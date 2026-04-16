@@ -9,4 +9,4 @@ data/
 .env
 .venv/
 venv/
-.ruff_cache/
+.ruff_cache/web/node_modules/

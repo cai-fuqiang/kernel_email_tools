@@ -94,6 +94,22 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS: allow frontend dev server and production
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=['*'],
+    allow_credentials=True,
+    allow_methods=['*'],
+    allow_headers=['*'],
+)
+# Serve static frontend files if available
+from fastapi.staticfiles import StaticFiles
+import os
+static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'web', 'dist')
+if os.path.isdir(static_dir):
+    app.mount('/app', StaticFiles(directory=static_dir, html=True), name='frontend')
+
 
 # ============================================================
 # Pydantic 响应模型
