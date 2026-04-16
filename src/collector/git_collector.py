@@ -146,9 +146,16 @@ class GitCollector(BaseCollector):
         emails: list[RawEmail] = []
 
         # 流式遍历 commit，不一次性加载到内存
+        # bare/mirror 仓库可能没有 HEAD，使用 --all 遍历所有分支
         processed = 0
         skipped = 0
-        for commit in repo.iter_commits("HEAD"):
+        try:
+            commit_iter = repo.iter_commits("HEAD")
+        except Exception:
+            logger.info("HEAD not available, using --all for bare repo")
+            commit_iter = repo.iter_commits(all=True)
+
+        for commit in commit_iter:
             processed += 1
 
             # 进度日志：每 1000 条输出一次

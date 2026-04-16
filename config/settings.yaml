@@ -1,9 +1,9 @@
 # kernel_email_tools 配置文件
 
 collector:
-  type: git                              # git | lore_api
+  type: git
   base_url: https://lore.kernel.org
-  data_dir: ./data/repos                 # git clone 本地存储路径
+  data_dir: ~/workspace/kernel_email     # 远端服务器已有仓库路径
   default_lists:
     - linux-mm
 

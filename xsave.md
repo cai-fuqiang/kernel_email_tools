@@ -8,3 +8,5 @@ XSAVE feature 扩展了 `FXSAVE`和`FXRSTOR` instruction 功能。
 * the registers used by the streaming SIMD extensions (SSE state)
 
 xsave feature 由8个指令构成:
+* **XGETBV** :
+* **XSETBV** :
