@@ -105,10 +105,18 @@ app.add_middleware(
 )
 # Serve static frontend files if available
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import FileResponse
 import os
 static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'web', 'dist')
 if os.path.isdir(static_dir):
-    app.mount('/app', StaticFiles(directory=static_dir, html=True), name='frontend')
+    # SPA fallback: serve index.html for all non-file paths under /app
+    @app.get('/app/{path:path}')
+    async def serve_spa(path: str):
+        file_path = os.path.join(static_dir, path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(os.path.join(static_dir, 'index.html'))
+    app.mount('/app/assets', StaticFiles(directory=os.path.join(static_dir, 'assets')), name='assets')
 
 
 # ============================================================
