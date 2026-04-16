@@ -1,0 +1,15 @@
+pyproject.toml
+kernel_email_tools.egg-info/PKG-INFO
+kernel_email_tools.egg-info/SOURCES.txt
+kernel_email_tools.egg-info/dependency_links.txt
+kernel_email_tools.egg-info/requires.txt
+kernel_email_tools.egg-info/top_level.txt
+src/__init__.py
+src/collector/__init__.py
+src/collector/base.py
+src/collector/git_collector.py
+src/parser/__init__.py
+src/parser/base.py
+src/parser/email_parser.py
+src/parser/patch_extractor.py
+src/parser/thread_builder.py

@@ -1,0 +1,35 @@
+# kernel_email_tools 配置文件
+
+collector:
+  type: git                              # git | lore_api
+  base_url: https://lore.kernel.org
+  data_dir: ./data/repos                 # git clone 本地存储路径
+  default_lists:
+    - linux-mm
+
+parser:
+  max_body_length: 100000                # 正文最大字符数
+  patch_separator: "---"                 # patch 分隔标识
+
+storage:
+  type: postgres
+  database_url: postgresql+asyncpg://localhost:5432/kernel_email
+  pool_size: 5
+
+indexer:
+  fulltext:
+    enabled: true
+    language: english
+  vector:
+    enabled: false                       # MVP 阶段先关闭，Phase 2 开启
+    model: text-embedding-3-small
+    dimension: 1536
+
+retriever:
+  default_mode: hybrid                   # keyword | semantic | hybrid
+  keyword_page_size: 50
+  semantic_top_k: 20
+
+qa:
+  llm_provider: openai                   # openai | anthropic
+  model: gpt-4
