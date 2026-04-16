@@ -1,6 +1,8 @@
 ## intel spec chapter 13
 
-### MANAGING STATE USING THE XSAVE FEATURE SET
+**_MANAGING STATE USING THE XSAVE FEATURE SET_**
+
+***
 
 XSAVE feature 扩展了 `FXSAVE`和`FXRSTOR` instruction 功能。
 来支持save/restore
@@ -32,3 +34,19 @@ features**(这些feature 依赖 XSAVE-feature, 也就是说如果使能这些`XS
 需要使能`XSAVE feature`)
 
 ***
+
+13.3 描述了软件如何 enable XSAVE feature set 和 XSAVE-enabled feature.
+
+***
+
+XSAVE feature set 允许 从 `XSAVE area`(a memory region) 中 save/load process
+state. 13.4 展示了 `XSAVE area` 细节。
+
+***
+
+每一个`XSAVE-managed state component` 对应着 `XSAVE area` 中的一部分。13.5 描述了
+每一个`XSAVE-managed state component`
+
+***
+
+### XSAVE-SUPPORTED FEATURES AND STATE-COMPONENT BITMAPS

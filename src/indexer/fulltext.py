@@ -56,19 +56,28 @@ class FulltextIndexer(BaseIndexer):
             更新的邮件数量。
         """
         async with self.session_factory() as session:
-            # 使用原生 SQL 批量更新（性能更优）
-            sql = text("""
-                UPDATE emails SET search_vector =
-                    setweight(to_tsvector('english', COALESCE(subject, '')), 'A') ||
-                    setweight(to_tsvector('english', COALESCE(sender, '')), 'B') ||
-                    setweight(to_tsvector('english', COALESCE(body, '')), 'C')
-                WHERE (:rebuild OR search_vector IS NULL)
-                  AND (:list_name IS NULL OR list_name = :list_name)
-            """)
-
-            result = await session.execute(
-                sql, {"rebuild": rebuild, "list_name": list_name}
-            )
+            # asyncpg 需要明确参数类型，分两种情况构造 SQL 避免类型歧义
+            if list_name:
+                sql = text("""
+                    UPDATE emails SET search_vector =
+                        setweight(to_tsvector('english', COALESCE(subject, '')), 'A') ||
+                        setweight(to_tsvector('english', COALESCE(sender, '')), 'B') ||
+                        setweight(to_tsvector('english', COALESCE(body, '')), 'C')
+                    WHERE (:rebuild OR search_vector IS NULL)
+                      AND list_name = :list_name
+                """)
+                result = await session.execute(
+                    sql, {"rebuild": rebuild, "list_name": list_name}
+                )
+            else:
+                sql = text("""
+                    UPDATE emails SET search_vector =
+                        setweight(to_tsvector('english', COALESCE(subject, '')), 'A') ||
+                        setweight(to_tsvector('english', COALESCE(sender, '')), 'B') ||
+                        setweight(to_tsvector('english', COALESCE(body, '')), 'C')
+                    WHERE (:rebuild OR search_vector IS NULL)
+                """)
+                result = await session.execute(sql, {"rebuild": rebuild})
             count = result.rowcount
             await session.commit()
 
