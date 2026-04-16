@@ -5,7 +5,7 @@ import AskPage from './pages/AskPage';
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/app">
       <Routes>
         <Route element={<MainLayout />}>
           <Route path="/" element={<SearchPage />} />
