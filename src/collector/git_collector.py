@@ -3,7 +3,6 @@
 import email
 import logging
 import os
-import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -32,10 +31,10 @@ class GitCollector(BaseCollector):
 
         Args:
             base_url: lore.kernel.org 基础 URL。
-            data_dir: 本地 git 仓库存储路径。
+            data_dir: 本地 git 仓库存储路径，支持 ~ 家目录展开。
         """
         self.base_url = base_url.rstrip("/")
-        self.data_dir = Path(data_dir)
+        self.data_dir = Path(os.path.expanduser(data_dir))
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
     def _repo_path(self, list_name: str, epoch: int) -> Path:
@@ -43,9 +42,10 @@ class GitCollector(BaseCollector):
         return self.data_dir / list_name / "git" / f"{epoch}.git"
 
     def _clone_or_fetch(self, list_name: str, epoch: int) -> Repo:
-        """克隆或更新 git 仓库。
+        """打开本地仓库，若不存在则从远端克隆。
 
-        如果本地已存在仓库，则执行 git fetch；否则执行 git clone --mirror。
+        优先使用本地已有的 git mirror 仓库（如手动 clone 的），
+        仅在本地不存在时才从远端克隆。
 
         Args:
             list_name: 邮件列表名称。
@@ -56,20 +56,21 @@ class GitCollector(BaseCollector):
 
         Raises:
             GitCommandError: git 操作失败。
+            FileNotFoundError: 本地仓库不存在且无法克隆。
         """
         repo_path = self._repo_path(list_name, epoch)
-        remote_url = f"{self.base_url}/{list_name}/{epoch}"
 
         if repo_path.exists():
             try:
                 repo = Repo(str(repo_path))
-                logger.info("Fetching updates for %s epoch %d...", list_name, epoch)
-                repo.remotes.origin.fetch()
+                logger.info("Using local repo: %s", repo_path)
                 return repo
-            except (InvalidGitRepositoryError, GitCommandError) as e:
-                logger.warning("Existing repo invalid, re-cloning: %s", e)
+            except InvalidGitRepositoryError as e:
+                logger.warning("Local repo invalid at %s: %s", repo_path, e)
 
-        logger.info("Cloning %s epoch %d from %s...", list_name, epoch, remote_url)
+        # 本地不存在，尝试远端克隆
+        remote_url = f"{self.base_url}/{list_name}/{epoch}"
+        logger.info("Local repo not found, cloning %s epoch %d from %s...", list_name, epoch, remote_url)
         repo_path.parent.mkdir(parents=True, exist_ok=True)
         repo = Repo.clone_from(remote_url, str(repo_path), mirror=True)
         logger.info("Clone complete: %s", repo_path)
@@ -162,7 +163,10 @@ class GitCollector(BaseCollector):
         return emails
 
     def get_epoch_count(self, list_name: str) -> int:
-        """通过尝试访问递增的 epoch URL 来确定 epoch 总数。
+        """获取邮件列表的 epoch 总数。
+
+        优先扫描本地目录（查找 N.git 格式的目录），
+        若本地无数据则 fallback 到 HTTP HEAD 探测远端。
 
         Args:
             list_name: 邮件列表名称。
@@ -170,18 +174,40 @@ class GitCollector(BaseCollector):
         Returns:
             epoch 总数。
         """
-        import httpx
+        # 策略1：扫描本地目录
+        git_dir = self.data_dir / list_name / "git"
+        if git_dir.exists():
+            epochs = []
+            for item in git_dir.iterdir():
+                if item.is_dir() and item.name.endswith(".git"):
+                    try:
+                        epoch_num = int(item.name[:-4])  # 去掉 .git 后缀
+                        epochs.append(epoch_num)
+                    except ValueError:
+                        continue
+            if epochs:
+                count = max(epochs) + 1
+                logger.info("Found %d epochs locally for %s", count, list_name)
+                return count
 
-        count = 0
-        while True:
-            url = f"{self.base_url}/{list_name}/{count}"
-            try:
-                resp = httpx.head(url, follow_redirects=True, timeout=10)
-                if resp.status_code == 200:
-                    count += 1
-                else:
+        # 策略2：HTTP HEAD 探测远端
+        logger.info("No local repos found, probing remote for %s epochs...", list_name)
+        try:
+            import httpx
+
+            count = 0
+            while True:
+                url = f"{self.base_url}/{list_name}/{count}"
+                try:
+                    resp = httpx.head(url, follow_redirects=True, timeout=10)
+                    if resp.status_code == 200:
+                        count += 1
+                    else:
+                        break
+                except httpx.RequestError:
                     break
-            except httpx.RequestError:
-                break
-        logger.info("Found %d epochs for %s", count, list_name)
-        return count
+            logger.info("Found %d epochs via HTTP for %s", count, list_name)
+            return count
+        except ImportError:
+            logger.warning("httpx not installed, cannot probe remote epochs")
+            return 0
