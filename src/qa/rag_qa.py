@@ -163,6 +163,12 @@ class RagQA(BaseQA):
     async def _call_llm(self, question: str, context: str) -> str:
         """调用 LLM 生成回答。
 
+        支持的提供商：
+        - openai: OpenAI GPT 系列
+        - anthropic: Anthropic Claude 系列
+        - dashscope: 阿里云千问 (Qwen)
+        - minimax: MiniMax 海螺 AI
+
         Args:
             question: 用户问题。
             context: RAG 上下文。
@@ -170,10 +176,102 @@ class RagQA(BaseQA):
         Returns:
             LLM 生成的回答文本，不可用时返回空字符串。
         """
-        # TODO: 对接 OpenAI / Anthropic API
-        # MVP 阶段暂不调用 LLM，返回空字符串触发 fallback
-        logger.info("LLM call skipped (not configured in MVP), using fallback")
-        return ""
+        import os
+
+        api_key = os.environ.get("DASHSCOPE_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            logger.info("No LLM API key found in environment, using fallback")
+            return ""
+
+        try:
+            if self.llm_provider == "openai":
+                from openai import AsyncOpenAI
+                client = AsyncOpenAI(api_key=api_key)
+                response = await client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": RAG_SYSTEM_PROMPT},
+                        {"role": "user", "content": RAG_USER_PROMPT_TEMPLATE.format(
+                            context=context, question=question
+                        )},
+                    ],
+                    temperature=0.7,
+                    max_tokens=1000,
+                )
+                return response.choices[0].message.content or ""
+
+            elif self.llm_provider == "anthropic":
+                from anthropic import AsyncAnthropic
+                client = AsyncAnthropic(api_key=api_key)
+                response = await client.messages.create(
+                    model=self.model,
+                    max_tokens=1000,
+                    system=RAG_SYSTEM_PROMPT,
+                    messages=[
+                        {"role": "user", "content": RAG_USER_PROMPT_TEMPLATE.format(
+                            context=context, question=question
+                        )},
+                    ],
+                )
+                return response.content[0].text if response.content else ""
+
+            elif self.llm_provider == "dashscope":
+                # 阿里云千问 (Qwen)
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(
+                        "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": self.model or "qwen-plus",
+                            "messages": [
+                                {"role": "system", "content": RAG_SYSTEM_PROMPT},
+                                {"role": "user", "content": RAG_USER_PROMPT_TEMPLATE.format(
+                                    context=context, question=question
+                                )},
+                            ],
+                            "temperature": 0.7,
+                            "max_tokens": 1000,
+                        },
+                        timeout=60.0,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+            elif self.llm_provider == "minimax":
+                # MiniMax 海螺 AI
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(
+                        "https://api.minimax.chat/v1/text/chatcompletion_v2",
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": self.model or "MiniMax-Text-01",
+                            "messages": [
+                                {"role": "system", "content": RAG_SYSTEM_PROMPT},
+                                {"role": "user", "content": RAG_USER_PROMPT_TEMPLATE.format(
+                                    context=context, question=question
+                                )},
+                            ],
+                            "temperature": 0.7,
+                            "max_tokens": 1000,
+                        },
+                        timeout=60.0,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+        except Exception as e:
+            logger.error(f"LLM call failed: {e}")
+            return ""
 
     def _build_fallback_answer(
         self, question: str, sources: list[SourceReference]

@@ -31,5 +31,7 @@ retriever:
   semantic_top_k: 20
 
 qa:
-  llm_provider: openai                   # openai | anthropic
-  model: gpt-4
+  llm_provider: dashscope              # openai | anthropic | dashscope | minimax
+  model: qwen-plus                     # 千问模型: qwen-plus, qwen-turbo, qwen-max
+                                        # MiniMax模型: MiniMax-Text-01
+                                        # OpenAI模型: gpt-4, gpt-3.5-turbo
