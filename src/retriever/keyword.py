@@ -40,6 +40,10 @@ class KeywordRetriever(BaseRetriever):
         results, total = await self.storage.search_fulltext(
             query=query.text,
             list_name=query.list_name,
+            sender=query.sender,
+            date_from=query.date_from,
+            date_to=query.date_to,
+            has_patch=query.has_patch,
             page=query.page,
             page_size=query.page_size,
         )

@@ -1,6 +1,7 @@
 """存储层抽象接口。"""
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Optional
 
 from src.storage.models import EmailCreate, EmailRead, EmailSearchResult
@@ -55,14 +56,25 @@ class BaseStorage(ABC):
 
     @abstractmethod
     async def search_fulltext(
-        self, query: str, list_name: Optional[str] = None,
-        page: int = 1, page_size: int = 50,
+        self,
+        query: str,
+        list_name: Optional[str] = None,
+        sender: Optional[str] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        has_patch: Optional[bool] = None,
+        page: int = 1,
+        page_size: int = 50,
     ) -> tuple[list[EmailSearchResult], int]:
         """全文搜索邮件。
 
         Args:
             query: 搜索关键词。
             list_name: 限定邮件列表，None 表示全部。
+            sender: 发件人模糊匹配，None 表示不限制。
+            date_from: 起始日期，None 表示不限制。
+            date_to: 结束日期，None 表示不限制。
+            has_patch: 是否必须包含补丁，None 表示不限制。
             page: 页码（从 1 开始）。
             page_size: 每页数量。
 

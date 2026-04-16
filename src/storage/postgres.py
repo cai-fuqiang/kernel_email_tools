@@ -1,9 +1,10 @@
 """PostgreSQL 存储层实现 — 支持批量写入、去重、全文搜索。"""
 
 import logging
+from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, literal, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -136,17 +137,27 @@ class PostgresStorage(BaseStorage):
             return [EmailRead.model_validate(row) for row in rows]
 
     async def search_fulltext(
-        self, query: str, list_name: Optional[str] = None,
-        page: int = 1, page_size: int = 50,
+        self,
+        query: str,
+        list_name: Optional[str] = None,
+        sender: Optional[str] = None,
+        date_from=None,
+        date_to=None,
+        has_patch: Optional[bool] = None,
+        page: int = 1,
+        page_size: int = 50,
     ) -> tuple[list[EmailSearchResult], int]:
         """使用 PostgreSQL 全文搜索。
 
-        使用 plainto_tsquery 将用户输入转换为搜索表达式，
-        ts_rank 计算相关性排名，ts_headline 生成匹配片段。
+        当 query 为空时，仅基于过滤条件进行筛选。
 
         Args:
-            query: 搜索关键词。
+            query: 搜索关键词（可为空）。
             list_name: 限定邮件列表。
+            sender: 发件人模糊匹配（可选）。
+            date_from: 起始日期（可选）。
+            date_to: 结束日期（可选）。
+            has_patch: 是否必须包含补丁（可选）。
             page: 页码（从 1 开始）。
             page_size: 每页数量。
 
@@ -154,12 +165,31 @@ class PostgresStorage(BaseStorage):
             (搜索结果列表, 总匹配数)。
         """
         async with self.session_factory() as session:
-            tsquery = func.plainto_tsquery("english", query)
+            # 过滤条件列表
+            conditions = []
 
-            # 基础过滤条件
-            conditions = [EmailORM.search_vector.op("@@")(tsquery)]
+            # 只有当关键词非空时才添加全文搜索条件
+            if query and query.strip():
+                tsquery = func.plainto_tsquery("english", query)
+                conditions.append(EmailORM.search_vector.op("@@")(tsquery))
+
             if list_name:
                 conditions.append(EmailORM.list_name == list_name)
+            # 发件人模糊匹配
+            if sender:
+                conditions.append(EmailORM.sender.ilike(f"%{sender}%"))
+            # 日期范围过滤
+            if date_from:
+                if isinstance(date_from, str):
+                    date_from = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+                conditions.append(EmailORM.date >= date_from)
+            if date_to:
+                if isinstance(date_to, str):
+                    date_to = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+                conditions.append(EmailORM.date <= date_to)
+            # 补丁状态过滤
+            if has_patch is not None:
+                conditions.append(EmailORM.has_patch == has_patch)
 
             # 计算总匹配数
             count_stmt = select(func.count()).select_from(EmailORM).where(*conditions)
@@ -169,13 +199,21 @@ class PostgresStorage(BaseStorage):
                 return [], 0
 
             # 搜索结果（带排名和片段）
-            rank = func.ts_rank(EmailORM.search_vector, tsquery).label("rank")
-            snippet = func.ts_headline(
-                "english",
-                EmailORM.body,
-                tsquery,
-                text("'StartSel=<<, StopSel=>>, MaxWords=50, MinWords=20'"),
-            ).label("snippet")
+            # 有关键词时用 ts_rank 排序，无关键词时按日期倒序
+            if query and query.strip():
+                rank_col = func.ts_rank(EmailORM.search_vector, tsquery)
+                snippet_col = func.ts_headline(
+                    "english",
+                    EmailORM.body,
+                    tsquery,
+                    text("'StartSel=<<, StopSel=>>, MaxWords=50, MinWords=20'"),
+                )
+                order_col = rank_col.desc()
+            else:
+                # 无关键词时，使用固定的 rank 值 0，按日期倒序排序
+                rank_col = literal(0.0)
+                snippet_col = func.substring(EmailORM.body, 1, 500)
+                order_col = EmailORM.date.desc()
 
             search_stmt = (
                 select(
@@ -187,11 +225,11 @@ class PostgresStorage(BaseStorage):
                     EmailORM.list_name,
                     EmailORM.thread_id,
                     EmailORM.has_patch,
-                    rank,
-                    snippet,
+                    rank_col.label("rank"),
+                    snippet_col.label("snippet"),
                 )
                 .where(*conditions)
-                .order_by(rank.desc())
+                .order_by(order_col)
                 .offset((page - 1) * page_size)
                 .limit(page_size)
             )

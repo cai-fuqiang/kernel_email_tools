@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 
@@ -15,6 +16,10 @@ class SearchQuery:
         page: 页码（从 1 开始）。
         page_size: 每页数量。
         top_k: 语义检索 top-K 数量。
+        sender: 发件人模糊匹配（可选）。
+        date_from: 起始日期（ISO 格式，可选）。
+        date_to: 结束日期（ISO 格式，可选）。
+        has_patch: 是否必须包含补丁（可选）。
     """
 
     text: str
@@ -22,6 +27,10 @@ class SearchQuery:
     page: int = 1
     page_size: int = 50
     top_k: int = 20
+    sender: Optional[str] = None
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
+    has_patch: Optional[bool] = None
 
 
 @dataclass

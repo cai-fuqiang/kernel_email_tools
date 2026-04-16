@@ -2,6 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -98,8 +99,8 @@ app = FastAPI(
 from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
-    allow_credentials=True,
+    allow_origins=['*'],  # 允许所有来源（开发/生产环境）
+    allow_credentials=False,  # 移除 credentials 以避免与 wildcard origins 冲突
     allow_methods=['*'],
     allow_headers=['*'],
 )
@@ -156,19 +157,30 @@ class StatsResponse(BaseModel):
 
 
 # ============================================================
-# API 路由
+# API 路由（统一前缀 /api）
 # ============================================================
 
 @app.get("/")
+async def root():
+    """API 根路径 — 重定向到前端页面。"""
+    from starlette.responses import RedirectResponse
+    return RedirectResponse(url="/app/", status_code=302)
+
+
+@app.get("/api/")
 async def root():
     """API 根路径 — 健康检查。"""
     return {"status": "ok", "service": "kernel-email-kb", "version": "0.1.0"}
 
 
-@app.get("/search", response_model=SearchResponse)
+@app.get("/api/search", response_model=SearchResponse)
 async def search(
-    q: str = Query(..., min_length=1, description="搜索关键词"),
+    q: str = Query("", description="搜索关键词"),
     list_name: Optional[str] = Query(None, description="限定邮件列表"),
+    sender: Optional[str] = Query(None, description="发件人模糊匹配"),
+    date_from: Optional[datetime] = Query(None, description="起始日期 (ISO 格式)"),
+    date_to: Optional[datetime] = Query(None, description="结束日期 (ISO 格式)"),
+    has_patch: Optional[bool] = Query(None, description="是否必须包含补丁"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     mode: str = Query("hybrid", description="检索模式: keyword/semantic/hybrid"),
@@ -179,13 +191,26 @@ async def search(
     - keyword: 精确关键词检索（PostgreSQL GIN 全文索引）
     - semantic: 语义向量检索（pgvector，需启用）
     - hybrid: 混合检索（自动路由 + 结果融合）
+
+    支持高级过滤：
+    - sender: 发件人模糊匹配
+    - date_from/date_to: 日期范围过滤
+    - has_patch: 是否包含补丁
     """
     if not _retriever:
         raise HTTPException(status_code=503, detail="Service not initialized")
 
+    # 至少要有关键词或过滤条件
+    if not q.strip() and not sender and not date_from and not date_to and has_patch is None:
+        raise HTTPException(status_code=400, detail="At least one search condition is required")
+
     query = SearchQuery(
         text=q,
         list_name=list_name,
+        sender=sender,
+        date_from=date_from,
+        date_to=date_to,
+        has_patch=has_patch,
         page=page,
         page_size=page_size,
     )
@@ -222,7 +247,7 @@ async def search(
     )
 
 
-@app.get("/ask", response_model=AskResponse)
+@app.get("/api/ask", response_model=AskResponse)
 async def ask(
     q: str = Query(..., min_length=1, description="问题"),
     list_name: Optional[str] = Query(None, description="限定邮件列表"),
@@ -254,7 +279,7 @@ async def ask(
     )
 
 
-@app.get("/thread/{thread_id:path}", response_model=ThreadResponse)
+@app.get("/api/thread/{thread_id:path}", response_model=ThreadResponse)
 async def get_thread(thread_id: str):
     """获取邮件线程 — 返回线程内所有邮件（按时间排序）。"""
     if not _storage:
@@ -283,7 +308,7 @@ async def get_thread(thread_id: str):
     )
 
 
-@app.get("/stats", response_model=StatsResponse)
+@app.get("/api/stats", response_model=StatsResponse)
 async def stats():
     """获取数据库统计信息。"""
     if not _storage:
