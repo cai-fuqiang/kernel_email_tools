@@ -13,7 +13,7 @@ parser:
 
 storage:
   type: postgres
-  database_url: postgresql+asyncpg://localhost:5432/kernel_email
+  database_url: postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email
   pool_size: 5
 
 indexer:
