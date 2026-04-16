@@ -129,6 +129,7 @@ class GitCollector(BaseCollector):
         list_name: str,
         epoch: int = 0,
         since: Optional[datetime] = None,
+        limit: int = 0,
     ) -> list[RawEmail]:
         """从 git mirror 采集邮件。
 
@@ -136,6 +137,7 @@ class GitCollector(BaseCollector):
             list_name: 邮件列表名称，如 "linux-mm"。
             epoch: epoch 编号。
             since: 增量采集起始时间，None 表示全量。
+            limit: 最大采集数量，0 表示不限制。
 
         Returns:
             采集到的 RawEmail 列表。
@@ -143,14 +145,22 @@ class GitCollector(BaseCollector):
         repo = self._clone_or_fetch(list_name, epoch)
         emails: list[RawEmail] = []
 
-        # 遍历所有 commit
-        rev = "HEAD"
-        commits = list(repo.iter_commits(rev))
-        logger.info("Processing %d commits from %s epoch %d...", len(commits), list_name, epoch)
+        # 流式遍历 commit，不一次性加载到内存
+        processed = 0
+        skipped = 0
+        for commit in repo.iter_commits("HEAD"):
+            processed += 1
 
-        for commit in commits:
+            # 进度日志：每 1000 条输出一次
+            if processed % 1000 == 0:
+                logger.info(
+                    "Progress: processed %d commits, collected %d emails from %s epoch %d",
+                    processed, len(emails), list_name, epoch,
+                )
+
             # 增量过滤：跳过早于 since 的 commit
             if since and commit.committed_datetime.replace(tzinfo=None) < since:
+                skipped += 1
                 continue
 
             raw_email = self._extract_email_from_commit(
@@ -159,7 +169,15 @@ class GitCollector(BaseCollector):
             if raw_email:
                 emails.append(raw_email)
 
-        logger.info("Collected %d emails from %s epoch %d", len(emails), list_name, epoch)
+            # 达到限制数量时提前退出
+            if limit and len(emails) >= limit:
+                logger.info("Reached limit of %d emails, stopping", limit)
+                break
+
+        logger.info(
+            "Collected %d emails from %s epoch %d (processed %d commits, skipped %d)",
+            len(emails), list_name, epoch, processed, skipped,
+        )
         return emails
 
     def get_epoch_count(self, list_name: str) -> int:

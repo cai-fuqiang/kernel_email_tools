@@ -1,9 +1,9 @@
-#!/usr/bin/env python3
 """数据采集入口脚本。
 
 用法:
     python scripts/collect.py --list linux-mm --epoch 0
     python scripts/collect.py --list linux-mm --all-epochs
+    python scripts/collect.py --list linux-mm --epoch 0 --limit 100
 """
 
 import argparse
@@ -46,6 +46,7 @@ def main() -> None:
     parser.add_argument("--list", required=True, help="邮件列表名称，如 linux-mm")
     parser.add_argument("--epoch", type=int, default=0, help="epoch 编号（默认 0）")
     parser.add_argument("--all-epochs", action="store_true", help="采集所有 epoch")
+    parser.add_argument("--limit", type=int, default=0, help="每个 epoch 最大采集数量（0=不限制）")
     parser.add_argument(
         "--data-dir",
         default=collector_cfg.get("data_dir", "./data/repos"),
@@ -69,7 +70,7 @@ def main() -> None:
         logger.info("=== Collecting %s epoch %d ===", args.list, epoch)
 
         # 1. 采集原始邮件
-        raw_emails = collector.collect(args.list, epoch)
+        raw_emails = collector.collect(args.list, epoch, limit=args.limit)
         logger.info("Raw emails collected: %d", len(raw_emails))
 
         # 2. 解析邮件

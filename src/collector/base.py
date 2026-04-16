@@ -58,6 +58,7 @@ class BaseCollector(ABC):
         list_name: str,
         epoch: int = 0,
         since: Optional[datetime] = None,
+        limit: int = 0,
     ) -> list[RawEmail]:
         """采集指定邮件列表的原始邮件数据。
 
@@ -65,6 +66,7 @@ class BaseCollector(ABC):
             list_name: 邮件列表名称，如 "linux-mm"。
             epoch: epoch 编号，0 为最早的存档。
             since: 增量采集起始时间，None 表示全量采集。
+            limit: 最大采集数量，0 表示不限制。
 
         Returns:
             采集到的原始邮件列表。
