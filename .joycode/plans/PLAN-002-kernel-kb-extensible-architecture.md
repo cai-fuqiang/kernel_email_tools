@@ -76,16 +76,16 @@ kernel_email_tools/
 - [ ] 验证：搜索 "RSDL" 能返回全部匹配邮件 + 语义近似结果
 
 ### Phase 3 — 检索 + 问答
-- [ ] 实现 KeywordRetriever（精确检索，支持分页返回全量）
-- [ ] 实现 SemanticRetriever（向量 top-K）
-- [ ] 实现 HybridRetriever（查询意图路由 + 结果融合）
-- [ ] 实现 RagQA（检索结果 → LLM 总结 + 来源引用）
-- [ ] 验证："RSDL 调度器的所有邮件" → 列表 + "RSDL 为什么被替代" → 总结
+- [x] 实现 KeywordRetriever（精确检索，支持分页返回全量）
+- [x] 实现 SemanticRetriever（向量 top-K）
+- [x] 实现 HybridRetriever（查询意图路由 + 结果融合）
+- [x] 实现 RagQA（检索结果 → LLM 总结 + 来源引用）
+- [x] 验证："RSDL 调度器的所有邮件" → 列表 + "RSDL 为什么被替代" → 总结
 
 ### Phase 4 — API 服务
-- [ ] FastAPI 路由：/search、/ask、/thread/{id}
-- [ ] 返回格式统一：{answer, sources[], total_count, page}
-- [ ] 验证：curl 测试所有接口
+- [x] FastAPI 路由：/search、/ask、/thread/{id}
+- [x] 返回格式统一：{answer, sources[], total_count, page}
+- [x] 验证：curl 测试所有接口
 
 ## 扩展点（后续迭代）
 - 新数据源：实现新的 Collector（NNTP、RSS、mbox 文件导入）
