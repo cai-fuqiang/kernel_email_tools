@@ -10,11 +10,14 @@ import yaml
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from src.qa.manual_qa import ManualQA
 from src.qa.rag_qa import RagQA
 from src.retriever.base import SearchQuery
 from src.retriever.hybrid import HybridRetriever
 from src.retriever.keyword import KeywordRetriever
+from src.retriever.manual import ManualRetriever, ManualSearchQuery
 from src.retriever.semantic import SemanticRetriever
+from src.storage.document_store import DocumentStorage
 from src.storage.models import EmailRead
 from src.storage.postgres import PostgresStorage
 
@@ -26,6 +29,11 @@ logger = logging.getLogger(__name__)
 _storage: Optional[PostgresStorage] = None
 _retriever: Optional[HybridRetriever] = None
 _qa: Optional[RagQA] = None
+
+# 芯片手册相关组件
+_manual_storage: Optional[DocumentStorage] = None
+_manual_retriever: Optional[ManualRetriever] = None
+_manual_qa: Optional[ManualQA] = None
 
 
 def _load_config() -> dict:
@@ -41,6 +49,7 @@ def _load_config() -> dict:
 async def lifespan(app: FastAPI):
     """应用生命周期管理：启动时初始化组件，关闭时释放资源。"""
     global _storage, _retriever, _qa
+    global _manual_storage, _manual_retriever, _manual_qa
 
     config = _load_config()
     storage_cfg = config.get("storage", {})
@@ -48,21 +57,22 @@ async def lifespan(app: FastAPI):
     qa_cfg = config.get("qa", {})
     indexer_cfg = config.get("indexer", {})
 
-    database_url = storage_cfg.get("database_url")
-    if not database_url:
-        raise RuntimeError("storage.database_url not configured in settings.yaml")
+    # ========== 邮件存储初始化 ==========
+    email_storage_cfg = storage_cfg.get("email", {})
+    email_database_url = email_storage_cfg.get("database_url")
+    if not email_database_url:
+        raise RuntimeError("storage.email.database_url not configured in settings.yaml")
 
-    # 初始化存储层
     _storage = PostgresStorage(
-        database_url=database_url,
-        pool_size=storage_cfg.get("pool_size", 5),
+        database_url=email_database_url,
+        pool_size=email_storage_cfg.get("pool_size", 5),
     )
     await _storage.init_db()
 
     # 初始化检索层
     keyword_retriever = KeywordRetriever(storage=_storage)
     semantic_retriever = SemanticRetriever(
-        database_url=database_url,
+        database_url=email_database_url,
         model=indexer_cfg.get("vector", {}).get("model", "text-embedding-3-small"),
         enabled=indexer_cfg.get("vector", {}).get("enabled", False),
     )
@@ -71,14 +81,40 @@ async def lifespan(app: FastAPI):
         semantic_retriever=semantic_retriever,
     )
 
-    # 初始化问答层
+    # 初始化邮件问答层
+    email_qa_cfg = qa_cfg.get("email", qa_cfg)
     _qa = RagQA(
         retriever=_retriever,
         storage=_storage,
-        llm_provider=qa_cfg.get("llm_provider", "openai"),
-        model=qa_cfg.get("model", "gpt-4"),
-        api_key=qa_cfg.get("api_key", ""),
+        llm_provider=email_qa_cfg.get("llm_provider", "openai"),
+        model=email_qa_cfg.get("model", "gpt-4"),
+        api_key=email_qa_cfg.get("api_key", ""),
     )
+
+    # ========== 芯片手册存储初始化 ==========
+    manual_storage_cfg = storage_cfg.get("manual", {})
+    manual_database_url = manual_storage_cfg.get("database_url")
+    if manual_database_url:
+        _manual_storage = DocumentStorage(
+            database_url=manual_database_url,
+            pool_size=manual_storage_cfg.get("pool_size", 5),
+        )
+        await _manual_storage.init_db()
+
+        # 初始化手册检索层
+        _manual_retriever = ManualRetriever(storage=_manual_storage)
+
+        # 初始化手册问答层
+        manual_qa_cfg = qa_cfg.get("manual", qa_cfg)
+        _manual_qa = ManualQA(
+            retriever=_manual_retriever,
+            llm_provider=manual_qa_cfg.get("llm_provider", "openai"),
+            model=manual_qa_cfg.get("model", "gpt-4"),
+            api_key=manual_qa_cfg.get("api_key", ""),
+        )
+        logger.info("Manual storage initialized successfully")
+    else:
+        logger.warning("Manual storage not configured, chip manual features disabled")
 
     logger.info("API server initialized successfully")
     yield
@@ -86,6 +122,8 @@ async def lifespan(app: FastAPI):
     # 关闭资源
     if _storage:
         await _storage.close()
+    if _manual_storage:
+        await _manual_storage.close()
     logger.info("API server shutdown complete")
 
 
@@ -155,6 +193,30 @@ class StatsResponse(BaseModel):
     """统计信息响应。"""
     total_emails: int
     lists: dict
+
+
+class ManualSearchResponse(BaseModel):
+    """手册搜索响应。"""
+    query: str
+    mode: str
+    total: int
+    hits: list[dict]
+
+
+class ManualAskResponse(BaseModel):
+    """手册问答响应。"""
+    question: str
+    answer: str
+    sources: list[dict]
+    model: str
+    retrieval_mode: str
+
+
+class ManualStatsResponse(BaseModel):
+    """手册统计信息响应。"""
+    total_chunks: int
+    by_manual_type: dict
+    by_content_type: dict
 
 
 # ============================================================
@@ -320,4 +382,121 @@ async def stats():
     return StatsResponse(
         total_emails=total,
         lists={"total": total},
+    )
+
+
+# ============================================================
+# 芯片手册 API 路由
+# ============================================================
+
+@app.get("/api/manual/search", response_model=ManualSearchResponse)
+async def manual_search(
+    q: str = Query(..., min_length=1, description="搜索关键词"),
+    manual_type: Optional[str] = Query(None, description="手册类型 (如 intel_sdm)"),
+    content_type: Optional[str] = Query(None, description="内容类型过滤"),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=100, description="每页数量"),
+):
+    """全文搜索芯片手册文档。
+
+    支持按手册类型、内容类型过滤。
+    """
+    if not _manual_retriever:
+        raise HTTPException(
+            status_code=503,
+            detail="Manual storage not initialized. Please configure storage.manual in settings.yaml"
+        )
+
+    query = ManualSearchQuery(
+        text=q,
+        manual_type=manual_type,
+        content_type=content_type,
+        page=page,
+        page_size=page_size,
+    )
+
+    result = await _manual_retriever.search(query)
+
+    return ManualSearchResponse(
+        query=q,
+        mode=result.mode,
+        total=result.total,
+        hits=[
+            {
+                "chunk_id": h.chunk_id,
+                "manual_type": h.manual_type,
+                "manual_version": h.manual_version,
+                "volume": h.volume,
+                "chapter": h.chapter,
+                "section": h.section,
+                "section_title": h.section_title,
+                "content_type": h.content_type,
+                "content": h.content[:500],  # 限制内容长度
+                "page_start": h.page_start + 1,  # 转为 1-based
+                "page_end": h.page_end + 1,
+                "score": round(h.score, 4),
+                "snippet": h.snippet,
+            }
+            for h in result.hits
+        ],
+    )
+
+
+@app.get("/api/manual/ask", response_model=ManualAskResponse)
+async def manual_ask(
+    q: str = Query(..., min_length=1, description="问题"),
+    manual_type: Optional[str] = Query(None, description="限定手册类型"),
+    content_type: Optional[str] = Query(None, description="限定内容类型"),
+):
+    """RAG 问答 — 基于芯片手册上下文回答问题。
+
+    Pipeline: 问题 → 文档检索 → 上下文构建 → LLM 生成（或 fallback 到摘要）
+    """
+    if not _manual_qa:
+        raise HTTPException(
+            status_code=503,
+            detail="Manual storage not initialized. Please configure storage.manual in settings.yaml"
+        )
+
+    answer = await _manual_qa.ask(
+        question=q,
+        manual_type=manual_type,
+        content_type=content_type,
+    )
+
+    return ManualAskResponse(
+        question=answer.question,
+        answer=answer.answer,
+        sources=[
+            {
+                "chunk_id": s.chunk_id,
+                "section": s.section,
+                "section_title": s.section_title,
+                "manual_type": s.manual_type,
+                "page_start": s.page_start + 1,
+                "page_end": s.page_end + 1,
+                "snippet": s.snippet,
+            }
+            for s in answer.sources
+        ],
+        model=answer.model,
+        retrieval_mode=answer.retrieval_mode,
+    )
+
+
+@app.get("/api/manual/stats", response_model=ManualStatsResponse)
+async def manual_stats():
+    """获取芯片手册数据库统计信息。"""
+    if not _manual_storage:
+        raise HTTPException(
+            status_code=503,
+            detail="Manual storage not initialized"
+        )
+
+    stats = await _manual_storage.get_stats()
+
+    return ManualStatsResponse(
+        total_chunks=stats["total"],
+        by_manual_type=stats["by_manual_type"],
+        by_content_type=stats["by_content_type"],
     )
