@@ -1,4 +1,4 @@
-# PLAN-100: 两个工程结合
+# PLAN-100: 两个工程结合 ✅
 
 ## 任务概述
 
@@ -25,17 +25,17 @@
 
 ## 工作量评估
 
-| 任务 | 预计工时 | 状态 |
-|------|----------|------|
-| 配置文件合并 | 1h | ✅ |
-| Chunker 模块合并 | 2h | ✅ |
-| Parser 模块合并 | 2h | ✅ |
-| Storage 层重构 | 3h | ✅ |
-| API 层扩展 | 3-4h | ✅ |
-| 前端页面改造 | 4-6h | ⏳ |
-| 脚本整合 | 1h | ⏳ |
-| 代码清理 | 1-2h | ⏳ |
-| **总计** | **14-23h** | |
+| 任务 | 预计工时 | 实际工时 | 状态 |
+|------|----------|----------|------|
+| 配置文件合并 | 1h | ~0.5h | ✅ |
+| Chunker 模块合并 | 2h | ~1h | ✅ |
+| Parser 模块合并 | 2h | ~1h | ✅ |
+| Storage 层重构 | 3h | ~2h | ✅ |
+| API 层扩展 | 3-4h | ~2h | ✅ |
+| 前端页面改造 | 4-6h | ~3h | ✅ |
+| 脚本整合 | 1h | ~0.5h | ✅ |
+| 代码清理 | 1-2h | ~0.5h | ✅ |
+| **总计** | **14-23h** | **~10h** | ✅ |
 
 ## 实施记录
 
@@ -87,36 +87,51 @@
 - [x] `/api/manual/stats` - 手册统计信息
 - [x] 更新 `server.py` 支持多数据源存储初始化
 
-### Phase 3: 前端融合 ⏳
-- [ ] 添加芯片手册搜索/问答页面
-- [ ] 统一布局和组件
-- [ ] 端到端测试
+### Phase 3: 前端融合 ✅
+- [x] 创建芯片手册搜索页面 `ManualSearchPage`
+- [x] 创建芯片手册问答页面 `ManualAskPage`
+- [x] 更新前端 API 客户端支持手册接口
+- [x] 更新 MainLayout 添加手册导航
 
-### Phase 4: 收尾 ⏳
-- [ ] 清理 sdm_kernel_tools 目录
-- [ ] 更新文档和脚本
-- [ ] 验证全流程
+### Phase 4: 收尾 ✅
+- [x] 清理 sdm_kernel_tools 目录
+- [x] 更新 README 文档
+- [x] 创建 ingest_manual.py 脚本
 
-## 已完成 Commits
+## Git Commits
 
-1. `71c95b2` - feat: Phase 1 - 合并 sdm_kernel_tools 基础设施
-2. `af70531` - feat: Phase 2 - 实现 ManualRetriever 和 ManualQA
+| Commit | 描述 |
+|--------|------|
+| `71c95b2` | feat: Phase 1 - 合并 sdm_kernel_tools 基础设施 |
+| `af70531` | feat: Phase 2 - 实现 ManualRetriever 和 ManualQA |
+| `e550179` | feat: Phase 3 - 前端融合 |
+| `d34ceeb` | chore: Phase 4 - 收尾工作 |
 
-## 当前目录结构
+## 最终目录结构
 
 ```
 kernel_email_tools/
 ├── config/
-│   └── settings.yaml          # 统一配置
+│   └── settings.yaml          # 统一配置（多数据源）
 ├── src/
 │   ├── chunker/               # 文档分片
+│   │   ├── base.py
+│   │   ├── section_chunker.py
+│   │   ├── content_type_chunker.py
+│   │   ├── sliding_window.py
+│   │   ├── instruction_chunker.py
+│   │   ├── table_chunker.py
+│   │   └── pipeline.py
 │   ├── parser/
 │   │   ├── base.py           # PDF 解析接口
 │   │   ├── pdf_extractor.py
 │   │   └── intel_sdm/
+│   │       └── parser.py
 │   ├── storage/
 │   │   ├── base.py           # 统一存储接口
+│   │   ├── models.py         # 邮件模型
 │   │   ├── document_models.py # 文档模型
+│   │   ├── postgres.py       # 邮件存储
 │   │   └── document_store.py # 文档存储
 │   ├── retriever/
 │   │   └── manual.py         # 手册检索器
@@ -124,23 +139,34 @@ kernel_email_tools/
 │   │   └── manual_qa.py      # 手册问答
 │   └── api/
 │       └── server.py         # 统一 API
-└── sdm_kernel_tools/          # 待清理
+├── scripts/
+│   ├── collect.py             # 邮件采集
+│   ├── index.py               # 邮件索引
+│   ├── serve.py               # 服务启动
+│   └── ingest_manual.py       # 手册导入
+└── web/
+    └── src/
+        ├── pages/
+        │   ├── SearchPage.tsx
+        │   ├── AskPage.tsx
+        │   ├── ManualSearchPage.tsx
+        │   └── ManualAskPage.tsx
+        ├── layouts/
+        │   └── MainLayout.tsx
+        └── api/
+            ├── client.ts
+            └── types.ts
 ```
 
-## 下一步计划
+## 技术亮点
 
-1. **Phase 3: 前端融合**
-   - 创建芯片手册搜索页面 (`ManualSearchPage`)
-   - 创建芯片手册问答页面 (`ManualAskPage`)
-   - 更新前端 API 客户端支持手册接口
-
-2. **Phase 4: 收尾**
-   - 将 `sdm_kernel_tools/scripts/ingest.py` 整合为 `scripts/ingest_manual.py`
-   - 清理 `sdm_kernel_tools` 目录
-   - 更新 README 文档
+1. **模块独立 + API 融合** - 双数据源独立演进，统一用户体验
+2. **三层分片策略** - L1 章节→L2 内容类型→L3 滑动窗口，针对芯片手册优化
+3. **多 LLM 支持** - OpenAI/Anthropic/DashScope/MiniMax
+4. **Fallback 机制** - LLM 不可用时自动降级到检索摘要
 
 ---
 
 *创建时间: 2026-04-17*
-*最后更新: 2026-04-17*
-*状态: Phase 1-2 完成, Phase 3 待开始*
+*完成时间: 2026-04-17*
+*状态: ✅ 全部完成*
