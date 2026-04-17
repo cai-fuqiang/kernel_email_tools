@@ -1,4 +1,12 @@
-import type { SearchResponse, AskResponse, ThreadResponse, StatsResponse } from './types';
+import type { 
+  SearchResponse, 
+  AskResponse, 
+  ThreadResponse, 
+  StatsResponse,
+  ManualSearchResponse,
+  ManualAskResponse,
+  ManualStatsResponse
+} from './types';
 
 // 使用相对路径，同源请求不会有 CORS 问题
 // 开发环境：Vite 代理 /api -> localhost:8000
@@ -56,4 +64,39 @@ export async function getThread(threadId: string): Promise<ThreadResponse> {
 
 export async function getStats(): Promise<StatsResponse> {
   return fetchJSON<StatsResponse>(`${API_BASE}/stats`);
+}
+
+// 芯片手册相关 API
+export interface ManualSearchOptions {
+  manual_type?: string;
+  content_type?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export async function searchManuals(
+  query: string,
+  opts: ManualSearchOptions = {},
+): Promise<ManualSearchResponse> {
+  const params = new URLSearchParams({ q: query });
+  if (opts.manual_type) params.set('manual_type', opts.manual_type);
+  if (opts.content_type) params.set('content_type', opts.content_type);
+  if (opts.page) params.set('page', String(opts.page));
+  if (opts.page_size) params.set('page_size', String(opts.page_size));
+  return fetchJSON<ManualSearchResponse>(`${API_BASE}/manual/search?${params}`);
+}
+
+export async function askManualQuestion(
+  question: string,
+  manualType?: string,
+  contentType?: string,
+): Promise<ManualAskResponse> {
+  const params = new URLSearchParams({ q: question });
+  if (manualType) params.set('manual_type', manualType);
+  if (contentType) params.set('content_type', contentType);
+  return fetchJSON<ManualAskResponse>(`${API_BASE}/manual/ask?${params}`);
+}
+
+export async function getManualStats(): Promise<ManualStatsResponse> {
+  return fetchJSON<ManualStatsResponse>(`${API_BASE}/manual/stats`);
 }

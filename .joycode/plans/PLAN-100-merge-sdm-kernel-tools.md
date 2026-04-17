@@ -23,27 +23,6 @@
 
 **模块独立 + API 融合（松耦合）**
 
-### 目标目录结构
-```
-kernel_email_tools/
-├── src/
-│   ├── parser/
-│   │   ├── email/              # 邮件解析 (原有)
-│   │   └── manual/             # 芯片手册 PDF 解析 (合并)
-│   ├── chunker/                 # 文档分片 (合并)
-│   ├── storage/
-│   │   ├── base.py             # 统一抽象基类
-│   │   ├── email_store.py      # 邮件存储
-│   │   └── document_store.py   # 文档分片存储
-│   ├── retriever/              # 共享检索层
-│   ├── qa/                     # 共享 RAG 问答
-│   └── api/
-│       └── server.py           # 统一 API
-├── scripts/
-│   └── ingest_manual.py        # 手册导入
-└── sdm_kernel_tools/           # 合并后移除
-```
-
 ## 工作量评估
 
 | 任务 | 预计工时 | 状态 |
@@ -52,7 +31,7 @@ kernel_email_tools/
 | Chunker 模块合并 | 2h | ✅ |
 | Parser 模块合并 | 2h | ✅ |
 | Storage 层重构 | 3h | ✅ |
-| API 层扩展 | 3-4h | ⏳ |
+| API 层扩展 | 3-4h | ✅ |
 | 前端页面改造 | 4-6h | ⏳ |
 | 脚本整合 | 1h | ⏳ |
 | 代码清理 | 1-2h | ⏳ |
@@ -90,19 +69,23 @@ kernel_email_tools/
 - [x] 新增 `DocumentChunkModel` 数据模型
 - [x] 新增 `DocumentStorage` 文档存储实现
 
-### Phase 2: API 融合 ⏳
+### Phase 2: API 融合 ✅
 
-#### 2.1 DocumentStorage 实现
-- [x] 创建 `DocumentStorage` PostgreSQL 存储实现
-- [x] 支持文档分片的 CRUD 操作
-- [x] 支持全文搜索
-- [x] 支持按手册类型/内容类型过滤
+#### 2.1 ManualRetriever 实现
+- [x] 创建 `ManualRetriever` 手册检索器
+- [x] 支持文档分片的全文搜索
+- [x] 支持按手册类型、内容类型过滤
 
-#### 2.2 待完成
-- [ ] 实现 `ManualRetriever` 手册检索器
-- [ ] 实现 `ManualQA` 手册问答
-- [ ] 扩展 API 路由支持芯片手册搜索/问答
-- [ ] 创建统一搜索入口
+#### 2.2 ManualQA 实现
+- [x] 创建 `ManualQA` 手册问答 (RAG Pipeline)
+- [x] 支持 OpenAI/Anthropic/DashScope/MiniMax 多 LLM 提供商
+- [x] LLM 不可用时 fallback 到检索摘要
+
+#### 2.3 API 路由扩展
+- [x] `/api/manual/search` - 手册文档搜索
+- [x] `/api/manual/ask` - 手册 RAG 问答
+- [x] `/api/manual/stats` - 手册统计信息
+- [x] 更新 `server.py` 支持多数据源存储初始化
 
 ### Phase 3: 前端融合 ⏳
 - [ ] 添加芯片手册搜索/问答页面
@@ -114,6 +97,11 @@ kernel_email_tools/
 - [ ] 更新文档和脚本
 - [ ] 验证全流程
 
+## 已完成 Commits
+
+1. `71c95b2` - feat: Phase 1 - 合并 sdm_kernel_tools 基础设施
+2. `af70531` - feat: Phase 2 - 实现 ManualRetriever 和 ManualQA
+
 ## 当前目录结构
 
 ```
@@ -122,37 +110,37 @@ kernel_email_tools/
 │   └── settings.yaml          # 统一配置
 ├── src/
 │   ├── chunker/               # 文档分片
-│   │   ├── base.py
-│   │   ├── section_chunker.py
-│   │   ├── content_type_chunker.py
-│   │   ├── sliding_window.py
-│   │   ├── instruction_chunker.py
-│   │   ├── table_chunker.py
-│   │   └── pipeline.py
 │   ├── parser/
 │   │   ├── base.py           # PDF 解析接口
 │   │   ├── pdf_extractor.py
 │   │   └── intel_sdm/
-│   │       └── parser.py
 │   ├── storage/
 │   │   ├── base.py           # 统一存储接口
-│   │   ├── models.py         # 邮件模型
 │   │   ├── document_models.py # 文档模型
-│   │   ├── postgres.py       # 邮件存储
 │   │   └── document_store.py # 文档存储
-│   └── ...
+│   ├── retriever/
+│   │   └── manual.py         # 手册检索器
+│   ├── qa/
+│   │   └── manual_qa.py      # 手册问答
+│   └── api/
+│       └── server.py         # 统一 API
 └── sdm_kernel_tools/          # 待清理
 ```
 
 ## 下一步计划
 
-1. **ManualRetriever** - 实现芯片手册的检索功能
-2. **扩展 API 路由** - 添加手册搜索和问答接口
-3. **前端页面** - 创建芯片手册的搜索和问答页面
-4. **脚本整合** - 将 ingest.py 整合为 scripts/ingest_manual.py
+1. **Phase 3: 前端融合**
+   - 创建芯片手册搜索页面 (`ManualSearchPage`)
+   - 创建芯片手册问答页面 (`ManualAskPage`)
+   - 更新前端 API 客户端支持手册接口
+
+2. **Phase 4: 收尾**
+   - 将 `sdm_kernel_tools/scripts/ingest.py` 整合为 `scripts/ingest_manual.py`
+   - 清理 `sdm_kernel_tools` 目录
+   - 更新 README 文档
 
 ---
 
 *创建时间: 2026-04-17*
 *最后更新: 2026-04-17*
-*状态: Phase 1-2 进行中*
+*状态: Phase 1-2 完成, Phase 3 待开始*
