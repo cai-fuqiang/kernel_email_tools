@@ -1,10 +1,10 @@
 # Kernel Email Knowledge Base
 
-一个基于 Linux 内核邮件列表构建的知识库系统，支持精确全文检索和 RAG 语义问答。采用双引擎架构（PostgreSQL GIN 全文索引 + pgvector 向量检索），提供 Web 界面和 REST API。
+一个基于 Linux 内核邮件列表和芯片手册构建的知识库系统，支持精确全文检索和 RAG 语义问答。采用双引擎架构（PostgreSQL GIN 全文索引 + pgvector 向量检索），提供 Web 界面和 REST API。
 
 ## 🎯 项目目标
 
-- **数据源**：从 lore.kernel.org 的 git mirror 采集内核邮件列表数据
+- **双数据源**：Linux 内核邮件列表 + 芯片手册（Intel SDM/ARM/AMD）
 - **双引擎检索**：PostgreSQL 全文索引（精确）+ pgvector 向量检索（语义）
 - **RAG 问答**：基于检索结果自动生成带来源引用的回答
 - **插件化架构**：六层解耦（采集→解析→存储→索引→检索→问答），每层可替换
@@ -16,18 +16,19 @@
 ```
 src/
 ├── collector/     # 数据采集层（GitCollector）
-├── parser/        # 邮件解析层（RFC2822 解析 + 线程重建）
+├── parser/        # 解析层（邮件 RFC2822 + PDF 手册）
+├── chunker/       # 文档分片层（L1→L2→L3 智能分片）
 ├── storage/       # 存储层（PostgreSQL + 模型定义）
 ├── indexer/       # 索引层（GIN 全文 + pgvector 向量）
-├── retriever/     # 检索层（Keyword/Semantic/Hybrid）
-├── qa/           # 问答层（RAG Pipeline）
+├── retriever/     # 检索层（Keyword/Semantic/Hybrid + Manual）
+├── qa/           # 问答层（RAG Pipeline + ManualQA）
 └── api/          # FastAPI 服务层
 ```
 
 ### 前端架构（React）
 ```
 web/src/
-├── pages/         # 页面组件（SearchPage, AskPage）
+├── pages/         # 页面组件（SearchPage, AskPage, ManualSearchPage, ManualAskPage）
 ├── components/    # 通用组件（ThreadDrawer）
 ├── layouts/       # 布局组件（MainLayout）
 ├── api/          # API 客户端 + TypeScript 类型
@@ -81,6 +82,12 @@ python scripts/serve.py
 # 服务运行在 http://localhost:8000
 ```
 
+### 7. 导入芯片手册（可选）
+```bash
+# 下载 Intel SDM PDF 到 manuals/intel_sdm/
+python scripts/ingest_manual.py --pdf ./manuals/intel_sdm/sdm.pdf --store
+```
+
 ### 7. 启动前端开发服务器（可选）
 ```bash
 cd web && npm install
@@ -105,22 +112,34 @@ npm run dev
 - MVP 阶段使用检索摘要作为 fallback，可配置 OpenAI API 启用 LLM 回答
 
 ### API 接口
-- `GET /` - 健康检查
-- `GET /search?q=关键词` - 邮件搜索
-- `GET /ask?q=问题` - 智能问答  
-- `GET /thread/{id}` - 获取邮件线程
-- `GET /stats` - 数据库统计
+### API 接口（邮件）
+- `GET /api/` - 健康检查
+- `GET /api/search?q=关键词` - 邮件搜索
+- `GET /api/ask?q=问题` - 智能问答  
+- `GET /api/thread/{id}` - 获取邮件线程
+- `GET /api/stats` - 数据库统计
+
+### API 接口（芯片手册）
+- `GET /api/manual/search?q=关键词` - 手册搜索
+- `GET /api/manual/ask?q=问题` - 手册问答
+- `GET /api/manual/stats` - 手册统计
 
 完整 API 文档：http://localhost:8000/docs
 
 ## 📊 数据流程
 
+### 邮件数据流程
 1. **采集**：GitCollector 从 lore.kernel.org 拉取 git mirror
 2. **解析**：EmailParser 解析 RFC2822 格式，ThreadBuilder 重建对话关系
 3. **存储**：PostgresStorage 批量写入，基于 message_id 去重
 4. **索引**：PostgreSQL 触发器自动维护全文索引，支持增量更新
 5. **检索**：HybridRetriever 智能路由，关键词/语义结果融合
 6. **问答**：RagQA 检索上下文 + LLM 生成（或 fallback 摘要）
+
+### 芯片手册数据流程
+1. **解析**：IntelSDMParser 从 PDF 提取目录和内容
+2. **分片**：ChunkPipeline L1→L2→L3 三层智能分片
+3. **存储**：DocumentStorage 批量写入文档分片
 
 ## 🔧 配置说明
 
