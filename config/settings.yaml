@@ -1,36 +1,79 @@
-# kernel_email_tools 配置文件
+# kernel_email_tools 统一配置文件
 
-collector:
+# 邮件数据源配置
+email_collector:
   type: git
   base_url: https://lore.kernel.org
   data_dir: ~/workspace/kernel_email     # 远端服务器已有仓库路径
   default_lists:
     - linux-mm
 
-parser:
+email_parser:
   max_body_length: 100000                # 正文最大字符数
   patch_separator: "---"                 # patch 分隔标识
 
-storage:
-  type: postgres
-  database_url: postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email
-  pool_size: 5
+# 芯片手册数据源配置
+manual_collector:
+  manuals_dir: ./manuals                 # 手册 PDF 存放根目录
+  sources:
+    intel_sdm:
+      type: pdf
+      path: ./manuals/intel_sdm/
+      url: https://cdrdv2.intel.com/v1/dl/getContent/325462  # 合集 PDF
 
+manual_parser:
+  pdf_engine: pymupdf                    # pymupdf | pdfplumber
+  max_page_text_length: 50000            # 单页文本最大字符数
+
+# 文档分片配置
+chunker:
+  target_tokens: 512                     # L2 段落目标 token 数
+  max_tokens: 1024                       # L3 过长阈值
+  min_tokens: 128                        # L3 过短阈值
+  overlap_ratio: 0.2                     # L3 滑动窗口重叠比例
+  token_model: cl100k_base               # tiktoken 编码模型
+
+# 存储配置（支持多数据库）
+storage:
+  email:
+    type: postgres
+    database_url: postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email
+    pool_size: 5
+  manual:
+    type: postgres
+    database_url: postgresql+asyncpg://kernel:kernel@localhost:5432/chip_manual_kb
+    pool_size: 5
+
+# 索引配置
 indexer:
   fulltext:
     enabled: true
     language: english
   vector:
-    enabled: false                       # MVP 阶段先关闭，Phase 2 开启
+    enabled: false                       # Phase 2 开启
     model: text-embedding-3-small
     dimension: 1536
 
+# 检索配置
 retriever:
   default_mode: hybrid                   # keyword | semantic | hybrid
   keyword_page_size: 50
   semantic_top_k: 20
 
+# 翻译配置（芯片手册专用）
+translator:
+  provider: llm                          # llm | deepl | google
+  llm_model: gpt-4
+  cache_enabled: true
+  glossary_path: ./config/glossary.yaml
+
+# 问答配置
 qa:
-  llm_provider: dashscope              # openai | anthropic | dashscope | minimax
-  model: qwen-plus-2025-07-28                 # 千问模型: qwen-plus, qwen-turbo, qwen-max
-  api_key: ""                           # API Key（环境变量优先，配置次之）
+  email:
+    llm_provider: dashscope              # openai | anthropic | dashscope | minimax
+    model: qwen-plus-2025-07-28          # 千问模型
+    api_key: ""                          # API Key
+  manual:
+    llm_provider: openai
+    model: gpt-4
+    api_key: ""                          # API Key

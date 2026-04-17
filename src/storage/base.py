@@ -1,4 +1,4 @@
-"""存储层抽象接口。"""
+"""存储层抽象接口 — 支持邮件和文档分片两种数据源。"""
 
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -17,6 +17,15 @@ class BaseStorage(ABC):
     async def init_db(self) -> None:
         """初始化数据库（创建表、索引等）。"""
         ...
+
+    @abstractmethod
+    async def close(self) -> None:
+        """关闭连接和释放资源。"""
+        ...
+
+
+class BaseEmailStorage(BaseStorage):
+    """邮件存储抽象基类。"""
 
     @abstractmethod
     async def save_emails(self, emails: list[EmailCreate]) -> int:
@@ -93,9 +102,4 @@ class BaseStorage(ABC):
         Returns:
             邮件数量。
         """
-        ...
-
-    @abstractmethod
-    async def close(self) -> None:
-        """关闭连接和释放资源。"""
         ...
