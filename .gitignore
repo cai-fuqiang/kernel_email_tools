@@ -10,3 +10,4 @@ data/
 .venv/
 venv/
 .ruff_cache/web/node_modules/
+config/settings.yaml

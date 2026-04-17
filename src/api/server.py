@@ -77,6 +77,7 @@ async def lifespan(app: FastAPI):
         storage=_storage,
         llm_provider=qa_cfg.get("llm_provider", "openai"),
         model=qa_cfg.get("model", "gpt-4"),
+        api_key=qa_cfg.get("api_key", ""),
     )
 
     logger.info("API server initialized successfully")

@@ -52,6 +52,7 @@ class RagQA(BaseQA):
         storage: PostgresStorage,
         llm_provider: str = "openai",
         model: str = "gpt-4",
+        api_key: str = "",
         max_context_emails: int = 10,
         max_context_chars: int = 8000,
     ):
@@ -62,6 +63,7 @@ class RagQA(BaseQA):
             storage: 存储层实例。
             llm_provider: LLM 提供商。
             model: LLM 模型名称。
+            api_key: API Key（环境变量优先）。
             max_context_emails: 上下文最大邮件数量。
             max_context_chars: 上下文最大字符数。
         """
@@ -69,6 +71,7 @@ class RagQA(BaseQA):
         self.storage = storage
         self.llm_provider = llm_provider
         self.model = model
+        self.api_key = api_key
         self.max_context_emails = max_context_emails
         self.max_context_chars = max_context_chars
 
@@ -169,6 +172,8 @@ class RagQA(BaseQA):
         - dashscope: 阿里云千问 (Qwen)
         - minimax: MiniMax 海螺 AI
 
+        API Key 优先级：环境变量 > 配置文件
+
         Args:
             question: 用户问题。
             context: RAG 上下文。
@@ -178,9 +183,16 @@ class RagQA(BaseQA):
         """
         import os
 
-        api_key = os.environ.get("DASHSCOPE_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        # API Key 优先级：环境变量 > 配置文件
+        env_var_map = {
+            "openai": "OPENAI_API_KEY",
+            "anthropic": "ANTHROPIC_API_KEY",
+            "dashscope": "DASHSCOPE_API_KEY",
+            "minimax": "MINIMAX_API_KEY",
+        }
+        api_key = os.environ.get(env_var_map.get(self.llm_provider, "")) or getattr(self, "api_key", "") or ""
         if not api_key:
-            logger.info("No LLM API key found in environment, using fallback")
+            logger.info("No LLM API key found, using fallback")
             return ""
 
         try:
