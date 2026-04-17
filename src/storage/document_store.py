@@ -59,7 +59,7 @@ class DocumentStorage(BaseStorage):
             page_start=chunk.page_start,
             page_end=chunk.page_end,
             token_count=chunk.token_count,
-            metadata=chunk.metadata,
+            extra_data=chunk.metadata,
             translated_at=chunk.translated_at,
         )
 
@@ -80,7 +80,7 @@ class DocumentStorage(BaseStorage):
             page_start=model.page_start,
             page_end=model.page_end,
             token_count=model.token_count,
-            metadata=model.metadata or {},
+            metadata=model.extra_data or {},
             translated_at=model.translated_at,
         )
 
