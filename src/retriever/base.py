@@ -20,6 +20,8 @@ class SearchQuery:
         date_from: 起始日期（ISO 格式，可选）。
         date_to: 结束日期（ISO 格式，可选）。
         has_patch: 是否必须包含补丁（可选）。
+        tags: 标签列表（可选）。
+        tag_mode: 标签匹配模式，"any"（任一匹配）或 "all"（全部匹配）。
     """
 
     text: str
@@ -31,6 +33,8 @@ class SearchQuery:
     date_from: Optional[datetime] = None
     date_to: Optional[datetime] = None
     has_patch: Optional[bool] = None
+    tags: Optional[list[str]] = None
+    tag_mode: str = "any"
 
 
 @dataclass
@@ -45,6 +49,7 @@ class SearchHit:
         list_name: 邮件列表名称。
         thread_id: 线程根 ID。
         has_patch: 是否包含补丁。
+        tags: 邮件标签列表。
         score: 相关性分数。
         snippet: 匹配片段。
         source: 结果来源（keyword / semantic / hybrid）。
@@ -57,6 +62,7 @@ class SearchHit:
     list_name: str = ""
     thread_id: str = ""
     has_patch: bool = False
+    tags: list[str] = field(default_factory=list)
     score: float = 0.0
     snippet: str = ""
     source: str = ""

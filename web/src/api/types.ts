@@ -6,6 +6,7 @@ export interface SearchHit {
   list_name: string;
   thread_id: string;
   has_patch: boolean;
+  tags: string[];
   score: number;
   snippet: string;
   source: string;

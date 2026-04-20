@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 
@@ -50,12 +51,24 @@ class BaseQA(ABC):
     """
 
     @abstractmethod
-    async def ask(self, question: str, list_name: Optional[str] = None) -> Answer:
+    async def ask(
+        self,
+        question: str,
+        list_name: Optional[str] = None,
+        sender: Optional[str] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        tags: Optional[list[str]] = None,
+    ) -> Answer:
         """回答问题。
 
         Args:
             question: 用户问题。
             list_name: 限定邮件列表。
+            sender: 发件人模糊匹配。
+            date_from: 起始日期过滤。
+            date_to: 结束日期过滤。
+            tags: 标签列表过滤。
 
         Returns:
             包含回答和来源的 Answer 对象。

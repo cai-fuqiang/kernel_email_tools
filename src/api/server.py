@@ -18,8 +18,9 @@ from src.retriever.keyword import KeywordRetriever
 from src.retriever.manual import ManualRetriever, ManualSearchQuery
 from src.retriever.semantic import SemanticRetriever
 from src.storage.document_store import DocumentStorage
-from src.storage.models import EmailRead
+from src.storage.models import EmailRead, TagRead, TagTree
 from src.storage.postgres import PostgresStorage
+from src.storage.tag_store import TagStore
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 _storage: Optional[PostgresStorage] = None
 _retriever: Optional[HybridRetriever] = None
 _qa: Optional[RagQA] = None
+_tag_store: Optional[TagStore] = None
 
 # 芯片手册相关组件
 _manual_storage: Optional[DocumentStorage] = None
@@ -48,7 +50,7 @@ def _load_config() -> dict:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理：启动时初始化组件，关闭时释放资源。"""
-    global _storage, _retriever, _qa
+    global _storage, _retriever, _qa, _tag_store
     global _manual_storage, _manual_retriever, _manual_qa
 
     config = _load_config()
@@ -68,6 +70,9 @@ async def lifespan(app: FastAPI):
         pool_size=email_storage_cfg.get("pool_size", 5),
     )
     await _storage.init_db()
+
+    # 初始化标签存储
+    _tag_store = TagStore(session_factory=_storage.session_factory)
 
     # 初始化检索层
     keyword_retriever = KeywordRetriever(storage=_storage)
@@ -160,8 +165,27 @@ if os.path.isdir(static_dir):
 
 
 # ============================================================
-# Pydantic 响应模型
+# Pydantic 请求/响应模型
 # ============================================================
+
+class TagCreateRequest(BaseModel):
+    """创建标签请求。"""
+    name: str = Field(..., min_length=1, max_length=64, description="标签名称")
+    parent_id: Optional[int] = Field(None, description="父标签 ID（用于层级标签）")
+    color: str = Field("#6366f1", description="标签颜色（十六进制）")
+
+
+class TagUpdateRequest(BaseModel):
+    """更新标签请求。"""
+    name: Optional[str] = Field(None, min_length=1, max_length=64)
+    color: Optional[str] = None
+    parent_id: Optional[int] = None
+
+
+class TagAddRequest(BaseModel):
+    """为邮件添加标签请求。"""
+    tag_name: str = Field(..., min_length=1, max_length=64, description="标签名称")
+
 
 class SearchResponse(BaseModel):
     """搜索响应。"""
@@ -220,6 +244,123 @@ class ManualStatsResponse(BaseModel):
 
 
 # ============================================================
+# 标签管理 API 路由
+# ============================================================
+
+@app.post("/api/tags", response_model=TagRead)
+async def create_tag(request: TagCreateRequest):
+    """创建标签。
+
+    支持父子层级，子标签通过 parent_id 指定父标签。
+    """
+    if not _tag_store:
+        raise HTTPException(status_code=503, detail="Tag store not initialized")
+
+    try:
+        tag = await _tag_store.create_tag(
+            name=request.name,
+            parent_id=request.parent_id,
+            color=request.color,
+        )
+        return TagRead.model_validate(tag)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/tags", response_model=list[TagTree])
+async def get_tags():
+    """获取标签树形结构。
+
+    返回所有标签，按父子关系组织成树形结构。
+    """
+    if not _tag_store:
+        raise HTTPException(status_code=503, detail="Tag store not initialized")
+
+    return await _tag_store.get_tag_tree()
+
+
+@app.get("/api/tags/stats", response_model=list[dict])
+async def get_tag_stats():
+    """获取标签统计信息。
+
+    返回所有标签及其被使用的邮件数量。
+    """
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+
+    return await _storage.get_all_tags_with_count()
+
+
+@app.delete("/api/tags/{tag_id}")
+async def delete_tag(tag_id: int):
+    """删除标签。
+
+    会级联删除所有子标签。
+    """
+    if not _tag_store:
+        raise HTTPException(status_code=503, detail="Tag store not initialized")
+
+    deleted = await _tag_store.delete_tag(tag_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Tag {tag_id} not found")
+    return {"status": "ok", "message": f"Tag {tag_id} deleted"}
+
+
+@app.get("/api/email/{message_id}/tags")
+async def get_email_tags(message_id: str):
+    """获取邮件的标签列表。"""
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+
+    tags = await _storage.get_email_tags(message_id)
+    return {"message_id": message_id, "tags": tags}
+
+
+@app.post("/api/email/{message_id}/tags")
+async def add_email_tag(message_id: str, request: TagAddRequest):
+    """为邮件添加标签。
+
+    单封邮件最多 16 个标签。
+    """
+    if not _storage or not _tag_store:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+
+    # 确保标签存在（不存在则自动创建）
+    await _tag_store.get_or_create_tag(request.tag_name)
+
+    added = await _storage.add_email_tag(message_id, request.tag_name)
+    if not added:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to add tag. Email may not exist or tag limit (16) reached."
+        )
+
+    return {
+        "status": "ok",
+        "message_id": message_id,
+        "tag": request.tag_name,
+    }
+
+
+@app.delete("/api/email/{message_id}/tags/{tag_name}")
+async def remove_email_tag(message_id: str, tag_name: str):
+    """从邮件移除标签。"""
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+
+    removed = await _storage.remove_email_tag(message_id, tag_name)
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"Email {message_id} not found")
+
+    return {
+        "status": "ok",
+        "message_id": message_id,
+        "tag": tag_name,
+        "removed": True,
+    }
+
+
+# ============================================================
 # API 路由（统一前缀 /api）
 # ============================================================
 
@@ -244,6 +385,8 @@ async def search(
     date_from: Optional[datetime] = Query(None, description="起始日期 (ISO 格式)"),
     date_to: Optional[datetime] = Query(None, description="结束日期 (ISO 格式)"),
     has_patch: Optional[bool] = Query(None, description="是否必须包含补丁"),
+    tags: Optional[str] = Query(None, description="标签列表（逗号分隔，如 memory,vm）"),
+    tag_mode: str = Query("any", description="标签匹配模式: any(任一匹配) 或 all(全部匹配)"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     mode: str = Query("hybrid", description="检索模式: keyword/semantic/hybrid"),
@@ -259,12 +402,19 @@ async def search(
     - sender: 发件人模糊匹配
     - date_from/date_to: 日期范围过滤
     - has_patch: 是否包含补丁
+    - tags: 标签过滤（逗号分隔）
+    - tag_mode: 标签匹配模式（any/all）
     """
     if not _retriever:
         raise HTTPException(status_code=503, detail="Service not initialized")
 
+    # 解析标签列表
+    tag_list = None
+    if tags:
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+
     # 至少要有关键词或过滤条件
-    if not q.strip() and not sender and not date_from and not date_to and has_patch is None:
+    if not q.strip() and not sender and not date_from and not date_to and has_patch is None and not tag_list:
         raise HTTPException(status_code=400, detail="At least one search condition is required")
 
     query = SearchQuery(
@@ -274,6 +424,8 @@ async def search(
         date_from=date_from,
         date_to=date_to,
         has_patch=has_patch,
+        tags=tag_list,
+        tag_mode=tag_mode,
         page=page,
         page_size=page_size,
     )
@@ -301,6 +453,7 @@ async def search(
                 "list_name": h.list_name,
                 "thread_id": h.thread_id,
                 "has_patch": h.has_patch,
+                "tags": h.tags,
                 "score": round(h.score, 4),
                 "snippet": h.snippet,
                 "source": h.source,
@@ -314,15 +467,36 @@ async def search(
 async def ask(
     q: str = Query(..., min_length=1, description="问题"),
     list_name: Optional[str] = Query(None, description="限定邮件列表"),
+    sender: Optional[str] = Query(None, description="发件人模糊匹配"),
+    date_from: Optional[datetime] = Query(None, description="起始日期 (ISO 格式)"),
+    date_to: Optional[datetime] = Query(None, description="结束日期 (ISO 格式)"),
+    tags: Optional[str] = Query(None, description="标签列表（逗号分隔，如 memory,vm）"),
 ):
     """RAG 问答 — 基于邮件上下文回答问题。
 
-    Pipeline: 问题 → 混合检索 → 上下文构建 → LLM 生成（或 fallback 到摘要）
+    Pipeline: 问题 → 混合检索（支持作者/日期/标签过滤）→ 上下文构建 → LLM 生成（或 fallback 到摘要）
+
+    支持高级过滤：
+    - sender: 发件人模糊匹配
+    - date_from/date_to: 日期范围过滤
+    - tags: 标签过滤（逗号分隔）
     """
     if not _qa:
         raise HTTPException(status_code=503, detail="Service not initialized")
 
-    answer = await _qa.ask(question=q, list_name=list_name)
+    # 解析标签列表
+    tag_list = None
+    if tags:
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+    answer = await _qa.ask(
+        question=q,
+        list_name=list_name,
+        sender=sender,
+        date_from=date_from,
+        date_to=date_to,
+        tags=tag_list,
+    )
 
     return AskResponse(
         question=answer.question,

@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { searchEmails } from '../api/client';
+import { useState, useEffect } from 'react';
+import { searchEmails, getTagStats, type TagStats } from '../api/client';
 import type { SearchResponse, SearchHit } from '../api/types';
 import ThreadDrawer from '../components/ThreadDrawer';
+import TagFilter from '../components/TagFilter';
 
 export default function SearchPage() {
   const [query, setQuery] = useState('');
@@ -11,15 +12,24 @@ export default function SearchPage() {
   const [error, setError] = useState('');
   const [selectedThread, setSelectedThread] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [tagStats, setTagStats] = useState<TagStats[]>([]);
+
   // 高级搜索状态
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [sender, setSender] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [hasPatch, setHasPatch] = useState<boolean | null>(null);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [tagMode, setTagMode] = useState<'any' | 'all'>('any');
+
+  // 加载标签统计
+  useEffect(() => {
+    getTagStats().then(setTagStats).catch(() => {});
+  }, []);
 
   // 检查是否有任何过滤条件
-  const hasFilters = sender || dateFrom || dateTo || hasPatch !== null;
+  const hasFilters = sender || dateFrom || dateTo || hasPatch !== null || selectedTags.length > 0;
 
   const handleSearch = async (p = 1) => {
     // 至少要有关键词或过滤条件
@@ -36,6 +46,8 @@ export default function SearchPage() {
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
         has_patch: hasPatch ?? undefined,
+        tags: selectedTags.length > 0 ? selectedTags : undefined,
+        tag_mode: tagMode,
       });
       setResult(data);
     } catch (e: any) {
@@ -52,6 +64,15 @@ export default function SearchPage() {
     setDateFrom('');
     setDateTo('');
     setHasPatch(null);
+    setSelectedTags([]);
+  };
+
+  const handleTagToggle = (tag: string) => {
+    setSelectedTags(prev =>
+      prev.includes(tag)
+        ? prev.filter(t => t !== tag)
+        : [...prev, tag]
+    );
   };
 
   return (
@@ -104,6 +125,28 @@ export default function SearchPage() {
         </button>
       </div>
 
+      {/* 标签筛选快捷入口 */}
+      {tagStats.length > 0 && (
+        <div className="mb-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-500">Popular tags:</span>
+            {tagStats.slice(0, 8).map(tag => (
+              <button
+                key={tag.name}
+                onClick={() => handleTagToggle(tag.name)}
+                className={`px-2 py-1 text-xs rounded-full transition-colors ${
+                  selectedTags.includes(tag.name)
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {tag.name} ({tag.count})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 高级搜索切换 */}
       <button
         onClick={() => {
@@ -121,6 +164,7 @@ export default function SearchPage() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
         Advanced Filters
+        {hasFilters && <span className="ml-1 px-1.5 py-0.5 bg-indigo-100 text-indigo-600 text-xs rounded">Active</span>}
       </button>
 
       {/* 高级搜索面板 */}
@@ -189,6 +233,19 @@ export default function SearchPage() {
             </div>
           </div>
 
+          {/* 标签筛选 */}
+          {tagStats.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <TagFilter
+                tags={tagStats}
+                selectedTags={selectedTags}
+                tagMode={tagMode}
+                onTagToggle={handleTagToggle}
+                onTagModeChange={setTagMode}
+              />
+            </div>
+          )}
+
           {/* 搜索按钮 */}
           <div className="mt-4 flex justify-between items-center">
             <button
@@ -217,7 +274,15 @@ export default function SearchPage() {
       {result && (
         <div>
           <p className="text-sm text-gray-500 mb-4">
-            Found <span className="font-semibold text-gray-900">{result.total}</span> results{' '}
+            Found <span className="font-semibold text-gray-900">{result.total}</span> results
+            {selectedTags.length > 0 && (
+              <span className="ml-2">
+                <span className="text-gray-400">in tags:</span>
+                {selectedTags.map(t => (
+                  <span key={t} className="ml-1 px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-xs">{t}</span>
+                ))}
+              </span>
+            )}
             <span className="ml-2 px-2 py-0.5 bg-gray-100 rounded-full text-xs">{result.mode}</span>
           </p>
           <div className="space-y-3">
@@ -273,12 +338,14 @@ function ResultCard({
   hit: SearchHit;
   onThread: () => void;
 }) {
+  const [tags, setTags] = useState<string[]>(hit.tags || []);
+
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <h3 className="text-sm font-semibold text-gray-900 truncate">{hit.subject}</h3>
-          <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500">
+          <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500 flex-wrap">
             <span className="font-medium text-gray-700">
               {hit.sender.split('<')[0].trim()}
             </span>
@@ -289,6 +356,19 @@ function ResultCard({
               </span>
             )}
           </div>
+          {/* 标签展示 */}
+          {tags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2">
+              {tags.map(tag => (
+                <span
+                  key={tag}
+                  className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-xs"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs px-2 py-1 bg-indigo-50 text-indigo-600 rounded-full font-medium">

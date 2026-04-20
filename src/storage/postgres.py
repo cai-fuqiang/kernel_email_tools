@@ -144,6 +144,8 @@ class PostgresStorage(BaseStorage):
         date_from=None,
         date_to=None,
         has_patch: Optional[bool] = None,
+        tags: Optional[list[str]] = None,
+        tag_mode: str = "any",
         page: int = 1,
         page_size: int = 50,
     ) -> tuple[list[EmailSearchResult], int]:
@@ -158,6 +160,8 @@ class PostgresStorage(BaseStorage):
             date_from: 起始日期（可选）。
             date_to: 结束日期（可选）。
             has_patch: 是否必须包含补丁（可选）。
+            tags: 标签列表（可选）。
+            tag_mode: 标签匹配模式，"any"（任一匹配）或 "all"（全部匹配）。
             page: 页码（从 1 开始）。
             page_size: 每页数量。
 
@@ -190,6 +194,16 @@ class PostgresStorage(BaseStorage):
             # 补丁状态过滤
             if has_patch is not None:
                 conditions.append(EmailORM.has_patch == has_patch)
+
+            # 标签过滤
+            if tags:
+                if tag_mode == "all":
+                    # 全部匹配：邮件必须包含所有指定标签
+                    for tag in tags:
+                        conditions.append(EmailORM.tags.contains([tag]))
+                else:
+                    # 任一匹配：邮件包含任一指定标签
+                    conditions.append(EmailORM.tags.overlap(tags))
 
             # 计算总匹配数
             count_stmt = select(func.count()).select_from(EmailORM).where(*conditions)
@@ -262,6 +276,112 @@ class PostgresStorage(BaseStorage):
                 stmt = stmt.where(EmailORM.list_name == list_name)
             result = await session.execute(stmt)
             return result.scalar() or 0
+
+    # ============================================================
+    # 邮件标签管理
+    # ============================================================
+
+    async def get_email_tags(self, message_id: str) -> list[str]:
+        """获取邮件的标签列表。
+
+        Args:
+            message_id: 邮件的 Message-ID。
+
+        Returns:
+            标签名称列表。
+        """
+        async with self.session_factory() as session:
+            stmt = select(EmailORM.tags).where(EmailORM.message_id == message_id)
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            return row or []
+
+    async def add_email_tag(self, message_id: str, tag_name: str) -> bool:
+        """为邮件添加标签。
+
+        Args:
+            message_id: 邮件的 Message-ID。
+            tag_name: 标签名称。
+
+        Returns:
+            添加成功返回 True，邮件不存在或已达上限返回 False。
+        """
+        from src.storage.tag_store import MAX_TAGS_PER_EMAIL
+
+        async with self.session_factory() as session:
+            stmt = select(EmailORM).where(EmailORM.message_id == message_id)
+            result = await session.execute(stmt)
+            email = result.scalar_one_or_none()
+
+            if not email:
+                logger.warning(f"Email not found: {message_id}")
+                return False
+
+            # 获取当前标签
+            current_tags = email.tags or []
+
+            # 检查是否已达上限
+            if len(current_tags) >= MAX_TAGS_PER_EMAIL:
+                logger.warning(
+                    f"Max tags ({MAX_TAGS_PER_EMAIL}) reached for email: {message_id}"
+                )
+                return False
+
+            # 检查标签是否已存在
+            if tag_name in current_tags:
+                return True  # 已存在，视为成功
+
+            # 添加标签
+            email.tags = current_tags + [tag_name]
+            await session.commit()
+            logger.info(f"Added tag '{tag_name}' to email: {message_id}")
+            return True
+
+    async def remove_email_tag(self, message_id: str, tag_name: str) -> bool:
+        """从邮件移除标签。
+
+        Args:
+            message_id: 邮件的 Message-ID。
+            tag_name: 标签名称。
+
+        Returns:
+            移除成功返回 True，邮件不存在返回 False。
+        """
+        async with self.session_factory() as session:
+            stmt = select(EmailORM).where(EmailORM.message_id == message_id)
+            result = await session.execute(stmt)
+            email = result.scalar_one_or_none()
+
+            if not email:
+                logger.warning(f"Email not found: {message_id}")
+                return False
+
+            current_tags = email.tags or []
+            if tag_name not in current_tags:
+                return True  # 不存在，视为成功
+
+            email.tags = [t for t in current_tags if t != tag_name]
+            await session.commit()
+            logger.info(f"Removed tag '{tag_name}' from email: {message_id}")
+            return True
+
+    async def get_all_tags_with_count(self) -> list[dict]:
+        """获取所有标签及其邮件数量。
+
+        Returns:
+            [{name: str, count: int}] 列表。
+        """
+        async with self.session_factory() as session:
+            # PostgreSQL unnest 展开 tags 数组并统计
+            stmt = text("""
+                SELECT tag, COUNT(*) as count
+                FROM emails,
+                     LATERAL unnest(COALESCE(tags, ARRAY[]::text[])) as tag
+                GROUP BY tag
+                ORDER BY count DESC, tag ASC
+            """)
+            result = await session.execute(stmt)
+            return [{"name": row.tag, "count": row.count} for row in result.all()]
 
     async def close(self) -> None:
         """关闭连接池。"""

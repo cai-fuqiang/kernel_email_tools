@@ -44,6 +44,8 @@ class KeywordRetriever(BaseRetriever):
             date_from=query.date_from,
             date_to=query.date_to,
             has_patch=query.has_patch,
+            tags=query.tags,
+            tag_mode=query.tag_mode,
             page=query.page,
             page_size=query.page_size,
         )
@@ -57,6 +59,7 @@ class KeywordRetriever(BaseRetriever):
                 list_name=r.list_name,
                 thread_id=r.thread_id,
                 has_patch=r.has_patch,
+                tags=r.tags if hasattr(r, 'tags') else [],
                 score=r.rank,
                 snippet=r.snippet,
                 source="keyword",

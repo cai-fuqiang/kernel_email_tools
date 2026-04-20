@@ -1,6 +1,7 @@
 """RAG 问答 Pipeline — 检索 + LLM 生成 + 来源引用。"""
 
 import logging
+from datetime import datetime
 from typing import Optional
 
 from src.qa.base import Answer, BaseQA, SourceReference
@@ -75,11 +76,19 @@ class RagQA(BaseQA):
         self.max_context_emails = max_context_emails
         self.max_context_chars = max_context_chars
 
-    async def ask(self, question: str, list_name: Optional[str] = None) -> Answer:
+    async def ask(
+        self,
+        question: str,
+        list_name: Optional[str] = None,
+        sender: Optional[str] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        tags: Optional[list[str]] = None,
+    ) -> Answer:
         """回答问题。
 
         Pipeline:
-        1. 通过混合检索器获取相关邮件
+        1. 通过混合检索器获取相关邮件（支持作者、日期、标签过滤）
         2. 从数据库获取邮件全文
         3. 构建 RAG 上下文
         4. 调用 LLM 生成回答（不可用时 fallback 到摘要）
@@ -87,14 +96,22 @@ class RagQA(BaseQA):
         Args:
             question: 用户问题。
             list_name: 限定邮件列表。
+            sender: 发件人模糊匹配。
+            date_from: 起始日期过滤。
+            date_to: 结束日期过滤。
+            tags: 标签列表过滤。
 
         Returns:
             Answer 对象。
         """
-        # 1. 检索相关邮件
+        # 1. 检索相关邮件（支持过滤）
         search_query = SearchQuery(
             text=question,
             list_name=list_name,
+            sender=sender,
+            date_from=date_from,
+            date_to=date_to,
+            tags=tags,
             page=1,
             page_size=self.max_context_emails,
             top_k=self.max_context_emails,

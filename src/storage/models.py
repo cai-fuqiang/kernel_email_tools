@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import (
     Column,
     DateTime,
+    ForeignKey,
     Integer,
     String,
     Text,
@@ -15,7 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 # ============================================================
@@ -25,6 +26,41 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 class Base(DeclarativeBase):
     """SQLAlchemy 声明式基类。"""
     pass
+
+
+class TagORM(Base):
+    """标签 ORM 模型，对应 tags 表。
+
+    支持父子层级（树形结构），通过 parent_id 自关联实现。
+    """
+
+    __tablename__ = "tags"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    parent_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("tags.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    color: Mapped[str] = mapped_column(String(7), nullable=False, default="#6366f1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+
+    # 自关联：父标签 -> 子标签
+    children: Mapped[list["TagORM"]] = relationship(
+        "TagORM", back_populates="parent", cascade="all, delete-orphan"
+    )
+    parent: Mapped[Optional["TagORM"]] = relationship(
+        "TagORM", back_populates="children", remote_side=[id]
+    )
+
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_tags_name"),
+        Index("ix_tags_parent_id", "parent_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<TagORM id={self.id} name={self.name!r}>"
 
 
 class EmailORM(Base):
@@ -47,6 +83,9 @@ class EmailORM(Base):
     thread_id: Mapped[str] = mapped_column(String(512), nullable=False, default="", index=True)
     epoch: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    # 标签列表（存储 tag name，最多 16 个）
+    tags: Mapped[Optional[list[str]]] = mapped_column(ARRAY(String), nullable=True)
+
     # 全文搜索向量列 — 由触发器或应用层维护
     search_vector: Mapped[Optional[str]] = mapped_column(
         TSVECTOR, nullable=True
@@ -56,6 +95,7 @@ class EmailORM(Base):
         UniqueConstraint("message_id", name="uq_emails_message_id"),
         Index("ix_emails_search_vector", "search_vector", postgresql_using="gin"),
         Index("ix_emails_list_thread", "list_name", "thread_id"),
+        Index("ix_emails_tags", "tags", postgresql_using="gin"),
     )
 
     def __repr__(self) -> str:
@@ -65,6 +105,39 @@ class EmailORM(Base):
 # ============================================================
 # Pydantic 数据校验模型
 # ============================================================
+
+class TagCreate(BaseModel):
+    """创建标签时的输入模型。"""
+
+    name: str = Field(..., min_length=1, max_length=64, description="标签名称")
+    parent_id: Optional[int] = Field(None, description="父标签 ID（用于层级标签）")
+    color: str = Field("#6366f1", pattern=r"^#[0-9A-Fa-f]{6}$", description="标签颜色")
+
+    model_config = {"from_attributes": True}
+
+
+class TagRead(BaseModel):
+    """查询标签时的输出模型。"""
+
+    id: int
+    name: str
+    parent_id: Optional[int] = None
+    color: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TagTree(BaseModel):
+    """树形标签结构（用于前端展示）。"""
+
+    id: int
+    name: str
+    color: str
+    children: list["TagTree"] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
 
 class EmailCreate(BaseModel):
     """创建邮件时的输入模型。"""
@@ -82,6 +155,7 @@ class EmailCreate(BaseModel):
     list_name: str = ""
     thread_id: str = ""
     epoch: int = 0
+    tags: list[str] = Field(default_factory=list, description="标签列表，最多 16 个")
 
     model_config = {"from_attributes": True}
 
@@ -102,6 +176,7 @@ class EmailRead(BaseModel):
     list_name: str
     thread_id: str
     epoch: int
+    tags: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -150,4 +225,5 @@ def parsed_email_to_create(parsed) -> EmailCreate:
         list_name=parsed.list_name,
         thread_id=parsed.thread_id,
         epoch=parsed.epoch,
+        tags=[],  # 新邮件默认无标签
     )
