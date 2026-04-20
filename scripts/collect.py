@@ -13,6 +13,7 @@
 """
 
 import argparse
+import os
 import logging
 import sys
 from pathlib import Path
@@ -112,10 +113,11 @@ def main() -> None:
     for list_name, channel_path in channels_to_collect:
         # 如果指定了 channel 路径，设置 collector 的 data_dir
         if channel_path:
-            collector.data_dir = Path(channel_path)
+            collector.data_dir = Path(os.path.expanduser(channel_path)).parent
             logger.info("Using local path: %s", channel_path)
 
         # 确定要采集的 epochs
+        logger.info('DEBUG: data_dir=%s, list_name=%s', collector.data_dir, list_name)
         if args.all_epochs:
             epoch_count = collector.get_epoch_count(list_name)
             if epoch_count == 0:

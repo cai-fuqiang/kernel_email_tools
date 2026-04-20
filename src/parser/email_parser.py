@@ -153,3 +153,18 @@ class EmailParser(BaseParser):
         except Exception as e:
             logger.error("Failed to parse email %s: %s", raw_email.message_id, e)
             return None
+    def parse_batch(self, raw_emails: list[RawEmail]) -> list[ParsedEmail]:
+        """批量解析邮件。
+
+        Args:
+            raw_emails: 原始邮件列表。
+
+        Returns:
+            解析成功的邮件列表。
+        """
+        results = []
+        for email in raw_emails:
+            parsed = self.parse(email)
+            if parsed:
+                results.append(parsed)
+        return results
