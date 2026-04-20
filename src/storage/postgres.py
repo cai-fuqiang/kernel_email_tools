@@ -52,7 +52,7 @@ class PostgresStorage(BaseStorage):
     async def init_db(self) -> None:
         """创建表和索引，设置全文搜索触发器。"""
         async with self.engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(Base.metadata.create_all, checkfirst=True)
 
             # 创建全文搜索触发器：自动更新 search_vector 列
             await conn.execute(text("""
