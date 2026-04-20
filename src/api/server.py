@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
     await _storage.init_db()
 
     # 初始化标签存储
-    _tag_store = TagStore(session_factory=_storage.session_factory)
+    _tag_store = TagStore(session=await _storage.session_factory().__aenter__())
 
     # 初始化检索层
     keyword_retriever = KeywordRetriever(storage=_storage)
