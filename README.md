@@ -246,7 +246,14 @@ podman stop kernel-pg && podman rm kernel-pg
 ### 数据库重建
 
 ```bash
-# 方法一：使用 psql 重建（删除所有表并重建）
+# 方法一：使用运维脚本重建（推荐）
+# 1. 清理所有表和索引
+python scripts/rebuild_db.py
+
+# 2. 重新初始化数据库（创建表、索引、触发器）
+python scripts/init_db_fresh.py
+
+# 方法二：使用 psql 重建（删除所有表并重建）
 podman exec -it kernel-pg psql -U kernel -d kernel_email -c "
 DROP TABLE IF EXISTS email_tags CASCADE;
 DROP TABLE IF EXISTS tags CASCADE;
@@ -254,20 +261,9 @@ DROP TABLE IF EXISTS emails CASCADE;
 "
 
 # 然后重新初始化数据库
-python -c "
-import asyncio
-from src.storage.postgres import PostgresStorage
+python scripts/init_db_fresh.py
 
-async def init():
-    storage = PostgresStorage(database_url='postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email')
-    await storage.init_db()
-    print('Database initialized')
-    await storage.close()
-
-asyncio.run(init())
-"
-
-# 方法二：使用 Python 脚本重建
+# 方法三：使用 Python 脚本重建
 python -c "
 import asyncio
 from sqlalchemy import text
@@ -285,7 +281,7 @@ async def rebuild():
 asyncio.run(rebuild())
 "
 
-# 方法三：删除手册数据库表
+# 方法四：删除手册数据库表
 python -c "
 import asyncio
 from sqlalchemy import text
@@ -302,10 +298,10 @@ async def rebuild_manual():
 asyncio.run(rebuild_manual())
 "
 
-# 方法四：重建全文索引（不删除数据）
+# 方法五：重建全文索引（不删除数据）
 python scripts/index.py --rebuild-fulltext
 
-# 方法五：删除并重建索引（需要先删除数据）
+# 方法六：删除并重建索引（需要先删除数据）
 podman exec -it kernel-pg psql -U kernel -d kernel_email -c "
 DROP INDEX IF EXISTS idx_emails_search_vector;
 CREATE INDEX idx_emails_search_vector ON emails USING GIN (search_vector);
