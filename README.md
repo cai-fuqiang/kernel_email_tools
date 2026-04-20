@@ -112,6 +112,222 @@ npm run dev
 # 前端开发服务器：http://localhost:5173/app/
 ```
 
+## 🗄️ 数据库运维命令
+
+### 初始化数据库
+
+```bash
+# 初始化邮件数据库（创建表、索引、触发器）
+python -c "
+import asyncio
+from src.storage.postgres import PostgresStorage
+from src.storage.models import EmailORM
+
+async def init():
+    storage = PostgresStorage(database_url='postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email')
+    await storage.init_db()
+    print('Database initialized')
+    await storage.close()
+
+asyncio.run(init())
+"
+
+# 初始化手册数据库
+python -c "
+import asyncio
+from src.storage.document_store import DocumentStorage
+
+async def init():
+    storage = DocumentStorage(database_url='postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email')
+    await storage.init_db()
+    print('Manual database initialized')
+    await storage.close()
+
+asyncio.run(init())
+"
+```
+
+### 数据导入与索引
+
+```bash
+# 采集邮件数据并入库
+python scripts/collect.py --list linux-mm --epoch 0 --limit 100
+python scripts/index.py --list linux-mm --epoch 0 --limit 100
+
+# 采集所有 epoch 并入库
+python scripts/index.py --list linux-mm --all-epochs
+
+# 从本地目录采集多个 channel
+python scripts/collect.py --all-channels --local
+
+# 导入芯片手册
+python scripts/ingest_manual.py --pdf ./manuals/intel_sdm/sdm.pdf --store
+
+# 重建全文索引
+python scripts/index.py --rebuild-fulltext
+```
+
+### 数据库统计
+
+```bash
+# 查看邮件数据库统计
+python scripts/index.py --stats
+
+# 通过 API 查看
+curl http://localhost:8000/api/stats
+
+# 查看手册统计
+curl http://localhost:8000/api/manual/stats
+```
+
+### 数据库维护
+
+```bash
+# 连接数据库（需在容器内或本地有 psql）
+psql -U kernel -d kernel_email
+
+# 查看表结构
+\dt
+
+# 查看邮件数量
+SELECT list_name, COUNT(*) FROM emails GROUP BY list_name;
+
+# 查看索引状态
+\d emails
+
+# 查看全文索引统计
+SELECT COUNT(*) FROM emails WHERE search_vector IS NOT NULL;
+
+# 手动触发索引更新（单条测试）
+UPDATE emails SET search_vector = to_tsvector('english', subject || ' ' || body)
+WHERE message_id = '<test@example.com>';
+
+# 清理孤立数据
+DELETE FROM emails WHERE thread_id NOT IN (SELECT DISTINCT thread_id FROM emails WHERE thread_id IS NOT NULL);
+
+# 查看数据库大小
+SELECT pg_size_pretty(pg_database_size('kernel_email'));
+
+# 查看表大小
+SELECT pg_size_pretty(pg_total_relation_size('emails'));
+```
+
+### Docker 运维命令
+
+```bash
+# 启动 PostgreSQL 容器
+podman run -d --name kernel-pg -p 5432:5432 \
+  -e POSTGRES_USER=kernel -e POSTGRES_PASSWORD=kernel \
+  -e POSTGRES_DB=kernel_email \
+  docker.io/postgres:16-alpine
+
+# 启用 pgvector 扩展
+podman exec -it kernel-pg psql -U kernel -d kernel_email -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+# 查看容器日志
+podman logs -f kernel-pg
+
+# 重启数据库
+podman restart kernel-pg
+
+# 进入容器操作
+podman exec -it kernel-pg psql -U kernel -d kernel_email
+
+# 备份数据库
+podman exec -it kernel-pg pg_dump -U kernel kernel_email > backup.sql
+
+# 恢复数据库
+podman exec -it kernel-pg psql -U kernel -d kernel_email < backup.sql
+
+# 停止并删除容器
+podman stop kernel-pg && podman rm kernel-pg
+```
+
+### 数据库重建
+
+```bash
+# 方法一：使用 psql 重建（删除所有表并重建）
+podman exec -it kernel-pg psql -U kernel -d kernel_email -c "
+DROP TABLE IF EXISTS email_tags CASCADE;
+DROP TABLE IF EXISTS tags CASCADE;
+DROP TABLE IF EXISTS emails CASCADE;
+"
+
+# 然后重新初始化数据库
+python -c "
+import asyncio
+from src.storage.postgres import PostgresStorage
+
+async def init():
+    storage = PostgresStorage(database_url='postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email')
+    await storage.init_db()
+    print('Database initialized')
+    await storage.close()
+
+asyncio.run(init())
+"
+
+# 方法二：使用 Python 脚本重建
+python -c "
+import asyncio
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+async def rebuild():
+    engine = create_async_engine('postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email')
+    async with engine.begin() as conn:
+        await conn.execute(text('DROP TABLE IF EXISTS email_tags CASCADE'))
+        await conn.execute(text('DROP TABLE IF EXISTS tags CASCADE'))
+        await conn.execute(text('DROP TABLE IF EXISTS emails CASCADE'))
+    await engine.dispose()
+    print('Tables dropped')
+
+asyncio.run(rebuild())
+"
+
+# 方法三：删除手册数据库表
+python -c "
+import asyncio
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+async def rebuild_manual():
+    engine = create_async_engine('postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email')
+    async with engine.begin() as conn:
+        await conn.execute(text('DROP TABLE IF EXISTS document_chunks CASCADE'))
+        await conn.execute(text('DROP TABLE IF EXISTS manuals CASCADE'))
+    await engine.dispose()
+    print('Manual tables dropped')
+
+asyncio.run(rebuild_manual())
+"
+
+# 方法四：重建全文索引（不删除数据）
+python scripts/index.py --rebuild-fulltext
+
+# 方法五：删除并重建索引（需要先删除数据）
+podman exec -it kernel-pg psql -U kernel -d kernel_email -c "
+DROP INDEX IF EXISTS idx_emails_search_vector;
+CREATE INDEX idx_emails_search_vector ON emails USING GIN (search_vector);
+"
+```
+
+### 环境变量配置
+
+在 `config/settings.yaml` 中配置数据库连接：
+
+```yaml
+storage:
+  # 邮件数据库
+  database_url: "postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email"
+  pool_size: 5
+
+# 手册数据库（可复用同一实例或单独配置）
+manual:
+  database_url: "postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email"
+  pool_size: 3
+```
+
 ## 🌐 使用方式
 
 ### Web 界面
