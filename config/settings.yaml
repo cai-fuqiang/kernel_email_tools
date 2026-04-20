@@ -7,6 +7,14 @@ email_collector:
   data_dir: ~/workspace/kernel_email     # 远端服务器已有仓库路径
   default_lists:
     - linux-mm
+  # 本地多 channel 配置（从本地目录采集）
+  local_channels:
+    - name: kvm        # channel 名称，对应 list_name
+      path: ~/workspace/kernel_email/kvm
+    - name: linux-mm
+      path: ~/workspace/kernel_email/linux-mm
+    - name: lkml
+      path: ~/workspace/kernel_email/lkml
 
 email_parser:
   max_body_length: 100000                # 正文最大字符数

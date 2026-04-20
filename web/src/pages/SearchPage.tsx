@@ -23,13 +23,25 @@ export default function SearchPage() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [tagMode, setTagMode] = useState<'any' | 'all'>('any');
 
+  // Channel/channel 选择状态
+  const [selectedChannel, setSelectedChannel] = useState<string>('');
+  const [channels, setChannels] = useState<string[]>([]);
+
+  // 预定义的 channel 列表（与 settings.yaml 的 local_channels 对应）
+  const CHANNEL_OPTIONS = [
+    { value: '', label: 'All Channels' },
+    { value: 'kvm', label: 'KVM' },
+    { value: 'linux-mm', label: 'Linux-MM' },
+    { value: 'lkml', label: 'LKML' },
+  ];
+
   // 加载标签统计
   useEffect(() => {
     getTagStats().then(setTagStats).catch(() => {});
   }, []);
 
   // 检查是否有任何过滤条件
-  const hasFilters = sender || dateFrom || dateTo || hasPatch !== null || selectedTags.length > 0;
+  const hasFilters = sender || dateFrom || dateTo || hasPatch !== null || selectedTags.length > 0 || selectedChannel;
 
   const handleSearch = async (p = 1) => {
     // 至少要有关键词或过滤条件
@@ -42,6 +54,7 @@ export default function SearchPage() {
         mode,
         page: p,
         page_size: 20,
+        list_name: selectedChannel || undefined,
         sender: sender || undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
@@ -65,6 +78,7 @@ export default function SearchPage() {
     setDateTo('');
     setHasPatch(null);
     setSelectedTags([]);
+    setSelectedChannel('');
   };
 
   const handleTagToggle = (tag: string) => {
@@ -115,6 +129,16 @@ export default function SearchPage() {
           <option value="hybrid">Hybrid</option>
           <option value="keyword">Keyword</option>
           <option value="semantic">Semantic</option>
+        </select>
+        {/* Channel/channel 选择器 */}
+        <select
+          value={selectedChannel}
+          onChange={(e) => setSelectedChannel(e.target.value)}
+          className="px-3 py-3 bg-white border border-gray-300 rounded-xl text-sm"
+        >
+          {CHANNEL_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
         </select>
         <button
           onClick={() => handleSearch()}
@@ -275,6 +299,12 @@ export default function SearchPage() {
         <div>
           <p className="text-sm text-gray-500 mb-4">
             Found <span className="font-semibold text-gray-900">{result.total}</span> results
+            {selectedChannel && (
+              <span className="ml-2">
+                <span className="text-gray-400">in channel:</span>
+                <span className="ml-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-xs font-medium">{selectedChannel}</span>
+              </span>
+            )}
             {selectedTags.length > 0 && (
               <span className="ml-2">
                 <span className="text-gray-400">in tags:</span>

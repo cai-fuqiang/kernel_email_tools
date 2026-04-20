@@ -66,7 +66,24 @@ storage:
   database_url: "postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email"
 ```
 
-### 4. 采集数据（示例：linux-mm epoch 0，限 100 条测试）
+### 4. 采集数据
+
+#### 方式一：从本地目录采集（已下载的数据）
+本地已有 `~/workspace/kernel_email/` 下的 channel 数据时：
+```bash
+# 采集所有 channel
+python scripts/collect.py --all-channels --local
+
+# 只采集指定 channel（如 kvm）
+python scripts/collect.py --list kvm --local --all-epochs
+
+# 只采集 linux-mm 的 epoch 0
+python scripts/collect.py --list linux-mm --local --epoch 0
+```
+
+支持的 channel：kvm、linux-mm、lkml
+
+#### 方式二：从远端采集
 ```bash
 python scripts/collect.py --list linux-mm --epoch 0 --limit 100
 ```
@@ -103,6 +120,7 @@ npm run dev
 #### 搜索功能
 - 输入关键词搜索邮件（如 "shmem mount"）
 - 支持三种检索模式：Hybrid（混合）、Keyword（关键词）、Semantic（语义）
+- **Channel/channel 过滤**：在下拉框选择要检索的 channel（留空则搜索所有 channel）
 - 结果包含邮件主题、发件人、时间、相关性分数和高亮片段
 - 点击 "Thread" 查看完整邮件线程对话
 
@@ -146,9 +164,17 @@ npm run dev
 所有配置集中在 `config/settings.yaml`：
 
 ```yaml
-collector:
-  base_url: https://lore.kernel.org     # 数据源
-  data_dir: ~/workspace/kernel_email    # 本地仓库存储
+email_collector:
+  base_url: https://lore.kernel.org     # 远端数据源
+  data_dir: ~/workspace/kernel_email    # 远端仓库存储路径
+  # 本地多 channel 配置（采集本地已有数据）
+  local_channels:
+    - name: kvm        # channel 名称，对应 list_name
+      path: ~/workspace/kernel_email/kvm
+    - name: linux-mm
+      path: ~/workspace/kernel_email/linux-mm
+    - name: lkml
+      path: ~/workspace/kernel_email/lkml
 
 storage:
   database_url: postgresql+asyncpg://... # 数据库连接
