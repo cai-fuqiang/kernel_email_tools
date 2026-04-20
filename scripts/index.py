@@ -53,8 +53,12 @@ def load_config() -> dict:
 
 async def run_collect_and_store(args, config: dict) -> None:
     """采集 → 解析 → 入库 → 索引 全流程。"""
-    collector_cfg = config.get("collector", {})
-    storage_cfg = config.get("storage", {})
+    collector_cfg = config.get("email_collector", {})
+    storage_cfg = config.get("storage", {}).get("email", {})
+    database_url = storage_cfg.get("database_url")
+    if not database_url:
+        logger.error("email storage database_url not configured")
+        return
 
     # 初始化组件
     collector = GitCollector(
@@ -63,11 +67,11 @@ async def run_collect_and_store(args, config: dict) -> None:
     )
     email_parser = EmailParser()
     storage = PostgresStorage(
-        database_url=storage_cfg.get("database_url"),
+        database_url=database_url,
         pool_size=storage_cfg.get("pool_size", 5),
     )
     fulltext_indexer = FulltextIndexer(
-        database_url=storage_cfg.get("database_url"),
+        database_url=database_url,
     )
 
     try:
@@ -116,20 +120,28 @@ async def run_collect_and_store(args, config: dict) -> None:
 
 async def run_rebuild_fulltext(config: dict) -> None:
     """仅重建全文索引。"""
-    storage_cfg = config.get("storage", {})
-    indexer = FulltextIndexer(database_url=storage_cfg.get("database_url"))
+    storage_cfg = config.get("storage", {}).get("email", {})
+    database_url = storage_cfg.get("database_url")
+    if not database_url:
+        logger.error("email storage database_url not configured")
+        return
+    indexer = FulltextIndexer(database_url=database_url)
     count = await indexer.build(rebuild=True)
     logger.info("Fulltext index rebuilt: %d emails", count)
 
 
 async def run_stats(config: dict) -> None:
     """显示数据库和索引统计信息。"""
-    storage_cfg = config.get("storage", {})
+    storage_cfg = config.get("storage", {}).get("email", {})
+    database_url = storage_cfg.get("database_url")
+    if not database_url:
+        logger.error("email storage database_url not configured")
+        return
     storage = PostgresStorage(
-        database_url=storage_cfg.get("database_url"),
+        database_url=database_url,
         pool_size=1,
     )
-    indexer = FulltextIndexer(database_url=storage_cfg.get("database_url"), pool_size=1)
+    indexer = FulltextIndexer(database_url=database_url, pool_size=1)
 
     try:
         count = await storage.get_email_count()

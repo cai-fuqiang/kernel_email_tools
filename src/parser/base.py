@@ -2,7 +2,71 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
+
+
+# ============================================================
+# 邮件解析器接口和数据类
+# ============================================================
+
+@dataclass
+class ParsedEmail:
+    """解析后的邮件数据。
+
+    Attributes:
+        message_id: 邮件唯一标识。
+        subject: 邮件主题。
+        sender: 发件人（格式: "Name <email>"）。
+        date: 发送时间。
+        in_reply_to: 回复目标 Message-ID。
+        references: 线程引用链。
+        body: 清洗后的邮件正文。
+        body_raw: 原始邮件正文。
+        patch_content: 提取的补丁内容（无则为""）。
+        has_patch: 是否包含补丁。
+        list_name: 邮件列表名称。
+        thread_id: 线程根 ID。
+        epoch: epoch 编号。
+    """
+
+    message_id: str
+    subject: str = ""
+    sender: str = ""
+    date: Optional[datetime] = None
+    in_reply_to: str = ""
+    references: list[str] = field(default_factory=list)
+    body: str = ""
+    body_raw: str = ""
+    patch_content: str = ""
+    has_patch: bool = False
+    list_name: str = ""
+    thread_id: str = ""
+    epoch: int = 0
+
+
+class BaseParser(ABC):
+    """邮件解析器抽象基类。
+
+    所有邮件解析器须实现此接口。
+    """
+
+    @abstractmethod
+    def parse(self, raw_email) -> Optional[ParsedEmail]:
+        """解析原始邮件。
+
+        Args:
+            raw_email: 采集层输出的原始邮件。
+
+        Returns:
+            解析成功返回 ParsedEmail，失败返回 None。
+        """
+        ...
+
+
+# ============================================================
+# 手册解析器接口和数据类
+# ============================================================
 
 
 @dataclass
