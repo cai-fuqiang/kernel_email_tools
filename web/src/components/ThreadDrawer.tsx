@@ -108,6 +108,7 @@ function EmailCard({
   viewMode,
   layeredExpandedIds,
   toggleLayeredExpand,
+  layeredVisibleDepth,
 }: { 
   node: ThreadNode;
   expandedIds: Set<number>;
@@ -118,7 +119,8 @@ function EmailCard({
   foldLevel: FoldLevel;
   viewMode: ViewMode;
   layeredExpandedIds: Set<number>;
-  toggleLayeredExpand: (id: number) => void;
+  toggleLayeredExpand: (id: number, depth: number) => void;
+  layeredVisibleDepth: number;
 }) {
   const { email, children, depth } = node;
   const isExpanded = expandedIds.has(email.id);
@@ -258,13 +260,14 @@ function EmailCard({
   // 分层模式下的展开状态切换
   const handleToggleExpand = () => {
     if (viewMode === 'layered') {
-      toggleLayeredExpand(email.id);
+      toggleLayeredExpand(email.id, depth);
     } else {
       toggleExpand(email.id);
     }
   };
 
   // 根据视图模式和展开状态决定显示方式
+  // 分层模式：depth 0 始终显示，depth > 0 根据 isLayeredExpanded 和可见深度决定
   const isCollapsed = viewMode === 'tree' 
     ? foldLevel === 'collapsed' 
     : (depth > 0 && !isLayeredExpanded);
@@ -272,6 +275,11 @@ function EmailCard({
   const shouldShowContent = viewMode === 'tree' 
     ? isExpanded 
     : isLayeredExpanded;
+
+  // 分层模式下：根据可见深度决定是否显示
+  if (viewMode === 'layered' && depth > layeredVisibleDepth) {
+    return null;
+  }
 
   // 折叠视图
   if (isCollapsed) {
@@ -316,6 +324,7 @@ function EmailCard({
                 viewMode={viewMode}
                 layeredExpandedIds={layeredExpandedIds}
                 toggleLayeredExpand={toggleLayeredExpand}
+                layeredVisibleDepth={layeredVisibleDepth}
               />
             ))}
           </div>
@@ -447,6 +456,7 @@ function EmailCard({
               viewMode={viewMode}
               layeredExpandedIds={layeredExpandedIds}
               toggleLayeredExpand={toggleLayeredExpand}
+                layeredVisibleDepth={layeredVisibleDepth}
             />
           ))}
         </div>
@@ -494,6 +504,8 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   // 分层展开模式：记录哪些邮件被展开了（用于分层展开）
   const [layeredExpandedIds, setLayeredExpandedIds] = useState<Set<number>>(new Set());
+  // 分层模式下的可见深度（初始为1，即只显示root和child）
+  const [layeredVisibleDepth, setLayeredVisibleDepth] = useState<number>(1);
 
   // 清除缓存消息
   const clearCacheMessage = useCallback(() => {
@@ -598,27 +610,31 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
   };
 
   // 分层展开模式：切换单个邮件的展开状态
-  const toggleLayeredExpand = useCallback((id: number) => {
+  const toggleLayeredExpand = useCallback((id: number, nodeDepth: number) => {
+    const isCurrentlyExpanded = layeredExpandedIds.has(id);
+    
     setLayeredExpandedIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) {
+      if (isCurrentlyExpanded) {
         next.delete(id);
       } else {
         next.add(id);
+        // 展开时增加可见深度
+        setLayeredVisibleDepth((currentDepth: number) => Math.max(currentDepth, nodeDepth + 1));
       }
       return next;
     });
     // 同时更新 expandedIds，这样视觉效果一致
     setExpandedIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) {
+      if (isCurrentlyExpanded) {
         next.delete(id);
       } else {
         next.add(id);
       }
       return next;
     });
-  }, []);
+  }, [layeredExpandedIds]);
 
   // 切换到分层展开模式
   const enterLayeredMode = useCallback(() => {
@@ -629,12 +645,12 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
       const allFirstLayerIds = new Set<number>();
       threadTree.forEach(node => {
         firstLayerIds.add(node.email.id);
-        // 收集所有顶级邮件的ID（用于展开）
         allFirstLayerIds.add(node.email.id);
       });
       setLayeredExpandedIds(firstLayerIds);
-      // 同时更新 expandedIds，这样树形模式下也会显示
       setExpandedIds(allFirstLayerIds);
+      // 分层模式初始只显示到 depth 1
+      setLayeredVisibleDepth(1);
     }
   }, [threadTree]);
 
@@ -868,6 +884,7 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
                     viewMode={viewMode}
                     layeredExpandedIds={layeredExpandedIds}
                     toggleLayeredExpand={toggleLayeredExpand}
+                layeredVisibleDepth={layeredVisibleDepth}
                   />
                 ))}
               </div>
