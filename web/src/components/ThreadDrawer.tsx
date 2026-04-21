@@ -250,12 +250,9 @@ function EmailCard({
   
   // 分层模式下：只显示被展开的节点
   if (viewMode === 'layered') {
-    // 如果是顶层节点（depth=0），始终显示
-    // 如果是子节点，需要检查是否在 layeredExpandedIds 中
-    if (depth > 0 && !isLayeredExpanded) {
-      // 不显示（等待父节点展开）
-      return null;
-    }
+    // 顶层节点始终显示
+    // 子节点始终显示（让用户可以点击展开），但折叠状态由 isLayeredExpanded 决定
+    // 注意：如果节点不在 layeredExpandedIds 中，会以折叠状态显示
   }
 
   // 分层模式下的展开状态切换
@@ -267,11 +264,14 @@ function EmailCard({
     }
   };
 
-  // 分层模式：折叠状态显示一行摘要
-  const isCollapsedInLayered = viewMode === 'layered' && !isLayeredExpanded && children.length > 0;
+  // 分层模式：邮件是否被展开
+  const isExpandedInLayered = viewMode === 'layered' && isLayeredExpanded;
 
-  // 根据折叠级别渲染
-  if (foldLevel === 'collapsed' || isCollapsedInLayered) {
+  // 根据视图模式渲染
+  const showCollapsedView = foldLevel === 'collapsed' || 
+    (viewMode === 'layered' && !isLayeredExpanded && children.length > 0);
+  
+  if (showCollapsedView) {
     // 折叠模式：只显示一行摘要
     return (
       <div className="email-node" style={{ marginLeft: depth > 0 ? '16px' : 0 }}>
@@ -282,8 +282,16 @@ function EmailCard({
           {renderCollapsedSummary()}
         </div>
         
-        {/* 折叠状态下点击展开 */}
-        {isExpanded && (
+        {/* 折叠/分层模式下显示摘要，点击展开 */}
+        <div 
+          onClick={handleToggleExpand}
+          className="cursor-pointer hover:bg-gray-50 rounded-lg border border-gray-200 transition-colors"
+        >
+          {renderCollapsedSummary()}
+        </div>
+        
+        {/* 点击展开后显示内容 */}
+        {(isExpanded || isExpandedInLayered) && (
           <div className="email-body px-4 pb-4 mt-2">
             <div className="mb-3">
               <EmailTagEditor messageId={email.message_id} />
@@ -606,6 +614,16 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
       }
       return next;
     });
+    // 同时更新 expandedIds，这样视觉效果一致
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   }, []);
 
   // 切换到分层展开模式
@@ -614,10 +632,15 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
     // 只展开第一层（depth=0 的邮件）
     if (threadTree.length > 0) {
       const firstLayerIds = new Set<number>();
+      const allFirstLayerIds = new Set<number>();
       threadTree.forEach(node => {
         firstLayerIds.add(node.email.id);
+        // 收集所有顶级邮件的ID（用于展开）
+        allFirstLayerIds.add(node.email.id);
       });
       setLayeredExpandedIds(firstLayerIds);
+      // 同时更新 expandedIds，这样树形模式下也会显示
+      setExpandedIds(allFirstLayerIds);
     }
   }, [threadTree]);
 
