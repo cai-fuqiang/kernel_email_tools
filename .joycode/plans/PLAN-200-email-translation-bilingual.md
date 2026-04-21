@@ -21,6 +21,65 @@
 
 ## 新增功能
 
+### TODO: 邮件折叠模式切换
+
+#### 功能描述
+目前 ThreadDrawer 使用 `<details>/<summary>` 实现折叠，但只能折叠正文内容。需要增加一种新的折叠方式，可以折叠全部邮件信息（包括作者、标题、时间等），只显示一行摘要。
+
+#### 折叠模式
+1. **展开模式（default）**：显示完整邮件内容
+2. **仅正文折叠**：只折叠邮件正文，保持作者/标题可见
+3. **全部折叠**：折叠整个邮件卡片，只显示一行摘要（如 "Andrew Morton <akpm@linux-foundation.org> - 2 days ago - [PATCH mm] ..."）
+
+#### UI 设计
+在邮件卡片的 summary 区域添加折叠级别切换按钮：
+- 📄 仅正文：显示作者+标题，点击展开正文
+- 📋 全部折叠：只显示一行摘要，点击展开全部
+- 工具栏添加快捷切换：全部展开 / 仅正文展开
+
+#### 实现方案
+```tsx
+// 折叠级别枚举
+type FoldLevel = 'expanded' | 'body_only' | 'collapsed';
+
+// EmailCard 新增 props
+interface EmailCardProps {
+  foldLevel: FoldLevel;
+  onFoldLevelChange: (level: FoldLevel) => void;
+}
+
+// 状态管理
+const [foldLevel, setFoldLevel] = useState<FoldLevel>('expanded');
+
+// 渲染逻辑
+<div className={`email-card fold-${foldLevel}`}>
+  <summary>
+    {foldLevel === 'collapsed' ? (
+      // 一行摘要模式
+      <div className="email-summary-line">
+        <Avatar /> <Subject /> <Time /> <Badge />
+      </div>
+    ) : (
+      // 完整标题模式
+      <div className="email-header">
+        <Avatar /> <Subject /> <Time /> <Badge />
+        {/* 折叠级别切换按钮 */}
+        <FoldLevelToggle />
+      </div>
+    )}
+  </summary>
+  {foldLevel !== 'collapsed' && (
+    <div className="email-body">
+      {/* 正文内容 */}
+    </div>
+  )}
+</div>
+```
+
+#### 快捷操作
+- 工具栏按钮："全部折叠" / "仅正文" / "全部展开"
+- 键盘快捷键：1/2/3 切换折叠级别
+
 ### TODO: 缓存管理功能
 
 #### 缓存清除 API
