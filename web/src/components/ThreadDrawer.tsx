@@ -265,6 +265,7 @@ function EmailCard({
   };
 
   // 根据视图模式和展开状态决定显示方式
+  // 分层模式：只显示 depth 0 和 depth 1 的邮件
   const isCollapsed = viewMode === 'tree' 
     ? foldLevel === 'collapsed' 
     : (depth > 0 && !isLayeredExpanded);
@@ -272,6 +273,11 @@ function EmailCard({
   const shouldShowContent = viewMode === 'tree' 
     ? isExpanded 
     : isLayeredExpanded;
+
+  // 分层模式下：只显示 depth <= 1 的邮件（root 和 child）
+  if (viewMode === 'layered' && depth > 1) {
+    return null;
+  }
 
   // 折叠视图
   if (isCollapsed) {
