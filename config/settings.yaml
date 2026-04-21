@@ -78,8 +78,8 @@ translator:
   # 代理配置（用于访问 Google Translate）
   proxy:
     enabled: true
-    http: http://127.0.0.1:7890         # HTTP 代理地址
-    https: http://127.0.0.1:7890         # HTTPS 代理地址
+    http: http://127.0.0.1:7897        # HTTP 代理地址
+    https: http://127.0.0.1:7897         # HTTPS 代理地址
   # 其他翻译服务配置
   deepl:
     api_key: ""
