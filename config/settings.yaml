@@ -68,9 +68,21 @@ retriever:
   keyword_page_size: 50
   semantic_top_k: 20
 
-# 翻译配置（芯片手册专用）
+# 翻译配置
 translator:
-  provider: llm                          # llm | deepl | google
+  provider: google                      # google | deepl | llm
+  # Google Translate API 配置
+  google:
+    api_url: https://translate.googleapis.com/translate_a/single
+    timeout: 10
+  # 代理配置（用于访问 Google Translate）
+  proxy:
+    enabled: true
+    http: http://127.0.0.1:7890         # HTTP 代理地址
+    https: http://127.0.0.1:7890         # HTTPS 代理地址
+  # 其他翻译服务配置
+  deepl:
+    api_key: ""
   llm_model: gpt-4
   cache_enabled: true
   glossary_path: ./config/glossary.yaml

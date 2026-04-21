@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
-import { getThread } from '../api/client';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { getThread, translateBatch, clearTranslationCache } from '../api/client';
 import type { ThreadResponse, ThreadEmail } from '../api/types';
 import EmailTagEditor from './EmailTagEditor';
 
@@ -67,10 +67,11 @@ function parseParagraphs(body: string): string[] {
   return body.split(/\n\n+/).filter(p => p.trim());
 }
 
-// 判断段落是否需要翻译
+// 判断段落是否需要翻译（排除代码和补丁内容）
 function shouldTranslate(text: string): boolean {
-  if (/[\u4e00-\u9fff]/.test(text)) return false;
+  if (!text || /[\u4e00-\u9fff]/.test(text)) return false;
   const lines = text.split('\n');
+  if (lines.length === 0) return false;
   const codeLines = lines.filter(l => 
     l.trim().startsWith('>') || 
     l.trim().startsWith('diff ') ||
@@ -78,26 +79,61 @@ function shouldTranslate(text: string): boolean {
     l.trim().startsWith('---') ||
     l.trim().startsWith('+++') ||
     l.trim().startsWith('Signed-off-by:') ||
-    l.trim().startsWith('Reviewed-by:')
+    l.trim().startsWith('Reviewed-by:') ||
+    l.trim().startsWith('Acked-by:') ||
+    l.trim().startsWith('Tested-by:') ||
+    /^[+-]/.test(l.trim())
   );
-  return codeLines.length < lines.length * 0.5;
+  return codeLines.length < lines.length * 0.5 && lines.filter(l => l.trim()).length > 0;
 }
+
+// 翻译状态映射类型
+type TranslationMap = Map<string, { translation: string; loading: boolean; error?: string }>;
 
 // 邮件卡片组件
 function EmailCard({ 
   node, 
   expandedIds,
   toggleExpand,
-  showTranslation,
+  translations,
+  onTranslationUpdate,
+  onClearParagraphCache,
 }: { 
   node: ThreadNode;
   expandedIds: Set<number>;
   toggleExpand: (id: number) => void;
-  showTranslation: boolean;
+  translations: TranslationMap;
+  onTranslationUpdate: (para: string, translation: string) => void;
+  onClearParagraphCache: (paragraph: string) => void;
 }) {
   const { email, children, depth } = node;
   const isExpanded = expandedIds.has(email.id);
   const paragraphs = parseParagraphs(email.body);
+
+  // 编辑状态
+  const [editingPara, setEditingPara] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+
+  // 开始编辑
+  const handleStartEdit = (para: string, currentTrans: string) => {
+    setEditingPara(para);
+    setEditText(currentTrans || para);
+  };
+
+  // 保存编辑
+  const handleSaveEdit = () => {
+    if (!editingPara) return;
+    // 通过回调更新父组件的 translations
+    onTranslationUpdate(editingPara, editText);
+    setEditingPara(null);
+    setEditText('');
+  };
+
+  // 取消编辑
+  const handleCancelEdit = () => {
+    setEditingPara(null);
+    setEditText('');
+  };
   
   return (
     <div className="email-node" style={{ marginLeft: depth > 0 ? '16px' : 0 }}>
@@ -165,8 +201,12 @@ function EmailCard({
           <div className="email-content rounded-lg overflow-hidden">
             {paragraphs.map((para, idx) => {
               const needTrans = shouldTranslate(para);
+              const transState = translations.get(para);
+              const isLoading = transState?.loading;
+              const translation = transState?.translation;
+              const transError = transState?.error;
               
-              if (showTranslation && needTrans) {
+              if (needTrans) {
                 // 双语对照模式
                 return (
                   <div key={idx} className="bilingual-block">
@@ -175,13 +215,67 @@ function EmailCard({
                       <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
                     </div>
                     <div className="bilingual-translation">
-                      <div className="lang-label">中文</div>
-                      <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed">{para}</pre>
+                      <div className="lang-label flex items-center justify-between">
+                        <span>中文</span>
+                        {translation && editingPara !== para && (
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => handleStartEdit(para, translation)}
+                              className="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
+                              title="编辑翻译"
+                            >
+                              ✏️ 编辑
+                            </button>
+                            <button
+                              onClick={() => onClearParagraphCache(para)}
+                              className="text-xs px-2 py-1 bg-orange-100 text-orange-600 rounded hover:bg-orange-200"
+                              title="清除此段缓存"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      {editingPara === para ? (
+                        <div className="mt-2">
+                          <textarea
+                            value={editText}
+                            onChange={(e) => setEditText(e.target.value)}
+                            className="w-full min-h-[80px] p-2 text-sm border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                            placeholder="输入人工翻译..."
+                          />
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              onClick={handleSaveEdit}
+                              className="px-3 py-1.5 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600"
+                            >
+                              保存
+                            </button>
+                            <button
+                              onClick={handleCancelEdit}
+                              className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300"
+                            >
+                              取消
+                            </button>
+                          </div>
+                        </div>
+                      ) : isLoading ? (
+                        <div className="flex items-center justify-center py-4">
+                          <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+                          <span className="ml-2 text-sm text-gray-500">翻译中...</span>
+                        </div>
+                      ) : translation ? (
+                        <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed">{translation}</pre>
+                      ) : transError ? (
+                        <div className="text-sm text-red-500 py-2">翻译失败: {transError}</div>
+                      ) : (
+                        <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed opacity-50">{para}</pre>
+                      )}
                     </div>
                   </div>
                 );
               } else {
-                // 普通模式
+                // 普通模式（代码或补丁内容，不翻译）
                 return (
                   <div key={idx} className="email-paragraph">
                     <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
@@ -202,13 +296,35 @@ function EmailCard({
               node={child} 
               expandedIds={expandedIds}
               toggleExpand={toggleExpand}
-              showTranslation={showTranslation}
+              translations={translations}
+              onTranslationUpdate={onTranslationUpdate}
+              onClearParagraphCache={onClearParagraphCache}
             />
           ))}
         </div>
       )}
     </div>
   );
+}
+
+// 从线程中提取所有需要翻译的段落
+function extractTranslatableParagraphs(thread: ThreadResponse | null): string[] {
+  if (!thread) return [];
+  const paragraphs = new Set<string>();
+  
+  const collectParagraphs = (emails: ThreadEmail[]) => {
+    for (const email of emails) {
+      const paras = parseParagraphs(email.body || '');
+      for (const para of paras) {
+        if (shouldTranslate(para)) {
+          paragraphs.add(para);
+        }
+      }
+    }
+  };
+  
+  collectParagraphs(thread.emails);
+  return Array.from(paragraphs);
 }
 
 // 主组件
@@ -222,9 +338,72 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
-  const [showTranslation, setShowTranslation] = useState(false);
   const [threadTree, setThreadTree] = useState<ThreadNode[]>([]);
-  
+  const [translations, setTranslations] = useState<TranslationMap>(new Map());
+  const [translating, setTranslating] = useState(false);
+  const [cacheMessage, setCacheMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // 清除缓存消息
+  const clearCacheMessage = useCallback(() => {
+    setCacheMessage(null);
+  }, []);
+
+  // 清除单个段落缓存
+  const handleClearParagraphCache = useCallback(async (paragraph: string) => {
+    try {
+      // 计算段落 hash
+      const encoder = new TextEncoder();
+      const data = encoder.encode(paragraph);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+      const result = await clearTranslationCache('paragraph', hashHex);
+      if (result.success) {
+        setCacheMessage({ type: 'success', text: '段落缓存已清除' });
+        // 清除本地翻译状态
+        setTranslations(prev => {
+          const next = new Map(prev);
+          next.delete(paragraph);
+          return next;
+        });
+      } else {
+        setCacheMessage({ type: 'error', text: result.message });
+      }
+      setTimeout(clearCacheMessage, 2000);
+    } catch (err) {
+      setCacheMessage({ type: 'error', text: '清除缓存失败' });
+      setTimeout(clearCacheMessage, 2000);
+    }
+  }, [clearCacheMessage]);
+
+  // 清除全部缓存
+  const handleClearAllCache = useCallback(async () => {
+    try {
+      const result = await clearTranslationCache('all');
+      if (result.success) {
+        setCacheMessage({ type: 'success', text: `已清除全部缓存 (${result.cleared_count} 条)` });
+        // 清除所有本地翻译状态
+        setTranslations(new Map());
+      } else {
+        setCacheMessage({ type: 'error', text: result.message });
+      }
+      setTimeout(clearCacheMessage, 2000);
+    } catch (err) {
+      setCacheMessage({ type: 'error', text: '清除缓存失败' });
+      setTimeout(clearCacheMessage, 2000);
+    }
+  }, [clearCacheMessage]);
+
+  // 更新单个翻译（来自 EmailCard 编辑）
+  const handleTranslationUpdate = useCallback((para: string, translation: string) => {
+    setTranslations(prev => {
+      const next = new Map(prev);
+      next.set(para, { translation, loading: false });
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     setLoading(true);
     getThread(threadId)
@@ -264,6 +443,70 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
     }
   };
   
+  // 翻译所有可见段落
+  const handleTranslate = useCallback(async () => {
+    if (!thread || translating) return;
+    
+    const paragraphs = extractTranslatableParagraphs(thread);
+    if (paragraphs.length === 0) return;
+    
+    // 检查哪些段落还没有翻译
+    const needTrans = paragraphs.filter(p => !translations.has(p) || !translations.get(p)?.translation);
+    if (needTrans.length === 0) return;
+    
+    setTranslating(true);
+    
+    // 标记所有段落为加载中
+    setTranslations(prev => {
+      const next = new Map(prev);
+      for (const p of needTrans) {
+        next.set(p, { translation: '', loading: true });
+      }
+      return next;
+    });
+    
+    try {
+      // 批量翻译（每次最多50条）
+      const batchSize = 50;
+      const allTranslations: string[] = [];
+      
+      for (let i = 0; i < needTrans.length; i += batchSize) {
+        const batch = needTrans.slice(i, i + batchSize);
+        const result = await translateBatch(batch, 'auto', 'zh-CN');
+        allTranslations.push(...result.translations);
+      }
+      
+      // 更新翻译结果
+      setTranslations(prev => {
+        const next = new Map(prev);
+        needTrans.forEach((para, idx) => {
+          const translation = allTranslations[idx] || para;
+          next.set(para, { translation, loading: false });
+        });
+        return next;
+      });
+    } catch (err) {
+      console.error('Translation failed:', err);
+      // 标记翻译失败
+      setTranslations(prev => {
+        const next = new Map(prev);
+        for (const p of needTrans) {
+          next.set(p, { translation: '', loading: false, error: '翻译服务暂时不可用' });
+        }
+        return next;
+      });
+    } finally {
+      setTranslating(false);
+    }
+  }, [thread, translations, translating]);
+  
+  // 统计翻译进度
+  const translationStats = useMemo(() => {
+    const total = extractTranslatableParagraphs(thread).length;
+    const translated = Array.from(translations.values()).filter(t => !!t.translation).length;
+    return { total, translated };
+  }, [thread, translations]);
+  
   return (
     <div className="fixed inset-0 z-50 flex">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
@@ -286,18 +529,48 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
           </div>
           
           <div className="flex items-center gap-3">
-            {/* 中英对照开关 */}
+            {/* 翻译按钮 */}
             <button
-              onClick={() => setShowTranslation(!showTranslation)}
+              onClick={handleTranslate}
+              disabled={translating || translationStats.total === 0}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                showTranslation 
-                  ? 'bg-blue-500 text-white' 
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                translating 
+                  ? 'bg-blue-300 text-white cursor-not-allowed' 
+                  : translationStats.translated > 0
+                    ? 'bg-green-500 text-white hover:bg-green-600'
+                    : 'bg-blue-500 text-white hover:bg-blue-600'
               }`}
             >
-              中英对照 {showTranslation ? '✓' : ''}
+              {translating ? (
+                <>
+                  <span className="inline-block animate-spin mr-2">⟳</span>
+                  翻译中 ({translationStats.translated}/{translationStats.total})
+                </>
+              ) : translationStats.translated > 0 ? (
+                <>✓ 已翻译 ({translationStats.translated}/{translationStats.total})</>
+              ) : (
+                <>🌐 中英对照</>
+              )}
             </button>
-            
+
+            {/* 缓存清除按钮 */}
+            <div className="relative">
+              <button
+                onClick={handleClearAllCache}
+                className="px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 rounded-lg transition-colors border border-orange-200"
+                title="清除全部翻译缓存"
+              >
+                🗑️ 清除缓存
+              </button>
+              {cacheMessage && (
+                <div className={`absolute top-full mt-1 right-0 px-3 py-1.5 rounded-lg text-sm whitespace-nowrap z-10 ${
+                  cacheMessage.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                }`}>
+                  {cacheMessage.text}
+                </div>
+              )}
+            </div>
+
             {/* 展开/收起 */}
             <button
               onClick={expandAll}
@@ -341,6 +614,9 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
               <div className="bg-white rounded-lg px-4 py-3 mb-6 flex items-center gap-6 text-sm text-gray-600 border border-gray-200">
                 <span><strong className="text-gray-900">{thread.emails.length}</strong> 封邮件</span>
                 <span><strong className="text-gray-900">{threadTree.length}</strong> 个主题</span>
+                {translationStats.total > 0 && (
+                  <span><strong className="text-gray-900">{translationStats.total}</strong> 段落可翻译</span>
+                )}
               </div>
               
               {/* 线程树 */}
@@ -351,7 +627,9 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
                     node={rootNode}
                     expandedIds={expandedIds}
                     toggleExpand={toggleExpand}
-                    showTranslation={showTranslation}
+                    translations={translations}
+                    onTranslationUpdate={handleTranslationUpdate}
+                    onClearParagraphCache={handleClearParagraphCache}
                   />
                 ))}
               </div>
@@ -368,7 +646,7 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
         .email-thread > summary::-webkit-details-marker {
           display: none;
         }
-.email-content {
+        .email-content {
           background: white;
           border: 1px solid #e5e7eb;
         }
@@ -387,13 +665,13 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
           border-bottom: none;
         }
         .bilingual-original {
-          flex: 1;
+          flex: 0 0 40%;
           padding: 12px 16px;
           background: #fafafa;
           border-right: 1px solid #e5e7eb;
         }
         .bilingual-translation {
-          flex: 1;
+          flex: 0 0 60%;
           padding: 12px 16px;
           background: #f0f9ff;
         }

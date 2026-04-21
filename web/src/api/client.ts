@@ -215,3 +215,122 @@ export async function askManualQuestion(
 export async function getManualStats(): Promise<ManualStatsResponse> {
   return fetchJSON<ManualStatsResponse>(`${API_BASE}/manual/stats`);
 }
+
+// ============================================================
+// 翻译 API
+// ============================================================
+
+export interface TranslateRequest {
+  text: string;
+  source_lang?: string;
+  target_lang?: string;
+}
+
+export interface TranslateResponse {
+  translation: string;
+  cached: boolean;
+}
+
+export interface TranslateBatchRequest {
+  texts: string[];
+  source_lang?: string;
+  target_lang?: string;
+}
+
+export interface TranslateBatchResponse {
+  translations: string[];
+  cached_count: number;
+}
+
+export async function translateText(
+  text: string,
+  sourceLang: string = "auto",
+  targetLang: string = "zh-CN"
+): Promise<TranslateResponse> {
+  const res = await fetch(`${API_BASE}/translate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, source_lang: sourceLang, target_lang: targetLang }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Translation error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export async function translateBatch(
+  texts: string[],
+  sourceLang: string = "auto",
+  targetLang: string = "zh-CN"
+): Promise<TranslateBatchResponse> {
+  const res = await fetch(`${API_BASE}/translate/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ texts, source_lang: sourceLang, target_lang: targetLang }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Translation error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export async function getTranslateHealth(): Promise<{
+  available: boolean;
+  translator: string;
+  cache_enabled: boolean;
+}> {
+  return fetchJSON(`${API_BASE}/translate/health`);
+}
+
+export interface ClearCacheResponse {
+  success: boolean;
+  message: string;
+  cleared_count: number;
+}
+
+export async function clearTranslationCache(
+  scope: 'paragraph' | 'all',
+  textHash?: string
+): Promise<ClearCacheResponse> {
+  const res = await fetch(`${API_BASE}/translate/cache`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope, text_hash: textHash }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Clear cache error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export interface ManualTranslateResponse {
+  success: boolean;
+  message: string;
+  cache_key?: string;
+}
+
+export async function saveManualTranslation(
+  originalText: string,
+  translatedText: string,
+  sourceLang: string = 'en',
+  targetLang: string = 'zh-CN'
+): Promise<ManualTranslateResponse> {
+  const res = await fetch(`${API_BASE}/translate/manual`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      original_text: originalText,
+      translated_text: translatedText,
+      source_lang: sourceLang,
+      target_lang: targetLang,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Manual translation error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
