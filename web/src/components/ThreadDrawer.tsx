@@ -264,15 +264,17 @@ function EmailCard({
     }
   };
 
-  // 分层模式：邮件是否被展开
-  const isExpandedInLayered = viewMode === 'layered' && isLayeredExpanded;
-
-  // 根据视图模式渲染
-  const showCollapsedView = foldLevel === 'collapsed' || 
-    (viewMode === 'layered' && !isLayeredExpanded && children.length > 0);
+  // 根据视图模式和展开状态决定显示方式
+  const isCollapsed = viewMode === 'tree' 
+    ? foldLevel === 'collapsed' 
+    : (depth > 0 && !isLayeredExpanded);
   
-  if (showCollapsedView) {
-    // 折叠模式：只显示一行摘要
+  const shouldShowContent = viewMode === 'tree' 
+    ? isExpanded 
+    : isLayeredExpanded;
+
+  // 折叠视图
+  if (isCollapsed) {
     return (
       <div className="email-node" style={{ marginLeft: depth > 0 ? '16px' : 0 }}>
         <div 
@@ -290,8 +292,8 @@ function EmailCard({
           {renderCollapsedSummary()}
         </div>
         
-        {/* 点击展开后显示内容 */}
-        {(isExpanded || isExpandedInLayered) && (
+        {/* 展开后显示内容 */}
+        {shouldShowContent && (
           <div className="email-body px-4 pb-4 mt-2">
             <div className="mb-3">
               <EmailTagEditor messageId={email.message_id} />
