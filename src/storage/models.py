@@ -56,7 +56,6 @@ class TagORM(Base):
 
     __table_args__ = (
         UniqueConstraint("name", name="uq_tags_name"),
-        Index("ix_tags_parent_id", "parent_id"),
     )
 
     def __repr__(self) -> str:

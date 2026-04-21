@@ -49,7 +49,7 @@ class DocumentChunkModel(DocumentBase):
     # token 统计
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # 元数据（使用 extra_data 避免与 SQLAlchemy 保留字段冲突）
+    # 元数据
     extra_data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
     # 时间戳

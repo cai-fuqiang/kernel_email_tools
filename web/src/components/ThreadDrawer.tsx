@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getThread } from '../api/client';
 import type { ThreadResponse } from '../api/types';
+import EmailTagEditor from './EmailTagEditor';
 
 interface Props { threadId: string; onClose: () => void; }
 
@@ -34,6 +35,9 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
                   <p className='text-xs text-gray-500 mt-1'>{e.sender.split('<')[0].trim()} &middot; {e.date ? new Date(e.date).toLocaleString() : ''}</p>
                 </button>
                 {expanded.has(e.id) && <div className='px-4 pb-4 border-t border-gray-100'>
+                  <div className='mt-2 mb-2'>
+                    <EmailTagEditor messageId={e.message_id} />
+                  </div>
                   <pre className='text-xs text-gray-700 whitespace-pre-wrap mt-3 leading-relaxed max-h-80 overflow-y-auto'>{e.body}</pre>
                 </div>}
               </div>

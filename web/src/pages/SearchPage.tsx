@@ -3,6 +3,7 @@ import { searchEmails, getTagStats, type TagStats } from '../api/client';
 import type { SearchResponse, SearchHit } from '../api/types';
 import ThreadDrawer from '../components/ThreadDrawer';
 import TagFilter from '../components/TagFilter';
+import EmailTagEditor from '../components/EmailTagEditor';
 
 export default function SearchPage() {
   const [query, setQuery] = useState('');
@@ -25,7 +26,7 @@ export default function SearchPage() {
 
   // Channel/channel 选择状态
   const [selectedChannel, setSelectedChannel] = useState<string>('');
-  const [channels, setChannels] = useState<string[]>([]);
+  
 
   // 预定义的 channel 列表（与 settings.yaml 的 local_channels 对应）
   const CHANNEL_OPTIONS = [
@@ -368,8 +369,6 @@ function ResultCard({
   hit: SearchHit;
   onThread: () => void;
 }) {
-  const [tags, setTags] = useState<string[]>(hit.tags || []);
-
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between gap-4">
@@ -386,19 +385,10 @@ function ResultCard({
               </span>
             )}
           </div>
-          {/* 标签展示 */}
-          {tags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
-              {tags.map(tag => (
-                <span
-                  key={tag}
-                  className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-xs"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
+          {/* 可编辑标签 */}
+          <div className="mt-2">
+            <EmailTagEditor messageId={hit.message_id} initialTags={hit.tags || []} />
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs px-2 py-1 bg-indigo-50 text-indigo-600 rounded-full font-medium">

@@ -95,21 +95,53 @@ class PostgresStorage(BaseStorage):
         if not emails:
             return 0
 
-        async with self.session_factory() as session:
-            # 分批处理，每批 500 条
-            batch_size = 500
-            total_inserted = 0
+        batch_size = 500
+        total_inserted = 0
 
-            for i in range(0, len(emails), batch_size):
-                batch = emails[i:i + batch_size]
-                values = [e.model_dump() for e in batch]
+        for i in range(0, len(emails), batch_size):
+            batch = emails[i:i + batch_size]
+            # 截断超长字段，避免 VARCHAR 溢出
+            values = []
+            for e in batch:
+                d = e.model_dump()
+                d["subject"] = d.get("subject", "")[:1024]
+                d["sender"] = d.get("sender", "")[:512]
+                d["message_id"] = d.get("message_id", "")[:512]
+                d["in_reply_to"] = d.get("in_reply_to", "")[:512]
+                d["thread_id"] = d.get("thread_id", "")[:512]
+                d["list_name"] = d.get("list_name", "")[:128]
+                d["body"] = d.get("body", "")[:1000000]
+                d["body_raw"] = d.get("body_raw", "")[:1000000]
+                d["patch_content"] = d.get("patch_content", "")[:1000000]
+                values.append(d)
 
+            # 每批独立 session，失败不影响其他批次
+            async with self.session_factory() as session:
                 stmt = pg_insert(EmailORM).values(values)
                 stmt = stmt.on_conflict_do_nothing(index_elements=["message_id"])
-                result = await session.execute(stmt)
-                total_inserted += result.rowcount
+                try:
+                    result = await session.execute(stmt)
+                    await session.commit()
+                    total_inserted += result.rowcount
+                except Exception as ex:
+                    await session.rollback()
+                    logger.error(f"Batch insert failed: {ex}, falling back to single insert")
+                    # 单条重试，每条独立提交
+                    for v in values:
+                        async with self.session_factory() as retry_session:
+                            try:
+                                stmt = pg_insert(EmailORM).values(v)
+                                stmt = stmt.on_conflict_do_nothing(index_elements=["message_id"])
+                                result = await retry_session.execute(stmt)
+                                await retry_session.commit()
+                                total_inserted += result.rowcount
+                            except Exception as e:
+                                await retry_session.rollback()
+                                logger.warning(f"Single insert failed for {v.get('message_id', '?')}: {e}")
 
-            await session.commit()
+            # 进度日志
+            if (i // batch_size + 1) % 100 == 0:
+                logger.info("Progress: %d / %d emails processed", i + batch_size, len(emails))
 
         logger.info("Saved %d new emails (total submitted: %d)", total_inserted, len(emails))
         return total_inserted
