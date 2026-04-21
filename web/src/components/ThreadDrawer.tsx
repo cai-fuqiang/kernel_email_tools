@@ -639,16 +639,11 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
   // 切换到分层展开模式
   const enterLayeredMode = useCallback(() => {
     setViewMode('layered');
-    // 只展开第一层（depth=0 的邮件）
+    // 只展开第一个 root 节点
     if (threadTree.length > 0) {
-      const firstLayerIds = new Set<number>();
-      const allFirstLayerIds = new Set<number>();
-      threadTree.forEach(node => {
-        firstLayerIds.add(node.email.id);
-        allFirstLayerIds.add(node.email.id);
-      });
-      setLayeredExpandedIds(firstLayerIds);
-      setExpandedIds(allFirstLayerIds);
+      const firstRootId = threadTree[0].email.id;
+      setLayeredExpandedIds(new Set([firstRootId]));
+      setExpandedIds(new Set([firstRootId]));
       // 分层模式初始只显示到 depth 1
       setLayeredVisibleDepth(1);
     }
