@@ -90,8 +90,11 @@ function shouldTranslate(text: string): boolean {
 // 翻译状态映射类型
 type TranslationMap = Map<string, { translation: string; loading: boolean; error?: string }>;
 
-// 折叠级别类型
+// 折叠级别类型（用于 tree 模式）
 type FoldLevel = 'expanded' | 'body_only' | 'collapsed';
+
+// 视图模式类型
+type ViewMode = 'tree' | 'layered';
 
 // 邮件卡片组件
 function EmailCard({ 
@@ -102,6 +105,9 @@ function EmailCard({
   onTranslationUpdate,
   onClearParagraphCache,
   foldLevel,
+  viewMode,
+  layeredExpandedIds,
+  toggleLayeredExpand,
 }: { 
   node: ThreadNode;
   expandedIds: Set<number>;
@@ -110,9 +116,13 @@ function EmailCard({
   onTranslationUpdate: (para: string, translation: string) => void;
   onClearParagraphCache: (paragraph: string) => void;
   foldLevel: FoldLevel;
+  viewMode: ViewMode;
+  layeredExpandedIds: Set<number>;
+  toggleLayeredExpand: (id: number) => void;
 }) {
   const { email, children, depth } = node;
   const isExpanded = expandedIds.has(email.id);
+  const isLayeredExpanded = layeredExpandedIds.has(email.id);
   const paragraphs = parseParagraphs(email.body);
 
   // 编辑状态
@@ -238,13 +248,35 @@ function EmailCard({
     </div>
   );
   
+  // 分层模式下：只显示被展开的节点
+  if (viewMode === 'layered') {
+    // 如果是顶层节点（depth=0），始终显示
+    // 如果是子节点，需要检查是否在 layeredExpandedIds 中
+    if (depth > 0 && !isLayeredExpanded) {
+      // 不显示（等待父节点展开）
+      return null;
+    }
+  }
+
+  // 分层模式下的展开状态切换
+  const handleToggleExpand = () => {
+    if (viewMode === 'layered') {
+      toggleLayeredExpand(email.id);
+    } else {
+      toggleExpand(email.id);
+    }
+  };
+
+  // 分层模式：折叠状态显示一行摘要
+  const isCollapsedInLayered = viewMode === 'layered' && !isLayeredExpanded && children.length > 0;
+
   // 根据折叠级别渲染
-  if (foldLevel === 'collapsed') {
+  if (foldLevel === 'collapsed' || isCollapsedInLayered) {
     // 折叠模式：只显示一行摘要
     return (
       <div className="email-node" style={{ marginLeft: depth > 0 ? '16px' : 0 }}>
         <div 
-          onClick={() => toggleExpand(email.id)}
+          onClick={handleToggleExpand}
           className="cursor-pointer hover:bg-gray-50 rounded-lg border border-gray-200 transition-colors"
         >
           {renderCollapsedSummary()}
@@ -279,6 +311,9 @@ function EmailCard({
                 onTranslationUpdate={onTranslationUpdate}
                 onClearParagraphCache={onClearParagraphCache}
                 foldLevel={foldLevel}
+                viewMode={viewMode}
+                layeredExpandedIds={layeredExpandedIds}
+                toggleLayeredExpand={toggleLayeredExpand}
               />
             ))}
           </div>
@@ -292,7 +327,7 @@ function EmailCard({
     <div className="email-node" style={{ marginLeft: depth > 0 ? '16px' : 0 }}>
       <details className="email-thread" open={isExpanded}>
         <summary 
-          onClick={(e) => { e.preventDefault(); toggleExpand(email.id); }}
+          onClick={(e) => { e.preventDefault(); handleToggleExpand(); }}
           className="cursor-pointer"
         >
           {renderFullHeader()}
@@ -407,6 +442,9 @@ function EmailCard({
               onTranslationUpdate={onTranslationUpdate}
               onClearParagraphCache={onClearParagraphCache}
               foldLevel={foldLevel}
+              viewMode={viewMode}
+              layeredExpandedIds={layeredExpandedIds}
+              toggleLayeredExpand={toggleLayeredExpand}
             />
           ))}
         </div>
@@ -451,6 +489,9 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
   const [translating, setTranslating] = useState(false);
   const [cacheMessage, setCacheMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [foldLevel, setFoldLevel] = useState<FoldLevel>('expanded');
+  const [viewMode, setViewMode] = useState<ViewMode>('tree');
+  // 分层展开模式：记录哪些邮件被展开了（用于分层展开）
+  const [layeredExpandedIds, setLayeredExpandedIds] = useState<Set<number>>(new Set());
 
   // 清除缓存消息
   const clearCacheMessage = useCallback(() => {
@@ -540,23 +581,6 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
     });
   }, []);
 
-  // 折叠级别切换
-  const setFoldLevelAll = (level: FoldLevel) => {
-    setFoldLevel(level);
-    if (!thread) return;
-    
-    if (level === 'collapsed') {
-      // 全部折叠：不展开任何邮件
-      setExpandedIds(new Set());
-    } else if (level === 'body_only') {
-      // 仅正文折叠：所有邮件都展开（显示标题和正文）
-      setExpandedIds(new Set(thread.emails.map(e => e.id)));
-    } else {
-      // 完全展开：所有邮件都展开
-      setExpandedIds(new Set(thread.emails.map(e => e.id)));
-    }
-  };
-
   const expandAll = () => {
     if (thread) {
       setFoldLevel('expanded');
@@ -570,6 +594,41 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
       setExpandedIds(new Set());
     }
   };
+
+  // 分层展开模式：切换单个邮件的展开状态
+  const toggleLayeredExpand = useCallback((id: number) => {
+    setLayeredExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  // 切换到分层展开模式
+  const enterLayeredMode = useCallback(() => {
+    setViewMode('layered');
+    // 只展开第一层（depth=0 的邮件）
+    if (threadTree.length > 0) {
+      const firstLayerIds = new Set<number>();
+      threadTree.forEach(node => {
+        firstLayerIds.add(node.email.id);
+      });
+      setLayeredExpandedIds(firstLayerIds);
+    }
+  }, [threadTree]);
+
+  // 切换到树形模式
+  const enterTreeMode = useCallback(() => {
+    setViewMode('tree');
+    // 展开所有
+    if (thread) {
+      setExpandedIds(new Set(thread.emails.map(e => e.id)));
+    }
+  }, [thread]);
   
   // 翻译所有可见段落
   const handleTranslate = useCallback(async () => {
@@ -699,57 +758,50 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
               )}
             </div>
 
-            {/* 折叠级别切换 */}
+            {/* 视图模式切换 */}
             <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
               <button
-                onClick={() => setFoldLevelAll('expanded')}
+                onClick={() => { enterTreeMode(); }}
                 className={`px-2 py-1.5 text-xs rounded transition-colors ${
-                  foldLevel === 'expanded' 
+                  viewMode === 'tree' 
                     ? 'bg-blue-500 text-white' 
                     : 'text-gray-600 hover:bg-gray-200'
                 }`}
-                title="完全展开"
+                title="树形模式 - 展开全部邮件"
               >
-                📖 展开
+                🌲 树形
               </button>
               <button
-                onClick={() => setFoldLevelAll('body_only')}
+                onClick={enterLayeredMode}
                 className={`px-2 py-1.5 text-xs rounded transition-colors ${
-                  foldLevel === 'body_only' 
+                  viewMode === 'layered' 
                     ? 'bg-blue-500 text-white' 
                     : 'text-gray-600 hover:bg-gray-200'
                 }`}
-                title="仅正文折叠"
+                title="分层展开 - 折叠只显示顶层，点击展开一层"
               >
-                📄 正文
-              </button>
-              <button
-                onClick={() => setFoldLevelAll('collapsed')}
-                className={`px-2 py-1.5 text-xs rounded transition-colors ${
-                  foldLevel === 'collapsed' 
-                    ? 'bg-blue-500 text-white' 
-                    : 'text-gray-600 hover:bg-gray-200'
-                }`}
-                title="全部折叠"
-              >
-                📋 折叠
+                � 分层
               </button>
             </div>
 
-            {/* 展开/收起 */}
-            <button
-              onClick={expandAll}
-              className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              全部展开
-            </button>
-            <button
-              onClick={collapseAll}
-              className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              全部收起
-            </button>
-            
+            {viewMode === 'tree' && (
+              <>
+                {/* 展开/收起 (仅树形模式) */}
+                <button
+                  onClick={expandAll}
+                  className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  全部展开
+                </button>
+                <button
+                  onClick={collapseAll}
+                  className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  全部收起
+                </button>
+              </>
+            )}
+
             <button 
               onClick={onClose} 
               className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-xl"
@@ -796,6 +848,9 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
                     onTranslationUpdate={handleTranslationUpdate}
                     onClearParagraphCache={handleClearParagraphCache}
                     foldLevel={foldLevel}
+                    viewMode={viewMode}
+                    layeredExpandedIds={layeredExpandedIds}
+                    toggleLayeredExpand={toggleLayeredExpand}
                   />
                 ))}
               </div>
