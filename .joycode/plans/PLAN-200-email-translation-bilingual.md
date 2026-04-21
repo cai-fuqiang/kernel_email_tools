@@ -250,3 +250,61 @@ translator:
 - [ ] 支持翻译语言选择（英文→中文/日文/韩文等）
 - [ ] 翻译质量评分
 - [ ] 翻译历史记录
+## 2026-04-21 更新：分层展开模式 Bug 修复
+
+### 问题描述
+
+在分层展开模式下，点击子节点后，兄弟节点也展开了。预期行为是点击子节点只展开该节点的子节点（孙子节点），不应影响兄弟节点。
+
+### 根因分析
+
+1. **双重状态更新问题**：`toggleLayeredExpand` 同时更新 `expandedIds` 和 `layeredExpandedIds`，导致状态不同步
+2. **跳跃式深度增加**：展开节点时增加 `nodeDepth + 1`，导致所有同层节点的子节点都被显示
+3. **显示逻辑基于全局深度**：`layeredVisibleDepth` 是全局变量，导致点击一个节点会影响所有兄弟节点
+
+### 修复方案
+
+1. **移除双重状态更新**：只更新 `layeredExpandedIds`，不再同时更新 `expandedIds`
+2. **简化可见深度逻辑**：只设置到当前节点的 `depth`，不跳跃增加
+3. **修改显示条件**：从 `depth > layeredVisibleDepth` 改为 `depth > 0 && !isLayeredExpanded`
+
+### 修改文件
+
+- `web/src/components/ThreadDrawer.tsx`
+
+### 关键代码变更
+
+```typescript
+// toggleLayeredExpand 简化后
+const toggleLayeredExpand = useCallback((id: number, nodeDepth: number) => {
+  const isCurrentlyExpanded = layeredExpandedIds.has(id);
+  
+  setLayeredExpandedIds(prev => {
+    const next = new Set(prev);
+    if (isCurrentlyExpanded) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    return next;
+  });
+  
+  // 只增加一层可见深度
+  setLayeredVisibleDepth(prev => Math.max(prev, nodeDepth));
+}, []);
+```
+
+```typescript
+// 显示条件修改
+// 分层模式下：根据展开状态决定是否显示
+// 只显示被明确展开的节点及其直接子节点
+if (viewMode === 'layered' && depth > 0 && !isLayeredExpanded) {
+  return null;
+}
+```
+
+### 验证
+
+- [x] 点击子节点只展开该节点的子节点
+- [x] 兄弟节点不受影响
+- [x] 收起节点正常工作

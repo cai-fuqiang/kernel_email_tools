@@ -258,7 +258,9 @@ function EmailCard({
   }
 
   // 分层模式下的展开状态切换
-  const handleToggleExpand = () => {
+  const handleToggleExpand = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    
     if (viewMode === 'layered') {
       toggleLayeredExpand(email.id, depth);
     } else {
@@ -276,8 +278,9 @@ function EmailCard({
     ? isExpanded 
     : isLayeredExpanded;
 
-  // 分层模式下：根据可见深度决定是否显示
-  if (viewMode === 'layered' && depth > layeredVisibleDepth) {
+  // 分层模式下：根据展开状态决定是否显示
+  // 只显示被明确展开的节点及其直接子节点
+  if (viewMode === 'layered' && depth > 0 && !isLayeredExpanded) {
     return null;
   }
 
@@ -286,7 +289,7 @@ function EmailCard({
     return (
       <div className="email-node" style={{ marginLeft: depth > 0 ? '16px' : 0 }}>
         <div 
-          onClick={handleToggleExpand}
+          onClick={(e) => handleToggleExpand(e)}
           className="cursor-pointer hover:bg-gray-50 rounded-lg border border-gray-200 transition-colors"
         >
           {renderCollapsedSummary()}
@@ -619,22 +622,13 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
         next.delete(id);
       } else {
         next.add(id);
-        // 展开时增加可见深度
-        setLayeredVisibleDepth((currentDepth: number) => Math.max(currentDepth, nodeDepth + 1));
       }
       return next;
     });
-    // 同时更新 expandedIds，这样视觉效果一致
-    setExpandedIds(prev => {
-      const next = new Set(prev);
-      if (isCurrentlyExpanded) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  }, [layeredExpandedIds]);
+    
+    // 只增加一层可见深度，不要跳跃式增加
+    setLayeredVisibleDepth(prev => Math.max(prev, nodeDepth));
+  }, []);
 
   // 切换到分层展开模式
   const enterLayeredMode = useCallback(() => {
