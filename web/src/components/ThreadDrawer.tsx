@@ -265,7 +265,6 @@ function EmailCard({
   };
 
   // 根据视图模式和展开状态决定显示方式
-  // 分层模式：只显示 depth 0 和 depth 1 的邮件
   const isCollapsed = viewMode === 'tree' 
     ? foldLevel === 'collapsed' 
     : (depth > 0 && !isLayeredExpanded);
@@ -274,23 +273,10 @@ function EmailCard({
     ? isExpanded 
     : isLayeredExpanded;
 
-  // 分层模式下：只显示 depth <= 1 的邮件（root 和 child）
-  if (viewMode === 'layered' && depth > 1) {
-    return null;
-  }
-
   // 折叠视图
   if (isCollapsed) {
     return (
       <div className="email-node" style={{ marginLeft: depth > 0 ? '16px' : 0 }}>
-        <div 
-          onClick={handleToggleExpand}
-          className="cursor-pointer hover:bg-gray-50 rounded-lg border border-gray-200 transition-colors"
-        >
-          {renderCollapsedSummary()}
-        </div>
-        
-        {/* 折叠/分层模式下显示摘要，点击展开 */}
         <div 
           onClick={handleToggleExpand}
           className="cursor-pointer hover:bg-gray-50 rounded-lg border border-gray-200 transition-colors"
