@@ -44,7 +44,9 @@ export interface ThreadEmail {
   sender: string;
   date: string | null;
   in_reply_to: string;
+  references: string[];
   has_patch: boolean;
+  patch_content: string;
   body: string;
 }
 

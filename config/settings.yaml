@@ -92,7 +92,7 @@ qa:
   email:
     llm_provider: dashscope              # openai | anthropic | dashscope | minimax
     model: qwen-plus-2025-07-28          # 千问模型
-    api_key: ""                          # API Key
+    api_key: "sk-ae19a6f47bf94122ae253ded970a6b9d"                          # API Key
   manual:
     llm_provider: openai
     model: gpt-4

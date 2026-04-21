@@ -108,7 +108,6 @@ function EmailCard({
   viewMode,
   layeredExpandedIds,
   toggleLayeredExpand,
-  layeredVisibleDepth,
 }: { 
   node: ThreadNode;
   expandedIds: Set<number>;
@@ -120,7 +119,6 @@ function EmailCard({
   viewMode: ViewMode;
   layeredExpandedIds: Set<number>;
   toggleLayeredExpand: (id: number, depth: number) => void;
-  layeredVisibleDepth: number;
 }) {
   const { email, children, depth } = node;
   const isExpanded = expandedIds.has(email.id);
@@ -191,6 +189,11 @@ function EmailCard({
           PATCH
         </span>
       )}
+      {email.references && email.references.length > 0 && (
+        <span className="text-xs text-gray-400" title={`回复链: ${email.references[email.references.length - 1]}`}>
+          ↳
+        </span>
+      )}
       {children.length > 0 && (
         <span className="text-xs text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded-full">
           {children.length} 回复
@@ -230,6 +233,11 @@ function EmailCard({
         <div className="text-sm text-gray-600 truncate mt-1">
           {email.subject}
         </div>
+        {email.references && email.references.length > 0 && (
+          <div className="text-xs text-gray-400 mt-1 truncate" title={`回复链: ${email.references[email.references.length - 1]}`}>
+            ↳ 回复: {email.references[email.references.length - 1]}
+          </div>
+        )}
       </div>
       
       {email.has_patch && (
@@ -269,19 +277,24 @@ function EmailCard({
   };
 
   // 根据视图模式和展开状态决定显示方式
-  // 分层模式：depth 0 始终显示，depth > 0 根据 isLayeredExpanded 和可见深度决定
+  // 分层模式：depth 0 始终以折叠摘要显示，depth > 0 根据 layeredExpandedIds 显示
   const isCollapsed = viewMode === 'tree' 
     ? foldLevel === 'collapsed' 
-    : (depth > 0 && !isLayeredExpanded);
+    : (depth === 0 ? false : !isLayeredExpanded);
   
   const shouldShowContent = viewMode === 'tree' 
     ? isExpanded 
     : isLayeredExpanded;
 
   // 分层模式下：根据展开状态决定是否显示
-  // 只显示被明确展开的节点及其直接子节点
-  if (viewMode === 'layered' && depth > 0 && !isLayeredExpanded) {
-    return null;
+  // 分层模式的核心逻辑：
+  // - depth 0 (根节点) 始终显示
+  // - depth > 0 (子节点) 只显示当它的父节点被展开时
+  // 注意：depth > 1 表示孙子节点或更深层级，需要自己的父节点被展开才显示
+  if (viewMode === 'layered' && depth > 0) {
+    if (depth > 1 && !isLayeredExpanded) {
+      return null;
+    }
   }
 
   // 折叠视图
@@ -327,7 +340,6 @@ function EmailCard({
                 viewMode={viewMode}
                 layeredExpandedIds={layeredExpandedIds}
                 toggleLayeredExpand={toggleLayeredExpand}
-                layeredVisibleDepth={layeredVisibleDepth}
               />
             ))}
           </div>
@@ -337,112 +349,245 @@ function EmailCard({
   }
 
   // 展开模式：显示完整邮件
+  // 分层模式下不使用 <details>，直接用 div + onClick
+  const isLayeredMode = viewMode === 'layered';
+  
   return (
     <div className="email-node" style={{ marginLeft: depth > 0 ? '16px' : 0 }}>
-      <details className="email-thread" open={isExpanded}>
-        <summary 
-          onClick={(e) => { e.preventDefault(); handleToggleExpand(); }}
-          className="cursor-pointer"
-        >
-          {renderFullHeader()}
-        </summary>
-        
-        {/* 邮件内容 */}
-        <div className="email-body px-4 pb-4 mt-2">
-          <div className="mb-3">
-            <EmailTagEditor messageId={email.message_id} />
+      {isLayeredMode ? (
+        // 分层模式：自定义折叠/展开
+        <>
+          <div 
+            onClick={(e) => handleToggleExpand(e)}
+            className="cursor-pointer hover:bg-gray-50 rounded-lg border border-gray-200 transition-colors"
+          >
+            {depth === 0 && !isLayeredExpanded ? renderCollapsedSummary() : renderFullHeader()}
           </div>
-          
-          {/* 邮件正文 */}
-          <div className="email-content rounded-lg overflow-hidden">
-            {paragraphs.map((para, idx) => {
-              const needTrans = shouldTranslate(para);
-              const transState = translations.get(para);
-              const isLoading = transState?.loading;
-              const translation = transState?.translation;
-              const transError = transState?.error;
-              
-              if (needTrans) {
-                // 双语对照模式
-                return (
-                  <div key={idx} className="bilingual-block">
-                    <div className="bilingual-original">
-                      <div className="lang-label">EN</div>
-                      <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
-                    </div>
-                    <div className="bilingual-translation">
-                      <div className="lang-label flex items-center justify-between">
-                        <span>中文</span>
-                        {translation && editingPara !== para && (
-                          <div className="flex gap-1">
-                            <button
-                              onClick={() => handleStartEdit(para, translation)}
-                              className="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
-                              title="编辑翻译"
-                            >
-                              ✏️ 编辑
-                            </button>
-                            <button
-                              onClick={() => onClearParagraphCache(para)}
-                              className="text-xs px-2 py-1 bg-orange-100 text-orange-600 rounded hover:bg-orange-200"
-                              title="清除此段缓存"
-                            >
-                              🗑️
-                            </button>
+          {isLayeredExpanded && (
+            <div className="email-body px-4 pb-4 mt-2">
+              <div className="mb-3">
+                <EmailTagEditor messageId={email.message_id} />
+              </div>
+              <div className="email-content rounded-lg overflow-hidden">
+                {paragraphs.map((para, idx) => {
+                  const needTrans = shouldTranslate(para);
+                  const transState = translations.get(para);
+                  const isLoading = transState?.loading;
+                  const translation = transState?.translation;
+                  const transError = transState?.error;
+                  
+                  if (needTrans) {
+                    return (
+                      <div key={idx} className="bilingual-block">
+                        <div className="bilingual-original">
+                          <div className="lang-label">EN</div>
+                          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
+                        </div>
+                        <div className="bilingual-translation">
+                          <div className="lang-label flex items-center justify-between">
+                            <span>中文</span>
+                            {translation && editingPara !== para && (
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={() => handleStartEdit(para, translation)}
+                                  className="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
+                                  title="编辑翻译"
+                                >
+                                  ✏️ 编辑
+                                </button>
+                                <button
+                                  onClick={() => onClearParagraphCache(para)}
+                                  className="text-xs px-2 py-1 bg-orange-100 text-orange-600 rounded hover:bg-orange-200"
+                                  title="清除此段缓存"
+                                >
+                                  🗑️
+                                </button>
+                              </div>
+                            )}
                           </div>
+                          {editingPara === para ? (
+                            <div className="mt-2">
+                              <textarea
+                                value={editText}
+                                onChange={(e) => setEditText(e.target.value)}
+                                className="w-full min-h-[80px] p-2 text-sm border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                                placeholder="输入人工翻译..."
+                              />
+                              <div className="flex gap-2 mt-2">
+                                <button
+                                  onClick={handleSaveEdit}
+                                  className="px-3 py-1.5 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600"
+                                >
+                                  保存
+                                </button>
+                                <button
+                                  onClick={handleCancelEdit}
+                                  className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300"
+                                >
+                                  取消
+                                </button>
+                              </div>
+                            </div>
+                          ) : isLoading ? (
+                            <div className="flex items-center justify-center py-4">
+                              <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+                              <span className="ml-2 text-sm text-gray-500">翻译中...</span>
+                            </div>
+                          ) : translation ? (
+                            <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed">{translation}</pre>
+                          ) : transError ? (
+                            <div className="text-sm text-red-500 py-2">翻译失败: {transError}</div>
+                          ) : (
+                            <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed opacity-50">{para}</pre>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div key={idx} className="email-paragraph">
+                        <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
+                      </div>
+                    );
+                  }
+                })}
+              </div>
+              
+              {/* Patch Diff 片段 */}
+              {email.has_patch && email.patch_content && (
+                <div className="mt-4 border-t border-gray-200 pt-4 patch-diff">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">PATCH</span>
+                    <span className="text-xs text-gray-500">Diff 片段</span>
+                  </div>
+                  <pre className="text-xs bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto font-mono leading-relaxed">
+                    {email.patch_content}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        // 树形模式：使用 <details> 元素
+        <details className="email-thread" open={isExpanded}>
+          <summary 
+            onClick={(e) => { e.preventDefault(); handleToggleExpand(); }}
+            className="cursor-pointer"
+          >
+            {renderFullHeader()}
+          </summary>
+          
+          {/* 邮件内容 */}
+          <div className="email-body px-4 pb-4 mt-2">
+            <div className="mb-3">
+              <EmailTagEditor messageId={email.message_id} />
+            </div>
+            
+            {/* 邮件正文 */}
+            <div className="email-content rounded-lg overflow-hidden">
+              {paragraphs.map((para, idx) => {
+                const needTrans = shouldTranslate(para);
+                const transState = translations.get(para);
+                const isLoading = transState?.loading;
+                const translation = transState?.translation;
+                const transError = transState?.error;
+                
+                if (needTrans) {
+                  // 双语对照模式
+                  return (
+                    <div key={idx} className="bilingual-block">
+                      <div className="bilingual-original">
+                        <div className="lang-label">EN</div>
+                        <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
+                      </div>
+                      <div className="bilingual-translation">
+                        <div className="lang-label flex items-center justify-between">
+                          <span>中文</span>
+                          {translation && editingPara !== para && (
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => handleStartEdit(para, translation)}
+                                className="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
+                                title="编辑翻译"
+                              >
+                                ✏️ 编辑
+                              </button>
+                              <button
+                                onClick={() => onClearParagraphCache(para)}
+                                className="text-xs px-2 py-1 bg-orange-100 text-orange-600 rounded hover:bg-orange-200"
+                                title="清除此段缓存"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        {editingPara === para ? (
+                          <div className="mt-2">
+                            <textarea
+                              value={editText}
+                              onChange={(e) => setEditText(e.target.value)}
+                              className="w-full min-h-[80px] p-2 text-sm border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                              placeholder="输入人工翻译..."
+                            />
+                            <div className="flex gap-2 mt-2">
+                              <button
+                                onClick={handleSaveEdit}
+                                className="px-3 py-1.5 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600"
+                              >
+                                保存
+                              </button>
+                              <button
+                                onClick={handleCancelEdit}
+                                className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300"
+                              >
+                                取消
+                              </button>
+                            </div>
+                          </div>
+                        ) : isLoading ? (
+                          <div className="flex items-center justify-center py-4">
+                            <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+                            <span className="ml-2 text-sm text-gray-500">翻译中...</span>
+                          </div>
+                        ) : translation ? (
+                          <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed">{translation}</pre>
+                        ) : transError ? (
+                          <div className="text-sm text-red-500 py-2">翻译失败: {transError}</div>
+                        ) : (
+                          <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed opacity-50">{para}</pre>
                         )}
                       </div>
-                      {editingPara === para ? (
-                        <div className="mt-2">
-                          <textarea
-                            value={editText}
-                            onChange={(e) => setEditText(e.target.value)}
-                            className="w-full min-h-[80px] p-2 text-sm border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
-                            placeholder="输入人工翻译..."
-                          />
-                          <div className="flex gap-2 mt-2">
-                            <button
-                              onClick={handleSaveEdit}
-                              className="px-3 py-1.5 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600"
-                            >
-                              保存
-                            </button>
-                            <button
-                              onClick={handleCancelEdit}
-                              className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300"
-                            >
-                              取消
-                            </button>
-                          </div>
-                        </div>
-                      ) : isLoading ? (
-                        <div className="flex items-center justify-center py-4">
-                          <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
-                          <span className="ml-2 text-sm text-gray-500">翻译中...</span>
-                        </div>
-                      ) : translation ? (
-                        <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed">{translation}</pre>
-                      ) : transError ? (
-                        <div className="text-sm text-red-500 py-2">翻译失败: {transError}</div>
-                      ) : (
-                        <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed opacity-50">{para}</pre>
-                      )}
                     </div>
-                  </div>
-                );
-              } else {
-                // 普通模式（代码或补丁内容，不翻译）
-                return (
-                  <div key={idx} className="email-paragraph">
-                    <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
-                  </div>
-                );
-              }
-            })}
+                  );
+                } else {
+                  // 普通模式（代码或补丁内容，不翻译）
+                  return (
+                    <div key={idx} className="email-paragraph">
+                      <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
+                    </div>
+                  );
+                }
+              })}
+            </div>
+
+            {/* Patch Diff 片段 */}
+            {email.has_patch && email.patch_content && (
+              <div className="mt-4 border-t border-gray-200 pt-4 patch-diff">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">PATCH</span>
+                  <span className="text-xs text-gray-500">Diff 片段</span>
+                </div>
+                <pre className="text-xs bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto font-mono leading-relaxed">
+                  {email.patch_content}
+                </pre>
+              </div>
+            )}
           </div>
-        </div>
-      </details>
-      
+        </details>
+      )}
+              
       {/* 子回复 */}
       {children.length > 0 && (
         <div className="replies mt-3">
@@ -459,7 +604,6 @@ function EmailCard({
               viewMode={viewMode}
               layeredExpandedIds={layeredExpandedIds}
               toggleLayeredExpand={toggleLayeredExpand}
-                layeredVisibleDepth={layeredVisibleDepth}
             />
           ))}
         </div>
@@ -507,8 +651,8 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   // 分层展开模式：记录哪些邮件被展开了（用于分层展开）
   const [layeredExpandedIds, setLayeredExpandedIds] = useState<Set<number>>(new Set());
-  // 分层模式下的可见深度（初始为1，即只显示root和child）
-  const [layeredVisibleDepth, setLayeredVisibleDepth] = useState<number>(1);
+  // 分层模式下的可见深度（已弃用，改用 layeredExpandedIds 控制）
+  // const [layeredVisibleDepth, setLayeredVisibleDepth] = useState<number>(1);
 
   // 清除缓存消息
   const clearCacheMessage = useCallback(() => {
@@ -613,33 +757,27 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
   };
 
   // 分层展开模式：切换单个邮件的展开状态
-  const toggleLayeredExpand = useCallback((id: number, nodeDepth: number) => {
-    const isCurrentlyExpanded = layeredExpandedIds.has(id);
-    
+  const toggleLayeredExpand = useCallback((id: number, _nodeDepth: number) => {
     setLayeredExpandedIds(prev => {
       const next = new Set(prev);
-      if (isCurrentlyExpanded) {
+      if (next.has(id)) {
         next.delete(id);
       } else {
         next.add(id);
       }
       return next;
     });
-    
-    // 只增加一层可见深度，不要跳跃式增加
-    setLayeredVisibleDepth(prev => Math.max(prev, nodeDepth));
   }, []);
 
   // 切换到分层展开模式
   const enterLayeredMode = useCallback(() => {
     setViewMode('layered');
-    // 只展开第一个 root 节点
+    // 初始：只展开第一个根节点，让用户看到线程入口
     if (threadTree.length > 0) {
       const firstRootId = threadTree[0].email.id;
       setLayeredExpandedIds(new Set([firstRootId]));
-      setExpandedIds(new Set([firstRootId]));
-      // 分层模式初始只显示到 depth 1
-      setLayeredVisibleDepth(1);
+    } else {
+      setLayeredExpandedIds(new Set());
     }
   }, [threadTree]);
 
@@ -873,7 +1011,6 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
                     viewMode={viewMode}
                     layeredExpandedIds={layeredExpandedIds}
                     toggleLayeredExpand={toggleLayeredExpand}
-                layeredVisibleDepth={layeredVisibleDepth}
                   />
                 ))}
               </div>
@@ -931,6 +1068,13 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
         .bilingual-translation .lang-label {
           color: #3b82f6;
           border-bottom-color: #bfdbfe;
+        }
+        .bilingual-translation .lang-label {
+          color: #3b82f6;
+          border-bottom-color: #bfdbfe;
+        }
+        .patch-diff {
+          border-left: 3px solid #22c55e;
         }
         @media (max-width: 768px) {
           .bilingual-block {

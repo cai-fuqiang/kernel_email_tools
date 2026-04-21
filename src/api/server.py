@@ -594,7 +594,9 @@ async def get_thread(thread_id: str):
                 "sender": e.sender,
                 "date": e.date.isoformat() if e.date else None,
                 "in_reply_to": e.in_reply_to,
+                "references": e.references or [],
                 "has_patch": e.has_patch,
+                "patch_content": e.patch_content or "",
                 "body": e.body[:500],  # 限制 body 长度
             }
             for e in emails

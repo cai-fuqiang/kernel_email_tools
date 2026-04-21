@@ -11,3 +11,8 @@ data/
 venv/
 .ruff_cache/web/node_modules/
 config/settings.yaml
+log*.txt
+nohup.out
+check_*.py
+run_import.py
+config.sh
