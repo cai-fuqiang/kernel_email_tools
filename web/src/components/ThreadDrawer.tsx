@@ -90,6 +90,9 @@ function shouldTranslate(text: string): boolean {
 // 翻译状态映射类型
 type TranslationMap = Map<string, { translation: string; loading: boolean; error?: string }>;
 
+// 折叠级别类型
+type FoldLevel = 'expanded' | 'body_only' | 'collapsed';
+
 // 邮件卡片组件
 function EmailCard({ 
   node, 
@@ -98,6 +101,7 @@ function EmailCard({
   translations,
   onTranslationUpdate,
   onClearParagraphCache,
+  foldLevel,
 }: { 
   node: ThreadNode;
   expandedIds: Set<number>;
@@ -105,6 +109,7 @@ function EmailCard({
   translations: TranslationMap;
   onTranslationUpdate: (para: string, translation: string) => void;
   onClearParagraphCache: (paragraph: string) => void;
+  foldLevel: FoldLevel;
 }) {
   const { email, children, depth } = node;
   const isExpanded = expandedIds.has(email.id);
@@ -134,7 +139,155 @@ function EmailCard({
     setEditingPara(null);
     setEditText('');
   };
+
+  // 格式化时间显示
+  const formatDate = (dateStr: string | null | undefined) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return '今天';
+    if (diffDays === 1) return '昨天';
+    if (diffDays < 7) return `${diffDays}天前`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)}周前`;
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)}月前`;
+    return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+  };
+
+  // 折叠模式下显示的一行摘要
+  const renderCollapsedSummary = () => (
+    <div className="flex items-center gap-2 py-2 px-4 text-sm">
+      <div 
+        className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+        style={{ backgroundColor: `hsl(${getAuthorName(email.sender).charCodeAt(0) * 15 % 360}, 65%, 50%)` }}
+      >
+        {getAuthorName(email.sender).charAt(0).toUpperCase()}
+      </div>
+      <span className="font-medium text-gray-900 truncate max-w-[150px]">
+        {getAuthorName(email.sender)}
+      </span>
+      <span className="text-gray-400 text-xs">
+        {formatDate(email.date)}
+      </span>
+      <span className="text-gray-600 truncate flex-1">
+        {email.subject}
+      </span>
+      {email.has_patch && (
+        <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded font-medium">
+          PATCH
+        </span>
+      )}
+      {children.length > 0 && (
+        <span className="text-xs text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded-full">
+          {children.length} 回复
+        </span>
+      )}
+      <span className="text-gray-400 ml-auto">▶</span>
+    </div>
+  );
+
+  // 展开模式下显示的完整标题
+  const renderFullHeader = () => (
+    <div className="flex items-center gap-3 py-3 px-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border-l-4 border-blue-400">
+      <div 
+        className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm"
+        style={{ backgroundColor: `hsl(${getAuthorName(email.sender).charCodeAt(0) * 15 % 360}, 65%, 50%)` }}
+      >
+        {getAuthorName(email.sender).charAt(0).toUpperCase()}
+      </div>
+      
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-gray-900 text-sm">
+            {getAuthorName(email.sender)}
+          </span>
+          {depth > 0 && (
+            <span className="text-xs text-blue-500 bg-blue-50 px-2 py-0.5 rounded">
+              → {depth} 层回复
+            </span>
+          )}
+          <span className="text-xs text-gray-400 ml-auto">
+            {email.date ? new Date(email.date).toLocaleDateString('zh-CN', { 
+              year: 'numeric', month: 'short', day: 'numeric',
+              hour: '2-digit', minute: '2-digit'
+            }) : ''}
+          </span>
+        </div>
+        <div className="text-sm text-gray-600 truncate mt-1">
+          {email.subject}
+        </div>
+      </div>
+      
+      {email.has_patch && (
+        <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">
+          PATCH
+        </span>
+      )}
+      
+      {children.length > 0 && (
+        <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded-full">
+          {children.length} 回复
+        </span>
+      )}
+      
+      <span className="text-gray-400 text-lg">
+        {isExpanded ? '▼' : '▶'}
+      </span>
+    </div>
+  );
   
+  // 根据折叠级别渲染
+  if (foldLevel === 'collapsed') {
+    // 折叠模式：只显示一行摘要
+    return (
+      <div className="email-node" style={{ marginLeft: depth > 0 ? '16px' : 0 }}>
+        <div 
+          onClick={() => toggleExpand(email.id)}
+          className="cursor-pointer hover:bg-gray-50 rounded-lg border border-gray-200 transition-colors"
+        >
+          {renderCollapsedSummary()}
+        </div>
+        
+        {/* 折叠状态下点击展开 */}
+        {isExpanded && (
+          <div className="email-body px-4 pb-4 mt-2">
+            <div className="mb-3">
+              <EmailTagEditor messageId={email.message_id} />
+            </div>
+            <div className="email-content rounded-lg overflow-hidden">
+              {paragraphs.map((para, idx) => (
+                <div key={idx} className="email-paragraph">
+                  <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {/* 子回复 */}
+        {children.length > 0 && (
+          <div className="replies mt-3">
+            {children.map(child => (
+              <EmailCard 
+                key={child.email.id} 
+                node={child} 
+                expandedIds={expandedIds}
+                toggleExpand={toggleExpand}
+                translations={translations}
+                onTranslationUpdate={onTranslationUpdate}
+                onClearParagraphCache={onClearParagraphCache}
+                foldLevel={foldLevel}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // 展开模式：显示完整邮件
   return (
     <div className="email-node" style={{ marginLeft: depth > 0 ? '16px' : 0 }}>
       <details className="email-thread" open={isExpanded}>
@@ -142,53 +295,7 @@ function EmailCard({
           onClick={(e) => { e.preventDefault(); toggleExpand(email.id); }}
           className="cursor-pointer"
         >
-          <div className="flex items-center gap-3 py-3 px-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border-l-4 border-blue-400">
-            {/* 头像 */}
-            <div 
-              className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm"
-              style={{ backgroundColor: `hsl(${getAuthorName(email.sender).charCodeAt(0) * 15 % 360}, 65%, 50%)` }}
-            >
-              {getAuthorName(email.sender).charAt(0).toUpperCase()}
-            </div>
-            
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-gray-900 text-sm">
-                  {getAuthorName(email.sender)}
-                </span>
-                {depth > 0 && (
-                  <span className="text-xs text-blue-500 bg-blue-50 px-2 py-0.5 rounded">
-                    → {depth} 层回复
-                  </span>
-                )}
-                <span className="text-xs text-gray-400 ml-auto">
-                  {email.date ? new Date(email.date).toLocaleDateString('zh-CN', { 
-                    year: 'numeric', month: 'short', day: 'numeric',
-                    hour: '2-digit', minute: '2-digit'
-                  }) : ''}
-                </span>
-              </div>
-              <div className="text-sm text-gray-600 truncate mt-1">
-                {email.subject}
-              </div>
-            </div>
-            
-            {email.has_patch && (
-              <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">
-                PATCH
-              </span>
-            )}
-            
-            {children.length > 0 && (
-              <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded-full">
-                {children.length} 回复
-              </span>
-            )}
-            
-            <span className="text-gray-400 text-lg">
-              {isExpanded ? '▼' : '▶'}
-            </span>
-          </div>
+          {renderFullHeader()}
         </summary>
         
         {/* 邮件内容 */}
@@ -299,6 +406,7 @@ function EmailCard({
               translations={translations}
               onTranslationUpdate={onTranslationUpdate}
               onClearParagraphCache={onClearParagraphCache}
+              foldLevel={foldLevel}
             />
           ))}
         </div>
@@ -342,6 +450,7 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
   const [translations, setTranslations] = useState<TranslationMap>(new Map());
   const [translating, setTranslating] = useState(false);
   const [cacheMessage, setCacheMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [foldLevel, setFoldLevel] = useState<FoldLevel>('expanded');
 
   // 清除缓存消息
   const clearCacheMessage = useCallback(() => {
@@ -430,16 +539,35 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
       return next;
     });
   }, []);
-  
+
+  // 折叠级别切换
+  const setFoldLevelAll = (level: FoldLevel) => {
+    setFoldLevel(level);
+    if (!thread) return;
+    
+    if (level === 'collapsed') {
+      // 全部折叠：不展开任何邮件
+      setExpandedIds(new Set());
+    } else if (level === 'body_only') {
+      // 仅正文折叠：所有邮件都展开（显示标题和正文）
+      setExpandedIds(new Set(thread.emails.map(e => e.id)));
+    } else {
+      // 完全展开：所有邮件都展开
+      setExpandedIds(new Set(thread.emails.map(e => e.id)));
+    }
+  };
+
   const expandAll = () => {
     if (thread) {
+      setFoldLevel('expanded');
       setExpandedIds(new Set(thread.emails.map(e => e.id)));
     }
   };
   
   const collapseAll = () => {
     if (thread && thread.emails.length > 0) {
-      setExpandedIds(new Set([thread.emails[0].id]));
+      setFoldLevel('collapsed');
+      setExpandedIds(new Set());
     }
   };
   
@@ -571,6 +699,43 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
               )}
             </div>
 
+            {/* 折叠级别切换 */}
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setFoldLevelAll('expanded')}
+                className={`px-2 py-1.5 text-xs rounded transition-colors ${
+                  foldLevel === 'expanded' 
+                    ? 'bg-blue-500 text-white' 
+                    : 'text-gray-600 hover:bg-gray-200'
+                }`}
+                title="完全展开"
+              >
+                📖 展开
+              </button>
+              <button
+                onClick={() => setFoldLevelAll('body_only')}
+                className={`px-2 py-1.5 text-xs rounded transition-colors ${
+                  foldLevel === 'body_only' 
+                    ? 'bg-blue-500 text-white' 
+                    : 'text-gray-600 hover:bg-gray-200'
+                }`}
+                title="仅正文折叠"
+              >
+                📄 正文
+              </button>
+              <button
+                onClick={() => setFoldLevelAll('collapsed')}
+                className={`px-2 py-1.5 text-xs rounded transition-colors ${
+                  foldLevel === 'collapsed' 
+                    ? 'bg-blue-500 text-white' 
+                    : 'text-gray-600 hover:bg-gray-200'
+                }`}
+                title="全部折叠"
+              >
+                📋 折叠
+              </button>
+            </div>
+
             {/* 展开/收起 */}
             <button
               onClick={expandAll}
@@ -630,6 +795,7 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
                     translations={translations}
                     onTranslationUpdate={handleTranslationUpdate}
                     onClearParagraphCache={handleClearParagraphCache}
+                    foldLevel={foldLevel}
                   />
                 ))}
               </div>
