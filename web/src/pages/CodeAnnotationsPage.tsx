@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { listCodeAnnotations, getKernelVersions } from '../api/client';
 import type { CodeAnnotation, KernelVersionInfo } from '../api/types';
 
@@ -65,10 +67,6 @@ export default function CodeAnnotationsPage() {
 
   const totalPages = Math.ceil(total / pageSize);
 
-  // 截断正文显示
-  const snippet = (body: string, maxLen = 200) =>
-    body.length > maxLen ? body.slice(0, maxLen) + '...' : body;
-
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       {/* 顶部 */}
@@ -124,29 +122,30 @@ export default function CodeAnnotationsPage() {
             {annotations.map((a) => (
               <div
                 key={a.annotation_id}
-                className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer flex flex-col h-40"
                 onClick={() => handleJump(a)}
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    {/* 位置信息 */}
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-700 rounded">
-                        {a.version}
-                      </span>
-                      <span className="text-xs font-mono text-gray-500">
-                        {a.file_path}
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        L{a.start_line}{a.end_line !== a.start_line ? `-${a.end_line}` : ''}
-                      </span>
-                    </div>
-                    {/* 注释正文 */}
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                      {snippet(a.body)}
-                    </p>
-                    {/* 元信息 */}
-                    <div className="flex items-center gap-3 mt-2 text-[10px] text-gray-400">
+                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 shrink-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-700 rounded">
+                      {a.version}
+                    </span>
+                    <span className="text-xs font-mono text-gray-500">
+                      {a.file_path}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      L{a.start_line}{a.end_line !== a.start_line ? `-${a.end_line}` : ''}
+                    </span>
+                  </div>
+                </div>
+                <div className="px-4 py-2 flex-1 overflow-hidden">
+                  <div className="prose prose-xs prose-slate max-w-none line-clamp-4 overflow-hidden">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{a.body}</ReactMarkdown>
+                  </div>
+                </div>
+                <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 shrink-0">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 text-[10px] text-gray-400">
                       <span>by {a.author}</span>
                       <span>·</span>
                       <span>{new Date(a.created_at).toLocaleDateString()}</span>
@@ -157,14 +156,13 @@ export default function CodeAnnotationsPage() {
                         </>
                       )}
                     </div>
+                    <button
+                      className="shrink-0 px-2 py-1 text-xs font-medium text-white bg-indigo-500 rounded hover:bg-indigo-600"
+                      onClick={(e) => { e.stopPropagation(); handleJump(a); }}
+                    >
+                      Jump
+                    </button>
                   </div>
-                  {/* 跳转按钮 */}
-                  <button
-                    className="shrink-0 px-3 py-1.5 text-xs font-medium text-white bg-indigo-500 rounded hover:bg-indigo-600"
-                    onClick={(e) => { e.stopPropagation(); handleJump(a); }}
-                  >
-                    Jump to Code
-                  </button>
                 </div>
               </div>
             ))}
