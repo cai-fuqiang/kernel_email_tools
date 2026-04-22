@@ -705,25 +705,21 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
 
     try {
       const batchSize = 50;
-      const resultMap = new Map<string, string>();
 
       for (const { messageId, paragraphs } of emailParagraphs) {
         for (let i = 0; i < paragraphs.length; i += batchSize) {
           const batch = paragraphs.slice(i, i + batchSize);
           const result = await translateBatch(batch, 'auto', 'zh-CN', messageId);
-          batch.forEach((para, idx) => {
-            resultMap.set(para, result.translations[idx] || para);
+          // 每个 batch 完成后立即更新进度
+          setTranslations(prev => {
+            const next = new Map(prev);
+            batch.forEach((para, idx) => {
+              next.set(para, { translation: result.translations[idx] || para, loading: false });
+            });
+            return next;
           });
         }
       }
-
-      setTranslations(prev => {
-        const next = new Map(prev);
-        for (const [para, trans] of resultMap) {
-          next.set(para, { translation: trans, loading: false });
-        }
-        return next;
-      });
     } catch {
       setTranslations(prev => {
         const next = new Map(prev);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { getTranslatedThreads, type TranslatedThreadInfo } from '../api/client';
 import ThreadDrawer from '../components/ThreadDrawer';
 
@@ -7,21 +7,34 @@ export default function TranslationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedThread, setSelectedThread] = useState<string | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchThreads = useCallback(async () => {
-    setLoading(true);
+  const fetchThreads = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError('');
     try {
       const resp = await getTranslatedThreads();
       setThreads(resp.threads);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load translated threads');
+      if (!silent) setError(e instanceof Error ? e.message : 'Failed to load translated threads');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
+  // 初始加载
   useEffect(() => { fetchThreads(); }, [fetchThreads]);
+
+  // 自动轮询（每 5 秒静默刷新）
+  useEffect(() => {
+    if (autoRefresh) {
+      timerRef.current = setInterval(() => fetchThreads(true), 5000);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [autoRefresh, fetchThreads]);
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return '-';
@@ -47,13 +60,24 @@ export default function TranslationsPage() {
             View and manage cached email thread translations. Tags from associated emails are shown.
           </p>
         </div>
-        <button
-          onClick={fetchThreads}
-          disabled={loading}
-          className="px-4 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
-        >
-          {loading ? 'Loading...' : 'Refresh'}
-        </button>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-1.5 text-sm text-gray-500 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={e => setAutoRefresh(e.target.checked)}
+              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            Auto-refresh
+          </label>
+          <button
+            onClick={() => fetchThreads()}
+            disabled={loading}
+            className="px-4 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            {loading ? 'Loading...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {error && (
