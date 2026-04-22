@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import PreviewModal from '../components/PreviewModal';
 import { listCodeAnnotations, getKernelVersions } from '../api/client';
 import type { CodeAnnotation, KernelVersionInfo } from '../api/types';
 
@@ -14,6 +15,7 @@ export default function CodeAnnotationsPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [previewAnnotation, setPreviewAnnotation] = useState<CodeAnnotation | null>(null);
 
   // 过滤条件
   const q = searchParams.get('q') || '';
@@ -53,6 +55,11 @@ export default function CodeAnnotationsPage() {
   // 跳转
   const handleJump = (a: CodeAnnotation) => {
     navigate(`/kernel-code?v=${encodeURIComponent(a.version)}&path=${encodeURIComponent(a.file_path)}&line=${a.start_line}`);
+  };
+
+  // 预览
+  const handlePreview = (a: CodeAnnotation) => {
+    setPreviewAnnotation(a);
   };
 
   // 过滤条件变化时重置页码
@@ -156,12 +163,20 @@ export default function CodeAnnotationsPage() {
                         </>
                       )}
                     </div>
-                    <button
-                      className="shrink-0 px-2 py-1 text-xs font-medium text-white bg-indigo-500 rounded hover:bg-indigo-600"
-                      onClick={(e) => { e.stopPropagation(); handleJump(a); }}
-                    >
-                      Jump
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="shrink-0 px-2 py-1 text-xs font-medium text-indigo-600 border border-indigo-300 rounded hover:bg-indigo-50"
+                        onClick={(e) => { e.stopPropagation(); handlePreview(a); }}
+                      >
+                        Preview
+                      </button>
+                      <button
+                        className="shrink-0 px-2 py-1 text-xs font-medium text-white bg-indigo-500 rounded hover:bg-indigo-600"
+                        onClick={(e) => { e.stopPropagation(); handleJump(a); }}
+                      >
+                        Jump
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -197,6 +212,13 @@ export default function CodeAnnotationsPage() {
           </div>
         </div>
       )}
+
+      {/* 预览弹窗 */}
+      <PreviewModal
+        isOpen={!!previewAnnotation}
+        onClose={() => setPreviewAnnotation(null)}
+        annotation={previewAnnotation}
+      />
     </div>
   );
 }

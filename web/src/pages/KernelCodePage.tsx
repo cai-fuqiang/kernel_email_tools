@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import PreviewModal from '../components/PreviewModal';
 import {
   getKernelVersions,
   getKernelTree,
@@ -384,6 +385,7 @@ function AnnotationPanel({
   filePath,
   onAnnotationCreated,
   onAnnotationDeleted,
+  onPreview,
 }: {
   annotations: CodeAnnotation[];
   selectedLine: number | null;
@@ -392,6 +394,7 @@ function AnnotationPanel({
   filePath: string;
   onAnnotationCreated: () => void;
   onAnnotationDeleted: () => void;
+  onPreview: (a: CodeAnnotation) => void;
 }) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAnnotation, setEditingAnnotation] = useState<CodeAnnotation | null>(null);
@@ -515,8 +518,16 @@ function AnnotationPanel({
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{a.body}</ReactMarkdown>
                     </div>
                   </div>
-                  <div className="px-3 py-1.5 text-[10px] text-gray-400 bg-gray-50 border-t border-gray-100 shrink-0">
-                    {a.author} · {new Date(a.created_at).toLocaleDateString()}
+                  <div className="px-3 py-1.5 flex items-center justify-between bg-gray-50 border-t border-gray-100 shrink-0">
+                    <span className="text-[10px] text-gray-400">
+                      {a.author} · {new Date(a.created_at).toLocaleDateString()}
+                    </span>
+                    <button
+                      onClick={() => onPreview(a)}
+                      className="text-[10px] text-indigo-500 hover:text-indigo-700 font-medium"
+                    >
+                      Preview
+                    </button>
                   </div>
                 </div>
               ))}
@@ -570,6 +581,7 @@ export default function KernelCodePage() {
   const [selectedRange, setSelectedRange] = useState<[number, number] | null>(null);
   const [showAnnotations, setShowAnnotations] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewAnnotation, setPreviewAnnotation] = useState<CodeAnnotation | null>(null);
 
   useEffect(() => {
     setVersionsLoading(true);
@@ -811,9 +823,17 @@ export default function KernelCodePage() {
             filePath={currentPath}
             onAnnotationCreated={refreshAnnotations}
             onAnnotationDeleted={refreshAnnotations}
+            onPreview={setPreviewAnnotation}
           />
         )}
       </div>
+
+      {/* 预览弹窗 */}
+      <PreviewModal
+        isOpen={!!previewAnnotation}
+        onClose={() => setPreviewAnnotation(null)}
+        annotation={previewAnnotation}
+      />
     </div>
   );
 }
