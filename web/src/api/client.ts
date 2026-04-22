@@ -9,6 +9,12 @@ import type {
   Annotation,
   AnnotationCreate,
   AnnotationListResponse,
+  KernelVersionsResponse,
+  KernelTreeResponse,
+  KernelFileResponse,
+  CodeAnnotation,
+  CodeAnnotationCreate,
+  CodeAnnotationListResponse,
 } from './types';
 
 // 使用相对路径，同源请求不会有 CORS 问题
@@ -470,4 +476,97 @@ export async function listAnnotations(opts?: {
   if (opts?.page) params.set('page', String(opts.page));
   if (opts?.page_size) params.set('page_size', String(opts.page_size));
   return fetchJSON<AnnotationListResponse>(`${API_BASE}/annotations?${params}`);
+}
+
+// ============================================================
+// 内核源码浏览 API (PLAN-10000)
+// ============================================================
+
+export async function getKernelVersions(
+  filter: 'release' | 'all' = 'release',
+): Promise<KernelVersionsResponse> {
+  return fetchJSON<KernelVersionsResponse>(
+    `${API_BASE}/kernel/versions?filter=${filter}`
+  );
+}
+
+export async function getKernelTree(
+  version: string,
+  path: string = '',
+): Promise<KernelTreeResponse> {
+  const url = path
+    ? `${API_BASE}/kernel/tree/${encodeURIComponent(version)}/${path}`
+    : `${API_BASE}/kernel/tree/${encodeURIComponent(version)}`;
+  return fetchJSON<KernelTreeResponse>(url);
+}
+
+export async function getKernelFile(
+  version: string,
+  path: string,
+): Promise<KernelFileResponse> {
+  return fetchJSON<KernelFileResponse>(
+    `${API_BASE}/kernel/file/${encodeURIComponent(version)}/${path}`
+  );
+}
+
+export async function getCodeAnnotations(
+  version: string,
+  path: string,
+): Promise<CodeAnnotation[]> {
+  return fetchJSON<CodeAnnotation[]>(
+    `${API_BASE}/kernel/annotations/${encodeURIComponent(version)}/${path}`
+  );
+}
+
+export async function listCodeAnnotations(opts?: {
+  q?: string;
+  version?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<CodeAnnotationListResponse> {
+  const params = new URLSearchParams();
+  if (opts?.q) params.set('q', opts.q);
+  if (opts?.version) params.set('version', opts.version);
+  if (opts?.page) params.set('page', String(opts.page));
+  if (opts?.page_size) params.set('page_size', String(opts.page_size));
+  return fetchJSON<CodeAnnotationListResponse>(`${API_BASE}/kernel/annotations?${params}`);
+}
+
+export async function createCodeAnnotation(data: CodeAnnotationCreate): Promise<CodeAnnotation> {
+  const res = await fetch(`${API_BASE}/kernel/annotations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export async function updateCodeAnnotation(
+  annotationId: string,
+  body: string,
+): Promise<CodeAnnotation> {
+  const res = await fetch(`${API_BASE}/kernel/annotations/${encodeURIComponent(annotationId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export async function deleteCodeAnnotation(annotationId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/kernel/annotations/${encodeURIComponent(annotationId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
 }

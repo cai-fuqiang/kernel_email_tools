@@ -101,3 +101,21 @@ qa:
 # 批注配置
 annotations:
   default_author: "me"                   # 默认批注作者名称
+
+# 内核源码浏览配置（PLAN-10000）
+kernel_source:
+  # 主仓库路径（torvalds/linux.git，覆盖 v2.6.12 ~ latest）
+  repo_path: ~/workspace/kernel_linux
+  # 历史仓库路径（history/history.git，覆盖 v0.01 ~ v2.6.11）
+  history_repo_path: ~/workspace/kernel_linux_history
+  # 是否启用 graft 接合（将 history 接入 master 仓库）
+  graft_enabled: true
+  # 版本过滤：release 仅正式版（vX.Y），all 包含 rc
+  version_filter: release
+  # 大文件阈值（字节），超过此大小返回截断提示
+  max_file_size: 1048576                 # 1MB
+  # 内存缓存配置
+  cache:
+    tag_list_ttl: 3600                   # tag 列表缓存 TTL（秒）
+    tree_cache_size: 256                 # 目录树 LRU 缓存条目数
+    file_cache_size: 128                 # 文件内容 LRU 缓存条目数

@@ -61,6 +61,14 @@ export default function MainLayout() {
             Translations
           </NavLink>
 
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-6 px-4">Kernel Code</div>
+          <NavLink to="/kernel-code" className={linkClass}>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+            </svg>
+            Code Browser
+          </NavLink>
+
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-6 px-4">Chip Manuals</div>
           <NavLink to="/manual/search" className={linkClass}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

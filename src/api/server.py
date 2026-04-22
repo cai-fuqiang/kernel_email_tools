@@ -49,6 +49,10 @@ _translation_cache: Optional[TranslationCacheStore] = None
 # 批注组件
 _annotation_store: Optional[AnnotationStore] = None
 
+# 内核源码浏览组件
+from src.kernel_source.git_local import GitLocalSource
+_kernel_source: Optional[GitLocalSource] = None
+
 
 def _load_config() -> dict:
     """加载配置文件。"""
@@ -66,6 +70,7 @@ async def lifespan(app: FastAPI):
     global _manual_storage, _manual_retriever, _manual_qa
     global _translator, _translation_cache
     global _annotation_store
+    global _kernel_source
 
     config = _load_config()
     storage_cfg = config.get("storage", {})
@@ -164,6 +169,26 @@ async def lifespan(app: FastAPI):
         logger.info("Manual storage initialized successfully")
     else:
         logger.warning("Manual storage not configured, chip manual features disabled")
+
+    # ========== 内核源码浏览初始化 ==========
+    kernel_cfg = config.get("kernel_source", {})
+    kernel_repo_path = kernel_cfg.get("repo_path", "")
+    if kernel_repo_path:
+        import os
+        expanded = os.path.expanduser(kernel_repo_path)
+        if os.path.isdir(expanded):
+            cache_cfg = kernel_cfg.get("cache", {})
+            _kernel_source = GitLocalSource(
+                repo_path=kernel_repo_path,
+                max_file_size=kernel_cfg.get("max_file_size", 1_048_576),
+                tree_cache_size=cache_cfg.get("tree_cache_size", 256),
+                file_cache_size=cache_cfg.get("file_cache_size", 128),
+            )
+            logger.info(f"Kernel source initialized: {expanded}")
+        else:
+            logger.warning(f"Kernel source repo not found: {expanded}, kernel code browsing disabled")
+    else:
+        logger.warning("kernel_source.repo_path not configured, kernel code browsing disabled")
 
     logger.info("API server initialized successfully")
     yield
@@ -1356,3 +1381,105 @@ async def manual_stats():
         by_manual_type=stats["by_manual_type"],
         by_content_type=stats["by_content_type"],
     )
+
+
+# ============================================================
+# 内核源码浏览 API 路由 (PLAN-10000)
+# ============================================================
+
+@app.get("/api/kernel/versions")
+async def kernel_versions(
+    filter: str = Query("release", description="版本过滤: release(正式版) 或 all(含rc)"),
+):
+    """获取所有可用的内核版本列表。
+
+    返回按版本号降序排列的版本信息列表，支持过滤 rc 版本。
+    """
+    if not _kernel_source:
+        raise HTTPException(
+            status_code=503,
+            detail="Kernel source not initialized. Please configure kernel_source.repo_path in settings.yaml",
+        )
+
+    include_rc = (filter == "all")
+    versions = await _kernel_source.list_versions(include_rc=include_rc)
+    return {
+        "versions": [
+            {
+                "tag": v.tag,
+                "major": v.major,
+                "minor": v.minor,
+                "patch": v.patch,
+                "rc": v.rc,
+                "is_release": v.is_release,
+            }
+            for v in versions
+        ],
+        "total": len(versions),
+    }
+
+
+@app.get("/api/kernel/tree/{version}/{path:path}")
+async def kernel_tree(version: str, path: str = ""):
+    """获取指定版本、指定路径下的目录树。
+
+    Args:
+        version: 版本 tag（如 v6.1）。
+        path: 相对路径（空字符串表示根目录）。
+    """
+    if not _kernel_source:
+        raise HTTPException(status_code=503, detail="Kernel source not initialized")
+
+    try:
+        entries = await _kernel_source.list_tree(version, path)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {
+        "version": version,
+        "path": path,
+        "entries": [
+            {
+                "name": e.name,
+                "path": e.path,
+                "type": e.entry_type.value,
+                "size": e.size,
+            }
+            for e in entries
+        ],
+        "total": len(entries),
+    }
+
+
+@app.get("/api/kernel/tree/{version}")
+async def kernel_tree_root(version: str):
+    """获取指定版本根目录树（无 path 参数时的路由）。"""
+    return await kernel_tree(version, "")
+
+
+@app.get("/api/kernel/file/{version}/{path:path}")
+async def kernel_file(version: str, path: str):
+    """获取指定版本、指定文件的内容。
+
+    Args:
+        version: 版本 tag。
+        path: 文件相对路径。
+    """
+    if not _kernel_source:
+        raise HTTPException(status_code=503, detail="Kernel source not initialized")
+
+    try:
+        file_content = await _kernel_source.get_file(version, path)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {
+        "version": file_content.version,
+        "path": file_content.path,
+        "content": file_content.content,
+        "line_count": file_content.line_count,
+        "size": file_content.size,
+        "truncated": file_content.truncated,
+    }

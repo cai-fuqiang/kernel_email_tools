@@ -147,3 +147,72 @@ export interface AnnotationListResponse {
   page: number;
   page_size: number;
 }
+
+// ============================================================
+// 内核源码浏览相关类型 (PLAN-10000)
+// ============================================================
+
+export interface KernelVersionInfo {
+  tag: string;
+  major: number;
+  minor: number;
+  patch: number;
+  rc: number;
+  is_release: boolean;
+}
+
+export interface KernelVersionsResponse {
+  versions: KernelVersionInfo[];
+  total: number;
+}
+
+export interface KernelTreeEntry {
+  name: string;
+  path: string;
+  type: 'dir' | 'file' | 'symlink';
+  size: number;
+}
+
+export interface KernelTreeResponse {
+  version: string;
+  path: string;
+  entries: KernelTreeEntry[];
+  total: number;
+}
+
+export interface KernelFileResponse {
+  version: string;
+  path: string;
+  content: string;
+  line_count: number;
+  size: number;
+  truncated: boolean;
+}
+
+export interface CodeAnnotation {
+  annotation_id: string;
+  version: string;
+  file_path: string;
+  start_line: number;
+  end_line: number;
+  body: string;
+  author: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CodeAnnotationCreate {
+  version: string;
+  file_path: string;
+  start_line: number;
+  end_line: number;
+  body: string;
+  author?: string;
+}
+
+export interface CodeAnnotationListResponse {
+  annotations: CodeAnnotation[];
+  total: number;
+  page: number;
+  page_size: number;
+}
