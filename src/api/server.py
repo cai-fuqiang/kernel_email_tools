@@ -200,15 +200,19 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("kernel_source.repo_path not configured, kernel code browsing disabled")
 
-    # ========== 代码注释存储初始化（Neon 云数据库）==========
+    # ========== 代码注释存储初始化（本地或云数据库）==========
     code_annot_cfg = storage_cfg.get("code_annotation", {})
     code_annot_url = code_annot_cfg.get("database_url", "")
     if code_annot_url:
+        # 本地数据库禁用 SSL，云端（如 Neon）启用 SSL
+        is_local = "localhost" in code_annot_url or "127.0.0.1" in code_annot_url
+        ssl_mode = not is_local
+        connect_args = {"ssl": ssl_mode} if ssl_mode else {}
         _code_annotation_engine = create_async_engine(
             code_annot_url,
             pool_size=code_annot_cfg.get("pool_size", 2),
             echo=False,
-            connect_args={"ssl": True},
+            connect_args=connect_args,
         )
         code_annot_session_factory = async_sessionmaker(
             _code_annotation_engine, class_=AsyncSession, expire_on_commit=False
@@ -217,7 +221,8 @@ async def lifespan(app: FastAPI):
             session_factory=code_annot_session_factory,
             default_author=annotations_cfg.get("default_author", "me"),
         )
-        logger.info("Code annotation store initialized (Neon cloud)")
+        storage_type = "local" if is_local else "Neon cloud"
+        logger.info(f"Code annotation store initialized ({storage_type})")
     else:
         logger.warning("storage.code_annotation.database_url not configured, code annotation disabled")
         _code_annotation_store = None

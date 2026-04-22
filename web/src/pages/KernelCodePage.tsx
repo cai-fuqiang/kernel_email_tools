@@ -256,6 +256,9 @@ function CodeView({
             truncated
           </span>
         )}
+        <span className="ml-auto text-[10px] text-gray-400">
+          Click line number to add annotation
+        </span>
       </div>
       {/* 代码区 */}
       <pre ref={codeRef} className="text-xs font-mono leading-5 select-text">
@@ -278,9 +281,16 @@ function CodeView({
                   }`}
                 >
                   <td
-                    className="w-12 text-right pr-3 text-gray-400 select-none cursor-pointer border-r border-gray-200 sticky left-0 bg-inherit"
+                    className={`w-12 text-right pr-3 select-none cursor-pointer border-r border-gray-200 sticky left-0 bg-inherit transition-colors ${
+                      isHighlighted
+                        ? 'text-indigo-600 bg-yellow-50 font-bold'
+                        : isAnnotated
+                        ? 'text-blue-600 bg-blue-50'
+                        : 'text-gray-400 hover:text-indigo-400 hover:bg-gray-100'
+                    }`}
                     onMouseDown={() => handleMouseDown(lineNum)}
                     onMouseUp={() => handleMouseUp(lineNum)}
+                    title={isAnnotated ? 'Click to view/edit annotation' : 'Click to add annotation'}
                   >
                     {lineNum}
                     {isAnnotated && (
