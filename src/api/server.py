@@ -119,9 +119,9 @@ async def lifespan(app: FastAPI):
             proxy_http=proxy_http,
             proxy_https=proxy_https,
         )
-        # 初始化翻译缓存
+        # 初始化翻译缓存（传入 session_factory，每次操作创建新 session）
         _translation_cache = TranslationCacheStore(
-            session=await _storage.session_factory().__aenter__()
+            session_factory=_storage.session_factory
         )
         logger.info(f"Translation service initialized (proxy: {proxy_enabled})")
     else:
@@ -823,8 +823,9 @@ async def get_translated_threads():
 
     通过 translation_cache.message_id 关联 emails 表，
     按 thread_id 分组，返回每个线程的翻译统计和标签信息。
+    每次请求创建新 session，避免长生命周期 session 过期问题。
     """
-    if not _translation_cache or not _storage:
+    if not _storage:
         return TranslatedThreadsResponse(threads=[], total=0)
 
     try:
@@ -832,88 +833,87 @@ async def get_translated_threads():
         from src.storage.models import EmailORM
         from sqlalchemy import func as sa_func
 
-        session = _translation_cache.session
-
-        # 查询有缓存的 message_id 及其缓存数量和最近翻译时间
-        cache_stmt = (
-            select(
-                TranslationCache.message_id,
-                sa_func.count().label("cached_count"),
-                sa_func.max(TranslationCache.created_at).label("last_translated"),
+        async with _storage.session_factory() as session:
+            # 查询有缓存的 message_id 及其缓存数量和最近翻译时间
+            cache_stmt = (
+                select(
+                    TranslationCache.message_id,
+                    sa_func.count().label("cached_count"),
+                    sa_func.max(TranslationCache.created_at).label("last_translated"),
+                )
+                .where(TranslationCache.message_id.isnot(None))
+                .group_by(TranslationCache.message_id)
             )
-            .where(TranslationCache.message_id.isnot(None))
-            .group_by(TranslationCache.message_id)
-        )
-        cache_result = await session.execute(cache_stmt)
-        cache_rows = cache_result.all()
+            cache_result = await session.execute(cache_stmt)
+            cache_rows = cache_result.all()
 
-        if not cache_rows:
-            return TranslatedThreadsResponse(threads=[], total=0)
+            if not cache_rows:
+                return TranslatedThreadsResponse(threads=[], total=0)
 
-        # 构建 message_id -> cache_info 映射
-        cache_map = {
-            row.message_id: {
-                "cached_count": row.cached_count,
-                "last_translated": row.last_translated,
-            }
-            for row in cache_rows
-        }
-
-        # 查询这些邮件的详细信息
-        email_stmt = select(EmailORM).where(
-            EmailORM.message_id.in_(list(cache_map.keys()))
-        )
-        email_result = await session.execute(email_stmt)
-        emails = email_result.scalars().all()
-
-        # 按 thread_id 分组
-        thread_groups: dict[str, dict] = {}
-        for email in emails:
-            tid = email.thread_id or email.message_id
-            if tid not in thread_groups:
-                thread_groups[tid] = {
-                    "thread_id": tid,
-                    "subject": email.subject,
-                    "sender": email.sender,
-                    "date": email.date.isoformat() if email.date else None,
-                    "list_name": email.list_name,
-                    "email_count": 0,
-                    "cached_paragraphs": 0,
-                    "tags": set(),
-                    "last_translated_at": None,
+            # 构建 message_id -> cache_info 映射
+            cache_map = {
+                row.message_id: {
+                    "cached_count": row.cached_count,
+                    "last_translated": row.last_translated,
                 }
-            group = thread_groups[tid]
-            group["email_count"] += 1
-            cache_info = cache_map.get(email.message_id, {})
-            group["cached_paragraphs"] += cache_info.get("cached_count", 0)
-            # 合并标签
-            if email.tags:
-                group["tags"].update(email.tags)
-            # 更新最近翻译时间
-            lt = cache_info.get("last_translated")
-            if lt:
-                lt_str = lt.isoformat() if hasattr(lt, "isoformat") else str(lt)
-                if not group["last_translated_at"] or lt_str > group["last_translated_at"]:
-                    group["last_translated_at"] = lt_str
+                for row in cache_rows
+            }
 
-        # 转为列表并排序
-        threads = [
-            TranslatedThreadInfo(
-                thread_id=g["thread_id"],
-                subject=g["subject"],
-                sender=g["sender"],
-                date=g["date"],
-                list_name=g["list_name"],
-                email_count=g["email_count"],
-                cached_paragraphs=g["cached_paragraphs"],
-                tags=sorted(g["tags"]),
-                last_translated_at=g["last_translated_at"],
+            # 查询这些邮件的详细信息
+            email_stmt = select(EmailORM).where(
+                EmailORM.message_id.in_(list(cache_map.keys()))
             )
-            for g in thread_groups.values()
-        ]
-        threads.sort(key=lambda t: t.last_translated_at or "", reverse=True)
+            email_result = await session.execute(email_stmt)
+            emails = email_result.scalars().all()
 
-        return TranslatedThreadsResponse(threads=threads, total=len(threads))
+            # 按 thread_id 分组
+            thread_groups: dict[str, dict] = {}
+            for email in emails:
+                tid = email.thread_id or email.message_id
+                if tid not in thread_groups:
+                    thread_groups[tid] = {
+                        "thread_id": tid,
+                        "subject": email.subject,
+                        "sender": email.sender,
+                        "date": email.date.isoformat() if email.date else None,
+                        "list_name": email.list_name,
+                        "email_count": 0,
+                        "cached_paragraphs": 0,
+                        "tags": set(),
+                        "last_translated_at": None,
+                    }
+                group = thread_groups[tid]
+                group["email_count"] += 1
+                cache_info = cache_map.get(email.message_id, {})
+                group["cached_paragraphs"] += cache_info.get("cached_count", 0)
+                # 合并标签
+                if email.tags:
+                    group["tags"].update(email.tags)
+                # 更新最近翻译时间
+                lt = cache_info.get("last_translated")
+                if lt:
+                    lt_str = lt.isoformat() if hasattr(lt, "isoformat") else str(lt)
+                    if not group["last_translated_at"] or lt_str > group["last_translated_at"]:
+                        group["last_translated_at"] = lt_str
+
+            # 转为列表并排序
+            threads = [
+                TranslatedThreadInfo(
+                    thread_id=g["thread_id"],
+                    subject=g["subject"],
+                    sender=g["sender"],
+                    date=g["date"],
+                    list_name=g["list_name"],
+                    email_count=g["email_count"],
+                    cached_paragraphs=g["cached_paragraphs"],
+                    tags=sorted(g["tags"]),
+                    last_translated_at=g["last_translated_at"],
+                )
+                for g in thread_groups.values()
+            ]
+            threads.sort(key=lambda t: t.last_translated_at or "", reverse=True)
+
+            return TranslatedThreadsResponse(threads=threads, total=len(threads))
 
     except Exception as e:
         logger.error(f"Failed to get translated threads: {e}")

@@ -44,18 +44,19 @@ class TranslationCacheStore:
     """翻译缓存存储器。
     
     提供翻译结果的缓存和查询功能，避免重复翻译相同内容。
+    使用 session_factory 每次操作创建新 session，避免长生命周期 session 过期。
     """
     
     # 单条翻译文本的最大长度限制
     MAX_TEXT_LENGTH = 5000
     
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session_factory):
         """初始化缓存存储器。
         
         Args:
-            session: SQLAlchemy 异步会话
+            session_factory: SQLAlchemy 异步会话工厂（async context manager）
         """
-        self.session = session
+        self.session_factory = session_factory
     
     async def get(
         self,
@@ -75,18 +76,19 @@ class TranslationCacheStore:
         """
         source_hash = TranslationCache.compute_hash(text)
         
-        stmt = select(TranslationCache).where(
-            TranslationCache.source_hash == source_hash,
-            TranslationCache.source_lang == source_lang,
-            TranslationCache.target_lang == target_lang,
-        )
-        result = await self.session.execute(stmt)
-        cached = result.scalar_one_or_none()
+        async with self.session_factory() as session:
+            stmt = select(TranslationCache).where(
+                TranslationCache.source_hash == source_hash,
+                TranslationCache.source_lang == source_lang,
+                TranslationCache.target_lang == target_lang,
+            )
+            result = await session.execute(stmt)
+            cached = result.scalar_one_or_none()
         
-        if cached:
-            logger.debug(f"Translation cache hit for hash: {source_hash[:16]}...")
-            return cached.translated_text
-        return None
+            if cached:
+                logger.debug(f"Translation cache hit for hash: {source_hash[:16]}...")
+                return cached.translated_text
+            return None
     
     async def set(
         self,
@@ -103,41 +105,43 @@ class TranslationCacheStore:
             translated_text: 翻译后的文本
             source_lang: 源语言
             target_lang: 目标语言
+            message_id: 关联的邮件 Message-ID（可选）
             
         Returns:
             是否成功存储（可能因重复而跳过）
         """
-        # 检查是否已存在
         source_hash = TranslationCache.compute_hash(text)
-        stmt = select(TranslationCache).where(
-            TranslationCache.source_hash == source_hash,
-            TranslationCache.source_lang == source_lang,
-            TranslationCache.target_lang == target_lang,
-        )
-        result = await self.session.execute(stmt)
-        existing = result.scalar_one_or_none()
-        if existing is not None:
-            # 如果已有缓存但没有 message_id，补充关联
-            if message_id and not existing.message_id:
-                existing.message_id = message_id
-                await self.session.commit()
-                logger.debug(f"Updated message_id for cached translation: {source_hash[:16]}...")
-            return False
         
-        source_hash = TranslationCache.compute_hash(text)
-        cache_entry = TranslationCache(
-            source_hash=source_hash,
-            source_text=text[: self.MAX_TEXT_LENGTH],
-            translated_text=translated_text,
-            source_lang=source_lang,
-            target_lang=target_lang,
-            message_id=message_id,
-        )
+        async with self.session_factory() as session:
+            # 检查是否已存在
+            stmt = select(TranslationCache).where(
+                TranslationCache.source_hash == source_hash,
+                TranslationCache.source_lang == source_lang,
+                TranslationCache.target_lang == target_lang,
+            )
+            result = await session.execute(stmt)
+            existing = result.scalar_one_or_none()
+            if existing is not None:
+                # 如果已有缓存但没有 message_id，补充关联
+                if message_id and not existing.message_id:
+                    existing.message_id = message_id
+                    await session.commit()
+                    logger.debug(f"Updated message_id for cached translation: {source_hash[:16]}...")
+                return False
         
-        self.session.add(cache_entry)
-        await self.session.commit()
-        logger.debug(f"Translation cached with hash: {source_hash[:16]}...")
-        return True
+            cache_entry = TranslationCache(
+                source_hash=source_hash,
+                source_text=text[: self.MAX_TEXT_LENGTH],
+                translated_text=translated_text,
+                source_lang=source_lang,
+                target_lang=target_lang,
+                message_id=message_id,
+            )
+        
+            session.add(cache_entry)
+            await session.commit()
+            logger.debug(f"Translation cached with hash: {source_hash[:16]}...")
+            return True
     
     async def get_batch(
         self,
@@ -157,13 +161,14 @@ class TranslationCacheStore:
         """
         hashes = [TranslationCache.compute_hash(t) for t in texts]
         
-        stmt = select(TranslationCache).where(
-            TranslationCache.source_hash.in_(hashes),
-            TranslationCache.source_lang == source_lang,
-            TranslationCache.target_lang == target_lang,
-        )
-        result = await self.session.execute(stmt)
-        cached_entries = result.scalars().all()
+        async with self.session_factory() as session:
+            stmt = select(TranslationCache).where(
+                TranslationCache.source_hash.in_(hashes),
+                TranslationCache.source_lang == source_lang,
+                TranslationCache.target_lang == target_lang,
+            )
+            result = await session.execute(stmt)
+            cached_entries = result.scalars().all()
         
         # 构建缓存字典
         cache_map = {entry.source_text: entry.translated_text for entry in cached_entries}
@@ -214,11 +219,12 @@ class TranslationCacheStore:
         """
         from sqlalchemy import delete
 
-        stmt = delete(TranslationCache).where(
-            TranslationCache.source_hash == text_hash
-        )
-        result = await self.session.execute(stmt)
-        await self.session.commit()
+        async with self.session_factory() as session:
+            stmt = delete(TranslationCache).where(
+                TranslationCache.source_hash == text_hash
+            )
+            result = await session.execute(stmt)
+            await session.commit()
 
         deleted = result.rowcount > 0
         if deleted:
@@ -233,15 +239,16 @@ class TranslationCacheStore:
         """
         from sqlalchemy import delete, func
 
-        # 先统计数量
-        count_stmt = select(func.count()).select_from(TranslationCache)
-        result = await self.session.execute(count_stmt)
-        total = result.scalar() or 0
+        async with self.session_factory() as session:
+            # 先统计数量
+            count_stmt = select(func.count()).select_from(TranslationCache)
+            result = await session.execute(count_stmt)
+            total = result.scalar() or 0
 
-        # 再删除所有
-        stmt = delete(TranslationCache)
-        await self.session.execute(stmt)
-        await self.session.commit()
+            # 再删除所有
+            stmt = delete(TranslationCache)
+            await session.execute(stmt)
+            await session.commit()
 
         logger.info(f"Cleared all translation cache: {total} entries deleted")
         return total
@@ -266,31 +273,32 @@ class TranslationCacheStore:
         """
         source_hash = TranslationCache.compute_hash(original_text)
 
-        # 检查是否已存在，存在则更新
-        stmt = select(TranslationCache).where(
-            TranslationCache.source_hash == source_hash
-        )
-        result = await self.session.execute(stmt)
-        existing = result.scalar_one_or_none()
-
-        if existing:
-            existing.translated_text = translated_text
-            existing.source_lang = source_lang
-            existing.target_lang = target_lang
-            existing.created_at = datetime.utcnow()
-            logger.info(f"Updated manual translation for hash: {source_hash[:16]}...")
-        else:
-            cache_entry = TranslationCache(
-                source_hash=source_hash,
-                source_text=original_text[: self.MAX_TEXT_LENGTH],
-                translated_text=translated_text,
-                source_lang=source_lang,
-                target_lang=target_lang,
+        async with self.session_factory() as session:
+            # 检查是否已存在，存在则更新
+            stmt = select(TranslationCache).where(
+                TranslationCache.source_hash == source_hash
             )
-            self.session.add(cache_entry)
-            logger.info(f"Saved manual translation for hash: {source_hash[:16]}...")
+            result = await session.execute(stmt)
+            existing = result.scalar_one_or_none()
 
-        await self.session.commit()
+            if existing:
+                existing.translated_text = translated_text
+                existing.source_lang = source_lang
+                existing.target_lang = target_lang
+                existing.created_at = datetime.utcnow()
+                logger.info(f"Updated manual translation for hash: {source_hash[:16]}...")
+            else:
+                cache_entry = TranslationCache(
+                    source_hash=source_hash,
+                    source_text=original_text[: self.MAX_TEXT_LENGTH],
+                    translated_text=translated_text,
+                    source_lang=source_lang,
+                    target_lang=target_lang,
+                )
+                session.add(cache_entry)
+                logger.info(f"Saved manual translation for hash: {source_hash[:16]}...")
+
+            await session.commit()
         return source_hash
 
     async def get_cached_message_ids(self) -> list[str]:
@@ -299,13 +307,14 @@ class TranslationCacheStore:
         Returns:
             去重后的 message_id 列表
         """
-        stmt = (
-            select(TranslationCache.message_id)
-            .where(TranslationCache.message_id.isnot(None))
-            .distinct()
-        )
-        result = await self.session.execute(stmt)
-        return [row[0] for row in result.all()]
+        async with self.session_factory() as session:
+            stmt = (
+                select(TranslationCache.message_id)
+                .where(TranslationCache.message_id.isnot(None))
+                .distinct()
+            )
+            result = await session.execute(stmt)
+            return [row[0] for row in result.all()]
 
     async def count_by_message_id(self, message_id: str) -> int:
         """统计指定邮件的翻译缓存数量。
@@ -316,11 +325,12 @@ class TranslationCacheStore:
         Returns:
             缓存条目数
         """
-        stmt = select(func.count()).select_from(TranslationCache).where(
-            TranslationCache.message_id == message_id
-        )
-        result = await self.session.execute(stmt)
-        return result.scalar() or 0
+        async with self.session_factory() as session:
+            stmt = select(func.count()).select_from(TranslationCache).where(
+                TranslationCache.message_id == message_id
+            )
+            result = await session.execute(stmt)
+            return result.scalar() or 0
 
 
 async def create_translation_cache_table(engine) -> None:
