@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   getKernelVersions,
   getKernelTree,
@@ -39,7 +41,6 @@ function VersionSelector({
     return true;
   });
 
-  // 分组：Latest (v7+v6), LTS (v5.x, v4.x), History (v3-, v2-, v1-, v0-)
   const latest = filtered.filter((v) => v.major >= 6);
   const lts = filtered.filter((v) => v.major >= 4 && v.major < 6);
   const history = filtered.filter((v) => v.major < 4);
@@ -195,7 +196,6 @@ function CodeView({
   const codeRef = useRef<HTMLPreElement>(null);
   const [selStart, setSelStart] = useState<number | null>(null);
 
-  // 滚动到高亮行
   useEffect(() => {
     if (highlightLine && codeRef.current) {
       const lineEl = codeRef.current.querySelector(`[data-line="${highlightLine}"]`);
@@ -216,7 +216,6 @@ function CodeView({
     );
   }
 
-  // 构建注释行号集合
   const annotatedLines = new Set<number>();
   annotations.forEach((a) => {
     for (let i = a.start_line; i <= a.end_line; i++) {
@@ -245,7 +244,6 @@ function CodeView({
 
   return (
     <div className="flex-1 overflow-auto bg-white">
-      {/* 文件头 */}
       <div className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-4 py-2 flex items-center gap-2">
         <span className="text-xs font-mono text-gray-600">{file.path}</span>
         <span className="text-[10px] text-gray-400">
@@ -260,7 +258,6 @@ function CodeView({
           Click line number to add annotation
         </span>
       </div>
-      {/* 代码区 */}
       <pre ref={codeRef} className="text-xs font-mono leading-5 select-text">
         <table className="w-full border-collapse">
           <tbody>
@@ -309,6 +306,74 @@ function CodeView({
 }
 
 // ============================================================
+// 子组件：弹窗编辑标注
+// ============================================================
+function AnnotationModal({
+  isOpen,
+  onClose,
+  mode,
+  initialBody,
+  lineInfo,
+  onSave,
+  saving,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  mode: 'create' | 'edit';
+  initialBody: string;
+  lineInfo: string;
+  onSave: (body: string) => void;
+  saving: boolean;
+}) {
+  const [body, setBody] = useState(initialBody);
+
+  useEffect(() => {
+    setBody(initialBody);
+  }, [initialBody]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-700">
+            {mode === 'create' ? 'Add Annotation' : 'Edit Annotation'}
+          </h3>
+          <span className="text-xs text-gray-400">{lineInfo}</span>
+        </div>
+        <div className="flex-1 overflow-hidden flex flex-col p-4 gap-3">
+          <div className="flex-1 min-h-0">
+            <textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder="Write annotation (Markdown supported)..."
+              className="w-full h-full min-h-[200px] px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono"
+              autoFocus
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => onSave(body)}
+              disabled={saving || !body.trim()}
+              className="px-4 py-2 text-sm font-medium text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 disabled:opacity-50"
+            >
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // 子组件：注释面板
 // ============================================================
 function AnnotationPanel({
@@ -328,51 +393,42 @@ function AnnotationPanel({
   onAnnotationCreated: () => void;
   onAnnotationDeleted: () => void;
 }) {
-  const [newBody, setNewBody] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editBody, setEditBody] = useState('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingAnnotation, setEditingAnnotation] = useState<CodeAnnotation | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const relevantAnnotations = annotations.filter((a) => {
-    if (selectedLine) {
-      return a.start_line <= selectedLine && a.end_line >= selectedLine;
-    }
-    if (selectedRange) {
-      return a.start_line <= selectedRange[1] && a.end_line >= selectedRange[0];
-    }
-    return true;
-  });
-
-  const handleCreate = async () => {
-    if (!newBody.trim()) return;
-    const start = selectedRange ? selectedRange[0] : selectedLine || 1;
-    const end = selectedRange ? selectedRange[1] : selectedLine || 1;
-    setCreating(true);
+  const handleCreate = async (body: string) => {
+    setSaving(true);
     try {
+      const start = selectedRange ? selectedRange[0] : selectedLine || 1;
+      const end = selectedRange ? selectedRange[1] : selectedLine || 1;
       await createCodeAnnotation({
         version,
         file_path: filePath,
         start_line: start,
         end_line: end,
-        body: newBody.trim(),
+        body: body.trim(),
       });
-      setNewBody('');
+      setShowCreateModal(false);
       onAnnotationCreated();
     } catch (e: unknown) {
       alert(`Failed to create annotation: ${e instanceof Error ? e.message : e}`);
     } finally {
-      setCreating(false);
+      setSaving(false);
     }
   };
 
-  const handleUpdate = async (id: string) => {
-    if (!editBody.trim()) return;
+  const handleUpdate = async (body: string) => {
+    if (!editingAnnotation) return;
+    setSaving(true);
     try {
-      await updateCodeAnnotation(id, editBody.trim());
-      setEditingId(null);
+      await updateCodeAnnotation(editingAnnotation.annotation_id, body.trim());
+      setEditingAnnotation(null);
       onAnnotationCreated();
     } catch (e: unknown) {
       alert(`Failed to update: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -386,109 +442,109 @@ function AnnotationPanel({
     }
   };
 
+  const lineInfo = selectedRange
+    ? `Lines ${selectedRange[0]}-${selectedRange[1]}`
+    : selectedLine
+    ? `Line ${selectedLine}`
+    : '';
+
+  const relevantAnnotations = annotations.filter((a) => {
+    if (selectedLine) {
+      return a.start_line <= selectedLine && a.end_line >= selectedLine;
+    }
+    if (selectedRange) {
+      return a.start_line <= selectedRange[1] && a.end_line >= selectedRange[0];
+    }
+    return true;
+  });
+
   return (
-    <div className="w-80 border-l border-gray-200 bg-gray-50 flex flex-col overflow-hidden">
-      <div className="p-3 border-b border-gray-200 bg-white">
-        <h3 className="text-sm font-semibold text-gray-700">Annotations</h3>
-        {selectedLine && (
-          <p className="text-[10px] text-gray-400 mt-0.5">Line {selectedLine}</p>
-        )}
-        {selectedRange && (
-          <p className="text-[10px] text-gray-400 mt-0.5">
-            Lines {selectedRange[0]}-{selectedRange[1]}
-          </p>
-        )}
-      </div>
-
-      {/* 新建注释 */}
-      {(selectedLine || selectedRange) && (
-        <div className="p-3 border-b border-gray-200 bg-white">
-          <textarea
-            value={newBody}
-            onChange={(e) => setNewBody(e.target.value)}
-            placeholder="Write annotation (Markdown)..."
-            className="w-full h-20 px-2 py-1.5 text-xs border border-gray-300 rounded resize-none focus:outline-none focus:ring-1 focus:ring-indigo-400"
-          />
-          <button
-            onClick={handleCreate}
-            disabled={creating || !newBody.trim()}
-            className="mt-1.5 w-full px-3 py-1.5 text-xs font-medium text-white bg-indigo-500 rounded hover:bg-indigo-600 disabled:opacity-50"
-          >
-            {creating ? 'Saving...' : 'Add Annotation'}
-          </button>
-        </div>
-      )}
-
-      {/* 注释列表 */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">
-        {relevantAnnotations.length === 0 ? (
-          <p className="text-xs text-gray-400 text-center py-4">
-            {selectedLine || selectedRange
-              ? 'No annotations for this selection'
-              : 'Click a line number to add annotation'}
-          </p>
-        ) : (
-          relevantAnnotations.map((a) => (
-            <div
-              key={a.annotation_id}
-              className="bg-white border border-gray-200 rounded-lg p-2.5 shadow-sm"
+    <>
+      <div className="w-80 border-l border-gray-200 bg-gray-50 flex flex-col overflow-hidden">
+        <div className="p-3 border-b border-gray-200 bg-white flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700">Annotations</h3>
+            {lineInfo && <p className="text-[10px] text-gray-400 mt-0.5">{lineInfo}</p>}
+          </div>
+          {(selectedLine || selectedRange) && (
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 flex items-center gap-1"
             >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] text-indigo-500 font-medium">
-                  L{a.start_line}
-                  {a.end_line !== a.start_line && `-${a.end_line}`}
-                </span>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => {
-                      setEditingId(a.annotation_id);
-                      setEditBody(a.body);
-                    }}
-                    className="text-[10px] text-gray-400 hover:text-blue-500"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(a.annotation_id)}
-                    className="text-[10px] text-gray-400 hover:text-red-500"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-              {editingId === a.annotation_id ? (
-                <div>
-                  <textarea
-                    value={editBody}
-                    onChange={(e) => setEditBody(e.target.value)}
-                    className="w-full h-16 px-2 py-1 text-xs border border-gray-300 rounded resize-none"
-                  />
-                  <div className="flex gap-1 mt-1">
-                    <button
-                      onClick={() => handleUpdate(a.annotation_id)}
-                      className="text-[10px] px-2 py-0.5 bg-indigo-500 text-white rounded"
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={() => setEditingId(null)}
-                      className="text-[10px] px-2 py-0.5 bg-gray-200 text-gray-600 rounded"
-                    >
-                      Cancel
-                    </button>
+              <span>+</span> Add
+            </button>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-2">
+          {relevantAnnotations.length === 0 ? (
+            <p className="text-xs text-gray-400 text-center py-8">
+              {selectedLine || selectedRange
+                ? 'No annotations for this selection'
+                : 'Click a line number to add annotation'}
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {relevantAnnotations.map((a) => (
+                <div
+                  key={a.annotation_id}
+                  className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm"
+                >
+                  <div className="px-3 py-2 bg-gray-50 flex items-center justify-between border-b border-gray-200">
+                    <span className="text-xs text-indigo-500 font-medium">
+                      L{a.start_line}
+                      {a.end_line !== a.start_line && `-${a.end_line}`}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setEditingAnnotation(a)}
+                        className="text-[10px] text-gray-400 hover:text-blue-500"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(a.annotation_id)}
+                        className="text-[10px] text-gray-400 hover:text-red-500"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                  <div className="px-3 py-2 max-h-40 overflow-hidden">
+                    <div className="prose prose-xs prose-slate max-w-none line-clamp-4">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{a.body}</ReactMarkdown>
+                    </div>
+                  </div>
+                  <div className="px-3 py-1.5 text-[10px] text-gray-400 bg-gray-50 border-t border-gray-100">
+                    {a.author} · {new Date(a.created_at).toLocaleDateString()}
                   </div>
                 </div>
-              ) : (
-                <p className="text-xs text-gray-700 whitespace-pre-wrap">{a.body}</p>
-              )}
-              <div className="mt-1 text-[10px] text-gray-400">
-                {a.author} · {new Date(a.created_at).toLocaleDateString()}
-              </div>
+              ))}
             </div>
-          ))
-        )}
+          )}
+        </div>
       </div>
-    </div>
+
+      <AnnotationModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        mode="create"
+        initialBody=""
+        lineInfo={lineInfo}
+        onSave={handleCreate}
+        saving={saving}
+      />
+
+      <AnnotationModal
+        isOpen={!!editingAnnotation}
+        onClose={() => setEditingAnnotation(null)}
+        mode="edit"
+        initialBody={editingAnnotation?.body || ''}
+        lineInfo={editingAnnotation ? `L${editingAnnotation.start_line}${editingAnnotation.end_line !== editingAnnotation.start_line ? `-${editingAnnotation.end_line}` : ''}` : ''}
+        onSave={handleUpdate}
+        saving={saving}
+      />
+    </>
   );
 }
 
@@ -498,12 +554,10 @@ function AnnotationPanel({
 export default function KernelCodePage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // URL 参数
   const urlVersion = searchParams.get('v') || '';
   const urlPath = searchParams.get('path') || '';
   const urlLine = parseInt(searchParams.get('line') || '0', 10) || null;
 
-  // 状态
   const [versions, setVersions] = useState<KernelVersionInfo[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(true);
   const [selectedVersion, setSelectedVersion] = useState(urlVersion);
@@ -517,7 +571,6 @@ export default function KernelCodePage() {
   const [showAnnotations, setShowAnnotations] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 加载版本列表
   useEffect(() => {
     setVersionsLoading(true);
     getKernelVersions('all')
@@ -531,7 +584,6 @@ export default function KernelCodePage() {
       .finally(() => setVersionsLoading(false));
   }, []);
 
-  // 版本切换时加载根目录
   useEffect(() => {
     if (!selectedVersion) return;
     setError(null);
@@ -548,14 +600,12 @@ export default function KernelCodePage() {
       .catch((e) => setError(e.message));
   }, [selectedVersion]);
 
-  // 加载 URL 指定的文件
   useEffect(() => {
     if (urlPath && selectedVersion) {
       loadFile(urlPath);
     }
   }, [selectedVersion]);
 
-  // 更新 URL
   const updateUrl = useCallback(
     (v: string, path: string, line?: number) => {
       const params: Record<string, string> = {};
@@ -567,7 +617,6 @@ export default function KernelCodePage() {
     [setSearchParams]
   );
 
-  // 目录展开/折叠
   const toggleDir = useCallback(
     async (dirPath: string) => {
       const updateNodes = (nodes: TreeNode[]): TreeNode[] =>
@@ -576,11 +625,8 @@ export default function KernelCodePage() {
             if (n.expanded) {
               return { ...n, expanded: false };
             }
-            // 需要加载子目录
             if (!n.children) {
-              // 标记 loading
               const loading = { ...n, expanded: true, loading: true, children: [] };
-              // 异步加载
               getKernelTree(selectedVersion, dirPath)
                 .then((res) => {
                   const children: TreeNode[] = res.entries.map((e) => ({
@@ -607,7 +653,6 @@ export default function KernelCodePage() {
     [selectedVersion]
   );
 
-  // 递归更新子节点
   const updateChildrenInTree = (
     nodes: TreeNode[],
     targetPath: string,
@@ -623,7 +668,6 @@ export default function KernelCodePage() {
       return n;
     });
 
-  // 加载文件
   const loadFile = useCallback(
     async (path: string) => {
       if (!selectedVersion) return;
@@ -651,7 +695,6 @@ export default function KernelCodePage() {
     [selectedVersion, updateUrl]
   );
 
-  // 版本选择
   const handleVersionSelect = (tag: string) => {
     setSelectedVersion(tag);
     setCurrentFile(null);
@@ -660,7 +703,6 @@ export default function KernelCodePage() {
     updateUrl(tag, '');
   };
 
-  // 行点击
   const handleLineClick = (line: number) => {
     setSelectedLine(line);
     setSelectedRange(null);
@@ -668,14 +710,12 @@ export default function KernelCodePage() {
     updateUrl(selectedVersion, currentPath, line);
   };
 
-  // 行范围选择
   const handleLineRangeSelect = (start: number, end: number) => {
     setSelectedRange([start, end]);
     setSelectedLine(null);
     setShowAnnotations(true);
   };
 
-  // 注释刷新
   const refreshAnnotations = useCallback(async () => {
     if (!selectedVersion || !currentPath) return;
     try {
@@ -688,7 +728,6 @@ export default function KernelCodePage() {
 
   return (
     <div className="h-screen flex flex-col">
-      {/* 顶部面包屑 */}
       <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-2 text-xs shrink-0">
         <span className="font-semibold text-gray-700">Kernel Code</span>
         {selectedVersion && (
@@ -725,9 +764,7 @@ export default function KernelCodePage() {
         </div>
       )}
 
-      {/* 三栏布局 */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 左栏：版本 + 文件树 */}
         <div className="w-64 border-r border-gray-200 bg-white flex flex-col overflow-hidden shrink-0">
           <div className="p-3 border-b border-gray-200">
             <VersionSelector
@@ -751,7 +788,6 @@ export default function KernelCodePage() {
           </div>
         </div>
 
-        {/* 中栏：代码视图 */}
         {fileLoading ? (
           <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
             Loading file...
@@ -766,7 +802,6 @@ export default function KernelCodePage() {
           />
         )}
 
-        {/* 右栏：注释面板 */}
         {showAnnotations && currentFile && (
           <AnnotationPanel
             annotations={annotations}
