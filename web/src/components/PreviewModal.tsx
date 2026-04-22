@@ -137,7 +137,7 @@ export default function PreviewModal({ isOpen, onClose, annotation }: PreviewMod
               <span className="text-xs text-gray-500">Annotation (Markdown)</span>
             </div>
             <div className="flex-1 overflow-auto p-4">
-              <div className="prose prose-sm prose-slate max-w-none">
+              <div className="markdown-content">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {ann.body}
                 </ReactMarkdown>

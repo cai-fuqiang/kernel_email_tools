@@ -37,6 +37,7 @@ alwaysApply: true
 - **样式**: Tailwind CSS 3
 - **路由**: React Router v7
 - **Markdown**: react-markdown + remark-gfm
+- **CSS**: 自定义 `.markdown-content` 类（不使用 @tailwindcss/typography，避免 sucrase 兼容问题）
 
 ---
 
@@ -74,7 +75,9 @@ kernel_email_tools/
 │   │   ├── translation_cache.py  # TranslationCache ORM + TranslationCacheStore
 │   │   ├── annotation_store.py   # AnnotationStore 批注存储（CRUD + 列表搜索 + 导入导出）
 │   │   ├── document_models.py    # DocumentChunkModel ORM
-│   │   └── document_store.py     # DocumentStorage（手册存储）
+│   │   ├── document_store.py     # DocumentStorage（手册存储）
+│   │   ├── code_annotation_models.py # CodeAnnotationORM（独立 Base）
+│   │   └── code_annotation_store.py  # CodeAnnotationStore
 │   ├── indexer/                  # 索引层
 │   │   ├── base.py              # BaseIndexer
 │   │   ├── fulltext.py          # 全文索引构建
@@ -109,12 +112,15 @@ kernel_email_tools/
 │   │   │   ├── AnnotationsPage.tsx # 批注管理页（全量列表+搜索+Markdown渲染）
 │   │   │   ├── TranslationsPage.tsx # 翻译管理页（已缓存线程+标签+自动轮询）
 │   │   │   ├── ManualSearchPage.tsx  # 手册搜索页
-│   │   │   └── ManualAskPage.tsx     # 手册问答页
+│   │   │   ├── ManualAskPage.tsx     # 手册问答页
+│   │   │   ├── KernelCodePage.tsx   # 内核源码浏览页（版本选择+文件树+行级标注）
+│   │   │   └── CodeAnnotationsPage.tsx # 代码标注列表页（搜索+过滤+预览）
 │   │   ├── components/          # 通用组件
 │   │   │   ├── ThreadDrawer.tsx # 线程抽屉（含翻译、引用行渲染、PatchDiffBlock、Markdown批注）
 │   │   │   ├── TagFilter.tsx    # 标签筛选组件
 │   │   │   ├── TagManager.tsx   # 标签管理组件
-│   │   │   └── EmailTagEditor.tsx # 邮件标签编辑器
+│   │   │   ├── EmailTagEditor.tsx # 邮件标签编辑器
+│   │   │   └── PreviewModal.tsx  # 代码标注预览弹窗
 │   │   ├── layouts/            # 布局组件
 │   │   │   └── MainLayout.tsx
 │   │   └── api/                # API 客户端
@@ -220,12 +226,33 @@ kernel_email_tools/
 | `search_vector` | TSVECTOR | 全文搜索向量 |
 | `embedding` | list | 向量嵌入 |
 
+### CodeAnnotationORM 核心字段（代码标注）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | int | 主键，自增 |
+| `annotation_id` | str(64) | 唯一标识（UUID 格式） |
+| `version` | str(32) | 内核版本 tag（如 v6.8） |
+| `file_path` | str(512) | 文件相对路径 |
+| `start_line` | int | 起始行号 |
+| `end_line` | int | 结束行号 |
+| `anchor_context` | str(128) | 上下文哈希（检测版本漂移） |
+| `body` | text | 标注正文（支持 Markdown） |
+| `author` | str(128) | 作者名称（默认 "me"） |
+| `created_at` | datetime | 创建时间 |
+| `updated_at` | datetime | 更新时间 |
+
+- 使用独立 `CodeAnnotationBase`，避免与主数据库索引冲突
+- 唯一约束：(version + file_path + start_line + end_line + body)
+- 通过 `in_reply_to` 关联原邮件或其他批注，支持嵌套回复
+
 ### 索引策略
 - **邮件表**: GIN(search_vector), GIN(tags), 复合(list_name, thread_id), 唯一(message_id)
 - **标签表**: name 唯一约束, parent_id 索引
 - **翻译缓存表**: 唯一(source_hash), 索引(message_id)
 - **批注表**: 唯一(annotation_id), 索引(thread_id), 索引(in_reply_to)
 - **手册表**: GIN(search_vector), 复合(manual_type, content_type)
+- **代码标注表**: 唯一(annotation_id), 索引(version), 复合(version, file_path), 唯一唯一约束(version, file_path, start_line, end_line, body)
 
 ---
 
@@ -363,6 +390,19 @@ kernel_email_tools/
 | `/api/manual/ask` | GET | 手册 RAG 问答 |
 | `/api/manual/stats` | GET | 手册数据库统计 |
 
+### 内核源码浏览 + 代码标注 API
+
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/kernel/versions` | GET | 获取内核版本列表 |
+| `/api/kernel/tree/{version}` | GET | 获取内核源码目录树 |
+| `/api/kernel/file/{version}/{path}` | GET | 获取内核源码文件内容 |
+| `/api/kernel/annotations` | GET | 获取代码标注列表（支持 q/version 过滤） |
+| `/api/kernel/annotations` | POST | 创建代码标注 |
+| `/api/kernel/annotations/{annotation_id}` | PUT | 更新代码标注 |
+| `/api/kernel/annotations/{annotation_id}` | DELETE | 删除代码标注 |
+| `/api/kernel/annotations/{version}/{path}` | GET | 获取指定文件的标注 |
+
 ---
 
 ## 代码风格
@@ -491,12 +531,31 @@ L1 章节分片 ──→ L2 内容类型分片 ──→ L3 滑动窗口分片
   - **排序优先级**: 批注节点排在同级子节点最前面，同类型按日期升序
 - **Markdown 渲染**: 批注正文使用 `react-markdown` + `remark-gfm` 渲染
   - ThreadDrawer 中 AnnotationCard 和 AnnotationsPage 卡片均使用 Markdown
-  - `.annotation-markdown` CSS 类提供标题/列表/代码/表格/链接等样式
+  - `.markdown-content` CSS 类提供标题/列表/代码/表格/链接等样式（不使用 @tailwindcss/typography，避免 sucrase 兼容问题）
 - **独立管理页面**: `AnnotationsPage.tsx`（路由 `/annotations`）
   - 搜索栏 + 分页 + Markdown 卡片列表
   - 点击卡片打开 ThreadDrawer 跳转到对应线程
   - 关联邮件信息（subject / sender）展示
 - **API 路由优先级**: `GET /api/annotations`（无路径参数）在 `GET /api/annotations/{thread_id:path}` 之前注册
+
+### 12. 代码标注系统（内核源码浏览）
+- **功能**: 在内核源码上进行行级/范围级标注，支持 Markdown 格式
+- **行选择交互**:
+  - 单击行号：选中该行（黄色高亮）
+  - 单击已选中行：取消选中
+  - Ctrl/Cmd + 单击：多选行号（蓝色高亮）
+  - Shift + 单击：范围选择
+  - Esc：清除所有选择
+  - 拖拽选择：范围选择
+- **存储**: `CodeAnnotationStore` 使用独立 `CodeAnnotationBase`，避免与主数据库表/索引冲突
+- **预览功能**: `PreviewModal` 组件显示标注内容和附近代码上下文
+- **前端组件**:
+  - `KernelCodePage.tsx`: 内核源码浏览页（版本选择+文件树+行号选择+标注面板）
+  - `CodeAnnotationsPage.tsx`: 代码标注列表页（搜索+版本过滤+分页）
+  - `PreviewModal.tsx`: 预览弹窗（代码上下文+Markdown渲染）
+- **Markdown 样式**: 使用 `.markdown-content` CSS 类
+  - 行内代码 `` `code` ``: 粉色文字 + 灰色背景 + 圆角
+  - 代码块 `pre`: 灰色背景 + 圆角 + 内边距
 
 ---
 
@@ -638,4 +697,5 @@ npm run preview
 - [x] 批注列表页面 + 搜索 + Markdown 渲染（AnnotationsPage + AnnotationStore list_all/search）
 - [x] 批注 Markdown 渲染（ThreadDrawer AnnotationCard + AnnotationsPage 使用 react-markdown）
 - [x] 批注排序优先（线程树中批注节点排在同级子节点最前面）
+- [x] 代码标注系统（内核源码浏览 + 行级标注 + Markdown 支持）
 - [ ] TagStore session_factory 重构（当前仍使用固定 session）

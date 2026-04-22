@@ -187,12 +187,16 @@ function CodeView({
   highlightLine,
   onLineClick,
   onLineRangeSelect,
+  selectedLines,
+  selectedRange,
 }: {
   file: KernelFileResponse | null;
   annotations: CodeAnnotation[];
   highlightLine: number | null;
-  onLineClick: (line: number) => void;
+  onLineClick: (line: number, event?: MouseEvent) => void;
   onLineRangeSelect: (start: number, end: number) => void;
+  selectedLines: Set<number>;
+  selectedRange: [number, number] | null;
 }) {
   const codeRef = useRef<HTMLPreElement>(null);
   const [selStart, setSelStart] = useState<number | null>(null);
@@ -226,21 +230,31 @@ function CodeView({
 
   const lines = file.content.split('\n');
 
-  const handleMouseDown = (lineNum: number) => {
+  const handleMouseDown = (lineNum: number, e: React.MouseEvent) => {
+    e.preventDefault();
     setSelStart(lineNum);
   };
 
-  const handleMouseUp = (lineNum: number) => {
+  const handleMouseUp = (lineNum: number, e: React.MouseEvent) => {
+    e.preventDefault();
     if (selStart !== null) {
       const start = Math.min(selStart, lineNum);
       const end = Math.max(selStart, lineNum);
       if (start === end) {
-        onLineClick(start);
+        onLineClick(start, e.nativeEvent as MouseEvent);
       } else {
         onLineRangeSelect(start, end);
       }
       setSelStart(null);
     }
+  };
+
+  // 计算高亮行
+  const getIsHighlighted = (lineNum: number): boolean => {
+    if (selectedRange && lineNum >= selectedRange[0] && lineNum <= selectedRange[1]) {
+      return true;
+    }
+    return selectedLines.has(lineNum);
   };
 
   return (
@@ -256,7 +270,7 @@ function CodeView({
           </span>
         )}
         <span className="ml-auto text-[10px] text-gray-400">
-          Click line number to add annotation
+          Click: select | Ctrl+Click: multi-select | Esc: clear
         </span>
       </div>
       <pre ref={codeRef} className="text-xs font-mono leading-5 select-text">
@@ -264,7 +278,7 @@ function CodeView({
           <tbody>
             {lines.map((line, idx) => {
               const lineNum = idx + 1;
-              const isHighlighted = lineNum === highlightLine;
+              const isHighlighted = getIsHighlighted(lineNum);
               const isAnnotated = annotatedLines.has(lineNum);
               return (
                 <tr
@@ -286,8 +300,8 @@ function CodeView({
                         ? 'text-blue-600 bg-blue-50'
                         : 'text-gray-400 hover:text-indigo-400 hover:bg-gray-100'
                     }`}
-                    onMouseDown={() => handleMouseDown(lineNum)}
-                    onMouseUp={() => handleMouseUp(lineNum)}
+                    onMouseDown={(e) => handleMouseDown(lineNum, e)}
+                    onMouseUp={(e) => handleMouseUp(lineNum, e)}
                     title={isAnnotated ? 'Click to view/edit annotation' : 'Click to add annotation'}
                   >
                     {lineNum}
@@ -379,7 +393,7 @@ function AnnotationModal({
 // ============================================================
 function AnnotationPanel({
   annotations,
-  selectedLine,
+  selectedLines,
   selectedRange,
   version,
   filePath,
@@ -388,7 +402,7 @@ function AnnotationPanel({
   onPreview,
 }: {
   annotations: CodeAnnotation[];
-  selectedLine: number | null;
+  selectedLines: Set<number>;
   selectedRange: [number, number] | null;
   version: string;
   filePath: string;
@@ -403,8 +417,19 @@ function AnnotationPanel({
   const handleCreate = async (body: string) => {
     setSaving(true);
     try {
-      const start = selectedRange ? selectedRange[0] : selectedLine || 1;
-      const end = selectedRange ? selectedRange[1] : selectedLine || 1;
+      let start: number, end: number;
+      if (selectedRange) {
+        start = selectedRange[0];
+        end = selectedRange[1];
+      } else if (selectedLines.size > 0) {
+        // 使用第一个选中的行作为范围起点
+        const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+        start = sorted[0];
+        end = sorted[sorted.length - 1];
+      } else {
+        start = 1;
+        end = 1;
+      }
       await createCodeAnnotation({
         version,
         file_path: filePath,
@@ -447,16 +472,19 @@ function AnnotationPanel({
 
   const lineInfo = selectedRange
     ? `Lines ${selectedRange[0]}-${selectedRange[1]}`
-    : selectedLine
-    ? `Line ${selectedLine}`
+    : selectedLines.size > 0
+    ? `Lines ${Array.from(selectedLines).sort((a, b) => a - b).join(', ')}`
     : '';
 
   const relevantAnnotations = annotations.filter((a) => {
-    if (selectedLine) {
-      return a.start_line <= selectedLine && a.end_line >= selectedLine;
-    }
     if (selectedRange) {
       return a.start_line <= selectedRange[1] && a.end_line >= selectedRange[0];
+    }
+    if (selectedLines.size > 0) {
+      // 检查标注是否与任何选中的行重叠
+      return Array.from(selectedLines).some(
+        (line) => a.start_line <= line && a.end_line >= line
+      );
     }
     return true;
   });
@@ -469,7 +497,7 @@ function AnnotationPanel({
             <h3 className="text-sm font-semibold text-gray-700">Annotations</h3>
             {lineInfo && <p className="text-[10px] text-gray-400 mt-0.5">{lineInfo}</p>}
           </div>
-          {(selectedLine || selectedRange) && (
+          {(selectedLines.size > 0 || selectedRange) && (
             <button
               onClick={() => setShowCreateModal(true)}
               className="px-3 py-1.5 text-xs font-medium text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 flex items-center gap-1"
@@ -482,7 +510,7 @@ function AnnotationPanel({
         <div className="flex-1 overflow-y-auto p-2">
           {relevantAnnotations.length === 0 ? (
             <p className="text-xs text-gray-400 text-center py-8">
-              {selectedLine || selectedRange
+              {selectedLines.size > 0 || selectedRange
                 ? 'No annotations for this selection'
                 : 'Click a line number to add annotation'}
             </p>
@@ -514,7 +542,7 @@ function AnnotationPanel({
                     </div>
                   </div>
                   <div className="px-3 py-2 flex-1 overflow-hidden">
-                    <div className="prose prose-xs prose-slate max-w-none line-clamp-5 overflow-hidden">
+                    <div className="markdown-content line-clamp-5 overflow-hidden">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{a.body}</ReactMarkdown>
                     </div>
                   </div>
@@ -577,11 +605,27 @@ export default function KernelCodePage() {
   const [fileLoading, setFileLoading] = useState(false);
   const [currentPath, setCurrentPath] = useState(urlPath);
   const [annotations, setAnnotations] = useState<CodeAnnotation[]>([]);
-  const [selectedLine, setSelectedLine] = useState<number | null>(urlLine);
+  const [selectedLines, setSelectedLines] = useState<Set<number>>(() => {
+    const initial = new Set<number>();
+    if (urlLine) initial.add(urlLine);
+    return initial;
+  });
   const [selectedRange, setSelectedRange] = useState<[number, number] | null>(null);
   const [showAnnotations, setShowAnnotations] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewAnnotation, setPreviewAnnotation] = useState<CodeAnnotation | null>(null);
+
+  // Keyboard handler for Escape to clear selection
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedLines(new Set());
+        setSelectedRange(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   useEffect(() => {
     setVersionsLoading(true);
@@ -685,7 +729,7 @@ export default function KernelCodePage() {
       if (!selectedVersion) return;
       setFileLoading(true);
       setCurrentPath(path);
-      setSelectedLine(null);
+      setSelectedLines(new Set());
       setSelectedRange(null);
       setError(null);
       try {
@@ -715,16 +759,43 @@ export default function KernelCodePage() {
     updateUrl(tag, '');
   };
 
-  const handleLineClick = (line: number) => {
-    setSelectedLine(line);
-    setSelectedRange(null);
+  const handleLineClick = (line: number, event?: MouseEvent) => {
+    // Ctrl/Cmd + 点击: 多选
+    if (event?.ctrlKey || event?.metaKey) {
+      setSelectedLines(prev => {
+        const next = new Set(prev);
+        if (next.has(line)) {
+          next.delete(line);
+        } else {
+          next.add(line);
+        }
+        return next;
+      });
+      setSelectedRange(null);
+    } else if (event?.shiftKey && selectedLines.size === 1) {
+      // Shift + 点击: 范围选择
+      const firstLine = Array.from(selectedLines)[0];
+      const start = Math.min(firstLine, line);
+      const end = Math.max(firstLine, line);
+      setSelectedRange([start, end]);
+      setSelectedLines(new Set());
+    } else {
+      // 普通点击: 取消选中已选行 或 选中单行
+      if (selectedLines.has(line)) {
+        setSelectedLines(new Set());
+        setSelectedRange(null);
+      } else {
+        setSelectedLines(new Set([line]));
+        setSelectedRange(null);
+      }
+    }
     setShowAnnotations(true);
     updateUrl(selectedVersion, currentPath, line);
   };
 
   const handleLineRangeSelect = (start: number, end: number) => {
     setSelectedRange([start, end]);
-    setSelectedLine(null);
+    setSelectedLines(new Set());
     setShowAnnotations(true);
   };
 
@@ -808,16 +879,18 @@ export default function KernelCodePage() {
           <CodeView
             file={currentFile}
             annotations={annotations}
-            highlightLine={selectedLine}
+            highlightLine={selectedLines.size === 1 ? Array.from(selectedLines)[0] : null}
             onLineClick={handleLineClick}
             onLineRangeSelect={handleLineRangeSelect}
+            selectedLines={selectedLines}
+            selectedRange={selectedRange}
           />
         )}
 
         {showAnnotations && currentFile && (
           <AnnotationPanel
             annotations={annotations}
-            selectedLine={selectedLine}
+            selectedLines={selectedLines}
             selectedRange={selectedRange}
             version={selectedVersion}
             filePath={currentPath}

@@ -146,7 +146,7 @@ export default function CodeAnnotationsPage() {
                   </div>
                 </div>
                 <div className="px-4 py-2 flex-1 overflow-hidden">
-                  <div className="prose prose-xs prose-slate max-w-none line-clamp-4 overflow-hidden">
+                  <div className="markdown-content line-clamp-4 overflow-hidden">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{a.body}</ReactMarkdown>
                   </div>
                 </div>
