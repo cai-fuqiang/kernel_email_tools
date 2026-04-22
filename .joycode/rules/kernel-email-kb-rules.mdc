@@ -104,12 +104,13 @@ kernel_email_tools/
 │   │   │   ├── SearchPage.tsx   # 邮件搜索页（含标签筛选）
 │   │   │   ├── AskPage.tsx      # 邮件问答页（含标签筛选）
 │   │   │   ├── TagsPage.tsx     # 标签管理页
-│   │   │   ├── TranslationsPage.tsx # 翻译管理页（已缓存线程+标签）
+│   │   │   ├── TranslationsPage.tsx # 翻译管理页（已缓存线程+标签+自动轮询）
 │   │   │   ├── ManualSearchPage.tsx  # 手册搜索页
 │   │   │   └── ManualAskPage.tsx     # 手册问答页
 │   │   ├── components/          # 通用组件
-│   │   │   ├── ThreadDrawer.tsx # 线程抽屉
+│   │   │   ├── ThreadDrawer.tsx # 线程抽屉（含翻译、引用行渲染）
 │   │   │   ├── TagFilter.tsx    # 标签筛选组件
+│   │   │   ├── TagManager.tsx   # 标签管理组件
 │   │   │   └── EmailTagEditor.tsx # 邮件标签编辑器
 │   │   ├── layouts/            # 布局组件
 │   │   │   └── MainLayout.tsx
@@ -404,7 +405,14 @@ L1 章节分片 ──→ L2 内容类型分片 ──→ L3 滑动窗口分片
 - 数据库操作用 SQLAlchemy async
 - LLM 调用异步化
 
-### 8. 标签系统
+### 8. Session 管理（重要）
+- **禁止长生命周期 session**：不得在应用启动时创建单一 AsyncSession 并全局复用
+- **请求级 session**：存储类应接受 `session_factory`（`async_sessionmaker`），每次操作通过 `async with self.session_factory() as session:` 创建新 session
+- **已踩坑案例**：`TranslationCacheStore` 曾持有固定 session，运行一段时间后 session 过期导致查询静默返回空
+- **TagStore 待重构**：当前仍使用固定 session，后续需同步改为 session_factory 模式
+- `PostgresStorage.session_factory` 类型为 `async_sessionmaker`，支持 `async with session_factory() as session:` 上下文管理
+
+### 9. 标签系统
 - 支持父子层级标签（树形结构）
 - 单封邮件最多 16 个标签
 - 标签名称全局唯一
@@ -544,3 +552,5 @@ npm run preview
 - [x] 邮件翻译（Google Translate + 缓存 + 人工校正 + 双语对照）
 - [x] 翻译缓存关联邮件 message_id（支持按线程聚合）
 - [x] 翻译管理页面（TranslationsPage：已缓存线程列表 + 标签展示）
+- [x] TranslationCacheStore session_factory 重构（请求级 session，避免过期）
+- [ ] TagStore session_factory 重构（当前仍使用固定 session）
