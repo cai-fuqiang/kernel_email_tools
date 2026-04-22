@@ -63,6 +63,36 @@ export async function createTag(
   return res.json();
 }
 
+export interface TagEmailItem {
+  message_id: string;
+  subject: string;
+  sender: string;
+  date: string | null;
+  list_name: string;
+  thread_id: string;
+  has_patch: boolean;
+  snippet: string;
+}
+
+export interface TagEmailsResponse {
+  tag: string;
+  emails: TagEmailItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export async function getEmailsByTag(
+  tagName: string,
+  page: number = 1,
+  pageSize: number = 20,
+): Promise<TagEmailsResponse> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  return fetchJSON<TagEmailsResponse>(
+    `${API_BASE}/tags/${encodeURIComponent(tagName)}/emails?${params}`
+  );
+}
+
 export async function deleteTag(tagId: number): Promise<void> {
   const res = await fetch(`${API_BASE}/tags/${tagId}`, { method: 'DELETE' });
   if (!res.ok) {

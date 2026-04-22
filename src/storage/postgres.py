@@ -397,6 +397,73 @@ class PostgresStorage(BaseStorage):
             logger.info(f"Removed tag '{tag_name}' from email: {message_id}")
             return True
 
+    async def get_emails_by_tag(
+        self,
+        tag_name: str,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[EmailSearchResult], int]:
+        """获取某个标签下的所有邮件。
+
+        Args:
+            tag_name: 标签名称。
+            page: 页码（从 1 开始）。
+            page_size: 每页数量。
+
+        Returns:
+            (邮件列表, 总数)。
+        """
+        async with self.session_factory() as session:
+            condition = EmailORM.tags.contains([tag_name])
+
+            # 总数
+            count_stmt = select(func.count()).select_from(EmailORM).where(condition)
+            total = (await session.execute(count_stmt)).scalar() or 0
+
+            if total == 0:
+                return [], 0
+
+            # 分页查询
+            snippet_col = func.substring(EmailORM.body, 1, 200)
+            stmt = (
+                select(
+                    EmailORM.id,
+                    EmailORM.message_id,
+                    EmailORM.subject,
+                    EmailORM.sender,
+                    EmailORM.date,
+                    EmailORM.list_name,
+                    EmailORM.thread_id,
+                    EmailORM.has_patch,
+                    literal(0.0).label("rank"),
+                    snippet_col.label("snippet"),
+                )
+                .where(condition)
+                .order_by(EmailORM.date.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+            result = await session.execute(stmt)
+            rows = result.all()
+
+            results = [
+                EmailSearchResult(
+                    id=row.id,
+                    message_id=row.message_id,
+                    subject=row.subject,
+                    sender=row.sender,
+                    date=row.date,
+                    list_name=row.list_name,
+                    thread_id=row.thread_id,
+                    has_patch=row.has_patch,
+                    rank=0.0,
+                    snippet=row.snippet or "",
+                )
+                for row in rows
+            ]
+
+        return results, total
+
     async def get_all_tags_with_count(self) -> list[dict]:
         """获取所有标签及其邮件数量。
 

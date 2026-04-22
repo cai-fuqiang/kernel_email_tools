@@ -301,6 +301,7 @@ kernel_email_tools/
 | `/api/tags` | POST | 创建标签 |
 | `/api/tags` | GET | 获取标签树（树形结构）|
 | `/api/tags/stats` | GET | 获取标签统计 |
+| `/api/tags/{tag_name}/emails` | GET | 获取标签下的邮件列表（分页）|
 | `/api/tags/{tag_id}` | DELETE | 删除标签（级联删除子标签）|
 | `/api/email/{message_id}/tags` | GET | 获取邮件标签 |
 | `/api/email/{message_id}/tags` | POST | 添加标签（最多 16 个）|
@@ -418,6 +419,12 @@ L1 章节分片 ──→ L2 内容类型分片 ──→ L3 滑动窗口分片
 - 标签名称全局唯一
 - 删除父标签时级联删除所有子标签
 - 标签过滤支持 `any`（任一匹配）和 `all`（全部匹配）两种模式
+- **标签邮件列表**: TagManager 组件点击标签可展开该标签下的邮件列表
+  - 后端 `PostgresStorage.get_emails_by_tag()` 使用 `tags @> ARRAY[tag_name]` 查询，日期倒序+分页
+  - API: `GET /api/tags/{tag_name}/emails?page=&page_size=`
+  - 前端 `TagEmailList` 子组件展示邮件表格（subject/sender/date/channel），支持分页
+  - 标签名旁显示邮件数量角标（集成 TagStats）
+  - 点击邮件行打开 `ThreadDrawer` 查看线程详情
 
 ### 10. 邮件正文展示与翻译架构
 - **数据源**: API `/api/thread/{id}` 返回 `body`（清洗后，无引用行）和 `body_raw`（原始正文，含引用行）
@@ -574,4 +581,5 @@ npm run preview
 - [x] TranslationCacheStore session_factory 重构（请求级 session，避免过期）
 - [x] 翻译展示优化（引用行展示不翻译 + diff 去重 + 去除 EN/中文标签）
 - [x] PATCH diff 折叠展示（默认折叠 + diff 着色 + 增删行统计）
+- [x] 标签邮件列表（TagManager 点击标签展开邮件列表 + 分页 + ThreadDrawer 跳转）
 - [ ] TagStore session_factory 重构（当前仍使用固定 session）

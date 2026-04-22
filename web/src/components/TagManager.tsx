@@ -1,5 +1,15 @@
 import { useState, useEffect } from 'react';
-import { getTagTree, createTag, deleteTag, type TagTree } from '../api/client';
+import {
+  getTagTree,
+  getTagStats,
+  createTag,
+  deleteTag,
+  getEmailsByTag,
+  type TagTree,
+  type TagStats,
+  type TagEmailItem,
+} from '../api/client';
+import ThreadDrawer from './ThreadDrawer';
 
 interface TagManagerProps {
   onTagsChanged?: () => void;
@@ -7,6 +17,7 @@ interface TagManagerProps {
 
 export default function TagManager({ onTagsChanged }: TagManagerProps) {
   const [tags, setTags] = useState<TagTree[]>([]);
+  const [tagStats, setTagStats] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('#6366f1');
@@ -14,10 +25,19 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
 
+  // 展开的标签（查看邮件列表）
+  const [expandedTag, setExpandedTag] = useState<string | null>(null);
+
+  // ThreadDrawer 状态
+  const [selectedThread, setSelectedThread] = useState<string | null>(null);
+
   const loadTags = async () => {
     try {
-      const data = await getTagTree();
+      const [data, stats] = await Promise.all([getTagTree(), getTagStats()]);
       setTags(data);
+      const m = new Map<string, number>();
+      stats.forEach((s: TagStats) => m.set(s.name, s.count));
+      setTagStats(m);
     } catch {
       setError('Failed to load tags');
     } finally {
@@ -49,11 +69,16 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
     setError('');
     try {
       await deleteTag(tagId);
+      if (expandedTag === tagName) setExpandedTag(null);
       await loadTags();
       onTagsChanged?.();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to delete tag');
     }
+  };
+
+  const handleToggleExpand = (tagName: string) => {
+    setExpandedTag(prev => prev === tagName ? null : tagName);
   };
 
   // 扁平化标签树用于 parent 选择
@@ -127,37 +152,217 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
         ) : tags.length === 0 ? (
           <p className="text-sm text-gray-400">No tags yet. Create one above.</p>
         ) : (
-          <TagNodeList nodes={tags} onDelete={handleDelete} depth={0} />
+          <TagNodeList
+            nodes={tags}
+            onDelete={handleDelete}
+            depth={0}
+            tagStats={tagStats}
+            expandedTag={expandedTag}
+            onToggleExpand={handleToggleExpand}
+            onOpenThread={setSelectedThread}
+          />
         )}
       </div>
+
+      {/* ThreadDrawer */}
+      {selectedThread && (
+        <ThreadDrawer
+          threadId={selectedThread}
+          onClose={() => setSelectedThread(null)}
+        />
+      )}
     </div>
   );
 }
 
-function TagNodeList({ nodes, onDelete, depth }: {
+// ============================================================
+// 标签节点列表（递归）
+// ============================================================
+
+function TagNodeList({ nodes, onDelete, depth, tagStats, expandedTag, onToggleExpand, onOpenThread }: {
   nodes: TagTree[];
   onDelete: (id: number, name: string) => void;
   depth: number;
+  tagStats: Map<string, number>;
+  expandedTag: string | null;
+  onToggleExpand: (tagName: string) => void;
+  onOpenThread: (threadId: string) => void;
 }) {
   return (
     <ul className={depth > 0 ? 'ml-4 border-l border-gray-100 pl-3' : ''}>
-      {nodes.map(tag => (
-        <li key={tag.id} className="py-1.5">
-          <div className="flex items-center gap-2 group">
-            <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
-            <span className="text-sm text-gray-800 flex-1">{tag.name}</span>
-            <button
-              onClick={() => onDelete(tag.id, tag.name)}
-              className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              Delete
-            </button>
-          </div>
-          {tag.children.length > 0 && (
-            <TagNodeList nodes={tag.children} onDelete={onDelete} depth={depth + 1} />
-          )}
-        </li>
-      ))}
+      {nodes.map(tag => {
+        const count = tagStats.get(tag.name) ?? 0;
+        const isExpanded = expandedTag === tag.name;
+
+        return (
+          <li key={tag.id} className="py-1.5">
+            <div className="flex items-center gap-2 group">
+              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+              <button
+                onClick={() => count > 0 && onToggleExpand(tag.name)}
+                className={`text-sm flex-1 text-left flex items-center gap-1.5 ${count > 0 ? 'text-gray-800 hover:text-indigo-600 cursor-pointer' : 'text-gray-400 cursor-default'}`}
+              >
+                <span className={isExpanded ? 'font-semibold text-indigo-700' : ''}>{tag.name}</span>
+                {count > 0 && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                    {count}
+                  </span>
+                )}
+                {count > 0 && (
+                  <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                )}
+              </button>
+              <button
+                onClick={() => onDelete(tag.id, tag.name)}
+                className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                Delete
+              </button>
+            </div>
+            {/* 展开的邮件列表 */}
+            {isExpanded && (
+              <TagEmailList tagName={tag.name} onOpenThread={onOpenThread} />
+            )}
+            {tag.children.length > 0 && (
+              <TagNodeList
+                nodes={tag.children}
+                onDelete={onDelete}
+                depth={depth + 1}
+                tagStats={tagStats}
+                expandedTag={expandedTag}
+                onToggleExpand={onToggleExpand}
+                onOpenThread={onOpenThread}
+              />
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
+}
+
+// ============================================================
+// 标签邮件列表子组件
+// ============================================================
+
+function TagEmailList({ tagName, onOpenThread }: {
+  tagName: string;
+  onOpenThread: (threadId: string) => void;
+}) {
+  const [emails, setEmails] = useState<TagEmailItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const pageSize = 10;
+
+  const load = async (p: number) => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await getEmailsByTag(tagName, p, pageSize);
+      setEmails(res.emails);
+      setTotal(res.total);
+      setPage(p);
+    } catch {
+      setError('Failed to load emails');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(1); }, [tagName]);
+
+  const totalPages = Math.ceil(total / pageSize);
+
+  if (loading && emails.length === 0) {
+    return <div className="ml-5 mt-2 text-xs text-gray-400">Loading emails...</div>;
+  }
+
+  if (error) {
+    return <div className="ml-5 mt-2 text-xs text-red-500">{error}</div>;
+  }
+
+  if (total === 0) {
+    return <div className="ml-5 mt-2 text-xs text-gray-400">No emails with this tag.</div>;
+  }
+
+  return (
+    <div className="ml-5 mt-2 mb-1 border border-gray-100 rounded-lg bg-gray-50 overflow-hidden">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="bg-gray-100 text-gray-500">
+            <th className="text-left px-3 py-1.5 font-medium">Subject</th>
+            <th className="text-left px-3 py-1.5 font-medium w-36">Sender</th>
+            <th className="text-left px-3 py-1.5 font-medium w-28">Date</th>
+            <th className="text-left px-3 py-1.5 font-medium w-20">Channel</th>
+          </tr>
+        </thead>
+        <tbody>
+          {emails.map(email => (
+            <tr
+              key={email.message_id}
+              onClick={() => onOpenThread(email.thread_id)}
+              className="border-t border-gray-100 hover:bg-indigo-50 cursor-pointer transition-colors"
+            >
+              <td className="px-3 py-2 truncate max-w-xs">
+                <span className="text-gray-800">{email.subject}</span>
+                {email.has_patch && (
+                  <span className="ml-1.5 inline-flex items-center px-1 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">
+                    PATCH
+                  </span>
+                )}
+              </td>
+              <td className="px-3 py-2 text-gray-500 truncate">{extractName(email.sender)}</td>
+              <td className="px-3 py-2 text-gray-400">{formatDate(email.date)}</td>
+              <td className="px-3 py-2 text-gray-400">{email.list_name}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* 分页 */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-3 py-2 bg-gray-100 text-xs text-gray-500">
+          <span>{total} emails total</span>
+          <div className="flex gap-1">
+            <button
+              disabled={page <= 1 || loading}
+              onClick={() => load(page - 1)}
+              className="px-2 py-0.5 rounded bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <span className="px-2 py-0.5">{page} / {totalPages}</span>
+            <button
+              disabled={page >= totalPages || loading}
+              onClick={() => load(page + 1)}
+              className="px-2 py-0.5 rounded bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 辅助函数
+
+function extractName(sender: string): string {
+  const match = sender.match(/^([^<]+)/);
+  return match ? match[1].trim() : sender;
+}
+
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return dateStr;
+  }
 }

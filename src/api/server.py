@@ -351,6 +351,52 @@ async def get_tag_stats():
     return await _storage.get_all_tags_with_count()
 
 
+@app.get("/api/tags/{tag_name}/emails")
+async def get_tag_emails(
+    tag_name: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    """获取指定标签下的邮件列表。
+
+    Args:
+        tag_name: 标签名称。
+        page: 页码（从 1 开始）。
+        page_size: 每页数量（最大 100）。
+
+    Returns:
+        包含标签名、邮件列表、总数、分页信息的字典。
+    """
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+
+    results, total = await _storage.get_emails_by_tag(
+        tag_name=tag_name,
+        page=page,
+        page_size=page_size,
+    )
+
+    return {
+        "tag": tag_name,
+        "emails": [
+            {
+                "message_id": r.message_id,
+                "subject": r.subject,
+                "sender": r.sender,
+                "date": r.date.isoformat() if r.date else None,
+                "list_name": r.list_name,
+                "thread_id": r.thread_id,
+                "has_patch": r.has_patch,
+                "snippet": r.snippet,
+            }
+            for r in results
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
 @app.delete("/api/tags/{tag_id}")
 async def delete_tag(tag_id: int):
     """删除标签。
