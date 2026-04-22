@@ -51,7 +51,11 @@ _annotation_store: Optional[AnnotationStore] = None
 
 # 内核源码浏览组件
 from src.kernel_source.git_local import GitLocalSource
+from src.storage.code_annotation_store import CodeAnnotationStore
+from src.storage.code_annotation_models import CodeAnnotationCreate, CodeAnnotationUpdate
+
 _kernel_source: Optional[GitLocalSource] = None
+_code_annotation_store: Optional[CodeAnnotationStore] = None
 
 
 def _load_config() -> dict:
@@ -71,6 +75,7 @@ async def lifespan(app: FastAPI):
     global _translator, _translation_cache
     global _annotation_store
     global _kernel_source
+    global _code_annotation_store
 
     config = _load_config()
     storage_cfg = config.get("storage", {})
@@ -189,6 +194,13 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Kernel source repo not found: {expanded}, kernel code browsing disabled")
     else:
         logger.warning("kernel_source.repo_path not configured, kernel code browsing disabled")
+
+    # ========== 代码注释存储初始化 ==========
+    _code_annotation_store = CodeAnnotationStore(
+        session_factory=_storage.session_factory,
+        default_author=annotations_cfg.get("default_author", "me"),
+    )
+    logger.info("Code annotation store initialized")
 
     logger.info("API server initialized successfully")
     yield
@@ -1483,3 +1495,166 @@ async def kernel_file(version: str, path: str):
         "size": file_content.size,
         "truncated": file_content.truncated,
     }
+
+
+# ============================================================
+# 代码注释 API 路由 (PLAN-10000 Phase B)
+# ============================================================
+
+class CodeAnnotationCreateRequest(BaseModel):
+    """创建代码注释请求。"""
+    version: str = Field(..., description="内核版本 tag")
+    file_path: str = Field(..., description="文件相对路径")
+    start_line: int = Field(..., ge=1, description="起始行号")
+    end_line: int = Field(..., ge=1, description="结束行号")
+    body: str = Field(..., min_length=1, description="注释正文（支持 Markdown）")
+    author: Optional[str] = Field(None, description="作者名称")
+
+
+class CodeAnnotationUpdateRequest(BaseModel):
+    """更新代码注释请求。"""
+    body: str = Field(..., min_length=1, description="注释正文")
+
+
+@app.get("/api/kernel/annotations")
+async def list_code_annotations(
+    q: Optional[str] = Query(None, description="搜索关键词"),
+    version: Optional[str] = Query(None, description="限定版本"),
+    author: Optional[str] = Query(None, description="限定作者"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    """代码注释总览：全量列表或关键词搜索。
+
+    支持按版本、作者过滤，支持分页。
+    """
+    if not _code_annotation_store:
+        raise HTTPException(status_code=503, detail="Code annotation store not initialized")
+
+    if q and q.strip():
+        annotations, total = await _code_annotation_store.search(
+            keyword=q.strip(),
+            version=version,
+            author=author,
+            page=page,
+            page_size=page_size,
+        )
+    else:
+        annotations, total = await _code_annotation_store.list_all(
+            page=page,
+            page_size=page_size,
+        )
+
+    return {
+        "annotations": [
+            {
+                "annotation_id": a.annotation_id,
+                "version": a.version,
+                "file_path": a.file_path,
+                "start_line": a.start_line,
+                "end_line": a.end_line,
+                "body": a.body,
+                "author": a.author,
+                "created_at": a.created_at.isoformat(),
+                "updated_at": a.updated_at.isoformat(),
+            }
+            for a in annotations
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@app.get("/api/kernel/annotations/{version}/{path:path}")
+async def get_file_code_annotations(version: str, path: str):
+    """获取指定文件的注释列表。"""
+    if not _code_annotation_store:
+        raise HTTPException(status_code=503, detail="Code annotation store not initialized")
+
+    annotations = await _code_annotation_store.list_by_file(version, path)
+    return [
+        {
+            "annotation_id": a.annotation_id,
+            "version": a.version,
+            "file_path": a.file_path,
+            "start_line": a.start_line,
+            "end_line": a.end_line,
+            "body": a.body,
+            "author": a.author,
+            "created_at": a.created_at.isoformat(),
+            "updated_at": a.updated_at.isoformat(),
+        }
+        for a in annotations
+    ]
+
+
+@app.post("/api/kernel/annotations")
+async def create_code_annotation(request: CodeAnnotationCreateRequest):
+    """创建代码注释。"""
+    if not _code_annotation_store:
+        raise HTTPException(status_code=503, detail="Code annotation store not initialized")
+
+    try:
+        annotation = await _code_annotation_store.create(
+            CodeAnnotationCreate(
+                version=request.version,
+                file_path=request.file_path,
+                start_line=request.start_line,
+                end_line=request.end_line,
+                body=request.body,
+                author=request.author,
+            ),
+            content_for_hash="",
+        )
+        return {
+            "annotation_id": annotation.annotation_id,
+            "version": annotation.version,
+            "file_path": annotation.file_path,
+            "start_line": annotation.start_line,
+            "end_line": annotation.end_line,
+            "body": annotation.body,
+            "author": annotation.author,
+            "created_at": annotation.created_at.isoformat(),
+            "updated_at": annotation.updated_at.isoformat(),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/api/kernel/annotations/{annotation_id}")
+async def update_code_annotation(annotation_id: str, request: CodeAnnotationUpdateRequest):
+    """更新代码注释正文。"""
+    if not _code_annotation_store:
+        raise HTTPException(status_code=503, detail="Code annotation store not initialized")
+
+    updated = await _code_annotation_store.update(
+        annotation_id,
+        CodeAnnotationUpdate(body=request.body),
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Annotation {annotation_id} not found")
+
+    return {
+        "annotation_id": updated.annotation_id,
+        "version": updated.version,
+        "file_path": updated.file_path,
+        "start_line": updated.start_line,
+        "end_line": updated.end_line,
+        "body": updated.body,
+        "author": updated.author,
+        "created_at": updated.created_at.isoformat(),
+        "updated_at": updated.updated_at.isoformat(),
+    }
+
+
+@app.delete("/api/kernel/annotations/{annotation_id}")
+async def delete_code_annotation(annotation_id: str):
+    """删除代码注释。"""
+    if not _code_annotation_store:
+        raise HTTPException(status_code=503, detail="Code annotation store not initialized")
+
+    deleted = await _code_annotation_store.delete(annotation_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Annotation {annotation_id} not found")
+    return {"status": "ok", "annotation_id": annotation_id}

@@ -8,6 +8,7 @@ import AnnotationsPage from './pages/AnnotationsPage';
 import ManualSearchPage from './pages/ManualSearchPage';
 import ManualAskPage from './pages/ManualAskPage';
 import KernelCodePage from './pages/KernelCodePage';
+import CodeAnnotationsPage from './pages/CodeAnnotationsPage';
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/manual/search" element={<ManualSearchPage />} />
           <Route path="/manual/ask" element={<ManualAskPage />} />
           <Route path="/kernel-code" element={<KernelCodePage />} />
+          <Route path="/kernel-code/annotations" element={<CodeAnnotationsPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

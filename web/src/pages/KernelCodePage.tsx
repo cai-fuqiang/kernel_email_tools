@@ -497,7 +497,6 @@ export default function KernelCodePage() {
   const [versions, setVersions] = useState<KernelVersionInfo[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(true);
   const [selectedVersion, setSelectedVersion] = useState(urlVersion);
-  const [treeNodes, setTreeNodes] = useState<Map<string, TreeNode[]>>(new Map());
   const [rootTree, setRootTree] = useState<TreeNode[]>([]);
   const [currentFile, setCurrentFile] = useState<KernelFileResponse | null>(null);
   const [fileLoading, setFileLoading] = useState(false);
@@ -535,7 +534,6 @@ export default function KernelCodePage() {
           loading: false,
         }));
         setRootTree(nodes);
-        setTreeNodes(new Map());
       })
       .catch((e) => setError(e.message));
   }, [selectedVersion]);
