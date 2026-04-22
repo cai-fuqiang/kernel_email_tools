@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import hljs from 'highlight.js';
+import 'highlight.js/styles/github.css';
 import PreviewModal from '../components/PreviewModal';
 import {
   getKernelVersions,
@@ -257,6 +259,35 @@ function CodeView({
     return selectedLines.has(lineNum);
   };
 
+  // 根据文件扩展名获取语言
+  const getLanguage = (path: string): string => {
+    const ext = path.split('.').pop()?.toLowerCase() || '';
+    const langMap: Record<string, string> = {
+      c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp',
+      py: 'python', rs: 'rust', go: 'go', js: 'javascript',
+      ts: 'typescript', sh: 'bash', makefile: 'makefile',
+      kt: 'kotlin', swift: 'swift', rb: 'ruby', yml: 'yaml',
+      yaml: 'yaml', json: 'json', xml: 'xml', html: 'html',
+      css: 'css', md: 'markdown',
+    };
+    return langMap[ext] || 'plaintext';
+  };
+
+  // 对代码行进行语法高亮
+  const highlightCode = useCallback((code: string, lang: string) => {
+    try {
+      if (hljs.getLanguage(lang)) {
+        return hljs.highlight(code, { language: lang }).value;
+      }
+      return hljs.highlightAuto(code).value;
+    } catch {
+      return code;
+    }
+  }, []);
+
+  const language = getLanguage(file.path);
+  const highlightedLines = lines.map(line => highlightCode(line, language));
+
   return (
     <div className="flex-1 overflow-auto bg-white">
       <div className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-4 py-2 flex items-center gap-2">
@@ -276,7 +307,7 @@ function CodeView({
       <pre ref={codeRef} className="text-xs font-mono leading-5 select-text">
         <table className="w-full border-collapse">
           <tbody>
-            {lines.map((line, idx) => {
+            {lines.map((_, idx) => {
               const lineNum = idx + 1;
               const isHighlighted = getIsHighlighted(lineNum);
               const isAnnotated = annotatedLines.has(lineNum);
@@ -309,7 +340,7 @@ function CodeView({
                       <span className="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full ml-1" />
                     )}
                   </td>
-                  <td className="pl-4 whitespace-pre">{line}</td>
+                  <td className="pl-4 whitespace-pre"><code dangerouslySetInnerHTML={{ __html: highlightedLines[idx] }} /></td>
                 </tr>
               );
             })}
