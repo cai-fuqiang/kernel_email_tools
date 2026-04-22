@@ -19,10 +19,11 @@ from src.retriever.keyword import KeywordRetriever
 from src.retriever.manual import ManualRetriever, ManualSearchQuery
 from src.retriever.semantic import SemanticRetriever
 from src.storage.document_store import DocumentStorage
-from src.storage.models import EmailRead, TagRead, TagTree
+from src.storage.models import AnnotationCreate, AnnotationRead, AnnotationUpdate, EmailRead, TagRead, TagTree
 from src.storage.postgres import PostgresStorage
 from src.storage.tag_store import TagStore
 from src.storage.translation_cache import TranslationCacheStore
+from src.storage.annotation_store import AnnotationStore
 from src.translator.base import TranslationError
 from src.translator.google_translator import GoogleTranslator, is_available as is_translator_available
 
@@ -45,6 +46,9 @@ _manual_qa: Optional[ManualQA] = None
 _translator: Optional[GoogleTranslator] = None
 _translation_cache: Optional[TranslationCacheStore] = None
 
+# 批注组件
+_annotation_store: Optional[AnnotationStore] = None
+
 
 def _load_config() -> dict:
     """加载配置文件。"""
@@ -61,6 +65,7 @@ async def lifespan(app: FastAPI):
     global _storage, _retriever, _qa, _tag_store
     global _manual_storage, _manual_retriever, _manual_qa
     global _translator, _translation_cache
+    global _annotation_store
 
     config = _load_config()
     storage_cfg = config.get("storage", {})
@@ -126,6 +131,14 @@ async def lifespan(app: FastAPI):
         logger.info(f"Translation service initialized (proxy: {proxy_enabled})")
     else:
         logger.warning("Translation service not available")
+
+    # ========== 批注组件初始化 ==========
+    annotations_cfg = config.get("annotations", {})
+    _annotation_store = AnnotationStore(
+        session_factory=_storage.session_factory,
+        default_author=annotations_cfg.get("default_author", "me"),
+    )
+    logger.info("Annotation store initialized")
 
     # ========== 芯片手册存储初始化 ==========
     manual_storage_cfg = storage_cfg.get("manual", {})
@@ -241,6 +254,7 @@ class ThreadResponse(BaseModel):
     """线程响应。"""
     thread_id: str
     emails: list[dict]
+    annotations: list[dict] = Field(default_factory=list)
     total: int
 
 
@@ -624,13 +638,30 @@ async def ask(
 
 @app.get("/api/thread/{thread_id:path}", response_model=ThreadResponse)
 async def get_thread(thread_id: str):
-    """获取邮件线程 — 返回线程内所有邮件（按时间排序）。"""
+    """获取邮件线程 — 返回线程内所有邮件及批注（按时间排序）。"""
     if not _storage:
         raise HTTPException(status_code=503, detail="Service not initialized")
 
     emails = await _storage.get_thread(thread_id)
     if not emails:
         raise HTTPException(status_code=404, detail=f"Thread not found: {thread_id}")
+
+    # 获取线程批注
+    annotations_data = []
+    if _annotation_store:
+        annotations = await _annotation_store.list_by_thread(thread_id)
+        annotations_data = [
+            {
+                "annotation_id": a.annotation_id,
+                "thread_id": a.thread_id,
+                "in_reply_to": a.in_reply_to,
+                "author": a.author,
+                "body": a.body,
+                "created_at": a.created_at.isoformat(),
+                "updated_at": a.updated_at.isoformat(),
+            }
+            for a in annotations
+        ]
 
     return ThreadResponse(
         thread_id=thread_id,
@@ -650,6 +681,7 @@ async def get_thread(thread_id: str):
             }
             for e in emails
         ],
+        annotations=annotations_data,
         total=len(emails),
     )
 
@@ -1014,6 +1046,164 @@ async def manual_translate(request: ManualTranslateRequest = Body(...)):
             success=False,
             message=f"Failed to save: {str(e)}",
         )
+
+
+# ============================================================
+# 批注 API 路由
+# ============================================================
+
+class AnnotationCreateRequest(BaseModel):
+    """创建批注请求。"""
+    thread_id: str = Field(..., description="所属线程 ID")
+    in_reply_to: str = Field("", description="回复的目标 message_id 或 annotation_id")
+    author: str = Field("", description="批注作者（留空使用默认作者）")
+    body: str = Field(..., min_length=1, description="批注正文（支持 Markdown）")
+
+
+class AnnotationUpdateRequest(BaseModel):
+    """更新批注请求。"""
+    body: str = Field(..., min_length=1, description="批注正文（支持 Markdown）")
+
+
+class AnnotationResponse(BaseModel):
+    """批注响应。"""
+    annotation_id: str
+    thread_id: str
+    in_reply_to: str
+    author: str
+    body: str
+    created_at: str
+    updated_at: str
+
+
+@app.post("/api/annotations", response_model=AnnotationResponse)
+async def create_annotation(request: AnnotationCreateRequest):
+    """创建批注（本地回复）。
+
+    在线程中添加本地批注，不是真正的邮件回复，
+    而是用户的本地评论，混合显示在线程树中。
+    """
+    if not _annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+
+    annotation = await _annotation_store.create(
+        AnnotationCreate(
+            thread_id=request.thread_id,
+            in_reply_to=request.in_reply_to,
+            author=request.author,
+            body=request.body,
+        )
+    )
+    return AnnotationResponse(
+        annotation_id=annotation.annotation_id,
+        thread_id=annotation.thread_id,
+        in_reply_to=annotation.in_reply_to,
+        author=annotation.author,
+        body=annotation.body,
+        created_at=annotation.created_at.isoformat(),
+        updated_at=annotation.updated_at.isoformat(),
+    )
+
+
+@app.get("/api/annotations/{thread_id:path}", response_model=list[AnnotationResponse])
+async def get_annotations(thread_id: str):
+    """获取线程所有批注。"""
+    if not _annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+
+    annotations = await _annotation_store.list_by_thread(thread_id)
+    return [
+        AnnotationResponse(
+            annotation_id=a.annotation_id,
+            thread_id=a.thread_id,
+            in_reply_to=a.in_reply_to,
+            author=a.author,
+            body=a.body,
+            created_at=a.created_at.isoformat(),
+            updated_at=a.updated_at.isoformat(),
+        )
+        for a in annotations
+    ]
+
+
+@app.put("/api/annotations/{annotation_id}")
+async def update_annotation(annotation_id: str, request: AnnotationUpdateRequest):
+    """编辑批注。"""
+    if not _annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+
+    updated = await _annotation_store.update(
+        annotation_id,
+        AnnotationUpdate(body=request.body),
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Annotation {annotation_id} not found")
+
+    return AnnotationResponse(
+        annotation_id=updated.annotation_id,
+        thread_id=updated.thread_id,
+        in_reply_to=updated.in_reply_to,
+        author=updated.author,
+        body=updated.body,
+        created_at=updated.created_at.isoformat(),
+        updated_at=updated.updated_at.isoformat(),
+    )
+
+
+@app.delete("/api/annotations/{annotation_id}")
+async def delete_annotation(annotation_id: str):
+    """删除批注。"""
+    if not _annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+
+    deleted = await _annotation_store.delete(annotation_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Annotation {annotation_id} not found")
+
+    return {"status": "ok", "message": f"Annotation {annotation_id} deleted"}
+
+
+@app.post("/api/annotations/export")
+async def export_annotations(
+    thread_id: Optional[str] = Query(None, description="线程 ID（留空导出全部）"),
+):
+    """导出批注为 JSON（满足 git 固化需求）。
+
+    - 指定 thread_id：导出单个线程的批注
+    - 不指定：导出所有批注（按线程分组）
+    """
+    if not _annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+
+    if thread_id:
+        return await _annotation_store.export_thread(thread_id)
+    else:
+        return await _annotation_store.export_all()
+
+
+@app.post("/api/annotations/import")
+async def import_annotations(data: dict = Body(...)):
+    """从 JSON 导入批注（已存在的会跳过）。
+
+    支持两种格式：
+    - 单线程格式：{ "thread_id": "...", "annotations": [...] }
+    - 全量格式：{ "threads": { "thread_id": [...], ... } }
+    """
+    if not _annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+
+    try:
+        if "threads" in data:
+            result = await _annotation_store.import_all(data)
+            return {"status": "ok", **result}
+        elif "thread_id" in data:
+            count = await _annotation_store.import_thread(data)
+            return {"status": "ok", "total_imported": count, "thread_id": data["thread_id"]}
+        else:
+            raise HTTPException(status_code=400, detail="Invalid format: need 'threads' or 'thread_id' key")
+    except Exception as e:
+        logger.error(f"Failed to import annotations: {e}")
+        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
 
 
 # ============================================================

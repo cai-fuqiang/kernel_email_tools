@@ -102,6 +102,42 @@ class EmailORM(Base):
 
 
 # ============================================================
+# 批注 ORM 模型
+# ============================================================
+
+class AnnotationORM(Base):
+    """批注 ORM 模型，对应 annotations 表。
+
+    用于存储用户对邮件的本地批注（回复），不是真正的邮件回复，
+    而是用户在 Thread 视图中添加的本地评论，可混合显示在线程树中。
+    """
+
+    __tablename__ = "annotations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    annotation_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    thread_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    in_reply_to: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    author: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint("annotation_id", name="uq_annotations_annotation_id"),
+        Index("ix_annotations_thread_id", "thread_id"),
+        Index("ix_annotations_in_reply_to", "in_reply_to"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AnnotationORM id={self.id} annotation_id={self.annotation_id!r}>"
+
+
+# ============================================================
 # Pydantic 数据校验模型
 # ============================================================
 
@@ -194,6 +230,40 @@ class EmailSearchResult(BaseModel):
     has_patch: bool
     rank: float = 0.0  # 全文搜索排名分数
     snippet: str = ""  # 匹配片段
+
+    model_config = {"from_attributes": True}
+
+
+class AnnotationCreate(BaseModel):
+    """创建批注时的输入模型。"""
+
+    thread_id: str = Field(..., description="所属线程 ID")
+    in_reply_to: str = Field("", description="回复的目标 message_id 或 annotation_id")
+    author: str = Field("", description="批注作者")
+    body: str = Field(..., min_length=1, description="批注正文（支持 Markdown）")
+
+    model_config = {"from_attributes": True}
+
+
+class AnnotationUpdate(BaseModel):
+    """更新批注时的输入模型。"""
+
+    body: str = Field(..., min_length=1, description="批注正文（支持 Markdown）")
+
+    model_config = {"from_attributes": True}
+
+
+class AnnotationRead(BaseModel):
+    """查询批注时的输出模型。"""
+
+    id: int
+    annotation_id: str
+    thread_id: str
+    in_reply_to: str
+    author: str
+    body: str
+    created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}
 

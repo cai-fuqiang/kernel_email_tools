@@ -97,3 +97,7 @@ qa:
     llm_provider: openai
     model: gpt-4
     api_key: ""                          # API Key
+
+# 批注配置
+annotations:
+  default_author: "me"                   # 默认批注作者名称

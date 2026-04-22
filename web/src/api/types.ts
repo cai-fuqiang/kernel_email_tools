@@ -51,9 +51,27 @@ export interface ThreadEmail {
   body_raw: string;
 }
 
+export interface Annotation {
+  annotation_id: string;
+  thread_id: string;
+  in_reply_to: string;
+  author: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AnnotationCreate {
+  thread_id: string;
+  in_reply_to: string;
+  author?: string;
+  body: string;
+}
+
 export interface ThreadResponse {
   thread_id: string;
   emails: ThreadEmail[];
+  annotations: Annotation[];
   total: number;
 }
 

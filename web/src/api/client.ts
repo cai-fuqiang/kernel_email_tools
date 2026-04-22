@@ -5,7 +5,9 @@ import type {
   StatsResponse,
   ManualSearchResponse,
   ManualAskResponse,
-  ManualStatsResponse
+  ManualStatsResponse,
+  Annotation,
+  AnnotationCreate,
 } from './types';
 
 // 使用相对路径，同源请求不会有 CORS 问题
@@ -386,4 +388,73 @@ export interface TranslatedThreadsResponse {
 
 export async function getTranslatedThreads(): Promise<TranslatedThreadsResponse> {
   return fetchJSON(`${API_BASE}/translate/threads`);
+}
+
+// ============================================================
+// 批注 API
+// ============================================================
+
+export async function createAnnotation(data: AnnotationCreate): Promise<Annotation> {
+  const res = await fetch(`${API_BASE}/annotations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export async function getAnnotations(threadId: string): Promise<Annotation[]> {
+  return fetchJSON<Annotation[]>(`${API_BASE}/annotations/${encodeURIComponent(threadId)}`);
+}
+
+export async function updateAnnotation(annotationId: string, body: string): Promise<Annotation> {
+  const res = await fetch(`${API_BASE}/annotations/${encodeURIComponent(annotationId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export async function deleteAnnotation(annotationId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/annotations/${encodeURIComponent(annotationId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+}
+
+export async function exportAnnotations(threadId?: string): Promise<Record<string, unknown>> {
+  const params = threadId ? `?thread_id=${encodeURIComponent(threadId)}` : '';
+  const res = await fetch(`${API_BASE}/annotations/export${params}`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export async function importAnnotations(data: Record<string, unknown>): Promise<{ status: string; total_imported: number }> {
+  const res = await fetch(`${API_BASE}/annotations/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+  return res.json();
 }

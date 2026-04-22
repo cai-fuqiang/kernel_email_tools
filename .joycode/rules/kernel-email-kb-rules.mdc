@@ -67,10 +67,11 @@ kernel_email_tools/
 │   │   └── pipeline.py           # 分片管道编排
 │   ├── storage/                   # 存储层
 │   │   ├── base.py              # BaseStorage + BaseEmailStorage
-│   │   ├── models.py            # EmailORM + TagORM + Pydantic 模型
+│   │   ├── models.py            # EmailORM + TagORM + AnnotationORM + Pydantic 模型
 │   │   ├── postgres.py           # PostgresStorage（邮件存储）
 │   │   ├── tag_store.py         # TagStore 标签管理
 │   │   ├── translation_cache.py  # TranslationCache ORM + TranslationCacheStore
+│   │   ├── annotation_store.py   # AnnotationStore 批注存储（CRUD + 导入导出）
 │   │   ├── document_models.py    # DocumentChunkModel ORM
 │   │   └── document_store.py     # DocumentStorage（手册存储）
 │   ├── indexer/                  # 索引层
@@ -173,6 +174,25 @@ kernel_email_tools/
 - 通过 `message_id` 关联 `emails` 表，支持按 thread 聚合翻译统计和标签展示
 - 翻译时自动写入 `message_id`；已有缓存命中时 backfill 补充关联
 
+### AnnotationORM 核心字段（批注/本地回复）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | int | 主键，自增 |
+| `annotation_id` | str(64) | 唯一标识（UUID 格式: annotation-xxxx）|
+| `thread_id` | str(512) | 所属线程 ID |
+| `in_reply_to` | str(512) | 回复的目标 message_id 或 annotation_id |
+| `author` | str(256) | 批注作者（默认从 config 读取）|
+| `body` | text | 批注正文（支持 Markdown）|
+| `created_at` | datetime | 创建时间 |
+| `updated_at` | datetime | 更新时间 |
+
+- 批注不是真正的邮件回复，而是用户本地评论，混合显示在 Thread 视图的线程树中
+- 通过 `in_reply_to` 关联原邮件或其他批注，支持嵌套回复
+- 前端以蓝色边框卡片 + "我的批注" 标签区分于真实邮件
+- 支持 JSON 导出/导入，满足 git 固化版本管理需求
+- `AnnotationStore` 遵循 session_factory 模式（请求级 session）
+
 ### DocumentChunkModel 核心字段（手册分片）
 
 | 字段 | 类型 | 说明 |
@@ -200,6 +220,7 @@ kernel_email_tools/
 - **邮件表**: GIN(search_vector), GIN(tags), 复合(list_name, thread_id), 唯一(message_id)
 - **标签表**: name 唯一约束, parent_id 索引
 - **翻译缓存表**: 唯一(source_hash), 索引(message_id)
+- **批注表**: 唯一(annotation_id), 索引(thread_id), 索引(in_reply_to)
 - **手册表**: GIN(search_vector), 复合(manual_type, content_type)
 
 ---
@@ -265,7 +286,7 @@ kernel_email_tools/
 │  ├── translator/google_translator.py                            │
 │  └── 全局组件初始化 (lifespan)                                   │
 │      ├── PostgresStorage / DocumentStorage                     │
-│      ├── TagStore / TranslationCache                            │
+│      ├── TagStore / TranslationCache / AnnotationStore          │
 │      └── HybridRetriever / ManualRetriever                     │
 └─────────────────────────────────────────────────────────────────┘
 
@@ -317,6 +338,17 @@ kernel_email_tools/
 | `/api/translate/health` | GET | 翻译服务健康检查 |
 | `/api/translate/cache` | DELETE | 清除翻译缓存 |
 | `/api/translate/manual` | PUT | 保存人工翻译 |
+
+### 批注 API
+
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/annotations` | POST | 创建批注（本地回复）|
+| `/api/annotations/{thread_id}` | GET | 获取线程所有批注 |
+| `/api/annotations/{annotation_id}` | PUT | 编辑批注 |
+| `/api/annotations/{annotation_id}` | DELETE | 删除批注 |
+| `/api/annotations/export` | POST | 导出批注为 JSON（支持单线程或全量）|
+| `/api/annotations/import` | POST | 从 JSON 导入批注（幂等，已存在则跳过）|
 
 ### 芯片手册 API
 

@@ -1,28 +1,56 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { getThread, translateBatch, clearTranslationCache } from '../api/client';
-import type { ThreadResponse, ThreadEmail } from '../api/types';
+import { getThread, translateBatch, clearTranslationCache, createAnnotation, updateAnnotation, deleteAnnotation, exportAnnotations, importAnnotations } from '../api/client';
+import type { ThreadResponse, ThreadEmail, Annotation } from '../api/types';
 import EmailTagEditor from './EmailTagEditor';
 
-// 线程节点类型
+// 线程节点类型（支持邮件和批注两种）
 interface ThreadNode {
   email: ThreadEmail;
   children: ThreadNode[];
   depth: number;
+  isAnnotation?: boolean;
+  annotation?: Annotation;
 }
 
-// 构建线程树
-function buildThreadTree(emails: ThreadEmail[]): ThreadNode[] {
+// 构建线程树（含批注混入）
+function buildThreadTree(emails: ThreadEmail[], annotations: Annotation[] = []): ThreadNode[] {
   const nodes: Map<string, ThreadNode> = new Map();
   const roots: ThreadNode[] = [];
   
+  // 先创建邮件节点
   emails.forEach(email => {
     nodes.set(email.message_id, { email, children: [], depth: 0 });
   });
+
+  // 将批注转为虚拟 ThreadNode 混入
+  annotations.forEach(ann => {
+    const fakeEmail: ThreadEmail = {
+      id: -Math.abs(hashCode(ann.annotation_id)),  // 负数 ID 避免和真实邮件冲突
+      message_id: ann.annotation_id,
+      subject: '批注',
+      sender: ann.author,
+      date: ann.created_at,
+      in_reply_to: ann.in_reply_to,
+      references: [],
+      has_patch: false,
+      patch_content: '',
+      body: ann.body,
+      body_raw: '',
+    };
+    nodes.set(ann.annotation_id, {
+      email: fakeEmail,
+      children: [],
+      depth: 0,
+      isAnnotation: true,
+      annotation: ann,
+    });
+  });
   
-  emails.forEach(email => {
-    const node = nodes.get(email.message_id)!;
-    if (email.in_reply_to) {
-      const parent = nodes.get(email.in_reply_to);
+  // 构建父子关系
+  nodes.forEach((node) => {
+    const replyTo = node.email.in_reply_to;
+    if (replyTo) {
+      const parent = nodes.get(replyTo);
       if (parent) {
         parent.children.push(node);
         node.depth = parent.depth + 1;
@@ -53,6 +81,17 @@ function buildThreadTree(emails: ThreadEmail[]): ThreadNode[] {
   recalcDepth(roots, 0);
   
   return roots;
+}
+
+// 简单 hash 函数用于生成批注的虚拟 ID
+function hashCode(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return Math.abs(hash);
 }
 
 function getAuthorName(sender: string): string {
@@ -211,6 +250,19 @@ function collectDescendantIds(node: ThreadNode): number[] {
   return ids;
 }
 
+// 计算节点下所有后代的总数（不含自身）
+function countDescendants(node: ThreadNode): number {
+  let count = 0;
+  const walk = (n: ThreadNode) => {
+    for (const child of n.children) {
+      count++;
+      walk(child);
+    }
+  };
+  walk(node);
+  return count;
+}
+
 function buildNodeMap(roots: ThreadNode[]): Map<number, ThreadNode> {
   const map = new Map<number, ThreadNode>();
   const walk = (node: ThreadNode) => {
@@ -250,6 +302,121 @@ function getDiffLineClass(line: string): string {
   if (trimmed.startsWith('diff ')) return 'diff-line diff-header';
   if (trimmed.startsWith('index ')) return 'diff-line diff-meta';
   return 'diff-line diff-ctx';
+}
+
+// =============================================================
+// 批注输入组件
+// =============================================================
+function AnnotationInput({ 
+  onSubmit, 
+  onCancel,
+  initialBody,
+  submitLabel,
+}: { 
+  onSubmit: (body: string) => void; 
+  onCancel: () => void;
+  initialBody?: string;
+  submitLabel?: string;
+}) {
+  const [body, setBody] = useState(initialBody || '');
+  return (
+    <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        className="w-full min-h-[80px] p-2 text-sm border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 bg-white"
+        placeholder="输入批注内容（支持 Markdown）..."
+        autoFocus
+      />
+      <div className="flex gap-2 mt-2">
+        <button
+          onClick={() => { if (body.trim()) onSubmit(body.trim()); }}
+          disabled={!body.trim()}
+          className="px-3 py-1.5 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {submitLabel || '提交批注'}
+        </button>
+        <button
+          onClick={onCancel}
+          className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300"
+        >
+          取消
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================
+// 批注卡片组件（用于显示已有批注）
+// =============================================================
+function AnnotationCard({
+  annotation,
+  depth,
+  onEdit,
+  onDelete,
+  onReply,
+}: {
+  annotation: Annotation;
+  depth: number;
+  onEdit: (annotationId: string, body: string) => void;
+  onDelete: (annotationId: string) => void;
+  onReply: (annotationId: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+
+  return (
+    <div
+      className="annotation-node border-l-4 border-blue-400 bg-blue-50 rounded-lg p-4 my-2"
+      style={{ marginLeft: depth > 0 ? `${Math.min(depth, 6) * 16}px` : 0 }}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <span className="px-2 py-0.5 bg-blue-200 text-blue-800 text-xs rounded font-medium">我的批注</span>
+        <span className="text-sm font-medium text-blue-900">{annotation.author}</span>
+        <span className="text-xs text-blue-500 ml-auto">
+          {new Date(annotation.created_at).toLocaleDateString('zh-CN', {
+            year: 'numeric', month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+          })}
+        </span>
+        {annotation.updated_at !== annotation.created_at && (
+          <span className="text-xs text-blue-400">(已编辑)</span>
+        )}
+      </div>
+      {editing ? (
+        <AnnotationInput
+          initialBody={annotation.body}
+          submitLabel="保存修改"
+          onSubmit={(body) => { onEdit(annotation.annotation_id, body); setEditing(false); }}
+          onCancel={() => setEditing(false)}
+        />
+      ) : (
+        <>
+          <pre className="text-sm whitespace-pre-wrap break-words text-blue-900 leading-relaxed">{annotation.body}</pre>
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={() => onReply(annotation.annotation_id)}
+              className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+            >
+              回复
+            </button>
+            <button
+              onClick={() => setEditing(true)}
+              className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+            >
+              编辑
+            </button>
+            <button
+              onClick={() => onDelete(annotation.annotation_id)}
+              className="text-xs px-2 py-1 text-red-500 hover:bg-red-50 rounded transition-colors"
+            >
+              删除
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 // =============================================================
@@ -311,6 +478,11 @@ function LayeredEmailCard({
   translations,
   onTranslationUpdate,
   onClearParagraphCache,
+  onAddAnnotation,
+  onEditAnnotation,
+  onDeleteAnnotation,
+  replyingTo,
+  onSetReplyingTo,
 }: {
   node: ThreadNode;
   isExpanded: boolean;
@@ -318,6 +490,11 @@ function LayeredEmailCard({
   translations: TranslationMap;
   onTranslationUpdate: (para: string, translation: string) => void;
   onClearParagraphCache: (paragraph: string) => void;
+  onAddAnnotation: (threadId: string, inReplyTo: string, body: string) => void;
+  onEditAnnotation: (annotationId: string, body: string) => void;
+  onDeleteAnnotation: (annotationId: string) => void;
+  replyingTo: string | null;
+  onSetReplyingTo: (id: string | null) => void;
 }) {
   const { email, children, depth } = node;
   const paragraphs = parseParagraphs(getDisplayBody(email));
@@ -369,16 +546,23 @@ function LayeredEmailCard({
       {email.has_patch && (
         <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded font-medium">PATCH</span>
       )}
-      {children.length > 0 && (
-        <span className="text-xs text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded-full">
-          {children.length} 回复
-        </span>
-      )}
+      {children.length > 0 && (() => {
+        const totalDesc = countDescendants(node);
+        return (
+          <span className="text-xs text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded-full">
+            {children.length} 回复{totalDesc > children.length && (
+              <span className="text-gray-400"> / 共 {totalDesc}</span>
+            )}
+          </span>
+        );
+      })()}
       <span className="text-gray-400 ml-auto">{isExpanded ? '▼' : '▶'}</span>
     </div>
   );
 
-  const renderFullHeader = () => (
+  const renderFullHeader = () => {
+    const totalDesc = children.length > 0 ? countDescendants(node) : 0;
+    return (
     <div className="flex items-center gap-3 py-3 px-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border-l-4 border-blue-400">
       <div 
         className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm"
@@ -407,11 +591,16 @@ function LayeredEmailCard({
         <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">PATCH</span>
       )}
       {children.length > 0 && (
-        <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded-full">{children.length} 回复</span>
+        <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded-full">
+          {children.length} 回复{totalDesc > children.length && (
+            <span className="text-gray-400"> / 共 {totalDesc}</span>
+          )}
+        </span>
       )}
       <span className="text-gray-400 text-lg">{isExpanded ? '▼' : '▶'}</span>
     </div>
-  );
+    );
+  };
 
   const renderParagraph = (block: ParagraphBlock, idx: number) => {
     const { text: para, type: blockType } = block;
@@ -476,6 +665,19 @@ function LayeredEmailCard({
     );
   };
 
+  // 批注节点特殊渲染
+  if (node.isAnnotation && node.annotation) {
+    return (
+      <AnnotationCard
+        annotation={node.annotation}
+        depth={depth}
+        onEdit={onEditAnnotation}
+        onDelete={onDeleteAnnotation}
+        onReply={(id) => onSetReplyingTo(id)}
+      />
+    );
+  }
+
   return (
     <div className="email-node" style={{ marginLeft: depth > 0 ? `${Math.min(depth, 6) * 16}px` : 0 }}>
       <div 
@@ -496,6 +698,22 @@ function LayeredEmailCard({
           {email.has_patch && email.patch_content && (
             <PatchDiffBlock content={email.patch_content} />
           )}
+          {/* 添加批注按钮 */}
+          <div className="mt-3">
+            {replyingTo === email.message_id ? (
+              <AnnotationInput
+                onSubmit={(body) => { onAddAnnotation(node.email.message_id, email.message_id, body); onSetReplyingTo(null); }}
+                onCancel={() => onSetReplyingTo(null)}
+              />
+            ) : (
+              <button
+                onClick={() => onSetReplyingTo(email.message_id)}
+                className="text-xs px-3 py-1.5 text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg transition-colors"
+              >
+                + 添加批注
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -512,6 +730,11 @@ function TreeEmailCard({
   translations,
   onTranslationUpdate,
   onClearParagraphCache,
+  onAddAnnotation,
+  onEditAnnotation,
+  onDeleteAnnotation,
+  replyingTo,
+  onSetReplyingTo,
 }: { 
   node: ThreadNode;
   expandedIds: Set<number>;
@@ -519,6 +742,11 @@ function TreeEmailCard({
   translations: TranslationMap;
   onTranslationUpdate: (para: string, translation: string) => void;
   onClearParagraphCache: (paragraph: string) => void;
+  onAddAnnotation: (threadId: string, inReplyTo: string, body: string) => void;
+  onEditAnnotation: (annotationId: string, body: string) => void;
+  onDeleteAnnotation: (annotationId: string) => void;
+  replyingTo: string | null;
+  onSetReplyingTo: (id: string | null) => void;
 }) {
   const { email, children, depth } = node;
   const isExpanded = expandedIds.has(email.id);
@@ -541,7 +769,9 @@ function TreeEmailCard({
     setEditText('');
   };
 
-  const renderFullHeader = () => (
+  const renderFullHeader = () => {
+    const totalDesc = children.length > 0 ? countDescendants(node) : 0;
+    return (
     <div className="flex items-center gap-3 py-3 px-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border-l-4 border-blue-400">
       <div 
         className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm"
@@ -575,11 +805,16 @@ function TreeEmailCard({
         <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">PATCH</span>
       )}
       {children.length > 0 && (
-        <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded-full">{children.length} 回复</span>
+        <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded-full">
+          {children.length} 回复{totalDesc > children.length && (
+            <span className="text-gray-400"> / 共 {totalDesc}</span>
+          )}
+        </span>
       )}
       <span className="text-gray-400 text-lg">{isExpanded ? '▼' : '▶'}</span>
     </div>
-  );
+    );
+  };
 
   const renderParagraph = (block: ParagraphBlock, idx: number) => {
     const { text: para, type: blockType } = block;
@@ -644,6 +879,49 @@ function TreeEmailCard({
     );
   };
 
+  // 批注节点特殊渲染
+  if (node.isAnnotation && node.annotation) {
+    return (
+      <div style={{ marginLeft: depth > 0 ? '16px' : 0 }}>
+        <AnnotationCard
+          annotation={node.annotation}
+          depth={0}
+          onEdit={onEditAnnotation}
+          onDelete={onDeleteAnnotation}
+          onReply={(id) => onSetReplyingTo(id)}
+        />
+        {children.length > 0 && (
+          <div className="replies mt-3">
+            {children.map(child => (
+              <TreeEmailCard 
+                key={child.email.id} 
+                node={child} 
+                expandedIds={expandedIds}
+                toggleExpand={toggleExpand}
+                translations={translations}
+                onTranslationUpdate={onTranslationUpdate}
+                onClearParagraphCache={onClearParagraphCache}
+                onAddAnnotation={onAddAnnotation}
+                onEditAnnotation={onEditAnnotation}
+                onDeleteAnnotation={onDeleteAnnotation}
+                replyingTo={replyingTo}
+                onSetReplyingTo={onSetReplyingTo}
+              />
+            ))}
+          </div>
+        )}
+        {replyingTo === node.annotation.annotation_id && (
+          <div style={{ marginLeft: '16px' }}>
+            <AnnotationInput
+              onSubmit={(body) => { onAddAnnotation(node.annotation!.thread_id, node.annotation!.annotation_id, body); onSetReplyingTo(null); }}
+              onCancel={() => onSetReplyingTo(null)}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="email-node" style={{ marginLeft: depth > 0 ? '16px' : 0 }}>
       <details className="email-thread" open={isExpanded}>
@@ -663,6 +941,22 @@ function TreeEmailCard({
           {email.has_patch && email.patch_content && (
             <PatchDiffBlock content={email.patch_content} />
           )}
+          {/* 添加批注按钮 */}
+          <div className="mt-3">
+            {replyingTo === email.message_id ? (
+              <AnnotationInput
+                onSubmit={(body) => { onAddAnnotation(node.email.message_id, email.message_id, body); onSetReplyingTo(null); }}
+                onCancel={() => onSetReplyingTo(null)}
+              />
+            ) : (
+              <button
+                onClick={() => onSetReplyingTo(email.message_id)}
+                className="text-xs px-3 py-1.5 text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg transition-colors"
+              >
+                + 添加批注
+              </button>
+            )}
+          </div>
         </div>
       </details>
       {children.length > 0 && (
@@ -676,6 +970,11 @@ function TreeEmailCard({
               translations={translations}
               onTranslationUpdate={onTranslationUpdate}
               onClearParagraphCache={onClearParagraphCache}
+              onAddAnnotation={onAddAnnotation}
+              onEditAnnotation={onEditAnnotation}
+              onDeleteAnnotation={onDeleteAnnotation}
+              replyingTo={replyingTo}
+              onSetReplyingTo={onSetReplyingTo}
             />
           ))}
         </div>
@@ -774,20 +1073,109 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
     });
   }, []);
 
+  // 批注相关状态
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+
+  // 重建线程树（将批注混入）
+  const rebuildTree = useCallback((t: ThreadResponse) => {
+    const tree = buildThreadTree(t.emails, t.annotations || []);
+    setThreadTree(tree);
+    return tree;
+  }, []);
+
+  const handleAddAnnotation = useCallback(async (_threadId: string, inReplyTo: string, body: string) => {
+    try {
+      await createAnnotation({
+        thread_id: threadId,
+        in_reply_to: inReplyTo,
+        body,
+      });
+      // 重新加载线程数据
+      const t = await getThread(threadId);
+      setThread(t);
+      rebuildTree(t);
+    } catch (e) {
+      console.error('Failed to create annotation:', e);
+    }
+  }, [threadId, rebuildTree]);
+
+  const handleEditAnnotation = useCallback(async (annotationId: string, body: string) => {
+    try {
+      await updateAnnotation(annotationId, body);
+      const t = await getThread(threadId);
+      setThread(t);
+      rebuildTree(t);
+    } catch (e) {
+      console.error('Failed to update annotation:', e);
+    }
+  }, [threadId, rebuildTree]);
+
+  const handleDeleteAnnotation = useCallback(async (annotationId: string) => {
+    if (!confirm('确定删除这条批注？')) return;
+    try {
+      await deleteAnnotation(annotationId);
+      const t = await getThread(threadId);
+      setThread(t);
+      rebuildTree(t);
+    } catch (e) {
+      console.error('Failed to delete annotation:', e);
+    }
+  }, [threadId, rebuildTree]);
+
+  const handleExportAnnotations = useCallback(async () => {
+    try {
+      const data = await exportAnnotations(threadId);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `annotations-${threadId.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Failed to export annotations:', e);
+    }
+  }, [threadId]);
+
+  const handleImportAnnotations = useCallback(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        const result = await importAnnotations(data);
+        if (result.total_imported > 0) {
+          // 重新加载线程
+          const t = await getThread(threadId);
+          setThread(t);
+          rebuildTree(t);
+        }
+        alert(`导入完成：${result.total_imported} 条批注`);
+      } catch (err) {
+        console.error('Failed to import annotations:', err);
+        alert('导入失败：' + (err instanceof Error ? err.message : String(err)));
+      }
+    };
+    input.click();
+  }, [threadId, rebuildTree]);
+
   useEffect(() => {
     setLoading(true);
     getThread(threadId)
       .then(t => {
         setThread(t);
-        const tree = buildThreadTree(t.emails);
-        setThreadTree(tree);
+        rebuildTree(t);
         if (t.emails.length > 0) {
           setExpandedIds(new Set([t.emails[0].id]));
         }
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, [threadId]);
+  }, [threadId, rebuildTree]);
 
   const toggleExpand = useCallback((id: number) => {
     setExpandedIds(prev => {
@@ -964,6 +1352,22 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
                 </div>
               )}
             </div>
+            {thread?.annotations && thread.annotations.length > 0 && (
+              <button
+                onClick={handleExportAnnotations}
+                className="px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-200"
+                title="导出批注为 JSON"
+              >
+                导出批注
+              </button>
+            )}
+            <button
+              onClick={handleImportAnnotations}
+              className="px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-200"
+              title="从 JSON 文件导入批注"
+            >
+              导入批注
+            </button>
             <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
               <button
                 onClick={enterTreeMode}
@@ -1015,6 +1419,9 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
               <div className="bg-white rounded-lg px-4 py-3 mb-6 flex items-center gap-6 text-sm text-gray-600 border border-gray-200">
                 <span><strong className="text-gray-900">{thread.emails.length}</strong> 封邮件</span>
                 <span><strong className="text-gray-900">{threadTree.length}</strong> 个主题</span>
+                {thread.annotations && thread.annotations.length > 0 && (
+                  <span><strong className="text-blue-600">{thread.annotations.length}</strong> 条批注</span>
+                )}
                 {translationStats.total > 0 && (
                   <span><strong className="text-gray-900">{translationStats.total}</strong> 段落可翻译</span>
                 )}
@@ -1030,6 +1437,11 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
                       translations={translations}
                       onTranslationUpdate={handleTranslationUpdate}
                       onClearParagraphCache={handleClearParagraphCache}
+                      onAddAnnotation={handleAddAnnotation}
+                      onEditAnnotation={handleEditAnnotation}
+                      onDeleteAnnotation={handleDeleteAnnotation}
+                      replyingTo={replyingTo}
+                      onSetReplyingTo={setReplyingTo}
                     />
                   ))
                 ) : (
@@ -1042,6 +1454,11 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
                       translations={translations}
                       onTranslationUpdate={handleTranslationUpdate}
                       onClearParagraphCache={handleClearParagraphCache}
+                      onAddAnnotation={handleAddAnnotation}
+                      onEditAnnotation={handleEditAnnotation}
+                      onDeleteAnnotation={handleDeleteAnnotation}
+                      replyingTo={replyingTo}
+                      onSetReplyingTo={setReplyingTo}
                     />
                   ))
                 )}
