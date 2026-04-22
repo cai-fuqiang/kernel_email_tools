@@ -599,7 +599,7 @@ async def get_thread(thread_id: str):
                 "references": e.references or [],
                 "has_patch": e.has_patch,
                 "patch_content": e.patch_content or "",
-                "body": e.body[:500],  # 限制 body 长度
+                "body": e.body or "",
             }
             for e in emails
         ],

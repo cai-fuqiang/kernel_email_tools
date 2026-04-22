@@ -69,19 +69,24 @@ function shouldTranslate(text: string): boolean {
   if (!text || /[一-译]/.test(text)) return false;
   const lines = text.split('\n');
   if (lines.length === 0) return false;
-  const codeLines = lines.filter(l => 
-    l.trim().startsWith('>') || 
-    l.trim().startsWith('diff ') ||
-    l.trim().startsWith('@@') ||
-    l.trim().startsWith('---') ||
-    l.trim().startsWith('+++') ||
-    l.trim().startsWith('Signed-off-by:') ||
-    l.trim().startsWith('Reviewed-by:') ||
-    l.trim().startsWith('Acked-by:') ||
-    l.trim().startsWith('Tested-by:') ||
-    /^[+-]/.test(l.trim())
-  );
-  return codeLines.length < lines.length * 0.5 && lines.filter(l => l.trim()).length > 0;
+  const skipLines = lines.filter(l => {
+    const t = l.trim();
+    return t.startsWith('diff ') ||
+      t.startsWith('@@') ||
+      t.startsWith('---') ||
+      t.startsWith('+++') ||
+      t.startsWith('Signed-off-by:') ||
+      t.startsWith('Reviewed-by:') ||
+      t.startsWith('Acked-by:') ||
+      t.startsWith('Tested-by:') ||
+      /^[+-]/.test(t);
+  });
+  return skipLines.length < lines.length * 0.8 && lines.filter(l => l.trim()).length > 0;
+}
+
+// 判断一行是否为引用行
+function isQuotedLine(line: string): boolean {
+  return /^\s*>/.test(line);
 }
 
 type TranslationMap = Map<string, { translation: string; loading: boolean; error?: string }>;
@@ -249,10 +254,40 @@ function LayeredEmailCard({
     const translation = transState?.translation;
     const transError = transState?.error;
 
+    // 渲染带引用样式的文本（引用行灰色左边框，正文行正常）
+    const renderStyledText = (text: string, baseClass: string) => {
+      const lines = text.split('\n');
+      const segments: { quoted: boolean; text: string }[] = [];
+      let current: { quoted: boolean; lines: string[] } | null = null;
+
+      for (const line of lines) {
+        const quoted = isQuotedLine(line);
+        if (!current || current.quoted !== quoted) {
+          if (current) segments.push({ quoted: current.quoted, text: current.lines.join('\n') });
+          current = { quoted, lines: [line] };
+        } else {
+          current.lines.push(line);
+        }
+      }
+      if (current) segments.push({ quoted: current.quoted, text: current.lines.join('\n') });
+
+      return (
+        <div>
+          {segments.map((seg, i) => (
+            seg.quoted ? (
+              <pre key={i} className={`${baseClass} border-l-3 border-gray-300 pl-3 text-gray-500 italic`}>{seg.text}</pre>
+            ) : (
+              <pre key={i} className={baseClass}>{seg.text}</pre>
+            )
+          ))}
+        </div>
+      );
+    };
+
     if (!needTrans) {
       return (
         <div key={idx} className="email-paragraph">
-          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
+          {renderStyledText(para, "text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed")}
         </div>
       );
     }
@@ -261,7 +296,7 @@ function LayeredEmailCard({
       <div key={idx} className="bilingual-block">
         <div className="bilingual-original">
           <div className="lang-label">EN</div>
-          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
+          {renderStyledText(para, "text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed")}
         </div>
         <div className="bilingual-translation">
           <div className="lang-label flex items-center justify-between">
@@ -418,10 +453,40 @@ function TreeEmailCard({
     const translation = transState?.translation;
     const transError = transState?.error;
 
+    // 渲染带引用样式的文本（引用行灰色左边框，正文行正常）
+    const renderStyledText = (text: string, baseClass: string) => {
+      const lines = text.split('\n');
+      const segments: { quoted: boolean; text: string }[] = [];
+      let current: { quoted: boolean; lines: string[] } | null = null;
+
+      for (const line of lines) {
+        const quoted = isQuotedLine(line);
+        if (!current || current.quoted !== quoted) {
+          if (current) segments.push({ quoted: current.quoted, text: current.lines.join('\n') });
+          current = { quoted, lines: [line] };
+        } else {
+          current.lines.push(line);
+        }
+      }
+      if (current) segments.push({ quoted: current.quoted, text: current.lines.join('\n') });
+
+      return (
+        <div>
+          {segments.map((seg, i) => (
+            seg.quoted ? (
+              <pre key={i} className={`${baseClass} border-l-3 border-gray-300 pl-3 text-gray-500 italic`}>{seg.text}</pre>
+            ) : (
+              <pre key={i} className={baseClass}>{seg.text}</pre>
+            )
+          ))}
+        </div>
+      );
+    };
+
     if (!needTrans) {
       return (
         <div key={idx} className="email-paragraph">
-          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
+          {renderStyledText(para, "text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed")}
         </div>
       );
     }
@@ -430,7 +495,7 @@ function TreeEmailCard({
       <div key={idx} className="bilingual-block">
         <div className="bilingual-original">
           <div className="lang-label">EN</div>
-          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
+          {renderStyledText(para, "text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed")}
         </div>
         <div className="bilingual-translation">
           <div className="lang-label flex items-center justify-between">
