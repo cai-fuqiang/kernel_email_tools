@@ -4,6 +4,7 @@ import SearchPage from './pages/SearchPage';
 import AskPage from './pages/AskPage';
 import TagsPage from './pages/TagsPage';
 import TranslationsPage from './pages/TranslationsPage';
+import AnnotationsPage from './pages/AnnotationsPage';
 import ManualSearchPage from './pages/ManualSearchPage';
 import ManualAskPage from './pages/ManualAskPage';
 
@@ -15,6 +16,7 @@ export default function App() {
           <Route path="/" element={<SearchPage />} />
           <Route path="/ask" element={<AskPage />} />
           <Route path="/tags" element={<TagsPage />} />
+          <Route path="/annotations" element={<AnnotationsPage />} />
           <Route path="/translations" element={<TranslationsPage />} />
           <Route path="/manual/search" element={<ManualSearchPage />} />
           <Route path="/manual/ask" element={<ManualAskPage />} />

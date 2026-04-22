@@ -8,6 +8,7 @@ import type {
   ManualStatsResponse,
   Annotation,
   AnnotationCreate,
+  AnnotationListResponse,
 } from './types';
 
 // 使用相对路径，同源请求不会有 CORS 问题
@@ -457,4 +458,16 @@ export async function importAnnotations(data: Record<string, unknown>): Promise<
     throw new Error(`API error ${res.status}: ${text}`);
   }
   return res.json();
+}
+
+export async function listAnnotations(opts?: {
+  q?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<AnnotationListResponse> {
+  const params = new URLSearchParams();
+  if (opts?.q) params.set('q', opts.q);
+  if (opts?.page) params.set('page', String(opts.page));
+  if (opts?.page_size) params.set('page_size', String(opts.page_size));
+  return fetchJSON<AnnotationListResponse>(`${API_BASE}/annotations?${params}`);
 }

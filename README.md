@@ -7,7 +7,7 @@
 - **双数据源**：Linux 内核邮件列表 + 芯片手册（Intel SDM/ARM/AMD）
 - **双引擎检索**：PostgreSQL 全文索引（精确）+ pgvector 向量检索（语义）
 - **RAG 问答**：基于检索结果自动生成带来源引用的回答
-- **插件化架构**：六层解耦（采集→解析→存储→索引→检索→问答），每层可替换
+- **插件化架构**：七层解耦（采集→解析→分片→存储→索引→检索→问答），每层可替换
 - **MVP 优先**：先跑通单列表全流程，再横向扩展
 
 ## 🏗️ 架构设计
@@ -28,8 +28,19 @@ src/
 ### 前端架构（React）
 ```
 web/src/
-├── pages/         # 页面组件（SearchPage, AskPage, ManualSearchPage, ManualAskPage）
-├── components/    # 通用组件（ThreadDrawer）
+├── pages/         # 页面组件
+│   ├── SearchPage.tsx        # 邮件搜索页（含标签筛选）
+│   ├── AskPage.tsx           # 邮件问答页（含标签筛选）
+│   ├── TagsPage.tsx          # 标签管理页
+│   ├── AnnotationsPage.tsx   # 批注管理页（全量列表+搜索+Markdown渲染）
+│   ├── TranslationsPage.tsx  # 翻译管理页（已缓存线程+标签+自动轮询）
+│   ├── ManualSearchPage.tsx  # 手册搜索页
+│   └── ManualAskPage.tsx     # 手册问答页
+├── components/    # 通用组件
+│   ├── ThreadDrawer.tsx      # 线程抽屉（含翻译、引用行渲染、PatchDiffBlock、Markdown批注）
+│   ├── TagFilter.tsx         # 标签筛选组件
+│   ├── TagManager.tsx        # 标签管理组件
+│   └── EmailTagEditor.tsx    # 邮件标签编辑器
 ├── layouts/       # 布局组件（MainLayout）
 ├── api/          # API 客户端 + TypeScript 类型
 └── assets/       # 静态资源
@@ -333,6 +344,7 @@ manual:
 - 输入关键词搜索邮件（如 "shmem mount"）
 - 支持三种检索模式：Hybrid（混合）、Keyword（关键词）、Semantic（语义）
 - **Channel/channel 过滤**：在下拉框选择要检索的 channel（留空则搜索所有 channel）
+- 支持标签过滤、发件人筛选、日期范围过滤
 - 结果包含邮件主题、发件人、时间、相关性分数和高亮片段
 - 点击 "Thread" 查看完整邮件线程对话
 
@@ -341,13 +353,58 @@ manual:
 - 系统会检索相关邮件并生成带来源引用的回答
 - MVP 阶段使用检索摘要作为 fallback，可配置 OpenAI API 启用 LLM 回答
 
+#### 标签管理
+- 支持父子层级标签（树形结构）
+- 为邮件添加/移除标签，单封邮件最多 16 个
+- 点击标签查看关联的邮件列表
+
+#### 翻译功能
+- Google Translate 自动翻译 + 缓存
+- 双语对照展示（原文/译文左右分栏）
+- 引用行不翻译，PATCH diff 独立折叠展示
+- 支持人工校正翻译
+
+#### 批注管理
+- 在邮件线程中添加本地批注（支持 Markdown）
+- 独立批注管理页面（`/annotations`）：全量浏览 + 关键词搜索
+- 批注在线程树中排在子节点最前面，蓝色卡片区分
+- 支持嵌套回复、编辑、删除
+- JSON 导出/导入，满足 git 固化版本管理需求
+
 ### API 接口
 ### API 接口（邮件）
 - `GET /api/` - 健康检查
-- `GET /api/search?q=关键词` - 邮件搜索
-- `GET /api/ask?q=问题` - 智能问答  
-- `GET /api/thread/{id}` - 获取邮件线程
+- `GET /api/search?q=关键词` - 邮件搜索（支持标签/发件人/日期过滤）
+- `GET /api/ask?q=问题` - 智能问答（支持标签/发件人/日期过滤）
+- `GET /api/thread/{id}` - 获取邮件线程（含批注）
 - `GET /api/stats` - 数据库统计
+
+### API 接口（标签）
+- `POST /api/tags` - 创建标签
+- `GET /api/tags` - 获取标签树（树形结构）
+- `GET /api/tags/stats` - 获取标签统计
+- `GET /api/tags/{tag_name}/emails` - 获取标签下的邮件列表（分页）
+- `DELETE /api/tags/{tag_id}` - 删除标签（级联删除子标签）
+- `GET /api/email/{message_id}/tags` - 获取邮件标签
+- `POST /api/email/{message_id}/tags` - 添加标签（最多 16 个）
+- `DELETE /api/email/{message_id}/tags/{tag_name}` - 删除邮件标签
+
+### API 接口（翻译）
+- `POST /api/translate` - 单条翻译
+- `POST /api/translate/batch` - 批量翻译（最多 50 条）
+- `GET /api/translate/threads` - 获取已翻译线程列表
+- `GET /api/translate/health` - 翻译服务健康检查
+- `DELETE /api/translate/cache` - 清除翻译缓存
+- `PUT /api/translate/manual` - 保存人工翻译
+
+### API 接口（批注）
+- `GET /api/annotations?q=&page=&page_size=` - 批注列表 + 搜索
+- `POST /api/annotations` - 创建批注
+- `GET /api/annotations/{thread_id}` - 获取线程所有批注
+- `PUT /api/annotations/{annotation_id}` - 编辑批注
+- `DELETE /api/annotations/{annotation_id}` - 删除批注
+- `POST /api/annotations/export` - 导出批注（JSON）
+- `POST /api/annotations/import` - 导入批注（JSON）
 
 ### API 接口（芯片手册）
 - `GET /api/manual/search?q=关键词` - 手册搜索

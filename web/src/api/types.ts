@@ -127,3 +127,23 @@ export interface ManualStatsResponse {
   by_manual_type: Record<string, number>;
   by_content_type: Record<string, number>;
 }
+
+// 批注列表相关类型
+export interface AnnotationListItem {
+  annotation_id: string;
+  thread_id: string;
+  in_reply_to: string;
+  author: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  email_subject: string;
+  email_sender: string;
+}
+
+export interface AnnotationListResponse {
+  annotations: AnnotationListItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}

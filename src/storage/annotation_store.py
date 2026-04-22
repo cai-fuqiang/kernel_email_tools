@@ -9,10 +9,11 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import delete, select, func
+from sqlalchemy import delete, select, func, or_
 from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.orm import aliased
 
-from src.storage.models import AnnotationCreate, AnnotationORM, AnnotationRead, AnnotationUpdate
+from src.storage.models import AnnotationCreate, AnnotationORM, AnnotationRead, AnnotationUpdate, EmailORM
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,109 @@ class AnnotationStore:
             result = await session.execute(stmt)
             rows = result.scalars().all()
             return [AnnotationRead.model_validate(r) for r in rows]
+
+    async def list_all(self, page: int = 1, page_size: int = 20) -> tuple[list[dict], int]:
+        """全量批注分页列表，按 created_at 倒序。
+
+        关联 emails 表（通过 in_reply_to 匹配 message_id）获取 subject / sender。
+
+        Args:
+            page: 页码（从 1 开始）。
+            page_size: 每页数量。
+
+        Returns:
+            (批注列表, 总数) 元组。
+        """
+        async with self.session_factory() as session:
+            # 计算总数
+            count_stmt = select(func.count()).select_from(AnnotationORM)
+            total = (await session.execute(count_stmt)).scalar() or 0
+
+            if total == 0:
+                return [], 0
+
+            # 分页查询批注 + LEFT JOIN emails
+            offset = (page - 1) * page_size
+            stmt = (
+                select(AnnotationORM, EmailORM.subject, EmailORM.sender)
+                .outerjoin(EmailORM, AnnotationORM.in_reply_to == EmailORM.message_id)
+                .order_by(AnnotationORM.created_at.desc())
+                .offset(offset)
+                .limit(page_size)
+            )
+            result = await session.execute(stmt)
+            rows = result.all()
+
+            items = []
+            for ann, email_subject, email_sender in rows:
+                items.append({
+                    "annotation_id": ann.annotation_id,
+                    "thread_id": ann.thread_id,
+                    "in_reply_to": ann.in_reply_to,
+                    "author": ann.author,
+                    "body": ann.body,
+                    "created_at": ann.created_at.isoformat(),
+                    "updated_at": ann.updated_at.isoformat(),
+                    "email_subject": email_subject or "",
+                    "email_sender": email_sender or "",
+                })
+
+            return items, total
+
+    async def search(self, keyword: str, page: int = 1, page_size: int = 20) -> tuple[list[dict], int]:
+        """按批注 body 内容模糊搜索。
+
+        使用 ILIKE 进行大小写不敏感模糊匹配，同样关联 emails 表返回上下文信息。
+
+        Args:
+            keyword: 搜索关键词。
+            page: 页码（从 1 开始）。
+            page_size: 每页数量。
+
+        Returns:
+            (匹配批注列表, 总数) 元组。
+        """
+        pattern = f"%{keyword}%"
+        async with self.session_factory() as session:
+            # 计算匹配总数
+            count_stmt = (
+                select(func.count())
+                .select_from(AnnotationORM)
+                .where(AnnotationORM.body.ilike(pattern))
+            )
+            total = (await session.execute(count_stmt)).scalar() or 0
+
+            if total == 0:
+                return [], 0
+
+            # 分页查询
+            offset = (page - 1) * page_size
+            stmt = (
+                select(AnnotationORM, EmailORM.subject, EmailORM.sender)
+                .outerjoin(EmailORM, AnnotationORM.in_reply_to == EmailORM.message_id)
+                .where(AnnotationORM.body.ilike(pattern))
+                .order_by(AnnotationORM.created_at.desc())
+                .offset(offset)
+                .limit(page_size)
+            )
+            result = await session.execute(stmt)
+            rows = result.all()
+
+            items = []
+            for ann, email_subject, email_sender in rows:
+                items.append({
+                    "annotation_id": ann.annotation_id,
+                    "thread_id": ann.thread_id,
+                    "in_reply_to": ann.in_reply_to,
+                    "author": ann.author,
+                    "body": ann.body,
+                    "created_at": ann.created_at.isoformat(),
+                    "updated_at": ann.updated_at.isoformat(),
+                    "email_subject": email_subject or "",
+                    "email_sender": email_sender or "",
+                })
+
+            return items, total
 
     async def update(self, annotation_id: str, data: AnnotationUpdate) -> Optional[AnnotationRead]:
         """更新批注内容。

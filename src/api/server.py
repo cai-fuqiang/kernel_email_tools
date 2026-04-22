@@ -1076,6 +1076,41 @@ class AnnotationResponse(BaseModel):
     updated_at: str
 
 
+@app.get("/api/annotations")
+async def list_annotations(
+    q: Optional[str] = Query(None, description="搜索关键词（模糊匹配批注正文）"),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=100, description="每页数量"),
+):
+    """批注列表 + 搜索。
+
+    - 无 q 参数：返回全部批注分页列表
+    - 有 q 参数：按关键词搜索批注正文
+    """
+    if not _annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+
+    try:
+        if q and q.strip():
+            annotations, total = await _annotation_store.search(
+                keyword=q.strip(), page=page, page_size=page_size
+            )
+        else:
+            annotations, total = await _annotation_store.list_all(
+                page=page, page_size=page_size
+            )
+
+        return {
+            "annotations": annotations,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+    except Exception as e:
+        logger.error(f"Failed to list annotations: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list annotations: {str(e)}")
+
+
 @app.post("/api/annotations", response_model=AnnotationResponse)
 async def create_annotation(request: AnnotationCreateRequest):
     """创建批注（本地回复）。

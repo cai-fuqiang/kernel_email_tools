@@ -7,3 +7,24 @@
     @apply bg-gray-50 text-gray-900 antialiased;
   }
 }
+
+/* Annotation Markdown rendering styles */
+.annotation-markdown h1 { @apply text-lg font-bold mt-3 mb-1; }
+.annotation-markdown h2 { @apply text-base font-bold mt-2 mb-1; }
+.annotation-markdown h3 { @apply text-sm font-bold mt-2 mb-1; }
+.annotation-markdown p { @apply mb-2 last:mb-0; }
+.annotation-markdown ul { @apply list-disc pl-5 mb-2; }
+.annotation-markdown ol { @apply list-decimal pl-5 mb-2; }
+.annotation-markdown li { @apply mb-0.5; }
+.annotation-markdown code { @apply bg-gray-100 text-pink-600 px-1 py-0.5 rounded text-xs font-mono; }
+.annotation-markdown pre { @apply bg-gray-100 rounded p-3 overflow-x-auto mb-2; }
+.annotation-markdown pre code { @apply bg-transparent text-gray-800 px-0 py-0; }
+.annotation-markdown blockquote { @apply border-l-4 border-gray-300 pl-3 italic text-gray-500 my-2; }
+.annotation-markdown a { @apply text-blue-600 underline hover:text-blue-800; }
+.annotation-markdown table { @apply border-collapse w-full mb-2; }
+.annotation-markdown th,
+.annotation-markdown td { @apply border border-gray-300 px-2 py-1 text-xs; }
+.annotation-markdown th { @apply bg-gray-50 font-semibold; }
+.annotation-markdown del { @apply line-through text-gray-400; }
+.annotation-markdown hr { @apply border-t border-gray-200 my-3; }
+.annotation-markdown input[type="checkbox"] { @apply mr-1; }

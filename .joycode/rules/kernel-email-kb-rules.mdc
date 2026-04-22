@@ -36,6 +36,7 @@ alwaysApply: true
 - **构建**: Vite
 - **样式**: Tailwind CSS 3
 - **路由**: React Router v7
+- **Markdown**: react-markdown + remark-gfm
 
 ---
 
@@ -71,7 +72,7 @@ kernel_email_tools/
 │   │   ├── postgres.py           # PostgresStorage（邮件存储）
 │   │   ├── tag_store.py         # TagStore 标签管理
 │   │   ├── translation_cache.py  # TranslationCache ORM + TranslationCacheStore
-│   │   ├── annotation_store.py   # AnnotationStore 批注存储（CRUD + 导入导出）
+│   │   ├── annotation_store.py   # AnnotationStore 批注存储（CRUD + 列表搜索 + 导入导出）
 │   │   ├── document_models.py    # DocumentChunkModel ORM
 │   │   └── document_store.py     # DocumentStorage（手册存储）
 │   ├── indexer/                  # 索引层
@@ -105,11 +106,12 @@ kernel_email_tools/
 │   │   │   ├── SearchPage.tsx   # 邮件搜索页（含标签筛选）
 │   │   │   ├── AskPage.tsx      # 邮件问答页（含标签筛选）
 │   │   │   ├── TagsPage.tsx     # 标签管理页
+│   │   │   ├── AnnotationsPage.tsx # 批注管理页（全量列表+搜索+Markdown渲染）
 │   │   │   ├── TranslationsPage.tsx # 翻译管理页（已缓存线程+标签+自动轮询）
 │   │   │   ├── ManualSearchPage.tsx  # 手册搜索页
 │   │   │   └── ManualAskPage.tsx     # 手册问答页
 │   │   ├── components/          # 通用组件
-│   │   │   ├── ThreadDrawer.tsx # 线程抽屉（含翻译、引用行渲染、PatchDiffBlock）
+│   │   │   ├── ThreadDrawer.tsx # 线程抽屉（含翻译、引用行渲染、PatchDiffBlock、Markdown批注）
 │   │   │   ├── TagFilter.tsx    # 标签筛选组件
 │   │   │   ├── TagManager.tsx   # 标签管理组件
 │   │   │   └── EmailTagEditor.tsx # 邮件标签编辑器
@@ -190,8 +192,10 @@ kernel_email_tools/
 - 批注不是真正的邮件回复，而是用户本地评论，混合显示在 Thread 视图的线程树中
 - 通过 `in_reply_to` 关联原邮件或其他批注，支持嵌套回复
 - 前端以蓝色边框卡片 + "我的批注" 标签区分于真实邮件
+- 批注正文支持 Markdown（使用 react-markdown + remark-gfm 渲染）
 - 支持 JSON 导出/导入，满足 git 固化版本管理需求
 - `AnnotationStore` 遵循 session_factory 模式（请求级 session）
+- `list_all` / `search` 方法通过 LEFT JOIN emails 表关联获取 email_subject / email_sender
 
 ### DocumentChunkModel 核心字段（手册分片）
 
@@ -343,6 +347,7 @@ kernel_email_tools/
 
 | 端点 | 方法 | 描述 |
 |------|------|------|
+| `/api/annotations` | GET | 批注列表 + 搜索（支持 q 关键词、分页）|
 | `/api/annotations` | POST | 创建批注（本地回复）|
 | `/api/annotations/{thread_id}` | GET | 获取线程所有批注 |
 | `/api/annotations/{annotation_id}` | PUT | 编辑批注 |
@@ -476,6 +481,22 @@ L1 章节分片 ──→ L2 内容类型分片 ──→ L3 滑动窗口分片
   - 展开后按行着色：`+` 绿、`-` 红、`@@` 蓝、`diff --git` 黄、上下文灰
   - 带行号列
 - **禁止重复**: body 中的 diff 内容已通过 `stripDiffAndSignature` 移除，仅在 PATCH 区域展示 `patch_content`
+
+### 11. 批注系统
+- **存储**: `AnnotationStore` 提供 CRUD + 列表搜索 + 导出/导入
+  - `list_all(page, page_size)`: 全量分页，LEFT JOIN emails 获取关联邮件信息
+  - `search(keyword, page, page_size)`: ILIKE 模糊搜索批注正文
+- **线程混入**: 批注作为虚拟 `ThreadNode`（`isAnnotation=true`）混入线程树
+  - 通过 `in_reply_to` 挂到对应邮件或批注节点下
+  - **排序优先级**: 批注节点排在同级子节点最前面，同类型按日期升序
+- **Markdown 渲染**: 批注正文使用 `react-markdown` + `remark-gfm` 渲染
+  - ThreadDrawer 中 AnnotationCard 和 AnnotationsPage 卡片均使用 Markdown
+  - `.annotation-markdown` CSS 类提供标题/列表/代码/表格/链接等样式
+- **独立管理页面**: `AnnotationsPage.tsx`（路由 `/annotations`）
+  - 搜索栏 + 分页 + Markdown 卡片列表
+  - 点击卡片打开 ThreadDrawer 跳转到对应线程
+  - 关联邮件信息（subject / sender）展示
+- **API 路由优先级**: `GET /api/annotations`（无路径参数）在 `GET /api/annotations/{thread_id:path}` 之前注册
 
 ---
 
@@ -614,4 +635,7 @@ npm run preview
 - [x] 翻译展示优化（引用行展示不翻译 + diff 去重 + 去除 EN/中文标签）
 - [x] PATCH diff 折叠展示（默认折叠 + diff 着色 + 增删行统计）
 - [x] 标签邮件列表（TagManager 点击标签展开邮件列表 + 分页 + ThreadDrawer 跳转）
+- [x] 批注列表页面 + 搜索 + Markdown 渲染（AnnotationsPage + AnnotationStore list_all/search）
+- [x] 批注 Markdown 渲染（ThreadDrawer AnnotationCard + AnnotationsPage 使用 react-markdown）
+- [x] 批注排序优先（线程树中批注节点排在同级子节点最前面）
 - [ ] TagStore session_factory 重构（当前仍使用固定 session）

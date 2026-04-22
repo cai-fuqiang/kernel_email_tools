@@ -1,4 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { getThread, translateBatch, clearTranslationCache, createAnnotation, updateAnnotation, deleteAnnotation, exportAnnotations, importAnnotations } from '../api/client';
 import type { ThreadResponse, ThreadEmail, Annotation } from '../api/types';
 import EmailTagEditor from './EmailTagEditor';
@@ -62,15 +64,19 @@ function buildThreadTree(emails: ThreadEmail[], annotations: Annotation[] = []):
     }
   });
   
-  const sortByDate = (nodes: ThreadNode[]) => {
+  const sortChildren = (nodes: ThreadNode[]) => {
     nodes.sort((a, b) => {
+      // 批注优先排在最前面
+      if (a.isAnnotation && !b.isAnnotation) return -1;
+      if (!a.isAnnotation && b.isAnnotation) return 1;
+      // 同类型按日期升序
       const dateA = a.email.date ? new Date(a.email.date).getTime() : 0;
       const dateB = b.email.date ? new Date(b.email.date).getTime() : 0;
       return dateA - dateB;
     });
-    nodes.forEach(node => sortByDate(node.children));
+    nodes.forEach(node => sortChildren(node.children));
   };
-  sortByDate(roots);
+  sortChildren(roots);
   
   const recalcDepth = (nodes: ThreadNode[], depth: number) => {
     nodes.forEach(node => {
@@ -392,7 +398,9 @@ function AnnotationCard({
         />
       ) : (
         <>
-          <pre className="text-sm whitespace-pre-wrap break-words text-blue-900 leading-relaxed">{annotation.body}</pre>
+          <div className="annotation-markdown text-sm text-blue-900 leading-relaxed">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{annotation.body}</ReactMarkdown>
+              </div>
           <div className="flex gap-2 mt-2">
             <button
               onClick={() => onReply(annotation.annotation_id)}
