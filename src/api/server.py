@@ -208,6 +208,7 @@ async def lifespan(app: FastAPI):
             code_annot_url,
             pool_size=code_annot_cfg.get("pool_size", 2),
             echo=False,
+            connect_args={"ssl": True},
         )
         code_annot_session_factory = async_sessionmaker(
             _code_annotation_engine, class_=AsyncSession, expire_on_commit=False

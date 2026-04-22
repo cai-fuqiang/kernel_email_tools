@@ -39,7 +39,15 @@ async def run_migration(drop: bool = False):
         print("  - Or set storage.email.database_url for local PostgreSQL")
         return False
 
-    engine = create_async_engine(database_url, pool_size=1, echo=False)
+    # 确保使用 asyncpg 驱动
+    if database_url.startswith("postgresql://"):
+        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    engine = create_async_engine(
+        database_url,
+        pool_size=1,
+        echo=False,
+        connect_args={"ssl": True},
+    )
 
     async with engine.begin() as conn:
         result = await conn.execute(
