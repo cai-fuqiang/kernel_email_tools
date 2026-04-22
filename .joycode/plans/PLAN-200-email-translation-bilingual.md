@@ -3,6 +3,167 @@
 ## 概述
 为 Kernel Email KB 添加邮件中英文对照翻译功能，支持机器翻译和人工校正。
 
+## TODO: 翻译管理页面（Translations Page）
+
+### 需求背景
+当前翻译入口深埋在 ThreadDrawer 内部（需先搜索 → 点 Thread → 点"中英对照"），交互链路长，用户无法直观看到哪些 thread 已翻译、翻译进度如何。需要一个独立页面集中管理翻译任务。
+
+### 功能设计
+
+#### 页面结构：`/translations`
+分两个区域：
+1. **正在翻译** - 当前前端正在进行翻译的 thread 列表（实时状态）
+2. **已缓存翻译** - 后端有翻译缓存记录的 thread 列表
+
+#### 后端新增 API
+
+##### `GET /api/translate/threads` - 获取有翻译缓存的 thread 列表
+```
+Response: {
+  threads: [{
+    thread_id: string,
+    subject: string,        // 线程主题（取根邮件 subject）
+    sender: string,         // 根邮件发件人
+    date: string,           // 根邮件日期
+    email_count: int,       // 线程邮件数量
+    total_paragraphs: int,  // 可翻译段落总数
+    cached_paragraphs: int, // 已缓存翻译段落数
+    last_translated_at: string, // 最近翻译时间
+  }],
+  total: int
+}
+```
+
+实现思路：
+- 从 `translation_cache` 表关联 `emails` 表
+- 遍历有缓存记录的邮件，按 thread_id 分组
+- 计算每个 thread 的翻译覆盖率
+- 按最近翻译时间降序排列
+
+##### `DELETE /api/translate/thread/{thread_id}` - 清除指定 thread 的全部翻译缓存
+```
+Response: { success: bool, cleared_count: int }
+```
+
+实现思路：
+- 根据 thread_id 查询该线程所有邮件
+- 提取所有段落，计算 hash
+- 批量删除对应的 translation_cache 记录
+
+#### 前端新增
+
+##### 1. `web/src/pages/TranslationsPage.tsx` - 翻译管理页面
+
+**页面布局：**
+```
+┌─────────────────────────────────────────────────┐
+│  Translations                                    │
+│  翻译管理 - 查看和管理邮件线程的翻译缓存          │
+├─────────────────────────────────────────────────┤
+│  ● 正在翻译 (2)                    [全局翻译进度] │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ [PATCH mm] shmem mount...    3/12 段落 25%  │ │
+│  │ Andrew Morton  2d ago  ███░░░░░░ 翻译中...  │ │
+│  ├─────────────────────────────────────────────┤ │
+│  │ Re: memory allocation...     8/8 段落 100%  │ │
+│  │ Linus Torvalds  5d ago  █████████ ✓ 完成    │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                   │
+│  ● 已缓存翻译 (15)              [清除全部缓存]    │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ Subject    Sender   Date  进度  操作         │ │
+│  │ ─────────────────────────────────────────── │ │
+│  │ [PATCH]... akpm    4/21  12/12 [阅读][清除] │ │
+│  │ Re: mm...  torv    4/20   8/10 [阅读][清除] │ │
+│  │ ...                                         │ │
+│  └─────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+```
+
+**交互设计：**
+- 点击「阅读」→ 打开 ThreadDrawer（已有翻译会自动显示）
+- 点击「清除」→ 清除该 thread 的翻译缓存
+- 点击「翻译」→ 打开 ThreadDrawer 并自动触发翻译
+- 进度条显示翻译覆盖率（已缓存/可翻译段落）
+- 翻译中的 thread 显示实时进度（前端状态管理）
+
+##### 2. 前端状态管理：翻译任务上下文
+
+新增 `web/src/contexts/TranslationContext.tsx`：
+- 用 React Context 维护全局翻译任务状态
+- ThreadDrawer 翻译时注册到 context
+- TranslationsPage 从 context 读取实时进度
+- 支持多个 thread 并行翻译状态追踪
+
+```tsx
+interface TranslationTask {
+  threadId: string;
+  subject: string;
+  sender: string;
+  date: string;
+  totalParagraphs: number;
+  translatedCount: number;
+  status: 'translating' | 'completed' | 'error';
+  startedAt: Date;
+}
+
+interface TranslationContextType {
+  activeTasks: Map<string, TranslationTask>;
+  registerTask: (task: TranslationTask) => void;
+  updateProgress: (threadId: string, count: number) => void;
+  completeTask: (threadId: string) => void;
+  removeTask: (threadId: string) => void;
+}
+```
+
+##### 3. 路由和导航
+
+- `App.tsx`: 新增 `<Route path="/translations" element={<TranslationsPage />} />`
+- `MainLayout.tsx`: 在 Kernel Emails 分组中添加 "Translations" 导航项
+- 侧边栏显示翻译徽章（正在翻译的数量）
+
+##### 4. API 客户端
+
+`web/src/api/client.ts` 新增：
+```tsx
+export async function getTranslatedThreads(): Promise<TranslatedThreadsResponse>
+export async function clearThreadTranslationCache(threadId: string): Promise<ClearCacheResponse>
+```
+
+### 实现步骤
+
+- [ ] **Step 1**: 后端 - 新增 `GET /api/translate/threads` API
+  - 在 `TranslationCacheStore` 添加按 thread 查询方法
+  - 在 `server.py` 添加端点
+  - 验证：curl 测试返回正确数据
+
+- [ ] **Step 2**: 后端 - 新增 `DELETE /api/translate/thread/{thread_id}` API
+  - 在 `TranslationCacheStore` 添加按 thread 清除方法
+  - 在 `server.py` 添加端点
+  - 验证：curl 测试清除功能
+
+- [ ] **Step 3**: 前端 - 创建 TranslationContext
+  - 创建 `web/src/contexts/TranslationContext.tsx`
+  - 在 App.tsx 中包裹 Provider
+  - 改造 ThreadDrawer 翻译逻辑接入 context
+
+- [ ] **Step 4**: 前端 - 创建 TranslationsPage
+  - 创建 `web/src/pages/TranslationsPage.tsx`
+  - 实现已缓存翻译列表 + 进度条
+  - 实现正在翻译区域（从 context 读取）
+  - 实现 ThreadDrawer 打开和清除缓存操作
+
+- [ ] **Step 5**: 前端 - 路由和导航集成
+  - App.tsx 添加 `/translations` 路由
+  - MainLayout.tsx 添加侧边栏导航项
+  - 构建验证
+
+- [ ] **Step 6**: 端到端验证
+  - 翻译一个 thread → 在翻译页面看到实时进度
+  - 完成后在已缓存列表中显示
+  - 清除缓存后从列表消失
+  - 点击阅读打开 ThreadDrawer 带已有翻译
+
 ## 已完成功能
 
 ### 后端翻译服务

@@ -24,6 +24,7 @@ class TranslationCache(Base):
     translated_text = Column(Text, nullable=False)
     source_lang = Column(String(10), nullable=False, default="auto")
     target_lang = Column(String(10), nullable=False, default="zh-CN")
+    message_id = Column(String(512), nullable=True, index=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     @classmethod
@@ -93,6 +94,7 @@ class TranslationCacheStore:
         translated_text: str,
         source_lang: str = "auto",
         target_lang: str = "zh-CN",
+        message_id: Optional[str] = None,
     ) -> bool:
         """存储翻译结果到缓存。
         
@@ -106,9 +108,20 @@ class TranslationCacheStore:
             是否成功存储（可能因重复而跳过）
         """
         # 检查是否已存在
-        existing = await self.get(text, source_lang, target_lang)
+        source_hash = TranslationCache.compute_hash(text)
+        stmt = select(TranslationCache).where(
+            TranslationCache.source_hash == source_hash,
+            TranslationCache.source_lang == source_lang,
+            TranslationCache.target_lang == target_lang,
+        )
+        result = await self.session.execute(stmt)
+        existing = result.scalar_one_or_none()
         if existing is not None:
-            logger.debug(f"Translation already cached, skipping insert")
+            # 如果已有缓存但没有 message_id，补充关联
+            if message_id and not existing.message_id:
+                existing.message_id = message_id
+                await self.session.commit()
+                logger.debug(f"Updated message_id for cached translation: {source_hash[:16]}...")
             return False
         
         source_hash = TranslationCache.compute_hash(text)
@@ -118,6 +131,7 @@ class TranslationCacheStore:
             translated_text=translated_text,
             source_lang=source_lang,
             target_lang=target_lang,
+            message_id=message_id,
         )
         
         self.session.add(cache_entry)
@@ -161,7 +175,8 @@ class TranslationCacheStore:
         self,
         translations: list[tuple[str, str]],
         source_lang: str = "auto",
-        target_lang: str = "zh-CN",
+        target_lang:str = "zh-CN",
+        message_id: Optional[str] = None,
     ) -> int:
         """批量存储翻译结果。
         
@@ -169,6 +184,7 @@ class TranslationCacheStore:
             translations: 元组列表 (原文, 翻译后文本)
             source_lang: 源语言
             target_lang: 目标语言
+            message_id: 关联的邮件 Message-ID（可选）
             
         Returns:
             成功存储的数量
@@ -177,7 +193,8 @@ class TranslationCacheStore:
         for source_text, translated_text in translations:
             try:
                 success = await self.set(
-                    source_text, translated_text, source_lang, target_lang
+                    source_text, translated_text, source_lang, target_lang,
+                    message_id=message_id,
                 )
                 if success:
                     count += 1
@@ -275,6 +292,35 @@ class TranslationCacheStore:
 
         await self.session.commit()
         return source_hash
+
+    async def get_cached_message_ids(self) -> list[str]:
+        """获取所有有翻译缓存的邮件 message_id 列表。
+
+        Returns:
+            去重后的 message_id 列表
+        """
+        stmt = (
+            select(TranslationCache.message_id)
+            .where(TranslationCache.message_id.isnot(None))
+            .distinct()
+        )
+        result = await self.session.execute(stmt)
+        return [row[0] for row in result.all()]
+
+    async def count_by_message_id(self, message_id: str) -> int:
+        """统计指定邮件的翻译缓存数量。
+
+        Args:
+            message_id: 邮件 Message-ID
+
+        Returns:
+            缓存条目数
+        """
+        stmt = select(func.count()).select_from(TranslationCache).where(
+            TranslationCache.message_id == message_id
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0
 
 
 async def create_translation_cache_table(engine) -> None:

@@ -680,35 +680,54 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
 
   const handleTranslate = useCallback(async () => {
     if (!thread || translating) return;
-    const paragraphs = extractTranslatableParagraphs(thread);
-    if (paragraphs.length === 0) return;
-    const needTrans = paragraphs.filter(p => !translations.has(p) || !translations.get(p)?.translation);
-    if (needTrans.length === 0) return;
     setTranslating(true);
+
+    // 按邮件分组提取可翻译段落，以便传入各自的 message_id
+    const emailParagraphs: { messageId: string; paragraphs: string[] }[] = [];
+    const allNeedTrans: string[] = [];
+    for (const email of thread.emails) {
+      const paras = parseParagraphs(email.body || '').filter(
+        p => shouldTranslate(p) && (!translations.has(p) || !translations.get(p)?.translation)
+      );
+      if (paras.length > 0) {
+        emailParagraphs.push({ messageId: email.message_id, paragraphs: paras });
+        allNeedTrans.push(...paras);
+      }
+    }
+    if (allNeedTrans.length === 0) { setTranslating(false); return; }
+
+    // 标记所有段落为加载中
     setTranslations(prev => {
       const next = new Map(prev);
-      for (const p of needTrans) { next.set(p, { translation: '', loading: true }); }
+      for (const p of allNeedTrans) { next.set(p, { translation: '', loading: true }); }
       return next;
     });
+
     try {
       const batchSize = 50;
-      const allTranslations: string[] = [];
-      for (let i = 0; i < needTrans.length; i += batchSize) {
-        const batch = needTrans.slice(i, i + batchSize);
-        const result = await translateBatch(batch, 'auto', 'zh-CN');
-        allTranslations.push(...result.translations);
+      const resultMap = new Map<string, string>();
+
+      for (const { messageId, paragraphs } of emailParagraphs) {
+        for (let i = 0; i < paragraphs.length; i += batchSize) {
+          const batch = paragraphs.slice(i, i + batchSize);
+          const result = await translateBatch(batch, 'auto', 'zh-CN', messageId);
+          batch.forEach((para, idx) => {
+            resultMap.set(para, result.translations[idx] || para);
+          });
+        }
       }
+
       setTranslations(prev => {
         const next = new Map(prev);
-        needTrans.forEach((para, idx) => {
-          next.set(para, { translation: allTranslations[idx] || para, loading: false });
-        });
+        for (const [para, trans] of resultMap) {
+          next.set(para, { translation: trans, loading: false });
+        }
         return next;
       });
     } catch {
       setTranslations(prev => {
         const next = new Map(prev);
-        for (const p of needTrans) {
+        for (const p of allNeedTrans) {
           next.set(p, { translation: '', loading: false, error: '翻译服务暂时不可用' });
         }
         return next;

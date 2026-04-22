@@ -291,6 +291,7 @@ class TranslateBatchRequest(BaseModel):
     texts: list[str] = Field(..., min_length=1, max_length=50, description="待翻译的原文列表（最多 50 条）")
     source_lang: str = Field("auto", description="源语言")
     target_lang: str = Field("zh-CN", description="目标语言")
+    message_id: Optional[str] = Field(None, description="关联的邮件 Message-ID（可选，用于翻译缓存关联邮件标签）")
 
 
 class TranslateBatchResponse(BaseModel):
@@ -714,7 +715,8 @@ async def translate_batch(request: TranslateBatchRequest):
                 # 缓存翻译结果
                 if _translation_cache:
                     await _translation_cache.set(
-                        text, translation, request.source_lang, target_lang
+                        text, translation, request.source_lang, target_lang,
+                        message_id=request.message_id,
                     )
             except TranslationError as e:
                 logger.warning(f"Translation failed for text: {str(e)}")
@@ -793,6 +795,128 @@ async def clear_translation_cache(request: ClearCacheRequest = Body(...)):
             message=f"Failed to clear cache: {str(e)}",
             cleared_count=0,
         )
+
+
+class TranslatedThreadInfo(BaseModel):
+    """已翻译线程信息。"""
+    thread_id: str
+    subject: str = ""
+    sender: str = ""
+    date: Optional[str] = None
+    list_name: str = ""
+    email_count: int = 0
+    cached_paragraphs: int = 0
+    tags: list[str] = []
+    last_translated_at: Optional[str] = None
+
+
+class TranslatedThreadsResponse(BaseModel):
+    """已翻译线程列表响应。"""
+    threads: list[TranslatedThreadInfo]
+    total: int
+
+
+@app.get("/api/translate/threads", response_model=TranslatedThreadsResponse)
+async def get_translated_threads():
+    """获取有翻译缓存的线程列表（含邮件标签）。
+
+    通过 translation_cache.message_id 关联 emails 表，
+    按 thread_id 分组，返回每个线程的翻译统计和标签信息。
+    """
+    if not _translation_cache or not _storage:
+        return TranslatedThreadsResponse(threads=[], total=0)
+
+    try:
+        from src.storage.translation_cache import TranslationCache
+        from src.storage.models import EmailORM
+        from sqlalchemy import func as sa_func
+
+        session = _translation_cache.session
+
+        # 查询有缓存的 message_id 及其缓存数量和最近翻译时间
+        cache_stmt = (
+            select(
+                TranslationCache.message_id,
+                sa_func.count().label("cached_count"),
+                sa_func.max(TranslationCache.created_at).label("last_translated"),
+            )
+            .where(TranslationCache.message_id.isnot(None))
+            .group_by(TranslationCache.message_id)
+        )
+        cache_result = await session.execute(cache_stmt)
+        cache_rows = cache_result.all()
+
+        if not cache_rows:
+            return TranslatedThreadsResponse(threads=[], total=0)
+
+        # 构建 message_id -> cache_info 映射
+        cache_map = {
+            row.message_id: {
+                "cached_count": row.cached_count,
+                "last_translated": row.last_translated,
+            }
+            for row in cache_rows
+        }
+
+        # 查询这些邮件的详细信息
+        email_stmt = select(EmailORM).where(
+            EmailORM.message_id.in_(list(cache_map.keys()))
+        )
+        email_result = await session.execute(email_stmt)
+        emails = email_result.scalars().all()
+
+        # 按 thread_id 分组
+        thread_groups: dict[str, dict] = {}
+        for email in emails:
+            tid = email.thread_id or email.message_id
+            if tid not in thread_groups:
+                thread_groups[tid] = {
+                    "thread_id": tid,
+                    "subject": email.subject,
+                    "sender": email.sender,
+                    "date": email.date.isoformat() if email.date else None,
+                    "list_name": email.list_name,
+                    "email_count": 0,
+                    "cached_paragraphs": 0,
+                    "tags": set(),
+                    "last_translated_at": None,
+                }
+            group = thread_groups[tid]
+            group["email_count"] += 1
+            cache_info = cache_map.get(email.message_id, {})
+            group["cached_paragraphs"] += cache_info.get("cached_count", 0)
+            # 合并标签
+            if email.tags:
+                group["tags"].update(email.tags)
+            # 更新最近翻译时间
+            lt = cache_info.get("last_translated")
+            if lt:
+                lt_str = lt.isoformat() if hasattr(lt, "isoformat") else str(lt)
+                if not group["last_translated_at"] or lt_str > group["last_translated_at"]:
+                    group["last_translated_at"] = lt_str
+
+        # 转为列表并排序
+        threads = [
+            TranslatedThreadInfo(
+                thread_id=g["thread_id"],
+                subject=g["subject"],
+                sender=g["sender"],
+                date=g["date"],
+                list_name=g["list_name"],
+                email_count=g["email_count"],
+                cached_paragraphs=g["cached_paragraphs"],
+                tags=sorted(g["tags"]),
+                last_translated_at=g["last_translated_at"],
+            )
+            for g in thread_groups.values()
+        ]
+        threads.sort(key=lambda t: t.last_translated_at or "", reverse=True)
+
+        return TranslatedThreadsResponse(threads=threads, total=len(threads))
+
+    except Exception as e:
+        logger.error(f"Failed to get translated threads: {e}")
+        return TranslatedThreadsResponse(threads=[], total=0)
 
 
 class ManualTranslateRequest(BaseModel):

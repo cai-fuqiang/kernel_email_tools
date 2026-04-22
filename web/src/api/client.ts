@@ -262,12 +262,13 @@ export async function translateText(
 export async function translateBatch(
   texts: string[],
   sourceLang: string = "auto",
-  targetLang: string = "zh-CN"
+  targetLang: string = "zh-CN",
+  messageId?: string
 ): Promise<TranslateBatchResponse> {
   const res = await fetch(`${API_BASE}/translate/batch`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ texts, source_lang: sourceLang, target_lang: targetLang }),
+    body: JSON.stringify({ texts, source_lang: sourceLang, target_lang: targetLang, message_id: messageId }),
   });
   if (!res.ok) {
     const text = await res.text();
@@ -333,4 +334,26 @@ export async function saveManualTranslation(
     throw new Error(`Manual translation error ${res.status}: ${text}`);
   }
   return res.json();
+}
+
+// 翻译线程列表相关类型和API
+export interface TranslatedThreadInfo {
+  thread_id: string;
+  subject: string;
+  sender: string;
+  date: string | null;
+  list_name: string;
+  email_count: number;
+  cached_paragraphs: number;
+  tags: string[];
+  last_translated_at: string | null;
+}
+
+export interface TranslatedThreadsResponse {
+  threads: TranslatedThreadInfo[];
+  total: number;
+}
+
+export async function getTranslatedThreads(): Promise<TranslatedThreadsResponse> {
+  return fetchJSON(`${API_BASE}/translate/threads`);
 }
