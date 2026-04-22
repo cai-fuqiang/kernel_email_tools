@@ -488,9 +488,9 @@ function AnnotationPanel({
               {relevantAnnotations.map((a) => (
                 <div
                   key={a.annotation_id}
-                  className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm"
+                  className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm flex flex-col h-40"
                 >
-                  <div className="px-3 py-2 bg-gray-50 flex items-center justify-between border-b border-gray-200">
+                  <div className="px-3 py-2 bg-gray-50 flex items-center justify-between border-b border-gray-200 shrink-0">
                     <span className="text-xs text-indigo-500 font-medium">
                       L{a.start_line}
                       {a.end_line !== a.start_line && `-${a.end_line}`}
@@ -510,12 +510,12 @@ function AnnotationPanel({
                       </button>
                     </div>
                   </div>
-                  <div className="px-3 py-2 max-h-40 overflow-hidden">
-                    <div className="prose prose-xs prose-slate max-w-none line-clamp-4">
+                  <div className="px-3 py-2 flex-1 overflow-hidden">
+                    <div className="prose prose-xs prose-slate max-w-none line-clamp-5 overflow-hidden">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{a.body}</ReactMarkdown>
                     </div>
                   </div>
-                  <div className="px-3 py-1.5 text-[10px] text-gray-400 bg-gray-50 border-t border-gray-100">
+                  <div className="px-3 py-1.5 text-[10px] text-gray-400 bg-gray-50 border-t border-gray-100 shrink-0">
                     {a.author} · {new Date(a.created_at).toLocaleDateString()}
                   </div>
                 </div>
