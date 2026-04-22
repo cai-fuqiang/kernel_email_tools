@@ -108,7 +108,7 @@ kernel_email_tools/
 │   │   │   ├── ManualSearchPage.tsx  # 手册搜索页
 │   │   │   └── ManualAskPage.tsx     # 手册问答页
 │   │   ├── components/          # 通用组件
-│   │   │   ├── ThreadDrawer.tsx # 线程抽屉（含翻译、引用行渲染）
+│   │   │   ├── ThreadDrawer.tsx # 线程抽屉（含翻译、引用行渲染、PatchDiffBlock）
 │   │   │   ├── TagFilter.tsx    # 标签筛选组件
 │   │   │   ├── TagManager.tsx   # 标签管理组件
 │   │   │   └── EmailTagEditor.tsx # 邮件标签编辑器
@@ -419,6 +419,25 @@ L1 章节分片 ──→ L2 内容类型分片 ──→ L3 滑动窗口分片
 - 删除父标签时级联删除所有子标签
 - 标签过滤支持 `any`（任一匹配）和 `all`（全部匹配）两种模式
 
+### 10. 邮件正文展示与翻译架构
+- **数据源**: API `/api/thread/{id}` 返回 `body`（清洗后，无引用行）和 `body_raw`（原始正文，含引用行）
+- **展示源选择**: 前端优先使用 `body_raw`，通过 `getDisplayBody()` 函数处理：
+  1. `stripDiffAndSignature()` 从 body_raw 中剔除 diff/patch 块和签名（`-- ` 之后）
+  2. 保留引用行（`>` 前缀），回退到 `body`（当 body_raw 为空时）
+- **段落拆分**: `parseParagraphs()` 将正文拆分为 `ParagraphBlock`（`normal` | `quoted` 两种类型）
+  - 纯引用段落 → `quoted` 类型
+  - 混合段落按连续行类型自动拆分为多个子块
+- **翻译策略**: `shouldTranslate()` 判断逻辑：
+  - `quoted` 类型 → 不翻译，灰色斜体+左边框展示
+  - 含中文 → 不翻译
+  - 元数据行（Signed-off-by / Reviewed-by / Cc 等超过 80%）→ 不翻译
+  - 其余 `normal` 类型 → 左右双栏对照翻译（原文 40% / 译文 60%）
+- **diff 展示**: `PatchDiffBlock` 组件（独立于正文）
+  - 默认折叠，标题栏显示文件数和增删行统计
+  - 展开后按行着色：`+` 绿、`-` 红、`@@` 蓝、`diff --git` 黄、上下文灰
+  - 带行号列
+- **禁止重复**: body 中的 diff 内容已通过 `stripDiffAndSignature` 移除，仅在 PATCH 区域展示 `patch_content`
+
 ---
 
 ## 开发约束
@@ -553,4 +572,6 @@ npm run preview
 - [x] 翻译缓存关联邮件 message_id（支持按线程聚合）
 - [x] 翻译管理页面（TranslationsPage：已缓存线程列表 + 标签展示）
 - [x] TranslationCacheStore session_factory 重构（请求级 session，避免过期）
+- [x] 翻译展示优化（引用行展示不翻译 + diff 去重 + 去除 EN/中文标签）
+- [x] PATCH diff 折叠展示（默认折叠 + diff 着色 + 增删行统计）
 - [ ] TagStore session_factory 重构（当前仍使用固定 session）

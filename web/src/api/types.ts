@@ -48,6 +48,7 @@ export interface ThreadEmail {
   has_patch: boolean;
   patch_content: string;
   body: string;
+  body_raw: string;
 }
 
 export interface ThreadResponse {

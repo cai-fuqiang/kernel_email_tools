@@ -60,28 +60,131 @@ function getAuthorName(sender: string): string {
   return match ? match[1].trim() : sender;
 }
 
-function parseParagraphs(body: string): string[] {
-  if (!body) return [];
-  return body.split(/\n\n+/).filter(p => p.trim());
+// 段落类型标记
+type ParagraphBlock = {
+  text: string;
+  type: 'normal' | 'quoted';
+};
+
+// 从 body_raw 中剔除 diff/patch 部分和签名，保留引用行
+function stripDiffAndSignature(bodyRaw: string): string {
+  if (!bodyRaw) return '';
+  const lines = bodyRaw.split('\n');
+  const result: string[] = [];
+  let inDiff = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // 签名分隔符 —— 后面全部丢弃
+    if (trimmed === '-- ' || trimmed === '--') {
+      // 检查是否真是签名（不是 diff 的 -- ）
+      // 如果前面不在 diff 中且后面不是 +++ 开头则视为签名
+      if (!inDiff) {
+        break;
+      }
+    }
+
+    // 检测 diff 块起始
+    if (trimmed.startsWith('diff --git ') ||
+        trimmed.startsWith('diff --cc ') ||
+        (trimmed.startsWith('--- a/') && i + 1 < lines.length && lines[i + 1].trim().startsWith('+++ b/'))) {
+      inDiff = true;
+    }
+
+    // 也检测 unified diff 起始（--- / +++ 配对但不是 diff --git 格式）
+    if (!inDiff && trimmed.match(/^---\s+\S/) && i + 1 < lines.length && lines[i + 1].trim().match(/^\+\+\+\s+\S/)) {
+      inDiff = true;
+    }
+
+    if (inDiff) {
+      // diff 行全部跳过
+      continue;
+    }
+
+    result.push(line);
+  }
+
+  return result.join('\n');
 }
 
-function shouldTranslate(text: string): boolean {
+// 将处理后的正文拆分为段落块（普通文本 / 引用）
+function parseParagraphs(body: string): ParagraphBlock[] {
+  if (!body) return [];
+  // 按空行分段
+  const rawParagraphs = body.split(/\n\n+/).filter(p => p.trim());
+  const blocks: ParagraphBlock[] = [];
+
+  for (const para of rawParagraphs) {
+    const lines = para.split('\n');
+
+    // 检查整个段落是否全部为引用行
+    const allQuoted = lines.every(l => isQuotedLine(l) || !l.trim());
+    if (allQuoted && lines.some(l => l.trim())) {
+      blocks.push({ text: para, type: 'quoted' });
+      continue;
+    }
+
+    // 整段都是普通文本
+    const anyQuoted = lines.some(l => isQuotedLine(l));
+    if (!anyQuoted) {
+      blocks.push({ text: para, type: 'normal' });
+      continue;
+    }
+
+    // 混合段落：按连续行类型拆分
+    let currentLines: string[] = [];
+    let currentType: 'normal' | 'quoted' = 'normal';
+
+    const flushCurrent = () => {
+      const text = currentLines.join('\n');
+      if (text.trim()) blocks.push({ text, type: currentType });
+      currentLines = [];
+    };
+
+    for (const line of lines) {
+      const lineType: 'normal' | 'quoted' = isQuotedLine(line) ? 'quoted' : 'normal';
+      if (lineType !== currentType && currentLines.length > 0) {
+        flushCurrent();
+      }
+      currentType = lineType;
+      currentLines.push(line);
+    }
+    flushCurrent();
+  }
+
+  return blocks;
+}
+
+function shouldTranslate(block: ParagraphBlock): boolean {
+  // 引用块不翻译
+  if (block.type === 'quoted') return false;
+  const text = block.text;
   if (!text || /[一-译]/.test(text)) return false;
   const lines = text.split('\n');
   if (lines.length === 0) return false;
-  const skipLines = lines.filter(l => {
+  const nonEmptyLines = lines.filter(l => l.trim());
+  const skipLines = nonEmptyLines.filter(l => {
     const t = l.trim();
-    return t.startsWith('diff ') ||
-      t.startsWith('@@') ||
-      t.startsWith('---') ||
-      t.startsWith('+++') ||
-      t.startsWith('Signed-off-by:') ||
+    return t.startsWith('Signed-off-by:') ||
       t.startsWith('Reviewed-by:') ||
       t.startsWith('Acked-by:') ||
       t.startsWith('Tested-by:') ||
-      /^[+-]/.test(t);
+      t.startsWith('Cc:') ||
+      t.startsWith('Link:');
   });
-  return skipLines.length < lines.length * 0.8 && lines.filter(l => l.trim()).length > 0;
+  return skipLines.length < nonEmptyLines.length * 0.8 && nonEmptyLines.length > 0;
+}
+
+// 从邮件获取用于展示的正文（body_raw 去除 diff 和签名）
+function getDisplayBody(email: ThreadEmail): string {
+  // 优先使用 body_raw（包含引用行），去除 diff 和签名
+  if (email.body_raw) {
+    return stripDiffAndSignature(email.body_raw);
+  }
+  // 回退到 body（不含引用行）
+  return email.body || '';
 }
 
 // 判断一行是否为引用行
@@ -136,6 +239,69 @@ function getVisibleNodes(roots: ThreadNode[], expandedIds: Set<number>): ThreadN
 }
 
 // =============================================================
+// Diff 行着色辅助
+// =============================================================
+function getDiffLineClass(line: string): string {
+  const trimmed = line.trimStart();
+  if (trimmed.startsWith('+++') || trimmed.startsWith('---')) return 'diff-line diff-meta';
+  if (trimmed.startsWith('+')) return 'diff-line diff-add';
+  if (trimmed.startsWith('-')) return 'diff-line diff-del';
+  if (trimmed.startsWith('@@')) return 'diff-line diff-hunk';
+  if (trimmed.startsWith('diff ')) return 'diff-line diff-header';
+  if (trimmed.startsWith('index ')) return 'diff-line diff-meta';
+  return 'diff-line diff-ctx';
+}
+
+// =============================================================
+// PATCH Diff 折叠组件
+// =============================================================
+function PatchDiffBlock({ content }: { content: string }) {
+  const [open, setOpen] = useState(false);
+  const lines = content.split('\n');
+  const fileCount = lines.filter(l => l.trimStart().startsWith('diff ')).length;
+  const addCount = lines.filter(l => {
+    const t = l.trimStart();
+    return t.startsWith('+') && !t.startsWith('+++');
+  }).length;
+  const delCount = lines.filter(l => {
+    const t = l.trimStart();
+    return t.startsWith('-') && !t.startsWith('---');
+  }).length;
+
+  return (
+    <div className="mt-4 border-t border-gray-200 pt-3 patch-diff">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-2 w-full text-left hover:bg-gray-50 rounded-lg px-2 py-1.5 transition-colors"
+      >
+        <span className="text-gray-400 text-sm">{open ? '▼' : '▶'}</span>
+        <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded font-medium">PATCH</span>
+        <span className="text-xs text-gray-500">
+          {fileCount > 0 && `${fileCount} file${fileCount > 1 ? 's' : ''}`}
+        </span>
+        {(addCount > 0 || delCount > 0) && (
+          <span className="text-xs font-mono">
+            {addCount > 0 && <span className="text-green-600">+{addCount}</span>}
+            {addCount > 0 && delCount > 0 && <span className="text-gray-400 mx-0.5">/</span>}
+            {delCount > 0 && <span className="text-red-500">-{delCount}</span>}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="mt-2 bg-gray-900 rounded-lg overflow-x-auto font-mono text-xs leading-relaxed">
+          {lines.map((line, i) => (
+            <div key={i} className={getDiffLineClass(line)}>
+              <span className="diff-line-no">{i + 1}</span>
+              <span className="diff-line-text">{line || ' '}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================
 // 分层模式邮件卡片组件（不递归渲染 children）
 // =============================================================
 function LayeredEmailCard({
@@ -154,7 +320,7 @@ function LayeredEmailCard({
   onClearParagraphCache: (paragraph: string) => void;
 }) {
   const { email, children, depth } = node;
-  const paragraphs = parseParagraphs(email.body);
+  const paragraphs = parseParagraphs(getDisplayBody(email));
   const [editingPara, setEditingPara] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
 
@@ -247,47 +413,28 @@ function LayeredEmailCard({
     </div>
   );
 
-  const renderParagraph = (para: string, idx: number) => {
-    const needTrans = shouldTranslate(para);
+  const renderParagraph = (block: ParagraphBlock, idx: number) => {
+    const { text: para, type: blockType } = block;
+
+    // 引用块：展示但不翻译
+    if (blockType === 'quoted') {
+      return (
+        <div key={idx} className="email-paragraph">
+          <pre className="text-sm whitespace-pre-wrap break-words text-gray-500 leading-relaxed border-l-3 border-gray-300 pl-3 italic">{para}</pre>
+        </div>
+      );
+    }
+
+    const needTrans = shouldTranslate(block);
     const transState = translations.get(para);
     const isLoading = transState?.loading;
     const translation = transState?.translation;
     const transError = transState?.error;
 
-    // 渲染带引用样式的文本（引用行灰色左边框，正文行正常）
-    const renderStyledText = (text: string, baseClass: string) => {
-      const lines = text.split('\n');
-      const segments: { quoted: boolean; text: string }[] = [];
-      let current: { quoted: boolean; lines: string[] } | null = null;
-
-      for (const line of lines) {
-        const quoted = isQuotedLine(line);
-        if (!current || current.quoted !== quoted) {
-          if (current) segments.push({ quoted: current.quoted, text: current.lines.join('\n') });
-          current = { quoted, lines: [line] };
-        } else {
-          current.lines.push(line);
-        }
-      }
-      if (current) segments.push({ quoted: current.quoted, text: current.lines.join('\n') });
-
-      return (
-        <div>
-          {segments.map((seg, i) => (
-            seg.quoted ? (
-              <pre key={i} className={`${baseClass} border-l-3 border-gray-300 pl-3 text-gray-500 italic`}>{seg.text}</pre>
-            ) : (
-              <pre key={i} className={baseClass}>{seg.text}</pre>
-            )
-          ))}
-        </div>
-      );
-    };
-
     if (!needTrans) {
       return (
         <div key={idx} className="email-paragraph">
-          {renderStyledText(para, "text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed")}
+          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
         </div>
       );
     }
@@ -295,21 +442,17 @@ function LayeredEmailCard({
     return (
       <div key={idx} className="bilingual-block">
         <div className="bilingual-original">
-          <div className="lang-label">EN</div>
-          {renderStyledText(para, "text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed")}
+          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
         </div>
         <div className="bilingual-translation">
-          <div className="lang-label flex items-center justify-between">
-            <span>中文</span>
-            {translation && editingPara !== para && (
-              <div className="flex gap-1">
-                <button onClick={() => handleStartEdit(para, translation)} className="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200" title="编辑翻译">✏️ 编辑</button>
-                <button onClick={() => onClearParagraphCache(para)} className="text-xs px-2 py-1 bg-orange-100 text-orange-600 rounded hover:bg-orange-200" title="清除此段缓存">🗑️</button>
-              </div>
-            )}
-          </div>
+          {translation && editingPara !== para && (
+            <div className="flex gap-1 mb-2 justify-end">
+              <button onClick={() => handleStartEdit(para, translation)} className="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200" title="编辑翻译">✏️</button>
+              <button onClick={() => onClearParagraphCache(para)} className="text-xs px-2 py-1 bg-orange-100 text-orange-600 rounded hover:bg-orange-200" title="清除此段缓存">🗑️</button>
+            </div>
+          )}
           {editingPara === para ? (
-            <div className="mt-2">
+            <div>
               <textarea value={editText} onChange={(e) => setEditText(e.target.value)} className="w-full min-h-[80px] p-2 text-sm border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400" placeholder="输入人工翻译..." />
               <div className="flex gap-2 mt-2">
                 <button onClick={handleSaveEdit} className="px-3 py-1.5 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600">保存</button>
@@ -348,18 +491,10 @@ function LayeredEmailCard({
             <EmailTagEditor messageId={email.message_id} />
           </div>
           <div className="email-content rounded-lg overflow-hidden">
-            {paragraphs.map((para, idx) => renderParagraph(para, idx))}
+            {paragraphs.map((block, idx) => renderParagraph(block, idx))}
           </div>
           {email.has_patch && email.patch_content && (
-            <div className="mt-4 border-t border-gray-200 pt-4 patch-diff">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">PATCH</span>
-                <span className="text-xs text-gray-500">Diff 片段</span>
-              </div>
-              <pre className="text-xs bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto font-mono leading-relaxed">
-                {email.patch_content}
-              </pre>
-            </div>
+            <PatchDiffBlock content={email.patch_content} />
           )}
         </div>
       )}
@@ -387,7 +522,7 @@ function TreeEmailCard({
 }) {
   const { email, children, depth } = node;
   const isExpanded = expandedIds.has(email.id);
-  const paragraphs = parseParagraphs(email.body);
+  const paragraphs = parseParagraphs(getDisplayBody(email));
   const [editingPara, setEditingPara] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
 
@@ -446,47 +581,28 @@ function TreeEmailCard({
     </div>
   );
 
-  const renderParagraph = (para: string, idx: number) => {
-    const needTrans = shouldTranslate(para);
+  const renderParagraph = (block: ParagraphBlock, idx: number) => {
+    const { text: para, type: blockType } = block;
+
+    // 引用块：展示但不翻译
+    if (blockType === 'quoted') {
+      return (
+        <div key={idx} className="email-paragraph">
+          <pre className="text-sm whitespace-pre-wrap break-words text-gray-500 leading-relaxed border-l-3 border-gray-300 pl-3 italic">{para}</pre>
+        </div>
+      );
+    }
+
+    const needTrans = shouldTranslate(block);
     const transState = translations.get(para);
     const isLoading = transState?.loading;
     const translation = transState?.translation;
     const transError = transState?.error;
 
-    // 渲染带引用样式的文本（引用行灰色左边框，正文行正常）
-    const renderStyledText = (text: string, baseClass: string) => {
-      const lines = text.split('\n');
-      const segments: { quoted: boolean; text: string }[] = [];
-      let current: { quoted: boolean; lines: string[] } | null = null;
-
-      for (const line of lines) {
-        const quoted = isQuotedLine(line);
-        if (!current || current.quoted !== quoted) {
-          if (current) segments.push({ quoted: current.quoted, text: current.lines.join('\n') });
-          current = { quoted, lines: [line] };
-        } else {
-          current.lines.push(line);
-        }
-      }
-      if (current) segments.push({ quoted: current.quoted, text: current.lines.join('\n') });
-
-      return (
-        <div>
-          {segments.map((seg, i) => (
-            seg.quoted ? (
-              <pre key={i} className={`${baseClass} border-l-3 border-gray-300 pl-3 text-gray-500 italic`}>{seg.text}</pre>
-            ) : (
-              <pre key={i} className={baseClass}>{seg.text}</pre>
-            )
-          ))}
-        </div>
-      );
-    };
-
     if (!needTrans) {
       return (
         <div key={idx} className="email-paragraph">
-          {renderStyledText(para, "text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed")}
+          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
         </div>
       );
     }
@@ -494,21 +610,17 @@ function TreeEmailCard({
     return (
       <div key={idx} className="bilingual-block">
         <div className="bilingual-original">
-          <div className="lang-label">EN</div>
-          {renderStyledText(para, "text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed")}
+          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
         </div>
         <div className="bilingual-translation">
-          <div className="lang-label flex items-center justify-between">
-            <span>中文</span>
-            {translation && editingPara !== para && (
-              <div className="flex gap-1">
-                <button onClick={() => handleStartEdit(para, translation)} className="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200" title="编辑翻译">✏️ 编辑</button>
-                <button onClick={() => onClearParagraphCache(para)} className="text-xs px-2 py-1 bg-orange-100 text-orange-600 rounded hover:bg-orange-200" title="清除此段缓存">🗑️</button>
-              </div>
-            )}
-          </div>
+          {translation && editingPara !== para && (
+            <div className="flex gap-1 mb-2 justify-end">
+              <button onClick={() => handleStartEdit(para, translation)} className="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200" title="编辑翻译">✏️</button>
+              <button onClick={() => onClearParagraphCache(para)} className="text-xs px-2 py-1 bg-orange-100 text-orange-600 rounded hover:bg-orange-200" title="清除此段缓存">🗑️</button>
+            </div>
+          )}
           {editingPara === para ? (
-            <div className="mt-2">
+            <div>
               <textarea value={editText} onChange={(e) => setEditText(e.target.value)} className="w-full min-h-[80px] p-2 text-sm border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400" placeholder="输入人工翻译..." />
               <div className="flex gap-2 mt-2">
                 <button onClick={handleSaveEdit} className="px-3 py-1.5 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600">保存</button>
@@ -546,18 +658,10 @@ function TreeEmailCard({
             <EmailTagEditor messageId={email.message_id} />
           </div>
           <div className="email-content rounded-lg overflow-hidden">
-            {paragraphs.map((para, idx) => renderParagraph(para, idx))}
+            {paragraphs.map((block, idx) => renderParagraph(block, idx))}
           </div>
           {email.has_patch && email.patch_content && (
-            <div className="mt-4 border-t border-gray-200 pt-4 patch-diff">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">PATCH</span>
-                <span className="text-xs text-gray-500">Diff 片段</span>
-              </div>
-              <pre className="text-xs bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto font-mono leading-relaxed">
-                {email.patch_content}
-              </pre>
-            </div>
+            <PatchDiffBlock content={email.patch_content} />
           )}
         </div>
       </details>
@@ -585,10 +689,10 @@ function extractTranslatableParagraphs(thread: ThreadResponse | null): string[] 
   if (!thread) return [];
   const paragraphs = new Set<string>();
   for (const email of thread.emails) {
-    const paras = parseParagraphs(email.body || '');
-    for (const para of paras) {
-      if (shouldTranslate(para)) {
-        paragraphs.add(para);
+    const blocks = parseParagraphs(getDisplayBody(email));
+    for (const block of blocks) {
+      if (shouldTranslate(block)) {
+        paragraphs.add(block.text);
       }
     }
   }
@@ -751,9 +855,9 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
     const emailParagraphs: { messageId: string; paragraphs: string[] }[] = [];
     const allNeedTrans: string[] = [];
     for (const email of thread.emails) {
-      const paras = parseParagraphs(email.body || '').filter(
-        p => shouldTranslate(p) && (!translations.has(p) || !translations.get(p)?.translation)
-      );
+      const paras = parseParagraphs(getDisplayBody(email))
+        .filter(b => shouldTranslate(b) && (!translations.has(b.text) || !translations.get(b.text)?.translation))
+        .map(b => b.text);
       if (paras.length > 0) {
         emailParagraphs.push({ messageId: email.message_id, paragraphs: paras });
         allNeedTrans.push(...paras);
@@ -976,28 +1080,64 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
           flex: 0 0 40%;
           padding: 12px 16px;
           background: #fafafa;
-          border-right: 1px solid #e5e7eb;
+          border-right: 2px solid #e5e7eb;
         }
         .bilingual-translation {
           flex: 0 0 60%;
           padding: 12px 16px;
           background: #f0f9ff;
         }
-        .lang-label {
-          font-size: 10px;
-          font-weight: 600;
-          text-transform: uppercase;
-          color: #6b7280;
-          margin-bottom: 8px;
-          padding-bottom: 4px;
-          border-bottom: 1px solid #e5e7eb;
-        }
-        .bilingual-translation .lang-label {
-          color: #3b82f6;
-          border-bottom-color: #bfdbfe;
-        }
         .patch-diff {
           border-left: 3px solid #22c55e;
+        }
+        .diff-line {
+          display: flex;
+          padding: 0 12px;
+          min-height: 20px;
+          line-height: 20px;
+        }
+        .diff-line-no {
+          display: inline-block;
+          width: 42px;
+          flex-shrink: 0;
+          text-align: right;
+          padding-right: 10px;
+          color: #6b7280;
+          user-select: none;
+          border-right: 1px solid #374151;
+          margin-right: 10px;
+        }
+        .diff-line-text {
+          white-space: pre;
+        }
+        .diff-add {
+          background: rgba(34, 197, 94, 0.15);
+        }
+        .diff-add .diff-line-text {
+          color: #4ade80;
+        }
+        .diff-del {
+          background: rgba(239, 68, 68, 0.15);
+        }
+        .diff-del .diff-line-text {
+          color: #f87171;
+        }
+        .diff-hunk {
+          background: rgba(96, 165, 250, 0.10);
+        }
+        .diff-hunk .diff-line-text {
+          color: #60a5fa;
+        }
+        .diff-header .diff-line-text {
+          color: #fbbf24;
+          font-weight: 600;
+        }
+        .diff-meta .diff-line-text {
+          color: #9ca3af;
+          font-weight: 600;
+        }
+        .diff-ctx .diff-line-text {
+          color: #d1d5db;
         }
         @media (max-width: 768px) {
           .bilingual-block {

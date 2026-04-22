@@ -170,6 +170,7 @@ class EmailRead(BaseModel):
     in_reply_to: str
     references: list[str]
     body: str
+    body_raw: str = ""
     patch_content: str
     has_patch: bool
     list_name: str

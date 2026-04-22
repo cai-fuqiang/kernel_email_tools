@@ -600,6 +600,7 @@ async def get_thread(thread_id: str):
                 "has_patch": e.has_patch,
                 "patch_content": e.patch_content or "",
                 "body": e.body or "",
+                "body_raw": e.body_raw or "",
             }
             for e in emails
         ],
