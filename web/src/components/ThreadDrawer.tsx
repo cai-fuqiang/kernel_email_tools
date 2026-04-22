@@ -55,21 +55,18 @@ function buildThreadTree(emails: ThreadEmail[]): ThreadNode[] {
   return roots;
 }
 
-// 提取作者名
 function getAuthorName(sender: string): string {
   const match = sender.match(/^([^<]+)/);
   return match ? match[1].trim() : sender;
 }
 
-// 解析邮件正文为段落（用于双语对照）
 function parseParagraphs(body: string): string[] {
   if (!body) return [];
   return body.split(/\n\n+/).filter(p => p.trim());
 }
 
-// 判断段落是否需要翻译（排除代码和补丁内容）
 function shouldTranslate(text: string): boolean {
-  if (!text || /[\u4e00-\u9fff]/.test(text)) return false;
+  if (!text || /[一-译]/.test(text)) return false;
   const lines = text.split('\n');
   if (lines.length === 0) return false;
   const codeLines = lines.filter(l => 
@@ -87,77 +84,96 @@ function shouldTranslate(text: string): boolean {
   return codeLines.length < lines.length * 0.5 && lines.filter(l => l.trim()).length > 0;
 }
 
-// 翻译状态映射类型
 type TranslationMap = Map<string, { translation: string; loading: boolean; error?: string }>;
-
-// 折叠级别类型（用于 tree 模式）
 type FoldLevel = 'expanded' | 'body_only' | 'collapsed';
-
-// 视图模式类型
 type ViewMode = 'tree' | 'layered';
 
-// 邮件卡片组件
-function EmailCard({ 
-  node, 
-  expandedIds,
-  toggleExpand,
+// =============================================================
+// 分层模式辅助函数
+// =============================================================
+function collectDescendantIds(node: ThreadNode): number[] {
+  const ids: number[] = [];
+  const walk = (n: ThreadNode) => {
+    for (const child of n.children) {
+      ids.push(child.email.id);
+      walk(child);
+    }
+  };
+  walk(node);
+  return ids;
+}
+
+function buildNodeMap(roots: ThreadNode[]): Map<number, ThreadNode> {
+  const map = new Map<number, ThreadNode>();
+  const walk = (node: ThreadNode) => {
+    map.set(node.email.id, node);
+    node.children.forEach(walk);
+  };
+  roots.forEach(walk);
+  return map;
+}
+
+// 计算分层模式下可见的节点列表（扁平化）
+// 规则：根节点始终可见；子节点仅当其直接父节点被展开时可见
+function getVisibleNodes(roots: ThreadNode[], expandedIds: Set<number>): ThreadNode[] {
+  const visible: ThreadNode[] = [];
+  const walk = (nodes: ThreadNode[], parentExpanded: boolean) => {
+    for (const node of nodes) {
+      if (node.depth === 0 || parentExpanded) {
+        visible.push(node);
+        const isExpanded = expandedIds.has(node.email.id);
+        walk(node.children, isExpanded);
+      }
+    }
+  };
+  walk(roots, true);
+  return visible;
+}
+
+// =============================================================
+// 分层模式邮件卡片组件（不递归渲染 children）
+// =============================================================
+function LayeredEmailCard({
+  node,
+  isExpanded,
+  onToggleExpand,
   translations,
   onTranslationUpdate,
   onClearParagraphCache,
-  foldLevel,
-  viewMode,
-  layeredExpandedIds,
-  toggleLayeredExpand,
-}: { 
+}: {
   node: ThreadNode;
-  expandedIds: Set<number>;
-  toggleExpand: (id: number) => void;
+  isExpanded: boolean;
+  onToggleExpand: (id: number) => void;
   translations: TranslationMap;
   onTranslationUpdate: (para: string, translation: string) => void;
   onClearParagraphCache: (paragraph: string) => void;
-  foldLevel: FoldLevel;
-  viewMode: ViewMode;
-  layeredExpandedIds: Set<number>;
-  toggleLayeredExpand: (id: number, depth: number) => void;
 }) {
   const { email, children, depth } = node;
-  const isExpanded = expandedIds.has(email.id);
-  const isLayeredExpanded = layeredExpandedIds.has(email.id);
   const paragraphs = parseParagraphs(email.body);
-
-  // 编辑状态
   const [editingPara, setEditingPara] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
 
-  // 开始编辑
   const handleStartEdit = (para: string, currentTrans: string) => {
     setEditingPara(para);
     setEditText(currentTrans || para);
   };
-
-  // 保存编辑
   const handleSaveEdit = () => {
     if (!editingPara) return;
-    // 通过回调更新父组件的 translations
     onTranslationUpdate(editingPara, editText);
     setEditingPara(null);
     setEditText('');
   };
-
-  // 取消编辑
   const handleCancelEdit = () => {
     setEditingPara(null);
     setEditText('');
   };
 
-  // 格式化时间显示
   const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return '';
     const date = new Date(dateStr);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    
     if (diffDays === 0) return '今天';
     if (diffDays === 1) return '昨天';
     if (diffDays < 7) return `${diffDays}天前`;
@@ -166,7 +182,6 @@ function EmailCard({
     return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
   };
 
-  // 折叠模式下显示的一行摘要
   const renderCollapsedSummary = () => (
     <div className="flex items-center gap-2 py-2 px-4 text-sm">
       <div 
@@ -178,32 +193,20 @@ function EmailCard({
       <span className="font-medium text-gray-900 truncate max-w-[150px]">
         {getAuthorName(email.sender)}
       </span>
-      <span className="text-gray-400 text-xs">
-        {formatDate(email.date)}
-      </span>
-      <span className="text-gray-600 truncate flex-1">
-        {email.subject}
-      </span>
+      <span className="text-gray-400 text-xs">{formatDate(email.date)}</span>
+      <span className="text-gray-600 truncate flex-1">{email.subject}</span>
       {email.has_patch && (
-        <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded font-medium">
-          PATCH
-        </span>
-      )}
-      {email.references && email.references.length > 0 && (
-        <span className="text-xs text-gray-400" title={`回复链: ${email.references[email.references.length - 1]}`}>
-          ↳
-        </span>
+        <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded font-medium">PATCH</span>
       )}
       {children.length > 0 && (
         <span className="text-xs text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded-full">
           {children.length} 回复
         </span>
       )}
-      <span className="text-gray-400 ml-auto">▶</span>
+      <span className="text-gray-400 ml-auto">{isExpanded ? '▼' : '▶'}</span>
     </div>
   );
 
-  // 展开模式下显示的完整标题
   const renderFullHeader = () => (
     <div className="flex items-center gap-3 py-3 px-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border-l-4 border-blue-400">
       <div 
@@ -212,12 +215,9 @@ function EmailCard({
       >
         {getAuthorName(email.sender).charAt(0).toUpperCase()}
       </div>
-      
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="font-semibold text-gray-900 text-sm">
-            {getAuthorName(email.sender)}
-          </span>
+          <span className="font-semibold text-gray-900 text-sm">{getAuthorName(email.sender)}</span>
           {depth > 0 && (
             <span className="text-xs text-blue-500 bg-blue-50 px-2 py-0.5 rounded">
               → {depth} 层回复
@@ -230,369 +230,276 @@ function EmailCard({
             }) : ''}
           </span>
         </div>
-        <div className="text-sm text-gray-600 truncate mt-1">
-          {email.subject}
+        <div className="text-sm text-gray-600 truncate mt-1">{email.subject}</div>
+      </div>
+      {email.has_patch && (
+        <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">PATCH</span>
+      )}
+      {children.length > 0 && (
+        <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded-full">{children.length} 回复</span>
+      )}
+      <span className="text-gray-400 text-lg">{isExpanded ? '▼' : '▶'}</span>
+    </div>
+  );
+
+  const renderParagraph = (para: string, idx: number) => {
+    const needTrans = shouldTranslate(para);
+    const transState = translations.get(para);
+    const isLoading = transState?.loading;
+    const translation = transState?.translation;
+    const transError = transState?.error;
+
+    if (!needTrans) {
+      return (
+        <div key={idx} className="email-paragraph">
+          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
         </div>
+      );
+    }
+
+    return (
+      <div key={idx} className="bilingual-block">
+        <div className="bilingual-original">
+          <div className="lang-label">EN</div>
+          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
+        </div>
+        <div className="bilingual-translation">
+          <div className="lang-label flex items-center justify-between">
+            <span>中文</span>
+            {translation && editingPara !== para && (
+              <div className="flex gap-1">
+                <button onClick={() => handleStartEdit(para, translation)} className="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200" title="编辑翻译">✏️ 编辑</button>
+                <button onClick={() => onClearParagraphCache(para)} className="text-xs px-2 py-1 bg-orange-100 text-orange-600 rounded hover:bg-orange-200" title="清除此段缓存">🗑️</button>
+              </div>
+            )}
+          </div>
+          {editingPara === para ? (
+            <div className="mt-2">
+              <textarea value={editText} onChange={(e) => setEditText(e.target.value)} className="w-full min-h-[80px] p-2 text-sm border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400" placeholder="输入人工翻译..." />
+              <div className="flex gap-2 mt-2">
+                <button onClick={handleSaveEdit} className="px-3 py-1.5 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600">保存</button>
+                <button onClick={handleCancelEdit} className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300">取消</button>
+              </div>
+            </div>
+          ) : isLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+              <span className="ml-2 text-sm text-gray-500">翻译中...</span>
+            </div>
+          ) : translation ? (
+            <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed">{translation}</pre>
+          ) : transError ? (
+            <div className="text-sm text-red-500 py-2">翻译失败: {transError}</div>
+          ) : (
+            <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed opacity-50">{para}</pre>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="email-node" style={{ marginLeft: depth > 0 ? `${Math.min(depth, 6) * 16}px` : 0 }}>
+      <div 
+        onClick={() => onToggleExpand(email.id)}
+        className="cursor-pointer hover:bg-gray-50 rounded-lg border border-gray-200 transition-colors"
+      >
+        {isExpanded ? renderFullHeader() : renderCollapsedSummary()}
+      </div>
+
+      {isExpanded && (
+        <div className="email-body px-4 pb-4 mt-2">
+          <div className="mb-3">
+            <EmailTagEditor messageId={email.message_id} />
+          </div>
+          <div className="email-content rounded-lg overflow-hidden">
+            {paragraphs.map((para, idx) => renderParagraph(para, idx))}
+          </div>
+          {email.has_patch && email.patch_content && (
+            <div className="mt-4 border-t border-gray-200 pt-4 patch-diff">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">PATCH</span>
+                <span className="text-xs text-gray-500">Diff 片段</span>
+              </div>
+              <pre className="text-xs bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto font-mono leading-relaxed">
+                {email.patch_content}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================
+// 树形模式邮件卡片组件（递归渲染 children）
+// =============================================================
+function TreeEmailCard({ 
+  node, 
+  expandedIds,
+  toggleExpand,
+  translations,
+  onTranslationUpdate,
+  onClearParagraphCache,
+}: { 
+  node: ThreadNode;
+  expandedIds: Set<number>;
+  toggleExpand: (id: number) => void;
+  translations: TranslationMap;
+  onTranslationUpdate: (para: string, translation: string) => void;
+  onClearParagraphCache: (paragraph: string) => void;
+}) {
+  const { email, children, depth } = node;
+  const isExpanded = expandedIds.has(email.id);
+  const paragraphs = parseParagraphs(email.body);
+  const [editingPara, setEditingPara] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+
+  const handleStartEdit = (para: string, currentTrans: string) => {
+    setEditingPara(para);
+    setEditText(currentTrans || para);
+  };
+  const handleSaveEdit = () => {
+    if (!editingPara) return;
+    onTranslationUpdate(editingPara, editText);
+    setEditingPara(null);
+    setEditText('');
+  };
+  const handleCancelEdit = () => {
+    setEditingPara(null);
+    setEditText('');
+  };
+
+  const renderFullHeader = () => (
+    <div className="flex items-center gap-3 py-3 px-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border-l-4 border-blue-400">
+      <div 
+        className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm"
+        style={{ backgroundColor: `hsl(${getAuthorName(email.sender).charCodeAt(0) * 15 % 360}, 65%, 50%)` }}
+      >
+        {getAuthorName(email.sender).charAt(0).toUpperCase()}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-gray-900 text-sm">{getAuthorName(email.sender)}</span>
+          {depth > 0 && (
+            <span className="text-xs text-blue-500 bg-blue-50 px-2 py-0.5 rounded">
+              → {depth} 层回复
+            </span>
+          )}
+          <span className="text-xs text-gray-400 ml-auto">
+            {email.date ? new Date(email.date).toLocaleDateString('zh-CN', { 
+              year: 'numeric', month: 'short', day: 'numeric',
+              hour: '2-digit', minute: '2-digit'
+            }) : ''}
+          </span>
+        </div>
+        <div className="text-sm text-gray-600 truncate mt-1">{email.subject}</div>
         {email.references && email.references.length > 0 && (
           <div className="text-xs text-gray-400 mt-1 truncate" title={`回复链: ${email.references[email.references.length - 1]}`}>
             ↳ 回复: {email.references[email.references.length - 1]}
           </div>
         )}
       </div>
-      
       {email.has_patch && (
-        <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">
-          PATCH
-        </span>
+        <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">PATCH</span>
       )}
-      
       {children.length > 0 && (
-        <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded-full">
-          {children.length} 回复
-        </span>
+        <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded-full">{children.length} 回复</span>
       )}
-      
-      <span className="text-gray-400 text-lg">
-        {isExpanded ? '▼' : '▶'}
-      </span>
+      <span className="text-gray-400 text-lg">{isExpanded ? '▼' : '▶'}</span>
     </div>
   );
-  
-  // 分层模式下：只显示被展开的节点
-  if (viewMode === 'layered') {
-    // 顶层节点始终显示
-    // 子节点始终显示（让用户可以点击展开），但折叠状态由 isLayeredExpanded 决定
-    // 注意：如果节点不在 layeredExpandedIds 中，会以折叠状态显示
-  }
 
-  // 分层模式下的展开状态切换
-  const handleToggleExpand = (e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    
-    if (viewMode === 'layered') {
-      toggleLayeredExpand(email.id, depth);
-    } else {
-      toggleExpand(email.id);
-    }
-  };
+  const renderParagraph = (para: string, idx: number) => {
+    const needTrans = shouldTranslate(para);
+    const transState = translations.get(para);
+    const isLoading = transState?.loading;
+    const translation = transState?.translation;
+    const transError = transState?.error;
 
-  // 根据视图模式和展开状态决定显示方式
-  // 分层模式：depth 0 始终以折叠摘要显示，depth > 0 根据 layeredExpandedIds 显示
-  const isCollapsed = viewMode === 'tree' 
-    ? foldLevel === 'collapsed' 
-    : (depth === 0 ? false : !isLayeredExpanded);
-  
-  const shouldShowContent = viewMode === 'tree' 
-    ? isExpanded 
-    : isLayeredExpanded;
-
-  // 分层模式下：根据展开状态决定是否显示
-  // 分层模式的核心逻辑：
-  // - depth 0 (根节点) 始终显示
-  // - depth > 0 (子节点) 只显示当它的父节点被展开时
-  // 注意：depth > 1 表示孙子节点或更深层级，需要自己的父节点被展开才显示
-  if (viewMode === 'layered' && depth > 0) {
-    if (depth > 1 && !isLayeredExpanded) {
-      return null;
-    }
-  }
-
-  // 折叠视图
-  if (isCollapsed) {
-    return (
-      <div className="email-node" style={{ marginLeft: depth > 0 ? '16px' : 0 }}>
-        <div 
-          onClick={(e) => handleToggleExpand(e)}
-          className="cursor-pointer hover:bg-gray-50 rounded-lg border border-gray-200 transition-colors"
-        >
-          {renderCollapsedSummary()}
+    if (!needTrans) {
+      return (
+        <div key={idx} className="email-paragraph">
+          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
         </div>
-        
-        {/* 展开后显示内容 */}
-        {shouldShowContent && (
-          <div className="email-body px-4 pb-4 mt-2">
-            <div className="mb-3">
-              <EmailTagEditor messageId={email.message_id} />
-            </div>
-            <div className="email-content rounded-lg overflow-hidden">
-              {paragraphs.map((para, idx) => (
-                <div key={idx} className="email-paragraph">
-                  <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        
-        {/* 子回复 */}
-        {children.length > 0 && (
-          <div className="replies mt-3">
-            {children.map(child => (
-              <EmailCard 
-                key={child.email.id} 
-                node={child} 
-                expandedIds={expandedIds}
-                toggleExpand={toggleExpand}
-                translations={translations}
-                onTranslationUpdate={onTranslationUpdate}
-                onClearParagraphCache={onClearParagraphCache}
-                foldLevel={foldLevel}
-                viewMode={viewMode}
-                layeredExpandedIds={layeredExpandedIds}
-                toggleLayeredExpand={toggleLayeredExpand}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
+      );
+    }
 
-  // 展开模式：显示完整邮件
-  // 分层模式下不使用 <details>，直接用 div + onClick
-  const isLayeredMode = viewMode === 'layered';
-  
-  return (
-    <div className="email-node" style={{ marginLeft: depth > 0 ? '16px' : 0 }}>
-      {isLayeredMode ? (
-        // 分层模式：自定义折叠/展开
-        <>
-          <div 
-            onClick={(e) => handleToggleExpand(e)}
-            className="cursor-pointer hover:bg-gray-50 rounded-lg border border-gray-200 transition-colors"
-          >
-            {depth === 0 && !isLayeredExpanded ? renderCollapsedSummary() : renderFullHeader()}
-          </div>
-          {isLayeredExpanded && (
-            <div className="email-body px-4 pb-4 mt-2">
-              <div className="mb-3">
-                <EmailTagEditor messageId={email.message_id} />
-              </div>
-              <div className="email-content rounded-lg overflow-hidden">
-                {paragraphs.map((para, idx) => {
-                  const needTrans = shouldTranslate(para);
-                  const transState = translations.get(para);
-                  const isLoading = transState?.loading;
-                  const translation = transState?.translation;
-                  const transError = transState?.error;
-                  
-                  if (needTrans) {
-                    return (
-                      <div key={idx} className="bilingual-block">
-                        <div className="bilingual-original">
-                          <div className="lang-label">EN</div>
-                          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
-                        </div>
-                        <div className="bilingual-translation">
-                          <div className="lang-label flex items-center justify-between">
-                            <span>中文</span>
-                            {translation && editingPara !== para && (
-                              <div className="flex gap-1">
-                                <button
-                                  onClick={() => handleStartEdit(para, translation)}
-                                  className="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
-                                  title="编辑翻译"
-                                >
-                                  ✏️ 编辑
-                                </button>
-                                <button
-                                  onClick={() => onClearParagraphCache(para)}
-                                  className="text-xs px-2 py-1 bg-orange-100 text-orange-600 rounded hover:bg-orange-200"
-                                  title="清除此段缓存"
-                                >
-                                  🗑️
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                          {editingPara === para ? (
-                            <div className="mt-2">
-                              <textarea
-                                value={editText}
-                                onChange={(e) => setEditText(e.target.value)}
-                                className="w-full min-h-[80px] p-2 text-sm border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
-                                placeholder="输入人工翻译..."
-                              />
-                              <div className="flex gap-2 mt-2">
-                                <button
-                                  onClick={handleSaveEdit}
-                                  className="px-3 py-1.5 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600"
-                                >
-                                  保存
-                                </button>
-                                <button
-                                  onClick={handleCancelEdit}
-                                  className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300"
-                                >
-                                  取消
-                                </button>
-                              </div>
-                            </div>
-                          ) : isLoading ? (
-                            <div className="flex items-center justify-center py-4">
-                              <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
-                              <span className="ml-2 text-sm text-gray-500">翻译中...</span>
-                            </div>
-                          ) : translation ? (
-                            <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed">{translation}</pre>
-                          ) : transError ? (
-                            <div className="text-sm text-red-500 py-2">翻译失败: {transError}</div>
-                          ) : (
-                            <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed opacity-50">{para}</pre>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  } else {
-                    return (
-                      <div key={idx} className="email-paragraph">
-                        <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
-                      </div>
-                    );
-                  }
-                })}
-              </div>
-              
-              {/* Patch Diff 片段 */}
-              {email.has_patch && email.patch_content && (
-                <div className="mt-4 border-t border-gray-200 pt-4 patch-diff">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">PATCH</span>
-                    <span className="text-xs text-gray-500">Diff 片段</span>
-                  </div>
-                  <pre className="text-xs bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto font-mono leading-relaxed">
-                    {email.patch_content}
-                  </pre>
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      ) : (
-        // 树形模式：使用 <details> 元素
-        <details className="email-thread" open={isExpanded}>
-          <summary 
-            onClick={(e) => { e.preventDefault(); handleToggleExpand(); }}
-            className="cursor-pointer"
-          >
-            {renderFullHeader()}
-          </summary>
-          
-          {/* 邮件内容 */}
-          <div className="email-body px-4 pb-4 mt-2">
-            <div className="mb-3">
-              <EmailTagEditor messageId={email.message_id} />
-            </div>
-            
-            {/* 邮件正文 */}
-            <div className="email-content rounded-lg overflow-hidden">
-              {paragraphs.map((para, idx) => {
-                const needTrans = shouldTranslate(para);
-                const transState = translations.get(para);
-                const isLoading = transState?.loading;
-                const translation = transState?.translation;
-                const transError = transState?.error;
-                
-                if (needTrans) {
-                  // 双语对照模式
-                  return (
-                    <div key={idx} className="bilingual-block">
-                      <div className="bilingual-original">
-                        <div className="lang-label">EN</div>
-                        <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
-                      </div>
-                      <div className="bilingual-translation">
-                        <div className="lang-label flex items-center justify-between">
-                          <span>中文</span>
-                          {translation && editingPara !== para && (
-                            <div className="flex gap-1">
-                              <button
-                                onClick={() => handleStartEdit(para, translation)}
-                                className="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
-                                title="编辑翻译"
-                              >
-                                ✏️ 编辑
-                              </button>
-                              <button
-                                onClick={() => onClearParagraphCache(para)}
-                                className="text-xs px-2 py-1 bg-orange-100 text-orange-600 rounded hover:bg-orange-200"
-                                title="清除此段缓存"
-                              >
-                                🗑️
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                        {editingPara === para ? (
-                          <div className="mt-2">
-                            <textarea
-                              value={editText}
-                              onChange={(e) => setEditText(e.target.value)}
-                              className="w-full min-h-[80px] p-2 text-sm border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
-                              placeholder="输入人工翻译..."
-                            />
-                            <div className="flex gap-2 mt-2">
-                              <button
-                                onClick={handleSaveEdit}
-                                className="px-3 py-1.5 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600"
-                              >
-                                保存
-                              </button>
-                              <button
-                                onClick={handleCancelEdit}
-                                className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300"
-                              >
-                                取消
-                              </button>
-                            </div>
-                          </div>
-                        ) : isLoading ? (
-                          <div className="flex items-center justify-center py-4">
-                            <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
-                            <span className="ml-2 text-sm text-gray-500">翻译中...</span>
-                          </div>
-                        ) : translation ? (
-                          <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed">{translation}</pre>
-                        ) : transError ? (
-                          <div className="text-sm text-red-500 py-2">翻译失败: {transError}</div>
-                        ) : (
-                          <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed opacity-50">{para}</pre>
-                        )}
-                      </div>
-                    </div>
-                  );
-                } else {
-                  // 普通模式（代码或补丁内容，不翻译）
-                  return (
-                    <div key={idx} className="email-paragraph">
-                      <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
-                    </div>
-                  );
-                }
-              })}
-            </div>
-
-            {/* Patch Diff 片段 */}
-            {email.has_patch && email.patch_content && (
-              <div className="mt-4 border-t border-gray-200 pt-4 patch-diff">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">PATCH</span>
-                  <span className="text-xs text-gray-500">Diff 片段</span>
-                </div>
-                <pre className="text-xs bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto font-mono leading-relaxed">
-                  {email.patch_content}
-                </pre>
+    return (
+      <div key={idx} className="bilingual-block">
+        <div className="bilingual-original">
+          <div className="lang-label">EN</div>
+          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
+        </div>
+        <div className="bilingual-translation">
+          <div className="lang-label flex items-center justify-between">
+            <span>中文</span>
+            {translation && editingPara !== para && (
+              <div className="flex gap-1">
+                <button onClick={() => handleStartEdit(para, translation)} className="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200" title="编辑翻译">✏️ 编辑</button>
+                <button onClick={() => onClearParagraphCache(para)} className="text-xs px-2 py-1 bg-orange-100 text-orange-600 rounded hover:bg-orange-200" title="清除此段缓存">🗑️</button>
               </div>
             )}
           </div>
-        </details>
-      )}
-              
-      {/* 子回复 */}
+          {editingPara === para ? (
+            <div className="mt-2">
+              <textarea value={editText} onChange={(e) => setEditText(e.target.value)} className="w-full min-h-[80px] p-2 text-sm border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400" placeholder="输入人工翻译..." />
+              <div className="flex gap-2 mt-2">
+                <button onClick={handleSaveEdit} className="px-3 py-1.5 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600">保存</button>
+                <button onClick={handleCancelEdit} className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300">取消</button>
+              </div>
+            </div>
+          ) : isLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+              <span className="ml-2 text-sm text-gray-500">翻译中...</span>
+            </div>
+          ) : translation ? (
+            <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed">{translation}</pre>
+          ) : transError ? (
+            <div className="text-sm text-red-500 py-2">翻译失败: {transError}</div>
+          ) : (
+            <pre className="text-sm whitespace-pre-wrap break-words text-gray-800 leading-relaxed opacity-50">{para}</pre>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="email-node" style={{ marginLeft: depth > 0 ? '16px' : 0 }}>
+      <details className="email-thread" open={isExpanded}>
+        <summary 
+          onClick={(e) => { e.preventDefault(); toggleExpand(email.id); }}
+          className="cursor-pointer"
+        >
+          {renderFullHeader()}
+        </summary>
+        <div className="email-body px-4 pb-4 mt-2">
+          <div className="mb-3">
+            <EmailTagEditor messageId={email.message_id} />
+          </div>
+          <div className="email-content rounded-lg overflow-hidden">
+            {paragraphs.map((para, idx) => renderParagraph(para, idx))}
+          </div>
+          {email.has_patch && email.patch_content && (
+            <div className="mt-4 border-t border-gray-200 pt-4 patch-diff">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">PATCH</span>
+                <span className="text-xs text-gray-500">Diff 片段</span>
+              </div>
+              <pre className="text-xs bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto font-mono leading-relaxed">
+                {email.patch_content}
+              </pre>
+            </div>
+          )}
+        </div>
+      </details>
       {children.length > 0 && (
         <div className="replies mt-3">
           {children.map(child => (
-            <EmailCard 
+            <TreeEmailCard 
               key={child.email.id} 
               node={child} 
               expandedIds={expandedIds}
@@ -600,10 +507,6 @@ function EmailCard({
               translations={translations}
               onTranslationUpdate={onTranslationUpdate}
               onClearParagraphCache={onClearParagraphCache}
-              foldLevel={foldLevel}
-              viewMode={viewMode}
-              layeredExpandedIds={layeredExpandedIds}
-              toggleLayeredExpand={toggleLayeredExpand}
             />
           ))}
         </div>
@@ -616,23 +519,20 @@ function EmailCard({
 function extractTranslatableParagraphs(thread: ThreadResponse | null): string[] {
   if (!thread) return [];
   const paragraphs = new Set<string>();
-  
-  const collectParagraphs = (emails: ThreadEmail[]) => {
-    for (const email of emails) {
-      const paras = parseParagraphs(email.body || '');
-      for (const para of paras) {
-        if (shouldTranslate(para)) {
-          paragraphs.add(para);
-        }
+  for (const email of thread.emails) {
+    const paras = parseParagraphs(email.body || '');
+    for (const para of paras) {
+      if (shouldTranslate(para)) {
+        paragraphs.add(para);
       }
     }
-  };
-  
-  collectParagraphs(thread.emails);
+  }
   return Array.from(paragraphs);
 }
 
+// =============================================================
 // 主组件
+// =============================================================
 interface Props {
   threadId: string;
   onClose: () => void;
@@ -647,66 +547,56 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
   const [translations, setTranslations] = useState<TranslationMap>(new Map());
   const [translating, setTranslating] = useState(false);
   const [cacheMessage, setCacheMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [foldLevel, setFoldLevel] = useState<FoldLevel>('expanded');
+  const [, setFoldLevel] = useState<FoldLevel>('expanded');
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
-  // 分层展开模式：记录哪些邮件被展开了（用于分层展开）
   const [layeredExpandedIds, setLayeredExpandedIds] = useState<Set<number>>(new Set());
-  // 分层模式下的可见深度（已弃用，改用 layeredExpandedIds 控制）
-  // const [layeredVisibleDepth, setLayeredVisibleDepth] = useState<number>(1);
 
-  // 清除缓存消息
-  const clearCacheMessage = useCallback(() => {
-    setCacheMessage(null);
-  }, []);
+  const nodeMap = useMemo(() => buildNodeMap(threadTree), [threadTree]);
 
-  // 清除单个段落缓存
+  const visibleNodes = useMemo(() => {
+    if (viewMode !== 'layered') return [];
+    return getVisibleNodes(threadTree, layeredExpandedIds);
+  }, [viewMode, threadTree, layeredExpandedIds]);
+
+  const clearCacheMessage = useCallback(() => { setCacheMessage(null); }, []);
+
   const handleClearParagraphCache = useCallback(async (paragraph: string) => {
     try {
-      // 计算段落 hash
       const encoder = new TextEncoder();
       const data = encoder.encode(paragraph);
       const hashBuffer = await crypto.subtle.digest('SHA-256', data);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
       const result = await clearTranslationCache('paragraph', hashHex);
       if (result.success) {
         setCacheMessage({ type: 'success', text: '段落缓存已清除' });
-        // 清除本地翻译状态
-        setTranslations(prev => {
-          const next = new Map(prev);
-          next.delete(paragraph);
-          return next;
-        });
+        setTranslations(prev => { const next = new Map(prev); next.delete(paragraph); return next; });
       } else {
         setCacheMessage({ type: 'error', text: result.message });
       }
       setTimeout(clearCacheMessage, 2000);
-    } catch (err) {
+    } catch {
       setCacheMessage({ type: 'error', text: '清除缓存失败' });
       setTimeout(clearCacheMessage, 2000);
     }
   }, [clearCacheMessage]);
 
-  // 清除全部缓存
   const handleClearAllCache = useCallback(async () => {
     try {
       const result = await clearTranslationCache('all');
       if (result.success) {
         setCacheMessage({ type: 'success', text: `已清除全部缓存 (${result.cleared_count} 条)` });
-        // 清除所有本地翻译状态
         setTranslations(new Map());
       } else {
         setCacheMessage({ type: 'error', text: result.message });
       }
       setTimeout(clearCacheMessage, 2000);
-    } catch (err) {
+    } catch {
       setCacheMessage({ type: 'error', text: '清除缓存失败' });
       setTimeout(clearCacheMessage, 2000);
     }
   }, [clearCacheMessage]);
 
-  // 更新单个翻译（来自 EmailCard 编辑）
   const handleTranslationUpdate = useCallback((para: string, translation: string) => {
     setTranslations(prev => {
       const next = new Map(prev);
@@ -729,15 +619,12 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, [threadId]);
-  
+
   const toggleExpand = useCallback((id: number) => {
     setExpandedIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }, []);
@@ -748,93 +635,77 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
       setExpandedIds(new Set(thread.emails.map(e => e.id)));
     }
   };
-  
+
   const collapseAll = () => {
-    if (thread && thread.emails.length > 0) {
+    if (thread) {
       setFoldLevel('collapsed');
       setExpandedIds(new Set());
     }
   };
 
-  // 分层展开模式：切换单个邮件的展开状态
-  const toggleLayeredExpand = useCallback((id: number, _nodeDepth: number) => {
+  // 分层展开模式：切换单个邮件展开状态，折叠时级联折叠所有后代
+  const toggleLayeredExpand = useCallback((id: number) => {
     setLayeredExpandedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
+        const node = nodeMap.get(id);
+        if (node) {
+          for (const descId of collectDescendantIds(node)) {
+            next.delete(descId);
+          }
+        }
       } else {
         next.add(id);
       }
       return next;
     });
-  }, []);
+  }, [nodeMap]);
 
-  // 切换到分层展开模式
   const enterLayeredMode = useCallback(() => {
     setViewMode('layered');
-    // 初始：只展开第一个根节点，让用户看到线程入口
     if (threadTree.length > 0) {
-      const firstRootId = threadTree[0].email.id;
-      setLayeredExpandedIds(new Set([firstRootId]));
+      setLayeredExpandedIds(new Set([threadTree[0].email.id]));
     } else {
       setLayeredExpandedIds(new Set());
     }
   }, [threadTree]);
 
-  // 切换到树形模式
   const enterTreeMode = useCallback(() => {
     setViewMode('tree');
-    // 展开所有
     if (thread) {
       setExpandedIds(new Set(thread.emails.map(e => e.id)));
     }
   }, [thread]);
-  
-  // 翻译所有可见段落
+
   const handleTranslate = useCallback(async () => {
     if (!thread || translating) return;
-    
     const paragraphs = extractTranslatableParagraphs(thread);
     if (paragraphs.length === 0) return;
-    
-    // 检查哪些段落还没有翻译
     const needTrans = paragraphs.filter(p => !translations.has(p) || !translations.get(p)?.translation);
     if (needTrans.length === 0) return;
-    
     setTranslating(true);
-    
-    // 标记所有段落为加载中
     setTranslations(prev => {
       const next = new Map(prev);
-      for (const p of needTrans) {
-        next.set(p, { translation: '', loading: true });
-      }
+      for (const p of needTrans) { next.set(p, { translation: '', loading: true }); }
       return next;
     });
-    
     try {
-      // 批量翻译（每次最多50条）
       const batchSize = 50;
       const allTranslations: string[] = [];
-      
       for (let i = 0; i < needTrans.length; i += batchSize) {
         const batch = needTrans.slice(i, i + batchSize);
         const result = await translateBatch(batch, 'auto', 'zh-CN');
         allTranslations.push(...result.translations);
       }
-      
-      // 更新翻译结果
       setTranslations(prev => {
         const next = new Map(prev);
         needTrans.forEach((para, idx) => {
-          const translation = allTranslations[idx] || para;
-          next.set(para, { translation, loading: false });
+          next.set(para, { translation: allTranslations[idx] || para, loading: false });
         });
         return next;
       });
-    } catch (err) {
-      console.error('Translation failed:', err);
-      // 标记翻译失败
+    } catch {
       setTranslations(prev => {
         const next = new Map(prev);
         for (const p of needTrans) {
@@ -846,27 +717,23 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
       setTranslating(false);
     }
   }, [thread, translations, translating]);
-  
-  // 统计翻译进度
+
   const translationStats = useMemo(() => {
     const total = extractTranslatableParagraphs(thread).length;
     const translated = Array.from(translations.values()).filter(t => !!t.translation).length;
     return { total, translated };
   }, [thread, translations]);
-  
+
   return (
     <div className="fixed inset-0 z-50 flex">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      
-      {/* 抽屉主体 - 90% 宽度 */}
       <div className="relative ml-auto bg-gray-50 flex flex-col"
            style={{ width: '90vw', height: '100vh' }}>
-        
         {/* 顶部工具栏 */}
         <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4 min-w-0">
             <h3 className="text-lg font-bold text-gray-900">
-              📧 Thread ({thread?.total ?? '...'})
+              Thread ({thread?.total ?? '...'})
             </h3>
             {thread?.emails[0] && (
               <span className="text-sm text-gray-500 truncate max-w-md">
@@ -874,9 +741,7 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
               </span>
             )}
           </div>
-          
           <div className="flex items-center gap-3">
-            {/* 翻译按钮 */}
             <button
               onClick={handleTranslate}
               disabled={translating || translationStats.total === 0}
@@ -890,24 +755,22 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
             >
               {translating ? (
                 <>
-                  <span className="inline-block animate-spin mr-2">⟳</span>
+                  <span className="inline-block animate-spin mr-2">&#x27F3;</span>
                   翻译中 ({translationStats.translated}/{translationStats.total})
                 </>
               ) : translationStats.translated > 0 ? (
-                <>✓ 已翻译 ({translationStats.translated}/{translationStats.total})</>
+                <>已翻译 ({translationStats.translated}/{translationStats.total})</>
               ) : (
-                <>🌐 中英对照</>
+                <>中英对照</>
               )}
             </button>
-
-            {/* 缓存清除按钮 */}
             <div className="relative">
               <button
                 onClick={handleClearAllCache}
                 className="px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 rounded-lg transition-colors border border-orange-200"
                 title="清除全部翻译缓存"
               >
-                🗑️ 清除缓存
+                清除缓存
               </button>
               {cacheMessage && (
                 <div className={`absolute top-full mt-1 right-0 px-3 py-1.5 rounded-lg text-sm whitespace-nowrap z-10 ${
@@ -917,60 +780,40 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
                 </div>
               )}
             </div>
-
-            {/* 视图模式切换 */}
             <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
               <button
-                onClick={() => { enterTreeMode(); }}
+                onClick={enterTreeMode}
                 className={`px-2 py-1.5 text-xs rounded transition-colors ${
-                  viewMode === 'tree' 
-                    ? 'bg-blue-500 text-white' 
-                    : 'text-gray-600 hover:bg-gray-200'
+                  viewMode === 'tree' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:bg-gray-200'
                 }`}
-                title="树形模式 - 展开全部邮件"
+                title="树形模式"
               >
-                🌲 树形
+                树形
               </button>
               <button
                 onClick={enterLayeredMode}
                 className={`px-2 py-1.5 text-xs rounded transition-colors ${
-                  viewMode === 'layered' 
-                    ? 'bg-blue-500 text-white' 
-                    : 'text-gray-600 hover:bg-gray-200'
+                  viewMode === 'layered' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:bg-gray-200'
                 }`}
-                title="分层展开 - 折叠只显示顶层，点击展开一层"
+                title="分层展开"
               >
-                � 分层
+                分层
               </button>
             </div>
-
             {viewMode === 'tree' && (
               <>
-                {/* 展开/收起 (仅树形模式) */}
-                <button
-                  onClick={expandAll}
-                  className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  全部展开
-                </button>
-                <button
-                  onClick={collapseAll}
-                  className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  全部收起
-                </button>
+                <button onClick={expandAll} className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">全部展开</button>
+                <button onClick={collapseAll} className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">全部收起</button>
               </>
             )}
-
             <button 
               onClick={onClose} 
               className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-xl"
             >
-              ✕
+              &#x2715;
             </button>
           </div>
         </div>
-        
         {/* 内容区域 */}
         <div className="flex-1 overflow-y-auto p-6">
           {loading && (
@@ -978,16 +821,13 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
               <div className="text-gray-400 text-lg">加载中...</div>
             </div>
           )}
-          
           {error && (
             <div className="flex items-center justify-center py-20">
               <div className="text-red-600 text-lg">{error}</div>
             </div>
           )}
-          
           {thread && (
             <div className="thread">
-              {/* 统计 */}
               <div className="bg-white rounded-lg px-4 py-3 mb-6 flex items-center gap-6 text-sm text-gray-600 border border-gray-200">
                 <span><strong className="text-gray-900">{thread.emails.length}</strong> 封邮件</span>
                 <span><strong className="text-gray-900">{threadTree.length}</strong> 个主题</span>
@@ -995,30 +835,37 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
                   <span><strong className="text-gray-900">{translationStats.total}</strong> 段落可翻译</span>
                 )}
               </div>
-              
-              {/* 线程树 */}
               <div className="space-y-3">
-                {threadTree.map((rootNode, idx) => (
-                  <EmailCard 
-                    key={`${rootNode.email.id}-${idx}`}
-                    node={rootNode}
-                    expandedIds={expandedIds}
-                    toggleExpand={toggleExpand}
-                    translations={translations}
-                    onTranslationUpdate={handleTranslationUpdate}
-                    onClearParagraphCache={handleClearParagraphCache}
-                    foldLevel={foldLevel}
-                    viewMode={viewMode}
-                    layeredExpandedIds={layeredExpandedIds}
-                    toggleLayeredExpand={toggleLayeredExpand}
-                  />
-                ))}
+                {viewMode === 'tree' ? (
+                  threadTree.map((rootNode, idx) => (
+                    <TreeEmailCard 
+                      key={`${rootNode.email.id}-${idx}`}
+                      node={rootNode}
+                      expandedIds={expandedIds}
+                      toggleExpand={toggleExpand}
+                      translations={translations}
+                      onTranslationUpdate={handleTranslationUpdate}
+                      onClearParagraphCache={handleClearParagraphCache}
+                    />
+                  ))
+                ) : (
+                  visibleNodes.map((node) => (
+                    <LayeredEmailCard
+                      key={node.email.id}
+                      node={node}
+                      isExpanded={layeredExpandedIds.has(node.email.id)}
+                      onToggleExpand={toggleLayeredExpand}
+                      translations={translations}
+                      onTranslationUpdate={handleTranslationUpdate}
+                      onClearParagraphCache={handleClearParagraphCache}
+                    />
+                  ))
+                )}
               </div>
             </div>
           )}
         </div>
       </div>
-      
       <style>{`
         .email-thread > summary {
           cursor: pointer;
@@ -1064,10 +911,6 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
           margin-bottom: 8px;
           padding-bottom: 4px;
           border-bottom: 1px solid #e5e7eb;
-        }
-        .bilingual-translation .lang-label {
-          color: #3b82f6;
-          border-bottom-color: #bfdbfe;
         }
         .bilingual-translation .lang-label {
           color: #3b82f6;
