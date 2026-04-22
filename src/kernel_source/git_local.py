@@ -11,6 +11,7 @@ import re
 import time
 from functools import lru_cache
 from typing import Optional
+from collections import OrderedDict
 
 from src.kernel_source.base import (
     BaseKernelSource,
@@ -206,41 +207,54 @@ class GitLocalSource(BaseKernelSource):
         raise TypeError("Should not be called directly")
 
     async def get_file(self, version: str, path: str) -> FileContent:
-        """获取指定版本、指定路径的文件内容。"""
+        """获取指定版本、指定路径的文件内容。
+
+        优化：合并 git show 命令同时获取大小和内容，减少 subprocess 调用。
+        """
+        key = (version, path)
+
+        # 检查缓存
+        try:
+            return self._get_file_cached(key)
+        except TypeError:
+            pass
+
         git_ref = f"{version}:{path}"
         try:
-            # 先获取文件大小
-            size_output = await self._run_git("cat-file", "-s", git_ref)
-            file_size = int(size_output.strip())
+            # 优化：只用一条 git show 获取内容（同时包含大小信息）
+            content_bytes = await self._run_git("show", git_ref, binary=True)
+            file_size = len(content_bytes)
+            content = content_bytes.decode("utf-8", errors="replace")
         except ValueError:
             raise FileNotFoundError(f"File not found: {version}:{path}")
 
         truncated = False
         if file_size > self._max_file_size:
             truncated = True
-            # 获取部分内容
-            content_bytes = await self._run_git("show", git_ref, binary=True)
-            content = content_bytes[:self._max_file_size].decode("utf-8", errors="replace")
+            content = content[:self._max_file_size]
             content += f"\n\n... [truncated: file size {file_size} bytes exceeds limit {self._max_file_size} bytes]"
-        else:
-            try:
-                content_bytes = await self._run_git("show", git_ref, binary=True)
-                content = content_bytes.decode("utf-8", errors="replace")
-            except ValueError:
-                raise FileNotFoundError(f"File not found: {version}:{path}")
+            file_size = self._max_file_size
 
         line_count = content.count("\n")
         if content and not content.endswith("\n"):
             line_count += 1
 
-        return FileContent(
+        result = FileContent(
             path=path,
             version=version,
             content=content,
             line_count=line_count,
-            size=file_size,
+            size=len(content_bytes),
             truncated=truncated,
         )
+
+        # 存入缓存
+        try:
+            self._get_file_cached.__wrapped__(key, result)
+        except (TypeError, KeyError):
+            pass
+
+        return result
 
     def _get_file_impl(self, key: tuple) -> FileContent:
         """LRU cache 占位。"""

@@ -57,7 +57,8 @@ storage:
     type: postgres
     # TODO: 替换为你自己的 Neon 连接串（从 Neon 控制台获取）
     # 格式: postgresql+asyncpg://user:password@host/dbname
-    database_url: "postgresql://neondb_owner:npg_Ec4bSNkhvdj7@ep-round-term-amz81fpj.c-5.us-east-1.aws.neon.tech/neondb?sslmode=require"
+    ## postgresql+asyncpg://neondb_owner:npg_Ec4bSNkhvdj7@ep-round-term-amz81fpj.c-5.us-east-1.aws.neon.tech/neondb
+    database_url: postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_code
     pool_size: 2
 
 # 索引配置
@@ -112,10 +113,10 @@ annotations:
 
 # 内核源码浏览配置（PLAN-10000）
 kernel_source:
-  # 主仓库路径（torvalds/linux.git，覆盖 v2.6.12 ~ latest）
-  repo_path: ~/workspace/kernel_linux
+  # 主仓库路径（指向 .git 目录，因为 GitLocalSource 使用 --git-dir）
+  repo_path: /home/wang/workspace/kernel/linux-stable/.git
   # 历史仓库路径（history/history.git，覆盖 v0.01 ~ v2.6.11）
-  history_repo_path: ~/workspace/kernel_linux_history
+  history_repo_path: /home/wang/workspace/kernel/history/.git
   # 是否启用 graft 接合（将 history 接入 master 仓库）
   graft_enabled: true
   # 版本过滤：release 仅正式版（vX.Y），all 包含 rc

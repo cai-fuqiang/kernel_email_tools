@@ -42,11 +42,15 @@ async def run_migration(drop: bool = False):
     # 确保使用 asyncpg 驱动
     if database_url.startswith("postgresql://"):
         database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+    # 本地数据库禁用 SSL，云端（如 Neon）启用 SSL
+    is_local = "localhost" in database_url or "127.0.0.1" in database_url
+    ssl_mode = not is_local  # 本地 False，云端 True
     engine = create_async_engine(
         database_url,
         pool_size=1,
         echo=False,
-        connect_args={"ssl": True},
+        connect_args={"ssl": ssl_mode} if ssl_mode else {},
     )
 
     async with engine.begin() as conn:
@@ -59,8 +63,8 @@ async def run_migration(drop: bool = False):
             if drop:
                 print("Dropping existing code_annotations table...")
                 await conn.execute(text("DROP TABLE code_annotations CASCADE"))
-                await conn.commit()
-                print("Dropped.")
+                # 不要单独 commit，保持事务连贯；后续建表会在同一事务中完成
+                print("Dropped. Proceeding to create new table...")
             else:
                 print("code_annotations table already exists. Use --drop to recreate.")
                 await engine.dispose()
@@ -84,11 +88,15 @@ async def run_migration(drop: bool = False):
                     UNIQUE (version, file_path, start_line, end_line, body)
             )
         """))
-        await conn.execute(text("CREATE INDEX ix_code_annotations_file ON code_annotations (version, file_path)"))
-        await conn.execute(text("CREATE INDEX ix_code_annotations_version ON code_annotations (version)"))
-        await conn.execute(text("CREATE INDEX ix_code_annotations_author ON code_annotations (author)"))
+        # 批量创建索引（使用 IF NOT EXISTS 避免重复创建报错）
+        for sql in [
+            "CREATE INDEX IF NOT EXISTS ix_code_annotations_file ON code_annotations (version, file_path)",
+            "CREATE INDEX IF NOT EXISTS ix_code_annotations_version ON code_annotations (version)",
+            "CREATE INDEX IF NOT EXISTS ix_code_annotations_author ON code_annotations (author)",
+        ]:
+            await conn.execute(text(sql))
         await conn.commit()
-        print("code_annotations table created successfully.")
+        print("code_annotations table and indexes ready.")
 
     await engine.dispose()
     return True

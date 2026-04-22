@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.storage.code_annotation_models import (
     CodeAnnotationORM,
+    CodeAnnotationBase,
     CodeAnnotationCreate,
     CodeAnnotationUpdate,
 )

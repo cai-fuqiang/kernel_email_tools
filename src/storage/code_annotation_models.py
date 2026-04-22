@@ -1,6 +1,8 @@
 """代码注释数据模型 — SQLAlchemy ORM + Pydantic 数据校验。
 
 对应 code_annotations 表，用于存储内核代码的行级/范围级注释。
+
+重要：使用独立的 Base，避免与主数据库 (models.py) 的表/索引冲突。
 """
 
 from datetime import datetime
@@ -18,14 +20,21 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from src.storage.models import Base
+
+# ============================================================
+# 独立的 DeclarativeBase（避免与主数据库 models.py 冲突）
+# ============================================================
+
+class CodeAnnotationBase(DeclarativeBase):
+    """代码注释专用的 SQLAlchemy 声明式基类。"""
+    pass
 
 
 # ============================================================
 # SQLAlchemy ORM 模型
 # ============================================================
 
-class CodeAnnotationORM(Base):
+class CodeAnnotationORM(CodeAnnotationBase):
     """代码注释 ORM 模型，对应 code_annotations 表。
 
     锚点策略：以 (version + file_path + start_line + end_line) 为准，
