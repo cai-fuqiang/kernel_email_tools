@@ -70,6 +70,7 @@ kernel_email_tools/
 │   │   ├── models.py            # EmailORM + TagORM + Pydantic 模型
 │   │   ├── postgres.py           # PostgresStorage（邮件存储）
 │   │   ├── tag_store.py         # TagStore 标签管理
+│   │   ├── translation_cache.py  # TranslationCache ORM + TranslationCacheStore
 │   │   ├── document_models.py    # DocumentChunkModel ORM
 │   │   └── document_store.py     # DocumentStorage（手册存储）
 │   ├── indexer/                  # 索引层
@@ -95,12 +96,15 @@ kernel_email_tools/
 │   ├── collect.py               # 数据采集入口
 │   ├── index.py                 # 索引构建入口
 │   ├── ingest_manual.py          # 手册导入入口
+│   ├── migrate_add_message_id.py # DB 迁移：translation_cache 添加 message_id 列
 │   └── serve.py                 # 服务启动入口
 ├── web/                          # React 前端
 │   ├── src/
 │   │   ├── pages/               # 页面组件
 │   │   │   ├── SearchPage.tsx   # 邮件搜索页（含标签筛选）
 │   │   │   ├── AskPage.tsx      # 邮件问答页（含标签筛选）
+│   │   │   ├── TagsPage.tsx     # 标签管理页
+│   │   │   ├── TranslationsPage.tsx # 翻译管理页（已缓存线程+标签）
 │   │   │   ├── ManualSearchPage.tsx  # 手册搜索页
 │   │   │   └── ManualAskPage.tsx     # 手册问答页
 │   │   ├── components/          # 通用组件
@@ -152,6 +156,22 @@ kernel_email_tools/
 | `color` | str | 标签颜色（十六进制，如 #6366f1）|
 | `created_at` | datetime | 创建时间 |
 
+### TranslationCache 核心字段（翻译缓存）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | int | 主键，自增 |
+| `source_hash` | str(64) | 原文 SHA256 哈希（唯一索引）|
+| `source_text` | text | 原文内容 |
+| `translated_text` | text | 翻译结果 |
+| `source_lang` | str(10) | 源语言（默认 auto）|
+| `target_lang` | str(10) | 目标语言（默认 zh-CN）|
+| `message_id` | str(512) | 关联邮件 Message-ID（nullable, indexed）|
+| `created_at` | datetime | 创建时间 |
+
+- 通过 `message_id` 关联 `emails` 表，支持按 thread 聚合翻译统计和标签展示
+- 翻译时自动写入 `message_id`；已有缓存命中时 backfill 补充关联
+
 ### DocumentChunkModel 核心字段（手册分片）
 
 | 字段 | 类型 | 说明 |
@@ -178,6 +198,7 @@ kernel_email_tools/
 ### 索引策略
 - **邮件表**: GIN(search_vector), GIN(tags), 复合(list_name, thread_id), 唯一(message_id)
 - **标签表**: name 唯一约束, parent_id 索引
+- **翻译缓存表**: 唯一(source_hash), 索引(message_id)
 - **手册表**: GIN(search_vector), 复合(manual_type, content_type)
 
 ---
@@ -289,7 +310,8 @@ kernel_email_tools/
 | 端点 | 方法 | 描述 |
 |------|------|------|
 | `/api/translate` | POST | 单条翻译 |
-| `/api/translate/batch` | POST | 批量翻译（最多 50 条）|
+| `/api/translate/batch` | POST | 批量翻译（最多 50 条，支持 message_id 关联）|
+| `/api/translate/threads` | GET | 获取已翻译线程列表（含标签）|
 | `/api/translate/health` | GET | 翻译服务健康检查 |
 | `/api/translate/cache` | DELETE | 清除翻译缓存 |
 | `/api/translate/manual` | PUT | 保存人工翻译 |
@@ -519,4 +541,6 @@ npm run preview
 - [ ] 多数据源支持（NNTP/RSS/mbox 文件导入）
 - [ ] 其他存储后端（Elasticsearch、Milvus）
 - [ ] AI 标签建议（自动分析邮件内容推荐标签）
-- [ ] 邮件翻译批量处理优化
+- [x] 邮件翻译（Google Translate + 缓存 + 人工校正 + 双语对照）
+- [x] 翻译缓存关联邮件 message_id（支持按线程聚合）
+- [x] 翻译管理页面（TranslationsPage：已缓存线程列表 + 标签展示）
