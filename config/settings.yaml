@@ -51,6 +51,14 @@ storage:
     type: postgres
     database_url: postgresql+asyncpg://kernel:kernel@localhost:5432/chip_manual_kb
     pool_size: 5
+  # 代码注释存储（使用云数据库，支持远端备份）
+  # 推荐 Neon: https://neon.tech (免费 500MB，适合注释文本)
+  code_annotation:
+    type: postgres
+    # TODO: 替换为你自己的 Neon 连接串（从 Neon 控制台获取）
+    # 格式: postgresql+asyncpg://user:password@host/dbname
+    database_url: "postgresql://neondb_owner:npg_Ec4bSNkhvdj7@ep-round-term-amz81fpj.c-5.us-east-1.aws.neon.tech/neondb?sslmode=require"
+    pool_size: 2
 
 # 索引配置
 indexer:

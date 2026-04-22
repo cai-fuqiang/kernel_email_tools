@@ -10,6 +10,7 @@ import yaml
 from fastapi import FastAPI, HTTPException, Query, Body
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.qa.manual_qa import ManualQA
 from src.qa.rag_qa import RagQA
@@ -24,6 +25,9 @@ from src.storage.postgres import PostgresStorage
 from src.storage.tag_store import TagStore
 from src.storage.translation_cache import TranslationCacheStore
 from src.storage.annotation_store import AnnotationStore
+from src.storage.code_annotation_store import CodeAnnotationStore
+from src.storage.code_annotation_models import CodeAnnotationCreate, CodeAnnotationUpdate
+from src.kernel_source.git_local import GitLocalSource
 from src.translator.base import TranslationError
 from src.translator.google_translator import GoogleTranslator, is_available as is_translator_available
 
@@ -49,11 +53,11 @@ _translation_cache: Optional[TranslationCacheStore] = None
 # 批注组件
 _annotation_store: Optional[AnnotationStore] = None
 
-# 内核源码浏览组件
-from src.kernel_source.git_local import GitLocalSource
-from src.storage.code_annotation_store import CodeAnnotationStore
-from src.storage.code_annotation_models import CodeAnnotationCreate, CodeAnnotationUpdate
+# 代码注释存储（Neon 云数据库）
+_code_annotation_engine = None
+_code_annotation_store: Optional[CodeAnnotationStore] = None
 
+# 内核源码浏览组件
 _kernel_source: Optional[GitLocalSource] = None
 _code_annotation_store: Optional[CodeAnnotationStore] = None
 
@@ -76,6 +80,7 @@ async def lifespan(app: FastAPI):
     global _annotation_store
     global _kernel_source
     global _code_annotation_store
+    global _code_annotation_engine
 
     config = _load_config()
     storage_cfg = config.get("storage", {})
@@ -195,12 +200,28 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("kernel_source.repo_path not configured, kernel code browsing disabled")
 
-    # ========== 代码注释存储初始化 ==========
-    _code_annotation_store = CodeAnnotationStore(
-        session_factory=_storage.session_factory,
-        default_author=annotations_cfg.get("default_author", "me"),
-    )
-    logger.info("Code annotation store initialized")
+    # ========== 代码注释存储初始化（Neon 云数据库）==========
+    code_annot_cfg = storage_cfg.get("code_annotation", {})
+    code_annot_url = code_annot_cfg.get("database_url", "")
+    if code_annot_url:
+        _code_annotation_engine = create_async_engine(
+            code_annot_url,
+            pool_size=code_annot_cfg.get("pool_size", 2),
+            echo=False,
+        )
+        code_annot_session_factory = async_sessionmaker(
+            _code_annotation_engine, class_=AsyncSession, expire_on_commit=False
+        )
+        _code_annotation_store = CodeAnnotationStore(
+            session_factory=code_annot_session_factory,
+            default_author=annotations_cfg.get("default_author", "me"),
+        )
+        logger.info("Code annotation store initialized (Neon cloud)")
+    else:
+        logger.warning("storage.code_annotation.database_url not configured, code annotation disabled")
+        _code_annotation_store = None
+
+    logger.info("API server initialized successfully")
 
     logger.info("API server initialized successfully")
     yield
@@ -210,6 +231,8 @@ async def lifespan(app: FastAPI):
         await _storage.close()
     if _manual_storage:
         await _manual_storage.close()
+    if _code_annotation_engine:
+        await _code_annotation_engine.dispose()
     logger.info("API server shutdown complete")
 
 
