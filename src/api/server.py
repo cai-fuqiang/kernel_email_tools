@@ -9,6 +9,7 @@ from typing import Optional
 import yaml
 from fastapi import FastAPI, HTTPException, Query, Body
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from src.qa.manual_qa import ManualQA
 from src.qa.rag_qa import RagQA
