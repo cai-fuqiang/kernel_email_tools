@@ -214,12 +214,18 @@ function CodeView({
 
   // 当 selectedLines 变化且只有一行时，自动滚动到该行
   useEffect(() => {
-    if (selectedLines.size === 1 && codeRef.current) {
+    if (selectedLines.size === 1) {
       const lineNum = Array.from(selectedLines)[0];
-      const lineEl = codeRef.current.querySelector(`[data-line="${lineNum}"]`);
-      if (lineEl) {
-        lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
+      const scrollToLine = () => {
+        const lineEl = document.querySelector(`[data-line="${lineNum}"]`);
+        if (lineEl) {
+          lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+          // 重试几次直到元素出现
+          setTimeout(scrollToLine, 50);
+        }
+      };
+      scrollToLine();
     }
   }, [selectedLines]);
 
@@ -566,7 +572,10 @@ function AnnotationPanel({
                   className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm flex flex-col h-40"
                 >
                   <div className="px-3 py-2 bg-gray-50 flex items-center justify-between border-b border-gray-200 shrink-0">
-                    <span className="text-xs text-indigo-500 font-medium">
+                    <span 
+                      className="text-xs text-indigo-500 font-medium cursor-pointer hover:underline"
+                      onClick={() => onGoToLine?.(a.start_line)}
+                    >
                       L{a.start_line}
                       {a.end_line !== a.start_line && `-${a.end_line}`}
                     </span>
@@ -594,20 +603,12 @@ function AnnotationPanel({
                     <span className="text-[10px] text-gray-400">
                       {a.author} · {new Date(a.created_at).toLocaleDateString()}
                     </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => onGoToLine?.(a.start_line)}
-                        className="text-[10px] text-blue-500 hover:text-blue-700 font-medium"
-                      >
-                        Go to
-                      </button>
-                      <button
-                        onClick={() => onPreview(a)}
-                        className="text-[10px] text-indigo-500 hover:text-indigo-700 font-medium"
-                      >
-                        Preview
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => onPreview(a)}
+                      className="text-[10px] text-indigo-500 hover:text-indigo-700 font-medium"
+                    >
+                      Preview
+                    </button>
                   </div>
                 </div>
               ))}
@@ -793,16 +794,9 @@ export default function KernelCodePage() {
         setShowAnnotations(annotRes.length > 0);
         updateUrl(selectedVersion, path);
         
-        // 如果 URL 中有 line 参数，加载后保持该行选中状态并滚动
+        // 如果 URL 中有 line 参数，加载后保持该行选中状态
         if (urlLine) {
           setSelectedLines(new Set([urlLine]));
-          // 等待 DOM 渲染完成后滚动
-          setTimeout(() => {
-            const lineEl = document.querySelector(`[data-line="${urlLine}"]`);
-            if (lineEl) {
-              lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-          }, 100);
         } else {
           setSelectedLines(new Set());
         }
@@ -868,13 +862,6 @@ export default function KernelCodePage() {
     setSelectedLines(new Set([line]));
     setSelectedRange(null);
     setShowAnnotations(true);
-    // 滚动到对应行
-    setTimeout(() => {
-      const lineEl = document.querySelector(`[data-line="${line}"]`);
-      if (lineEl) {
-        lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }, 50);
   };
 
   const refreshAnnotations = useCallback(async () => {
