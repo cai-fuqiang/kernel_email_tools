@@ -447,7 +447,6 @@ function AnnotationPanel({
   filePath,
   onAnnotationCreated,
   onAnnotationDeleted,
-  onPreview,
   onGoToLine,
 }: {
   annotations: CodeAnnotation[];
@@ -457,13 +456,45 @@ function AnnotationPanel({
   filePath: string;
   onAnnotationCreated: () => void;
   onAnnotationDeleted: () => void;
-  onPreview: (a: CodeAnnotation) => void;
   onGoToLine?: (line: number) => void;
 }) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAnnotation, setEditingAnnotation] = useState<CodeAnnotation | null>(null);
   const [saving, setSaving] = useState(false);
   const [replyToId, setReplyToId] = useState<string | null>(null);
+  // 展开/折叠状态
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  // 计算每个标注的回复数量
+  const replyCounts = annotations.reduce((acc, a) => {
+    if (a.in_reply_to) {
+      acc[a.in_reply_to] = (acc[a.in_reply_to] || 0) + 1;
+    }
+    return acc;
+  }, {} as Record<string, number>);
+
+  // 获取顶级标注（没有 in_reply_to）
+  const rootAnnotations = annotations.filter(a => !a.in_reply_to);
+
+  // 切换展开/折叠
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  // 默认展开所有顶级标注
+  useEffect(() => {
+    const newExpanded = new Set<string>();
+    rootAnnotations.forEach(a => newExpanded.add(a.annotation_id));
+    setExpandedIds(newExpanded);
+  }, [annotations]);
 
   const handleCreate = async (body: string) => {
     setSaving(true);
@@ -572,71 +603,113 @@ function AnnotationPanel({
             </p>
           ) : (
             <div className="space-y-2">
-              {relevantAnnotations.map((a) => (
-                <div
-                  key={a.annotation_id}
-                  className={`bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm flex flex-col h-40 ${
-                    a.in_reply_to ? 'border-l-4 border-l-green-500' : ''
-                  }`}
-                >
-                  <div className="px-3 py-2 bg-gray-50 flex items-center justify-between border-b border-gray-200 shrink-0">
-                    <div className="flex items-center gap-2">
-                      {a.in_reply_to && (
-                        <span className="text-[10px] text-green-500 bg-green-50 px-1.5 py-0.5 rounded">
-                          Reply
-                        </span>
-                      )}
-                      <span 
-                        className="text-xs text-indigo-500 font-medium cursor-pointer hover:underline"
-                        onClick={() => onGoToLine?.(a.start_line)}
-                      >
-                        L{a.start_line}
-                        {a.end_line !== a.start_line && `-${a.end_line}`}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          // 回复功能：设置 in_reply_to 并打开创建模态框
-                          setReplyToId(a.annotation_id);
-                          setShowCreateModal(true);
-                        }}
-                        className="text-[10px] text-gray-400 hover:text-green-500"
-                      >
-                        Reply
-                      </button>
-                      <button
-                        onClick={() => setEditingAnnotation(a)}
-                        className="text-[10px] text-gray-400 hover:text-blue-500"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(a.annotation_id)}
-                        className="text-[10px] text-gray-400 hover:text-red-500"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                  <div className="px-3 py-2 flex-1 overflow-hidden">
-                    <div className="markdown-content line-clamp-5 overflow-hidden">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{a.body}</ReactMarkdown>
-                    </div>
-                  </div>
-                  <div className="px-3 py-1.5 flex items-center justify-between bg-gray-50 border-t border-gray-100 shrink-0">
-                    <span className="text-[10px] text-gray-400">
-                      {a.author} · {new Date(a.created_at).toLocaleDateString()}
-                    </span>
-                    <button
-                      onClick={() => onPreview(a)}
-                      className="text-[10px] text-indigo-500 hover:text-indigo-700 font-medium"
+              {rootAnnotations.map((rootAnn) => {
+                const isExpanded = expandedIds.has(rootAnn.annotation_id);
+                const replyCount = replyCounts[rootAnn.annotation_id] || 0;
+                const replies = annotations.filter(a => a.in_reply_to === rootAnn.annotation_id);
+                
+                return (
+                  <div key={rootAnn.annotation_id} className="space-y-1">
+                    {/* 顶级标注 */}
+                    <div
+                      className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm flex flex-col"
                     >
-                      Preview
-                    </button>
+                      <div className="px-3 py-2 bg-gray-50 flex items-center justify-between border-b border-gray-200 shrink-0">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => toggleExpand(rootAnn.annotation_id)}
+                            className="text-[10px] text-gray-400 hover:text-gray-600 w-4"
+                          >
+                            {isExpanded ? '▼' : '▶'}
+                          </button>
+                          <span className="text-xs text-gray-400">
+                            L{rootAnn.start_line}
+                            {rootAnn.end_line !== rootAnn.start_line && `-${rootAnn.end_line}`}
+                          </span>
+                          {replyCount > 0 && (
+                            <span className="text-[10px] text-gray-400">
+                              ({replyCount} {replyCount === 1 ? 'reply' : 'replies'})
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => onGoToLine?.(rootAnn.start_line)}
+                            className="text-[10px] text-blue-500 hover:text-blue-700 font-medium"
+                          >
+                            Goto
+                          </button>
+                          <button
+                            onClick={() => {
+                              setReplyToId(rootAnn.annotation_id);
+                              setShowCreateModal(true);
+                            }}
+                            className="text-[10px] text-gray-400 hover:text-green-500"
+                          >
+                            Reply
+                          </button>
+                          <button
+                            onClick={() => setEditingAnnotation(rootAnn)}
+                            className="text-[10px] text-gray-400 hover:text-blue-500"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(rootAnn.annotation_id)}
+                            className="text-[10px] text-gray-400 hover:text-red-500"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                      <div className="px-3 py-2 overflow-hidden">
+                        <div className="markdown-content line-clamp-3 overflow-hidden">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{rootAnn.body}</ReactMarkdown>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* 展开的回复 */}
+                    {isExpanded && replies.map((reply) => (
+                      <div
+                        key={reply.annotation_id}
+                        className="ml-4 bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm flex flex-col border-l-4 border-l-green-500"
+                      >
+                        <div className="px-3 py-2 bg-gray-50 flex items-center justify-between border-b border-gray-200 shrink-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-green-500 bg-green-50 px-1.5 py-0.5 rounded">
+                              Reply
+                            </span>
+                            <span className="text-xs text-gray-400">
+                              L{reply.start_line}
+                              {reply.end_line !== reply.start_line && `-${reply.end_line}`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => onGoToLine?.(reply.start_line)}
+                              className="text-[10px] text-blue-500 hover:text-blue-700 font-medium"
+                            >
+                              Goto
+                            </button>
+                            <button
+                              onClick={() => handleDelete(reply.annotation_id)}
+                              className="text-[10px] text-gray-400 hover:text-red-500"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                        <div className="px-3 py-2 overflow-hidden">
+                          <div className="markdown-content line-clamp-3 overflow-hidden">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{reply.body}</ReactMarkdown>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -987,7 +1060,6 @@ export default function KernelCodePage() {
             onAnnotationCreated={refreshAnnotations}
             onAnnotationDeleted={refreshAnnotations}
             onGoToLine={handleGoToLine}
-            onPreview={setPreviewAnnotation}
           />
         )}
       </div>
