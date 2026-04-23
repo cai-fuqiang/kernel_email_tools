@@ -204,6 +204,7 @@ export interface CodeAnnotation {
   body: string;
   author: string;
   created_at: string;
+  in_reply_to?: string;
   updated_at: string;
 }
 

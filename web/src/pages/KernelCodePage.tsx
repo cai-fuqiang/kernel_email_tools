@@ -530,6 +530,9 @@ function AnnotationPanel({
     : '';
 
   const relevantAnnotations = annotations.filter((a) => {
+    // 回复标注始终显示
+    if (a.in_reply_to) return true;
+    
     if (selectedRange) {
       return a.start_line <= selectedRange[1] && a.end_line >= selectedRange[0];
     }
@@ -572,16 +575,25 @@ function AnnotationPanel({
               {relevantAnnotations.map((a) => (
                 <div
                   key={a.annotation_id}
-                  className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm flex flex-col h-40"
+                  className={`bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm flex flex-col h-40 ${
+                    a.in_reply_to ? 'border-l-4 border-l-green-500' : ''
+                  }`}
                 >
                   <div className="px-3 py-2 bg-gray-50 flex items-center justify-between border-b border-gray-200 shrink-0">
-                    <span 
-                      className="text-xs text-indigo-500 font-medium cursor-pointer hover:underline"
-                      onClick={() => onGoToLine?.(a.start_line)}
-                    >
-                      L{a.start_line}
-                      {a.end_line !== a.start_line && `-${a.end_line}`}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {a.in_reply_to && (
+                        <span className="text-[10px] text-green-500 bg-green-50 px-1.5 py-0.5 rounded">
+                          Reply
+                        </span>
+                      )}
+                      <span 
+                        className="text-xs text-indigo-500 font-medium cursor-pointer hover:underline"
+                        onClick={() => onGoToLine?.(a.start_line)}
+                      >
+                        L{a.start_line}
+                        {a.end_line !== a.start_line && `-${a.end_line}`}
+                      </span>
+                    </div>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => {
