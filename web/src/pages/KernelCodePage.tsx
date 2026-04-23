@@ -463,6 +463,7 @@ function AnnotationPanel({
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAnnotation, setEditingAnnotation] = useState<CodeAnnotation | null>(null);
   const [saving, setSaving] = useState(false);
+  const [replyToId, setReplyToId] = useState<string | null>(null);
 
   const handleCreate = async (body: string) => {
     setSaving(true);
@@ -486,8 +487,10 @@ function AnnotationPanel({
         start_line: start,
         end_line: end,
         body: body.trim(),
+        in_reply_to: replyToId || undefined,
       });
       setShowCreateModal(false);
+      setReplyToId(null);
       onAnnotationCreated();
     } catch (e: unknown) {
       alert(`Failed to create annotation: ${e instanceof Error ? e.message : e}`);
@@ -582,8 +585,8 @@ function AnnotationPanel({
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => {
-                          // 回复功能：复用创建模态框，自动填充 in_reply_to
-                          setEditingAnnotation(a);
+                          // 回复功能：设置 in_reply_to 并打开创建模态框
+                          setReplyToId(a.annotation_id);
                           setShowCreateModal(true);
                         }}
                         className="text-[10px] text-gray-400 hover:text-green-500"

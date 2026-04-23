@@ -64,7 +64,7 @@ export interface Annotation {
 export interface AnnotationCreate {
   thread_id: string;
   in_reply_to: string;
-  author?: string;
+  in_reply_to?: string;
   body: string;
 }
 
@@ -215,6 +215,7 @@ export interface CodeAnnotationCreate {
   end_line: number;
   body: string;
   author?: string;
+  in_reply_to?: string;
 }
 
 export interface CodeAnnotationListResponse {
