@@ -32,9 +32,9 @@ export default function AnnotationsPage() {
   // 展开/折叠状态
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  // 计算每个标注的回复数量（针对 email 类型）
+  // 计算每个标注的回复数量
   const replyCounts = annotations.reduce((acc, a) => {
-    if (a.annotation_type === 'email' && a.in_reply_to) {
+    if (a.annotation_type === 'email' && a.in_reply_to && a.in_reply_to !== '') {
       acc[a.in_reply_to] = (acc[a.in_reply_to] || 0) + 1;
     }
     return acc;
@@ -53,12 +53,12 @@ export default function AnnotationsPage() {
     });
   };
 
-  // 获取顶级标注（没有 in_reply_to）
-  const getRootAnnotations = (type: 'email' | 'code' | 'all') => {
-    return annotations.filter(a => {
-      if (type !== 'all' && a.annotation_type !== type) return false;
-      return !a.in_reply_to;
-    });
+  // 获取顶级标注（email 类型，没有 in_reply_to 或 in_reply_to 为空）
+  // 注意：只有 email 类型支持嵌套回复，code 类型不支持
+  const getRootAnnotations = () => {
+    return annotations.filter(a => 
+      a.annotation_type === 'email' && (!a.in_reply_to || a.in_reply_to === '')
+    );
   };
 
   // 获取回复标注
@@ -226,7 +226,7 @@ export default function AnnotationsPage() {
         <div className="space-y-4">
           {/* Email 类型标注支持展开/折叠 */}
           {filter !== 'code' && (() => {
-            const emailRoots = getRootAnnotations(filter);
+            const emailRoots = getRootAnnotations();
             return emailRoots.map(root => {
               const isExpanded = expandedIds.has(root.annotation_id);
               const replies = getReplies(root.annotation_id);
@@ -323,7 +323,10 @@ export default function AnnotationsPage() {
           
           {/* Code 类型标注（不支持展开/折叠，保持原有样式） */}
           {filter !== 'email' && (() => {
-            const codeAnnotations = paginatedAnnotations.filter(a => a.annotation_type === 'code');
+            // 只显示 code 类型标注，避免与左侧 emailRoots 重复
+            const codeAnnotations = annotations.filter(a => 
+              a.annotation_type === 'code' && (!a.in_reply_to || a.in_reply_to === '')
+            );
             return codeAnnotations.map(ann => (
               <div
                 key={ann.annotation_id}
