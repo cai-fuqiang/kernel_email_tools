@@ -29,6 +29,42 @@ export default function AnnotationsPage() {
   const [drawerThreadId, setDrawerThreadId] = useState<string | null>(null);
   // PreviewModal 状态
   const [previewAnnotation, setPreviewAnnotation] = useState<AnnotationListItem | null>(null);
+  // 展开/折叠状态
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  // 计算每个标注的回复数量（针对 email 类型）
+  const replyCounts = annotations.reduce((acc, a) => {
+    if (a.annotation_type === 'email' && a.in_reply_to) {
+      acc[a.in_reply_to] = (acc[a.in_reply_to] || 0) + 1;
+    }
+    return acc;
+  }, {} as Record<string, number>);
+
+  // 切换展开/折叠
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  // 获取顶级标注（没有 in_reply_to）
+  const getRootAnnotations = (type: 'email' | 'code' | 'all') => {
+    return annotations.filter(a => {
+      if (type !== 'all' && a.annotation_type !== type) return false;
+      return !a.in_reply_to;
+    });
+  };
+
+  // 获取回复标注
+  const getReplies = (parentId: string) => {
+    return annotations.filter(a => a.in_reply_to === parentId);
+  };
 
   // 分页
   const totalPages = Math.ceil(total / pageSize);
@@ -188,42 +224,140 @@ export default function AnnotationsPage() {
 
       {!loading && !error && paginatedAnnotations.length > 0 && (
         <div className="space-y-4">
-          {paginatedAnnotations.map((ann) => (
-            <div
-              key={ann.annotation_id}
-              onClick={() => handleCardClick(ann)}
-              className="cursor-pointer hover:opacity-90 transition-opacity"
-            >
-              <AnnotationCard
-                author={ann.author}
-                body={ann.body}
-                created_at={ann.created_at}
-                updated_at={ann.updated_at}
-                variant={ann.annotation_type}
-                version={ann.version}
-                file_path={ann.file_path}
-                start_line={ann.start_line}
-                end_line={ann.end_line}
-                email_subject={ann.email_subject}
-                email_sender={ann.email_sender}
-                thread_id={ann.thread_id}
-                onEdit={(body) => {
-                  updateAnnotation(ann.annotation_id, body).then(() => {
-                    setAnnotations((prev) =>
-                      prev.map((a) =>
-                        a.annotation_id === ann.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
-                      )
-                    );
-                  });
-                }}
-                onDelete={() => handleDeleteAnnotation(ann.annotation_id)}
-                onPreview={ann.annotation_type === 'code' ? (e: React.MouseEvent) => {
-                  e.stopPropagation();
-                  setPreviewAnnotation(ann);
-                } : undefined}
-              />
-            </div>
-          ))}
+          {/* Email 类型标注支持展开/折叠 */}
+          {filter !== 'code' && (() => {
+            const emailRoots = getRootAnnotations(filter);
+            return emailRoots.map(root => {
+              const isExpanded = expandedIds.has(root.annotation_id);
+              const replies = getReplies(root.annotation_id);
+              const replyCount = replyCounts[root.annotation_id] || 0;
+              
+              return (
+                <div key={root.annotation_id} className="space-y-2">
+                  <div
+                    className="cursor-pointer hover:opacity-90 transition-opacity"
+                    onClick={() => handleCardClick(root)}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleExpand(root.annotation_id);
+                        }}
+                        className="text-xs text-gray-400 hover:text-gray-600 w-5"
+                      >
+                        {isExpanded ? '▼' : '▶'}
+                      </button>
+                      <span className="text-xs text-gray-500">
+                        {root.email_subject || root.thread_id?.slice(0, 20) || 'Untitled'}
+                      </span>
+                      {replyCount > 0 && (
+                        <span className="text-[10px] text-gray-400">
+                          ({replyCount} {replyCount === 1 ? 'reply' : 'replies'})
+                        </span>
+                      )}
+                    </div>
+                    <AnnotationCard
+                      author={root.author}
+                      body={root.body}
+                      created_at={root.created_at}
+                      updated_at={root.updated_at}
+                      variant={root.annotation_type}
+                      thread_id={root.thread_id}
+                      email_subject={root.email_subject}
+                      email_sender={root.email_sender}
+                      onEdit={(body) => {
+                        updateAnnotation(root.annotation_id, body).then(() => {
+                          setAnnotations(prev =>
+                            prev.map(a =>
+                              a.annotation_id === root.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
+                            )
+                          );
+                        });
+                      }}
+                      onDelete={() => handleDeleteAnnotation(root.annotation_id)}
+                    />
+                  </div>
+                  
+                  {isExpanded && replies.map(reply => (
+                    <div key={reply.annotation_id} className="ml-6 border-l-4 border-l-green-500 pl-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-[10px] text-green-500 bg-green-50 px-1.5 py-0.5 rounded">
+                          Reply
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          {reply.email_sender || 'Anonymous'}
+                        </span>
+                      </div>
+                      <div
+                        className="cursor-pointer hover:opacity-90 transition-opacity"
+                        onClick={() => handleCardClick(reply)}
+                      >
+                        <AnnotationCard
+                          author={reply.author}
+                          body={reply.body}
+                          created_at={reply.created_at}
+                          updated_at={reply.updated_at}
+                          variant={reply.annotation_type}
+                          thread_id={reply.thread_id}
+                          email_subject={reply.email_subject}
+                          email_sender={reply.email_sender}
+                          onEdit={(body) => {
+                            updateAnnotation(reply.annotation_id, body).then(() => {
+                              setAnnotations(prev =>
+                                prev.map(a =>
+                                  a.annotation_id === reply.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
+                                )
+                              );
+                            });
+                          }}
+                          onDelete={() => handleDeleteAnnotation(reply.annotation_id)}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            });
+          })()}
+          
+          {/* Code 类型标注（不支持展开/折叠，保持原有样式） */}
+          {filter !== 'email' && (() => {
+            const codeAnnotations = paginatedAnnotations.filter(a => a.annotation_type === 'code');
+            return codeAnnotations.map(ann => (
+              <div
+                key={ann.annotation_id}
+                className="cursor-pointer hover:opacity-90 transition-opacity"
+                onClick={() => handleCardClick(ann)}
+              >
+                <AnnotationCard
+                  author={ann.author}
+                  body={ann.body}
+                  created_at={ann.created_at}
+                  updated_at={ann.updated_at}
+                  variant={ann.annotation_type}
+                  version={ann.version}
+                  file_path={ann.file_path}
+                  start_line={ann.start_line}
+                  end_line={ann.end_line}
+                  onEdit={(body) => {
+                    updateAnnotation(ann.annotation_id, body).then(() => {
+                      setAnnotations(prev =>
+                        prev.map(a =>
+                          a.annotation_id === ann.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
+                        )
+                      );
+                    });
+                  }}
+                  onDelete={() => handleDeleteAnnotation(ann.annotation_id)}
+                  onPreview={ann.annotation_type === 'code' ? (e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    setPreviewAnnotation(ann);
+                  } : undefined}
+                />
+              </div>
+            ));
+          })()}
         </div>
       )}
 
