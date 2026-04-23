@@ -63,9 +63,8 @@ export interface Annotation {
 
 export interface AnnotationCreate {
   thread_id: string;
-  in_reply_to: string;
-  in_reply_to?: string;
   body: string;
+  in_reply_to?: string;
 }
 
 export interface ThreadResponse {
