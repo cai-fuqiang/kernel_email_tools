@@ -53,18 +53,31 @@ export default function AnnotationsPage() {
     });
   };
 
-  // 获取顶级标注（没有 in_reply_to 或 in_reply_to 为空）
+  // 判断是否为批注回复（in_reply_to 指向另一个 annotation_id）
+  const isAnnotationReply = (inReplyTo: string): boolean => {
+    if (!inReplyTo || inReplyTo === '') return false;
+    // annotation_id 格式: annotation-xxx 或 code-annot-xxx
+    return inReplyTo.startsWith('annotation-') || inReplyTo.startsWith('code-annot-');
+  };
+
+  // 获取顶级标注
+  // 对于 email 类型：所有都是顶级（in_reply_to 指向邮件 message_id，不是批注回复）
+  // 对于 code 类型：in_reply_to 为空或不是 annotation_id 格式的才是顶级
   const getRootAnnotations = (type?: 'email' | 'code') => {
     return annotations.filter(a => {
-      if (a.in_reply_to && a.in_reply_to !== '') return false;
+      if (a.in_reply_to && a.in_reply_to !== '' && isAnnotationReply(a.in_reply_to)) {
+        return false; // 是批注回复，不是根
+      }
       if (type) return a.annotation_type === type;
       return true;
     });
   };
 
-  // 获取回复标注
+  // 获取回复标注（只返回批注回复，排除指向邮件的）
   const getReplies = (parentId: string) => {
-    return annotations.filter(a => a.in_reply_to === parentId);
+    return annotations.filter(a => 
+      a.in_reply_to === parentId && isAnnotationReply(a.in_reply_to)
+    );
   };
 
   // 分页
@@ -85,6 +98,13 @@ export default function AnnotationsPage() {
         page: page, 
         page_size: pageSize 
       });
+      
+      console.log('Loaded annotations:', res.annotations.map(a => ({
+        id: a.annotation_id.slice(0, 15),
+        type: a.annotation_type,
+        subject: a.email_subject || 'no subject',
+        sender: a.email_sender || 'no sender'
+      })));
       
       setAnnotations(res.annotations);
       setTotal(res.total);
