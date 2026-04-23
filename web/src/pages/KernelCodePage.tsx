@@ -793,9 +793,16 @@ export default function KernelCodePage() {
         setShowAnnotations(annotRes.length > 0);
         updateUrl(selectedVersion, path);
         
-        // 如果 URL 中有 line 参数，加载后保持该行选中状态
+        // 如果 URL 中有 line 参数，加载后保持该行选中状态并滚动
         if (urlLine) {
           setSelectedLines(new Set([urlLine]));
+          // 等待 DOM 渲染完成后滚动
+          setTimeout(() => {
+            const lineEl = document.querySelector(`[data-line="${urlLine}"]`);
+            if (lineEl) {
+              lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, 100);
         } else {
           setSelectedLines(new Set());
         }
@@ -861,6 +868,13 @@ export default function KernelCodePage() {
     setSelectedLines(new Set([line]));
     setSelectedRange(null);
     setShowAnnotations(true);
+    // 滚动到对应行
+    setTimeout(() => {
+      const lineEl = document.querySelector(`[data-line="${line}"]`);
+      if (lineEl) {
+        lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 50);
   };
 
   const refreshAnnotations = useCallback(async () => {
