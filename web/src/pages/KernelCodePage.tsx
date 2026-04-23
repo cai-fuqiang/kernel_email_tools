@@ -212,6 +212,17 @@ function CodeView({
     }
   }, [highlightLine, file]);
 
+  // 当 selectedLines 变化且只有一行时，自动滚动到该行
+  useEffect(() => {
+    if (selectedLines.size === 1 && codeRef.current) {
+      const lineNum = Array.from(selectedLines)[0];
+      const lineEl = codeRef.current.querySelector(`[data-line="${lineNum}"]`);
+      if (lineEl) {
+        lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [selectedLines]);
+
   if (!file) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-400">
@@ -431,6 +442,7 @@ function AnnotationPanel({
   onAnnotationCreated,
   onAnnotationDeleted,
   onPreview,
+  onGoToLine,
 }: {
   annotations: CodeAnnotation[];
   selectedLines: Set<number>;
@@ -440,6 +452,7 @@ function AnnotationPanel({
   onAnnotationCreated: () => void;
   onAnnotationDeleted: () => void;
   onPreview: (a: CodeAnnotation) => void;
+  onGoToLine?: (line: number) => void;
 }) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAnnotation, setEditingAnnotation] = useState<CodeAnnotation | null>(null);
@@ -581,12 +594,20 @@ function AnnotationPanel({
                     <span className="text-[10px] text-gray-400">
                       {a.author} · {new Date(a.created_at).toLocaleDateString()}
                     </span>
-                    <button
-                      onClick={() => onPreview(a)}
-                      className="text-[10px] text-indigo-500 hover:text-indigo-700 font-medium"
-                    >
-                      Preview
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => onGoToLine?.(a.start_line)}
+                        className="text-[10px] text-blue-500 hover:text-blue-700 font-medium"
+                      >
+                        Go to
+                      </button>
+                      <button
+                        onClick={() => onPreview(a)}
+                        className="text-[10px] text-indigo-500 hover:text-indigo-700 font-medium"
+                      >
+                        Preview
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -760,7 +781,6 @@ export default function KernelCodePage() {
       if (!selectedVersion) return;
       setFileLoading(true);
       setCurrentPath(path);
-      setSelectedLines(new Set());
       setSelectedRange(null);
       setError(null);
       try {
@@ -772,6 +792,13 @@ export default function KernelCodePage() {
         setAnnotations(annotRes);
         setShowAnnotations(annotRes.length > 0);
         updateUrl(selectedVersion, path);
+        
+        // 如果 URL 中有 line 参数，加载后保持该行选中状态
+        if (urlLine) {
+          setSelectedLines(new Set([urlLine]));
+        } else {
+          setSelectedLines(new Set());
+        }
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : String(e));
         setCurrentFile(null);
@@ -779,7 +806,7 @@ export default function KernelCodePage() {
         setFileLoading(false);
       }
     },
-    [selectedVersion, updateUrl]
+    [selectedVersion, updateUrl, urlLine]
   );
 
   const handleVersionSelect = (tag: string) => {
@@ -827,6 +854,12 @@ export default function KernelCodePage() {
   const handleLineRangeSelect = (start: number, end: number) => {
     setSelectedRange([start, end]);
     setSelectedLines(new Set());
+    setShowAnnotations(true);
+  };
+
+  const handleGoToLine = (line: number) => {
+    setSelectedLines(new Set([line]));
+    setSelectedRange(null);
     setShowAnnotations(true);
   };
 
@@ -927,6 +960,7 @@ export default function KernelCodePage() {
             filePath={currentPath}
             onAnnotationCreated={refreshAnnotations}
             onAnnotationDeleted={refreshAnnotations}
+            onGoToLine={handleGoToLine}
             onPreview={setPreviewAnnotation}
           />
         )}
