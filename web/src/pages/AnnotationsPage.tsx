@@ -32,9 +32,9 @@ export default function AnnotationsPage() {
   // 展开/折叠状态
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  // 计算每个标注的回复数量
+  // 计算每个标注的回复数量（包括所有类型）
   const replyCounts = annotations.reduce((acc, a) => {
-    if (a.annotation_type === 'email' && a.in_reply_to && a.in_reply_to !== '') {
+    if (a.in_reply_to && a.in_reply_to !== '') {
       acc[a.in_reply_to] = (acc[a.in_reply_to] || 0) + 1;
     }
     return acc;
@@ -53,11 +53,13 @@ export default function AnnotationsPage() {
     });
   };
 
-  // 获取顶级标注（email 类型，没有 in_reply_to 或 in_reply_to 为空）
-  const getRootAnnotations = () => {
-    return annotations.filter(a => 
-      a.annotation_type === 'email' && (!a.in_reply_to || a.in_reply_to === '')
-    );
+  // 获取顶级标注（没有 in_reply_to 或 in_reply_to 为空）
+  const getRootAnnotations = (type?: 'email' | 'code') => {
+    return annotations.filter(a => {
+      if (a.in_reply_to && a.in_reply_to !== '') return false;
+      if (type) return a.annotation_type === type;
+      return true;
+    });
   };
 
   // 获取回复标注
@@ -268,7 +270,7 @@ export default function AnnotationsPage() {
           <div className="space-y-6">
             {/* Email 类型标注 */}
             {filter !== 'code' && (() => {
-              const emailRoots = getRootAnnotations();
+              const emailRoots = getRootAnnotations('email');
               return emailRoots.map(root => {
                 const isExpanded = expandedIds.has(root.annotation_id);
                 const replies = getReplies(root.annotation_id);

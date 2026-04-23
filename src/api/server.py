@@ -1178,26 +1178,31 @@ async def list_annotations(
     try:
         # 代码版本过滤仅作用于 code 类型
         if type == "code" and version:
-            # 代码版本过滤需要单独处理
+            # 代码版本过滤需要单独处理（也使用 LEFT JOIN 获取 email 信息）
             async with _annotation_store.session_factory() as session:
-                from src.storage.models import AnnotationORM
-                from sqlalchemy import func
+                from src.storage.models import AnnotationORM, EmailORM
+                from sqlalchemy import func, select
                 
-                query = select(AnnotationORM).where(
-                    AnnotationORM.annotation_type == "code",
-                    AnnotationORM.version == version
+                # 使用 LEFT JOIN 获取 email 信息
+                query = (
+                    select(AnnotationORM, EmailORM.subject, EmailORM.sender)
+                    .outerjoin(EmailORM, AnnotationORM.in_reply_to == EmailORM.message_id)
+                    .where(
+                        AnnotationORM.annotation_type == "code",
+                        AnnotationORM.version == version
+                    )
                 )
                 
                 if q and q.strip():
                     query = query.where(AnnotationORM.body.ilike(f"%{q.strip()}%"))
                 
-                count_result = await session.execute(
-                    select(func.count()).select_from(AnnotationORM).where(
-                        AnnotationORM.annotation_type == "code",
-                        AnnotationORM.version == version,
-                        AnnotationORM.body.ilike(f"%{q.strip()}%") if q else True
-                    )
+                count_query = select(func.count()).select_from(AnnotationORM).where(
+                    AnnotationORM.annotation_type == "code",
+                    AnnotationORM.version == version,
                 )
+                if q and q.strip():
+                    count_query = count_query.where(AnnotationORM.body.ilike(f"%{q.strip()}%"))
+                count_result = await session.execute(count_query)
                 total = count_result.scalar() or 0
                 
                 offset = (page - 1) * page_size
@@ -1206,17 +1211,21 @@ async def list_annotations(
                     .offset(offset)
                     .limit(page_size)
                 )
-                rows = result.scalars().all()
+                rows = result.all()
                 
                 annotations = []
-                for ann in rows:
+                for ann, email_subject, email_sender in rows:
                     annotations.append({
                         "annotation_id": ann.annotation_id,
                         "annotation_type": ann.annotation_type,
+                        "thread_id": ann.thread_id or "",
+                        "in_reply_to": ann.in_reply_to or "",
                         "author": ann.author,
                         "body": ann.body,
                         "created_at": ann.created_at.isoformat(),
                         "updated_at": ann.updated_at.isoformat(),
+                        "email_subject": email_subject or "",
+                        "email_sender": email_sender or "",
                         "version": ann.version or "",
                         "file_path": ann.file_path or "",
                         "start_line": ann.start_line or 0,
