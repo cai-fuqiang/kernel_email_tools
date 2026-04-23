@@ -244,19 +244,20 @@ class UnifiedAnnotationStore:
                         "email_sender": email_sender or "",
                     })
             else:
-                # code 类型或其他：直接查询
+                # code 类型或其他：直接查询（也使用 LEFT JOIN 获取 email 信息）
                 stmt = (
-                    select(AnnotationORM)
-                    .where(and_(*base_filter)) if base_filter else select(AnnotationORM)
+                    select(AnnotationORM, EmailORM.subject, EmailORM.sender)
+                    .outerjoin(EmailORM, AnnotationORM.in_reply_to == EmailORM.message_id)
+                    .where(and_(*base_filter)) if base_filter else select(AnnotationORM, EmailORM.subject, EmailORM.sender).outerjoin(EmailORM, AnnotationORM.in_reply_to == EmailORM.message_id)
                     .order_by(AnnotationORM.created_at.desc())
                     .offset(offset)
                     .limit(page_size)
                 )
                 result = await session.execute(stmt)
-                rows = result.scalars().all()
+                rows = result.all()
 
                 items = []
-                for ann in rows:
+                for ann, email_subject, email_sender in rows:
                     items.append({
                         "annotation_id": ann.annotation_id,
                         "annotation_type": ann.annotation_type,
@@ -266,6 +267,8 @@ class UnifiedAnnotationStore:
                         "body": ann.body,
                         "created_at": ann.created_at.isoformat(),
                         "updated_at": ann.updated_at.isoformat(),
+                        "email_subject": email_subject or "",
+                        "email_sender": email_sender or "",
                         "version": ann.version or "",
                         "file_path": ann.file_path or "",
                         "start_line": ann.start_line or 0,
@@ -339,18 +342,20 @@ class UnifiedAnnotationStore:
                         "email_sender": email_sender or "",
                     })
             else:
+                # code 类型或其他：直接查询（也使用 LEFT JOIN 获取 email 信息）
                 stmt = (
-                    select(AnnotationORM)
+                    select(AnnotationORM, EmailORM.subject, EmailORM.sender)
+                    .outerjoin(EmailORM, AnnotationORM.in_reply_to == EmailORM.message_id)
                     .where(and_(*base_filter))
                     .order_by(AnnotationORM.created_at.desc())
                     .offset(offset)
                     .limit(page_size)
                 )
                 result = await session.execute(stmt)
-                rows = result.scalars().all()
+                rows = result.all()
 
                 items = []
-                for ann in rows:
+                for ann, email_subject, email_sender in rows:
                     items.append({
                         "annotation_id": ann.annotation_id,
                         "annotation_type": ann.annotation_type,
@@ -360,6 +365,8 @@ class UnifiedAnnotationStore:
                         "body": ann.body,
                         "created_at": ann.created_at.isoformat(),
                         "updated_at": ann.updated_at.isoformat(),
+                        "email_subject": email_subject or "",
+                        "email_sender": email_sender or "",
                         "version": ann.version or "",
                         "file_path": ann.file_path or "",
                         "start_line": ann.start_line or 0,

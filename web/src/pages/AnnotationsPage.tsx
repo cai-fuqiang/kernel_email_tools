@@ -54,7 +54,6 @@ export default function AnnotationsPage() {
   };
 
   // 获取顶级标注（email 类型，没有 in_reply_to 或 in_reply_to 为空）
-  // 注意：只有 email 类型支持嵌套回复，code 类型不支持
   const getRootAnnotations = () => {
     return annotations.filter(a => 
       a.annotation_type === 'email' && (!a.in_reply_to || a.in_reply_to === '')
@@ -68,7 +67,10 @@ export default function AnnotationsPage() {
 
   // 分页
   const totalPages = Math.ceil(total / pageSize);
-  const paginatedAnnotations = annotations.slice((page - 1) * pageSize, page * pageSize);
+
+  // 统计
+  const emailCount = annotations.filter(a => a.annotation_type === 'email').length;
+  const codeCount = annotations.filter(a => a.annotation_type === 'code').length;
 
   // 加载数据
   const loadAnnotations = useCallback(async () => {
@@ -131,221 +133,306 @@ export default function AnnotationsPage() {
 
   // 点击处理
   const handleCardClick = (ann: AnnotationListItem) => {
-    // 邮件批注点击打开线程抽屉
     if (ann.annotation_type === 'email' && ann.thread_id && ann.thread_id !== '') {
-      console.log('Opening thread drawer for:', ann.thread_id);
       setDrawerThreadId(ann.thread_id);
-    }
-    // 代码标注点击跳转内核浏览器
-    else if (ann.annotation_type === 'code') {
+    } else if (ann.annotation_type === 'code') {
       navigate(`/kernel-code?v=${encodeURIComponent(ann.version || '')}&path=${encodeURIComponent(ann.file_path || '')}&line=${ann.start_line}`);
     }
   };
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Annotations</h1>
-        <p className="text-sm text-gray-500">
-          Browse and search all your annotations across email threads and code
-        </p>
+      <div className="bg-white border-b border-slate-200 shadow-sm">
+        <div className="max-w-5xl mx-auto px-6 py-6">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
+              <i data-lucide="message-square" className="w-5 h-5 text-white"></i>
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-800">批注管理</h1>
+              <p className="text-sm text-slate-500">统一管理邮件批注和代码标注</p>
+            </div>
+          </div>
+          
+          {/* 统计卡片 */}
+          <div className="flex gap-4 mt-4">
+            <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg border border-blue-100">
+              <i data-lucide="mail" className="w-4 h-4 text-blue-500"></i>
+              <span className="text-sm text-blue-700 font-medium">{emailCount} 邮件批注</span>
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 rounded-lg border border-indigo-100">
+              <i data-lucide="code-2" className="w-4 h-4 text-indigo-500"></i>
+              <span className="text-sm text-indigo-700 font-medium">{codeCount} 代码标注</span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* 筛选栏 */}
-      <div className="flex gap-3 mb-4">
-        <input
-          type="text"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-          placeholder="Search annotations..."
-          className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none"
-        />
-        <button
-          onClick={handleSearch}
-          className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
-        >
-          Search
-        </button>
-        {q && (
-          <button
-            onClick={handleClear}
-            className="px-4 py-2.5 border border-gray-300 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-          >
-            Clear
-          </button>
+      <div className="max-w-5xl mx-auto px-6 py-6">
+        {/* 搜索栏 */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
+          <div className="flex gap-3">
+            <div className="flex-1 relative">
+              <i data-lucide="search" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+              <input
+                type="text"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                placeholder="搜索批注内容..."
+                className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none transition-all"
+              />
+            </div>
+            <button
+              onClick={handleSearch}
+              className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-2"
+            >
+              <i data-lucide="search" className="w-4 h-4"></i>
+              搜索
+            </button>
+            {q && (
+              <button
+                onClick={handleClear}
+                className="px-4 py-2.5 border border-slate-200 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors flex items-center gap-2"
+              >
+                <i data-lucide="x" className="w-4 h-4"></i>
+                清除
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 筛选标签 */}
+        <div className="flex items-center gap-2 mb-6">
+          <span className="text-sm text-slate-500 mr-2">类型筛选:</span>
+          {(['all', 'email', 'code'] as FilterType[]).map((f) => (
+            <button
+              key={f}
+              onClick={() => handleFilterChange(f)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                filter === f
+                  ? f === 'all' ? 'bg-slate-800 text-white shadow-md' : f === 'email' ? 'bg-blue-600 text-white shadow-md' : 'bg-indigo-600 text-white shadow-md'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              {f === 'all' && <><i data-lucide="layers" className="w-4 h-4"></i>全部</>}
+              {f === 'email' && <><i data-lucide="mail" className="w-4 h-4"></i>邮件批注</>}
+              {f === 'code' && <><i data-lucide="code-2" className="w-4 h-4"></i>代码标注</>}
+            </button>
+          ))}
+        </div>
+
+        {/* Loading/Error state */}
+        {loading && (
+          <div className="flex justify-center items-center py-16">
+            <div className="animate-spin h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+          </div>
         )}
-      </div>
 
-      {/* 筛选标签 */}
-      <div className="flex gap-2 mb-4">
-        {(['all', 'email', 'code'] as FilterType[]).map((f) => (
-          <button
-            key={f}
-            onClick={() => handleFilterChange(f)}
-            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-              filter === f
-                ? f === 'all' ? 'bg-gray-800 text-white' : f === 'email' ? 'bg-blue-600 text-white' : 'bg-green-600 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            {f === 'all' ? 'All' : f === 'email' ? 'Email Annotations' : 'Code Annotations'}
-          </button>
-        ))}
-      </div>
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-xl mb-4 flex items-center gap-2">
+            <i data-lucide="alert-circle" className="w-5 h-5"></i>
+            {error}
+          </div>
+        )}
 
-      {/* Loading/Error state */}
-      {loading && (
-        <div className="flex justify-center items-center py-12">
-          <div className="animate-spin h-8 w-8 border-4 border-indigo-600 border-t-transparent rounded-full"></div>
-        </div>
-      )}
+        {/* Results count */}
+        {!loading && !error && (
+          <div className="flex items-center gap-2 text-sm text-slate-500 mb-4">
+            <i data-lucide="info" className="w-4 h-4"></i>
+            {q ? (
+              <span>找到 <strong className="text-slate-700">{total}</strong> 条与 "<span className="text-slate-700">{q}</span>" 相关的批注</span>
+            ) : (
+              <span>共 <strong className="text-slate-700">{total}</strong> 条批注</span>
+            )}
+          </div>
+        )}
 
-      {error && (
-        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-4">
-          {error}
-        </div>
-      )}
+        {/* 列表 */}
+        {!loading && !error && annotations.length === 0 && (
+          <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 flex items-center justify-center">
+              <i data-lucide="inbox" className="w-8 h-8 text-slate-400"></i>
+            </div>
+            <h3 className="text-lg font-medium text-slate-700 mb-1">
+              {q ? '未找到匹配的批注' : '暂无批注'}
+            </h3>
+            <p className="text-sm text-slate-500">
+              {q ? '尝试使用其他关键词搜索' : '在邮件或代码中添加批注开始使用'}
+            </p>
+          </div>
+        )}
 
-      {/* Results count */}
-      {!loading && !error && (
-        <div className="text-sm text-gray-500 mb-4">
-          {q ? `Found ${total} result${total !== 1 ? 's' : ''} for "${q}"` : `${total} annotations`}
-        </div>
-      )}
-
-      {/* 列表 */}
-      {!loading && !error && paginatedAnnotations.length === 0 && (
-        <div className="text-center py-12 text-gray-500">
-          {q ? 'No annotations found matching your search.' : 'No annotations yet.'}
-        </div>
-      )}
-
-      {!loading && !error && paginatedAnnotations.length > 0 && (
-        <div className="space-y-4">
-          {/* Email 类型标注支持展开/折叠 */}
-          {filter !== 'code' && (() => {
-            const emailRoots = getRootAnnotations();
-            return emailRoots.map(root => {
-              const isExpanded = expandedIds.has(root.annotation_id);
-              const replies = getReplies(root.annotation_id);
-              const replyCount = replyCounts[root.annotation_id] || 0;
-              
-              return (
-                <div key={root.annotation_id} className="space-y-2">
-                  <div
-                    className="cursor-pointer hover:opacity-90 transition-opacity"
-                    onClick={() => handleCardClick(root)}
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleExpand(root.annotation_id);
+        {!loading && !error && annotations.length > 0 && (
+          <div className="space-y-6">
+            {/* Email 类型标注 */}
+            {filter !== 'code' && (() => {
+              const emailRoots = getRootAnnotations();
+              return emailRoots.map(root => {
+                const isExpanded = expandedIds.has(root.annotation_id);
+                const replies = getReplies(root.annotation_id);
+                const replyCount = replyCounts[root.annotation_id] || 0;
+                
+                return (
+                  <div key={root.annotation_id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    {/* 卡片头部 */}
+                    <div 
+                      className="px-4 py-3 bg-blue-50 border-b border-blue-100 cursor-pointer hover:bg-blue-100/50 transition-colors"
+                      onClick={() => handleCardClick(root)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleExpand(root.annotation_id);
+                          }}
+                          className="text-blue-400 hover:text-blue-600 transition-colors"
+                        >
+                          <i data-lucide={isExpanded ? "chevron-down" : "chevron-right"} className="w-4 h-4"></i>
+                        </button>
+                        <i data-lucide="mail" className="w-4 h-4 text-blue-500"></i>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-slate-800 truncate">
+                            {root.email_subject || root.thread_id?.slice(0, 30) || '无标题'}
+                          </div>
+                          <div className="text-xs text-slate-500 flex items-center gap-2">
+                            <span>{root.email_sender || '未知发件人'}</span>
+                            <span>•</span>
+                            <span>{new Date(root.created_at).toLocaleDateString('zh-CN')}</span>
+                          </div>
+                        </div>
+                        {replyCount > 0 && (
+                          <span className="px-2 py-1 text-xs bg-blue-100 text-blue-600 rounded-full">
+                            {replyCount} 条回复
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* 卡片内容 */}
+                    <div className="p-4">
+                      <AnnotationCard
+                        author={root.author}
+                        body={root.body}
+                        created_at={root.created_at}
+                        updated_at={root.updated_at}
+                        variant={root.annotation_type}
+                        thread_id={root.thread_id}
+                        email_subject={root.email_subject}
+                        email_sender={root.email_sender}
+                        onEdit={(body) => {
+                          updateAnnotation(root.annotation_id, body).then(() => {
+                            setAnnotations(prev =>
+                              prev.map(a =>
+                                a.annotation_id === root.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
+                              )
+                            );
+                          });
                         }}
-                        className="text-xs text-gray-400 hover:text-gray-600 w-5"
-                      >
-                        {isExpanded ? '▼' : '▶'}
-                      </button>
-                      <span className="text-xs text-gray-500">
-                        {root.email_subject || root.thread_id?.slice(0, 20) || 'Untitled'}
-                      </span>
-                      {replyCount > 0 && (
-                        <span className="text-[10px] text-gray-400">
-                          ({replyCount} {replyCount === 1 ? 'reply' : 'replies'})
-                        </span>
+                        onDelete={() => handleDeleteAnnotation(root.annotation_id)}
+                      />
+                      
+                      {/* 回复列表 */}
+                      {isExpanded && replies.length > 0 && (
+                        <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
+                          <div className="text-xs text-slate-500 font-medium flex items-center gap-1">
+                            <i data-lucide="corner-down-right" className="w-3 h-3"></i>
+                            回复列表
+                          </div>
+                          {replies.map(reply => (
+                            <div key={reply.annotation_id} className="pl-4 border-l-2 border-green-200">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="px-2 py-0.5 text-xs bg-green-100 text-green-600 rounded">
+                                  回复
+                                </span>
+                                <span className="text-xs text-slate-500">
+                                  {reply.email_sender || reply.author}
+                                </span>
+                              </div>
+                              <div
+                                className="cursor-pointer"
+                                onClick={() => handleCardClick(reply)}
+                              >
+                                <AnnotationCard
+                                  author={reply.author}
+                                  body={reply.body}
+                                  created_at={reply.created_at}
+                                  updated_at={reply.updated_at}
+                                  variant={reply.annotation_type}
+                                  thread_id={reply.thread_id}
+                                  email_subject={reply.email_subject}
+                                  email_sender={reply.email_sender}
+                                  onEdit={(body) => {
+                                    updateAnnotation(reply.annotation_id, body).then(() => {
+                                      setAnnotations(prev =>
+                                        prev.map(a =>
+                                          a.annotation_id === reply.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
+                                        )
+                                      );
+                                    });
+                                  }}
+                                  onDelete={() => handleDeleteAnnotation(reply.annotation_id)}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
-                    <AnnotationCard
-                      author={root.author}
-                      body={root.body}
-                      created_at={root.created_at}
-                      updated_at={root.updated_at}
-                      variant={root.annotation_type}
-                      thread_id={root.thread_id}
-                      email_subject={root.email_subject}
-                      email_sender={root.email_sender}
-                      onEdit={(body) => {
-                        updateAnnotation(root.annotation_id, body).then(() => {
-                          setAnnotations(prev =>
-                            prev.map(a =>
-                              a.annotation_id === root.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
-                            )
-                          );
-                        });
-                      }}
-                      onDelete={() => handleDeleteAnnotation(root.annotation_id)}
-                    />
                   </div>
-                  
-                  {isExpanded && replies.map(reply => (
-                    <div key={reply.annotation_id} className="ml-6 border-l-4 border-l-green-500 pl-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-[10px] text-green-500 bg-green-50 px-1.5 py-0.5 rounded">
-                          Reply
-                        </span>
-                        <span className="text-xs text-gray-400">
-                          {reply.email_sender || 'Anonymous'}
-                        </span>
-                      </div>
-                      <div
-                        className="cursor-pointer hover:opacity-90 transition-opacity"
-                        onClick={() => handleCardClick(reply)}
-                      >
-                        <AnnotationCard
-                          author={reply.author}
-                          body={reply.body}
-                          created_at={reply.created_at}
-                          updated_at={reply.updated_at}
-                          variant={reply.annotation_type}
-                          thread_id={reply.thread_id}
-                          email_subject={reply.email_subject}
-                          email_sender={reply.email_sender}
-                          onEdit={(body) => {
-                            updateAnnotation(reply.annotation_id, body).then(() => {
-                              setAnnotations(prev =>
-                                prev.map(a =>
-                                  a.annotation_id === reply.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
-                                )
-                              );
-                            });
+                );
+              });
+            })()}
+            
+            {/* Code 类型标注 */}
+            {filter !== 'email' && (() => {
+              const codeAnnotations = annotations.filter(a => 
+                a.annotation_type === 'code' && (!a.in_reply_to || a.in_reply_to === '')
+              );
+              return codeAnnotations.map(ann => {
+                const isExpanded = expandedIds.has(ann.annotation_id);
+                const replies = getReplies(ann.annotation_id);
+                const replyCount = replyCounts[ann.annotation_id] || 0;
+                
+                return (
+                  <div key={ann.annotation_id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    {/* 卡片头部 */}
+                    <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-100">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleExpand(ann.annotation_id);
                           }}
-                          onDelete={() => handleDeleteAnnotation(reply.annotation_id)}
-                        />
+                          className="text-indigo-400 hover:text-indigo-600 transition-colors"
+                        >
+                          <i data-lucide={isExpanded ? "chevron-down" : "chevron-right"} className="w-4 h-4"></i>
+                        </button>
+                        <i data-lucide="code-2" className="w-4 h-4 text-indigo-500"></i>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-mono text-slate-700 truncate">
+                            {ann.file_path}
+                          </div>
+                          <div className="text-xs text-slate-500 flex items-center gap-2">
+                            <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-600 rounded text-xs">
+                              {ann.version}
+                            </span>
+                            <span>行 {ann.start_line}{ann.end_line !== ann.start_line && `-${ann.end_line}`}</span>
+                            <span>•</span>
+                            <span>{new Date(ann.created_at).toLocaleDateString('zh-CN')}</span>
+                          </div>
+                        </div>
+                        {replyCount > 0 && (
+                          <span className="px-2 py-1 text-xs bg-indigo-100 text-indigo-600 rounded-full">
+                            {replyCount} 条回复
+                          </span>
+                        )}
                       </div>
                     </div>
-                  ))}
-                </div>
-              );
-            });
-          })()}
-          
-          {/* Code 类型标注（支持展开/折叠） */}
-          {filter !== 'email' && (() => {
-            // 只显示 code 类型根标注
-            const codeAnnotations = annotations.filter(a => 
-              a.annotation_type === 'code' && (!a.in_reply_to || a.in_reply_to === '')
-            );
-            return codeAnnotations.map(ann => {
-              const isExpanded = expandedIds.has(ann.annotation_id);
-              const replies = getReplies(ann.annotation_id);
-              const replyCount = replyCounts[ann.annotation_id] || 0;
-              
-              return (
-                <div key={ann.annotation_id} className="space-y-2">
-                  {/* 顶级标注 - 点击卡片展开/折叠，点击 Goto 跳转 */}
-                  <div className="flex items-start gap-2 mb-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleExpand(ann.annotation_id);
-                      }}
-                      className="text-xs text-gray-400 hover:text-gray-600 w-5 mt-0.5"
-                    >
-                      {isExpanded ? '▼' : '▶'}
-                    </button>
-                    <div className="flex-1 cursor-pointer hover:opacity-90 transition-opacity">
+                    
+                    {/* 卡片内容 */}
+                    <div className="p-4">
                       <AnnotationCard
                         author={ann.author}
                         body={ann.body}
@@ -358,7 +445,6 @@ export default function AnnotationsPage() {
                         end_line={ann.end_line}
                         showGoto={true}
                         onGoto={() => {
-                          // Goto 按钮跳转到 KernelCodePage
                           navigate(`/kernel-code?v=${encodeURIComponent(ann.version || '')}&path=${encodeURIComponent(ann.file_path || '')}&line=${ann.start_line}`);
                         }}
                         onEdit={(body) => {
@@ -376,107 +462,112 @@ export default function AnnotationsPage() {
                           setPreviewAnnotation(ann);
                         }}
                       />
+                      
+                      {/* 回复列表 */}
+                      {isExpanded && replies.length > 0 && (
+                        <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
+                          <div className="text-xs text-slate-500 font-medium flex items-center gap-1">
+                            <i data-lucide="corner-down-right" className="w-3 h-3"></i>
+                            回复列表
+                          </div>
+                          {replies.map(reply => (
+                            <div key={reply.annotation_id} className="pl-4 border-l-2 border-green-200">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="px-2 py-0.5 text-xs bg-green-100 text-green-600 rounded">
+                                  回复
+                                </span>
+                                <span className="text-xs text-slate-500">
+                                  {reply.author}
+                                </span>
+                              </div>
+                              <AnnotationCard
+                                author={reply.author}
+                                body={reply.body}
+                                created_at={reply.created_at}
+                                updated_at={reply.updated_at}
+                                variant={reply.annotation_type}
+                                version={reply.version}
+                                file_path={reply.file_path}
+                                start_line={reply.start_line}
+                                end_line={reply.end_line}
+                                showGoto={true}
+                                onGoto={() => {
+                                  navigate(`/kernel-code?v=${encodeURIComponent(reply.version || '')}&path=${encodeURIComponent(reply.file_path || '')}&line=${reply.start_line}`);
+                                }}
+                                onEdit={(body) => {
+                                  updateAnnotation(reply.annotation_id, body).then(() => {
+                                    setAnnotations(prev =>
+                                      prev.map(a =>
+                                        a.annotation_id === reply.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
+                                      )
+                                    );
+                                  });
+                                }}
+                                onDelete={() => handleDeleteAnnotation(reply.annotation_id)}
+                                onPreview={(e) => {
+                                  e.stopPropagation();
+                                  setPreviewAnnotation(reply);
+                                }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
-                  {replyCount > 0 && (
-                    <span className="text-[10px] text-gray-400 ml-7">
-                      {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
-                    </span>
-                  )}
-                  
-                  {/* 展开的回复 */}
-                  {isExpanded && replies.map(reply => (
-                    <div key={reply.annotation_id} className="ml-7 border-l-4 border-l-green-500 pl-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-[10px] text-green-500 bg-green-50 px-1.5 py-0.5 rounded">
-                          Reply
-                        </span>
-                        <span className="text-xs text-gray-400">
-                          {reply.author}
-                        </span>
-                      </div>
-                      <AnnotationCard
-                        author={reply.author}
-                        body={reply.body}
-                        created_at={reply.created_at}
-                        updated_at={reply.updated_at}
-                        variant={reply.annotation_type}
-                        version={reply.version}
-                        file_path={reply.file_path}
-                        start_line={reply.start_line}
-                        end_line={reply.end_line}
-                        showGoto={true}
-                        onGoto={() => {
-                          navigate(`/kernel-code?v=${encodeURIComponent(reply.version || '')}&path=${encodeURIComponent(reply.file_path || '')}&line=${reply.start_line}`);
-                        }}
-                        onEdit={(body) => {
-                          updateAnnotation(reply.annotation_id, body).then(() => {
-                            setAnnotations(prev =>
-                              prev.map(a =>
-                                a.annotation_id === reply.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
-                              )
-                            );
-                          });
-                        }}
-                        onDelete={() => handleDeleteAnnotation(reply.annotation_id)}
-                        onPreview={(e) => {
-                          e.stopPropagation();
-                          setPreviewAnnotation(reply);
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              );
-            });
-          })()}
-        </div>
-      )}
+                );
+              });
+            })()}
+          </div>
+        )}
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 mt-6">
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1}
-            className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-40 hover:bg-gray-100"
-          >
-            Previous
-          </button>
-          {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-            let pageNum: number;
-            if (totalPages <= 7) {
-              pageNum = i + 1;
-            } else if (page <= 4) {
-              pageNum = i + 1;
-            } else if (page >= totalPages - 3) {
-              pageNum = totalPages - 6 + i;
-            } else {
-              pageNum = page - 3 + i;
-            }
-            return (
-              <button
-                key={pageNum}
-                onClick={() => setPage(pageNum)}
-                className={`px-3 py-1.5 rounded text-sm ${
-                  page === pageNum
-                    ? 'bg-indigo-600 text-white'
-                    : 'border border-gray-300 hover:bg-gray-100'
-                }`}
-              >
-                {pageNum}
-              </button>
-            );
-          })}
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages}
-            className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-40 hover:bg-gray-100"
-          >
-            Next
-          </button>
-        </div>
-      )}
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 mt-8">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="px-4 py-2 border border-slate-200 rounded-lg text-sm disabled:opacity-40 hover:bg-slate-50 transition-colors flex items-center gap-1"
+            >
+              <i data-lucide="chevron-left" className="w-4 h-4"></i>
+              上一页
+            </button>
+            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+              let pageNum: number;
+              if (totalPages <= 7) {
+                pageNum = i + 1;
+              } else if (page <= 4) {
+                pageNum = i + 1;
+              } else if (page >= totalPages - 3) {
+                pageNum = totalPages - 6 + i;
+              } else {
+                pageNum = page - 3 + i;
+              }
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => setPage(pageNum)}
+                  className={`w-10 h-10 rounded-lg text-sm font-medium transition-colors ${
+                    page === pageNum
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'border border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="px-4 py-2 border border-slate-200 rounded-lg text-sm disabled:opacity-40 hover:bg-slate-50 transition-colors flex items-center gap-1"
+            >
+              下一页
+              <i data-lucide="chevron-right" className="w-4 h-4"></i>
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Thread Drawer */}
       {drawerThreadId && (
