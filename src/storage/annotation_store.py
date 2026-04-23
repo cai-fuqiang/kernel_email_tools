@@ -242,6 +242,11 @@ class UnifiedAnnotationStore:
                         "updated_at": ann.updated_at.isoformat(),
                         "email_subject": email_subject or "",
                         "email_sender": email_sender or "",
+                        # email 类型也包含 code 字段占位，避免前端类型不兼容
+                        "version": ann.version or "",
+                        "file_path": ann.file_path or "",
+                        "start_line": ann.start_line or 0,
+                        "end_line": ann.end_line or 0,
                     })
             else:
                 # code 类型或其他：直接查询（也使用 LEFT JOIN 获取 email 信息）
@@ -340,6 +345,11 @@ class UnifiedAnnotationStore:
                         "updated_at": ann.updated_at.isoformat(),
                         "email_subject": email_subject or "",
                         "email_sender": email_sender or "",
+                        # email 类型也包含 code 字段占位，避免前端类型不兼容
+                        "version": ann.version or "",
+                        "file_path": ann.file_path or "",
+                        "start_line": ann.start_line or 0,
+                        "end_line": ann.end_line or 0,
                     })
             else:
                 # code 类型或其他：直接查询（也使用 LEFT JOIN 获取 email 信息）
