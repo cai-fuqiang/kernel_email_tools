@@ -1,15 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import AnnotationCard from '../components/AnnotationCard';
-import { listAnnotations, updateAnnotation, deleteAnnotation } from '../api/client';
+import { useSearchParams } from 'react-router-dom';
+import AnnotationTree from '../components/AnnotationTree';
+import { listAnnotations } from '../api/client';
 import type { AnnotationListItem } from '../api/types';
-import ThreadDrawer from '../components/ThreadDrawer';
-import PreviewModal from '../components/PreviewModal';
 
 type FilterType = 'all' | 'email' | 'code';
 
 export default function AnnotationsPage() {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // 筛选和分页状态
@@ -24,61 +21,6 @@ export default function AnnotationsPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  // ThreadDrawer 状态
-  const [drawerThreadId, setDrawerThreadId] = useState<string | null>(null);
-  // PreviewModal 状态
-  const [previewAnnotation, setPreviewAnnotation] = useState<AnnotationListItem | null>(null);
-  // 展开/折叠状态
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-
-  // 计算每个标注的回复数量（包括所有类型）
-  const replyCounts = annotations.reduce((acc, a) => {
-    if (a.in_reply_to && a.in_reply_to !== '') {
-      acc[a.in_reply_to] = (acc[a.in_reply_to] || 0) + 1;
-    }
-    return acc;
-  }, {} as Record<string, number>);
-
-  // 切换展开/折叠
-  const toggleExpand = (id: string) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
-  // 判断是否为批注回复（in_reply_to 指向另一个 annotation_id）
-  const isAnnotationReply = (inReplyTo: string): boolean => {
-    if (!inReplyTo || inReplyTo === '') return false;
-    // annotation_id 格式: annotation-xxx 或 code-annot-xxx
-    return inReplyTo.startsWith('annotation-') || inReplyTo.startsWith('code-annot-');
-  };
-
-  // 获取顶级标注
-  // 对于 email 类型：所有都是顶级（in_reply_to 指向邮件 message_id，不是批注回复）
-  // 对于 code 类型：in_reply_to 为空或不是 annotation_id 格式的才是顶级
-  const getRootAnnotations = (type?: 'email' | 'code') => {
-    return annotations.filter(a => {
-      if (a.in_reply_to && a.in_reply_to !== '' && isAnnotationReply(a.in_reply_to)) {
-        return false; // 是批注回复，不是根
-      }
-      if (type) return a.annotation_type === type;
-      return true;
-    });
-  };
-
-  // 获取回复标注（只返回批注回复，排除指向邮件的）
-  const getReplies = (parentId: string) => {
-    return annotations.filter(a => 
-      a.in_reply_to === parentId && isAnnotationReply(a.in_reply_to)
-    );
-  };
 
   // 分页
   const totalPages = Math.ceil(total / pageSize);
@@ -132,27 +74,6 @@ export default function AnnotationsPage() {
   const handleFilterChange = (newFilter: FilterType) => {
     setPage(1);
     setFilter(newFilter);
-  };
-
-  // 删除批注
-  const handleDeleteAnnotation = async (annotationId: string) => {
-    if (!confirm('确定要删除这个批注吗？')) return;
-    try {
-      await deleteAnnotation(annotationId);
-      setAnnotations((prev) => prev.filter((a) => a.annotation_id !== annotationId));
-      setTotal((prev) => prev - 1);
-    } catch (e) {
-      alert('删除失败: ' + (e instanceof Error ? e.message : 'Unknown error'));
-    }
-  };
-
-  // 点击处理
-  const handleCardClick = (ann: AnnotationListItem) => {
-    if (ann.annotation_type === 'email' && ann.thread_id && ann.thread_id !== '') {
-      setDrawerThreadId(ann.thread_id);
-    } else if (ann.annotation_type === 'code') {
-      navigate(`/kernel-code?v=${encodeURIComponent(ann.version || '')}&path=${encodeURIComponent(ann.file_path || '')}&line=${ann.start_line}`);
-    }
   };
 
   return (
@@ -279,261 +200,12 @@ export default function AnnotationsPage() {
           </div>
         )}
 
+        {/* 统一树形组件 */}
         {!loading && !error && annotations.length > 0 && (
-          <div className="space-y-6">
-            {/* Email 类型标注 */}
-            {filter !== 'code' && (() => {
-              const emailRoots = getRootAnnotations('email');
-              return emailRoots.map(root => {
-                const isExpanded = expandedIds.has(root.annotation_id);
-                const replies = getReplies(root.annotation_id);
-                const replyCount = replyCounts[root.annotation_id] || 0;
-                
-                return (
-                  <div key={root.annotation_id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    {/* 卡片头部 */}
-                    <div 
-                      className="px-4 py-3 bg-blue-50 border-b border-blue-100 cursor-pointer hover:bg-blue-100/50 transition-colors"
-                      onClick={() => handleCardClick(root)}
-                    >
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleExpand(root.annotation_id);
-                          }}
-                          className="text-blue-400 hover:text-blue-600 transition-colors"
-                        >
-                          <i data-lucide={isExpanded ? "chevron-down" : "chevron-right"} className="w-4 h-4"></i>
-                        </button>
-                        <i data-lucide="mail" className="w-4 h-4 text-blue-500"></i>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-slate-800 truncate">
-                            {root.email_subject || root.thread_id?.slice(0, 30) || '无标题'}
-                          </div>
-                          <div className="text-xs text-slate-500 flex items-center gap-2">
-                            <span>{root.email_sender || '未知发件人'}</span>
-                            <span>•</span>
-                            <span>{new Date(root.created_at).toLocaleDateString('zh-CN')}</span>
-                          </div>
-                        </div>
-                        {replyCount > 0 && (
-                          <span className="px-2 py-1 text-xs bg-blue-100 text-blue-600 rounded-full">
-                            {replyCount} 条回复
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    
-                    {/* 卡片内容 */}
-                    <div className="p-4">
-                      <AnnotationCard
-                        author={root.author}
-                        body={root.body}
-                        created_at={root.created_at}
-                        updated_at={root.updated_at}
-                        variant={root.annotation_type}
-                        thread_id={root.thread_id}
-                        email_subject={root.email_subject}
-                        email_sender={root.email_sender}
-                        onEdit={(body) => {
-                          updateAnnotation(root.annotation_id, body).then(() => {
-                            setAnnotations(prev =>
-                              prev.map(a =>
-                                a.annotation_id === root.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
-                              )
-                            );
-                          });
-                        }}
-                        onDelete={() => handleDeleteAnnotation(root.annotation_id)}
-                      />
-                      
-                      {/* 回复列表 */}
-                      {isExpanded && replies.length > 0 && (
-                        <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
-                          <div className="text-xs text-slate-500 font-medium flex items-center gap-1">
-                            <i data-lucide="corner-down-right" className="w-3 h-3"></i>
-                            回复列表
-                          </div>
-                          {replies.map(reply => (
-                            <div key={reply.annotation_id} className="pl-4 border-l-2 border-green-200">
-                              <div className="flex items-center gap-2 mb-2">
-                                <span className="px-2 py-0.5 text-xs bg-green-100 text-green-600 rounded">
-                                  回复
-                                </span>
-                                <span className="text-xs text-slate-500">
-                                  {reply.email_sender || reply.author}
-                                </span>
-                              </div>
-                              <div
-                                className="cursor-pointer"
-                                onClick={() => handleCardClick(reply)}
-                              >
-                                <AnnotationCard
-                                  author={reply.author}
-                                  body={reply.body}
-                                  created_at={reply.created_at}
-                                  updated_at={reply.updated_at}
-                                  variant={reply.annotation_type}
-                                  thread_id={reply.thread_id}
-                                  email_subject={reply.email_subject}
-                                  email_sender={reply.email_sender}
-                                  onEdit={(body) => {
-                                    updateAnnotation(reply.annotation_id, body).then(() => {
-                                      setAnnotations(prev =>
-                                        prev.map(a =>
-                                          a.annotation_id === reply.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
-                                        )
-                                      );
-                                    });
-                                  }}
-                                  onDelete={() => handleDeleteAnnotation(reply.annotation_id)}
-                                />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-            
-            {/* Code 类型标注 */}
-            {filter !== 'email' && (() => {
-              const codeAnnotations = annotations.filter(a => 
-                a.annotation_type === 'code' && (!a.in_reply_to || a.in_reply_to === '')
-              );
-              return codeAnnotations.map(ann => {
-                const isExpanded = expandedIds.has(ann.annotation_id);
-                const replies = getReplies(ann.annotation_id);
-                const replyCount = replyCounts[ann.annotation_id] || 0;
-                
-                return (
-                  <div key={ann.annotation_id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    {/* 卡片头部 */}
-                    <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-100">
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleExpand(ann.annotation_id);
-                          }}
-                          className="text-indigo-400 hover:text-indigo-600 transition-colors"
-                        >
-                          <i data-lucide={isExpanded ? "chevron-down" : "chevron-right"} className="w-4 h-4"></i>
-                        </button>
-                        <i data-lucide="code-2" className="w-4 h-4 text-indigo-500"></i>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-mono text-slate-700 truncate">
-                            {ann.file_path}
-                          </div>
-                          <div className="text-xs text-slate-500 flex items-center gap-2">
-                            <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-600 rounded text-xs">
-                              {ann.version}
-                            </span>
-                            <span>行 {ann.start_line}{ann.end_line !== ann.start_line && `-${ann.end_line}`}</span>
-                            <span>•</span>
-                            <span>{new Date(ann.created_at).toLocaleDateString('zh-CN')}</span>
-                          </div>
-                        </div>
-                        {replyCount > 0 && (
-                          <span className="px-2 py-1 text-xs bg-indigo-100 text-indigo-600 rounded-full">
-                            {replyCount} 条回复
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    
-                    {/* 卡片内容 */}
-                    <div className="p-4">
-                      <AnnotationCard
-                        author={ann.author}
-                        body={ann.body}
-                        created_at={ann.created_at}
-                        updated_at={ann.updated_at}
-                        variant={ann.annotation_type}
-                        version={ann.version}
-                        file_path={ann.file_path}
-                        start_line={ann.start_line}
-                        end_line={ann.end_line}
-                        showGoto={true}
-                        onGoto={() => {
-                          navigate(`/kernel-code?v=${encodeURIComponent(ann.version || '')}&path=${encodeURIComponent(ann.file_path || '')}&line=${ann.start_line}`);
-                        }}
-                        onEdit={(body) => {
-                          updateAnnotation(ann.annotation_id, body).then(() => {
-                            setAnnotations(prev =>
-                              prev.map(a =>
-                                a.annotation_id === ann.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
-                              )
-                            );
-                          });
-                        }}
-                        onDelete={() => handleDeleteAnnotation(ann.annotation_id)}
-                        onPreview={(e) => {
-                          e.stopPropagation();
-                          setPreviewAnnotation(ann);
-                        }}
-                      />
-                      
-                      {/* 回复列表 */}
-                      {isExpanded && replies.length > 0 && (
-                        <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
-                          <div className="text-xs text-slate-500 font-medium flex items-center gap-1">
-                            <i data-lucide="corner-down-right" className="w-3 h-3"></i>
-                            回复列表
-                          </div>
-                          {replies.map(reply => (
-                            <div key={reply.annotation_id} className="pl-4 border-l-2 border-green-200">
-                              <div className="flex items-center gap-2 mb-2">
-                                <span className="px-2 py-0.5 text-xs bg-green-100 text-green-600 rounded">
-                                  回复
-                                </span>
-                                <span className="text-xs text-slate-500">
-                                  {reply.author}
-                                </span>
-                              </div>
-                              <AnnotationCard
-                                author={reply.author}
-                                body={reply.body}
-                                created_at={reply.created_at}
-                                updated_at={reply.updated_at}
-                                variant={reply.annotation_type}
-                                version={reply.version}
-                                file_path={reply.file_path}
-                                start_line={reply.start_line}
-                                end_line={reply.end_line}
-                                showGoto={true}
-                                onGoto={() => {
-                                  navigate(`/kernel-code?v=${encodeURIComponent(reply.version || '')}&path=${encodeURIComponent(reply.file_path || '')}&line=${reply.start_line}`);
-                                }}
-                                onEdit={(body) => {
-                                  updateAnnotation(reply.annotation_id, body).then(() => {
-                                    setAnnotations(prev =>
-                                      prev.map(a =>
-                                        a.annotation_id === reply.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
-                                      )
-                                    );
-                                  });
-                                }}
-                                onDelete={() => handleDeleteAnnotation(reply.annotation_id)}
-                                onPreview={(e) => {
-                                  e.stopPropagation();
-                                  setPreviewAnnotation(reply);
-                                }}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-          </div>
+          <AnnotationTree 
+            annotations={annotations} 
+            onAnnotationsChange={loadAnnotations}
+          />
         )}
 
         {/* Pagination */}
@@ -583,23 +255,6 @@ export default function AnnotationsPage() {
           </div>
         )}
       </div>
-
-      {/* Thread Drawer */}
-      {drawerThreadId && (
-        <ThreadDrawer
-          threadId={drawerThreadId}
-          onClose={() => setDrawerThreadId(null)}
-        />
-      )}
-
-      {/* Preview Modal */}
-      {previewAnnotation && previewAnnotation.annotation_type === 'code' && previewAnnotation.version && previewAnnotation.file_path && (
-        <PreviewModal
-          isOpen={true}
-          onClose={() => setPreviewAnnotation(null)}
-          annotation={previewAnnotation as any}
-        />
-      )}
     </div>
   );
 }
