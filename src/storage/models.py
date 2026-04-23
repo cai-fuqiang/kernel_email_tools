@@ -106,19 +106,25 @@ class EmailORM(Base):
 # ============================================================
 
 class AnnotationORM(Base):
-    """批注 ORM 模型，对应 annotations 表。
+    """统一批注 ORM 模型，对应 annotations 表。
 
-    用于存储用户对邮件的本地批注（回复），不是真正的邮件回复，
-    而是用户在 Thread 视图中添加的本地评论，可混合显示在线程树中。
+    支持两种批注类型：
+    - 'email': 邮件批注，存储在线程树中的本地评论
+    - 'code': 代码标注，对内核源码的行级/范围级注释
+
+    通过 annotation_type 字段区分类型，类型特定字段存储在相应列中。
     """
 
     __tablename__ = "annotations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     annotation_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
-    thread_id: Mapped[str] = mapped_column(String(512), nullable=False)
-    in_reply_to: Mapped[str] = mapped_column(String(512), nullable=False, default="")
-    author: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+
+    # 类型标识
+    annotation_type: Mapped[str] = mapped_column(String(20), nullable=False, default="email")
+
+    # 公共字段
+    author: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
     body: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=datetime.utcnow
@@ -127,14 +133,31 @@ class AnnotationORM(Base):
         DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
+    # 邮件批注字段（annotation_type='email' 时使用）
+    thread_id: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    in_reply_to: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+
+    # 代码标注字段（annotation_type='code' 时使用）
+    version: Mapped[str] = mapped_column(String(32), nullable=True)
+    file_path: Mapped[str] = mapped_column(String(512), nullable=True)
+    start_line: Mapped[int] = mapped_column(Integer, nullable=True)
+    end_line: Mapped[int] = mapped_column(Integer, nullable=True)
+    anchor_context: Mapped[str] = mapped_column(String(128), nullable=True)
+
     __table_args__ = (
         UniqueConstraint("annotation_id", name="uq_annotations_annotation_id"),
+        # 代码标注唯一约束：同一位置不能有完全重复的注释
+        UniqueConstraint(
+            "version", "file_path", "start_line", "end_line", "body",
+            name="uq_annotation_position_body"
+        ),
+        Index("ix_annotations_type", "annotation_type"),
         Index("ix_annotations_thread_id", "thread_id"),
-        Index("ix_annotations_in_reply_to", "in_reply_to"),
+        Index("ix_annotations_code", "version", "file_path"),
     )
 
     def __repr__(self) -> str:
-        return f"<AnnotationORM id={self.id} annotation_id={self.annotation_id!r}>"
+        return f"<AnnotationORM id={self.id} annotation_id={self.annotation_id!r} type={self.annotation_type}>"
 
 
 # ============================================================
@@ -235,12 +258,21 @@ class EmailSearchResult(BaseModel):
 
 
 class AnnotationCreate(BaseModel):
-    """创建批注时的输入模型。"""
+    """创建批注时的输入模型（统一，支持 email 和 code 类型）。"""
 
-    thread_id: str = Field(..., description="所属线程 ID")
-    in_reply_to: str = Field("", description="回复的目标 message_id 或 annotation_id")
-    author: str = Field("", description="批注作者")
+    annotation_type: str = Field("email", description="批注类型：'email' | 'code'")
     body: str = Field(..., min_length=1, description="批注正文（支持 Markdown）")
+    author: str = Field("", description="批注作者")
+
+    # email 类型字段
+    thread_id: str = Field("", description="所属线程 ID（email 类型）")
+    in_reply_to: str = Field("", description="回复的目标 message_id 或 annotation_id（email 类型）")
+
+    # code 类型字段
+    version: str = Field("", description="内核版本 tag（code 类型）")
+    file_path: str = Field("", description="文件相对路径（code 类型）")
+    start_line: int = Field(0, ge=0, description="起始行号（code 类型）")
+    end_line: int = Field(0, ge=0, description="结束行号（code 类型）")
 
     model_config = {"from_attributes": True}
 
@@ -254,16 +286,23 @@ class AnnotationUpdate(BaseModel):
 
 
 class AnnotationRead(BaseModel):
-    """查询批注时的输出模型。"""
+    """查询批注时的输出模型（统一）。"""
 
     id: int
     annotation_id: str
-    thread_id: str
-    in_reply_to: str
+    annotation_type: str
     author: str
     body: str
     created_at: datetime
     updated_at: datetime
+    # email 类型字段
+    thread_id: str = ""
+    in_reply_to: str = ""
+    # code 类型字段
+    version: str = ""
+    file_path: str = ""
+    start_line: int = 0
+    end_line: int = 0
 
     model_config = {"from_attributes": True}
 

@@ -468,11 +468,15 @@ export async function importAnnotations(data: Record<string, unknown>): Promise<
 
 export async function listAnnotations(opts?: {
   q?: string;
+  type?: 'all' | 'email' | 'code';
+  version?: string;
   page?: number;
   page_size?: number;
 }): Promise<AnnotationListResponse> {
   const params = new URLSearchParams();
   if (opts?.q) params.set('q', opts.q);
+  if (opts?.type) params.set('type', opts.type);
+  if (opts?.version) params.set('version', opts.version);
   if (opts?.page) params.set('page', String(opts.page));
   if (opts?.page_size) params.set('page_size', String(opts.page_size));
   return fetchJSON<AnnotationListResponse>(`${API_BASE}/annotations?${params}`);

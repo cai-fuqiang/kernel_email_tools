@@ -131,14 +131,21 @@ export interface ManualStatsResponse {
 // 批注列表相关类型
 export interface AnnotationListItem {
   annotation_id: string;
-  thread_id: string;
-  in_reply_to: string;
+  annotation_type: 'email' | 'code';
   author: string;
   body: string;
   created_at: string;
   updated_at: string;
-  email_subject: string;
-  email_sender: string;
+  // email 类型特有字段
+  thread_id?: string;
+  in_reply_to?: string;
+  email_subject?: string;
+  email_sender?: string;
+  // code 类型特有字段
+  version?: string;
+  file_path?: string;
+  start_line?: number;
+  end_line?: number;
 }
 
 export interface AnnotationListResponse {

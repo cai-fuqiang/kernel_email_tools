@@ -1119,11 +1119,20 @@ async def manual_translate(request: ManualTranslateRequest = Body(...)):
 # ============================================================
 
 class AnnotationCreateRequest(BaseModel):
-    """创建批注请求。"""
-    thread_id: str = Field(..., description="所属线程 ID")
-    in_reply_to: str = Field("", description="回复的目标 message_id 或 annotation_id")
-    author: str = Field("", description="批注作者（留空使用默认作者）")
+    """创建批注请求（统一，支持邮件和代码类型）。"""
+    annotation_type: str = Field("email", description="批注类型：'email' | 'code'")
     body: str = Field(..., min_length=1, description="批注正文（支持 Markdown）")
+    author: str = Field("", description="批注作者（留空使用默认作者）")
+    
+    # email 类型字段
+    thread_id: str = Field("", description="所属线程 ID（email 类型必填）")
+    in_reply_to: str = Field("", description="回复的目标 message_id 或 annotation_id（email 类型）")
+    
+    # code 类型字段
+    version: str = Field("", description="内核版本 tag（code 类型必填）")
+    file_path: str = Field("", description="文件相对路径（code 类型必填）")
+    start_line: int = Field(0, ge=0, description="起始行号（code 类型必填）")
+    end_line: int = Field(0, ge=0, description="结束行号（code 类型必填）")
 
 
 class AnnotationUpdateRequest(BaseModel):
@@ -1132,39 +1141,115 @@ class AnnotationUpdateRequest(BaseModel):
 
 
 class AnnotationResponse(BaseModel):
-    """批注响应。"""
+    """批注响应（统一，支持邮件和代码类型）。"""
     annotation_id: str
-    thread_id: str
-    in_reply_to: str
+    annotation_type: str = "email"
     author: str
     body: str
     created_at: str
     updated_at: str
+    # email 类型字段
+    thread_id: Optional[str] = None
+    in_reply_to: Optional[str] = None
+    # code 类型字段
+    version: Optional[str] = None
+    file_path: Optional[str] = None
+    start_line: Optional[int] = None
+    end_line: Optional[int] = None
 
 
 @app.get("/api/annotations")
 async def list_annotations(
     q: Optional[str] = Query(None, description="搜索关键词（模糊匹配批注正文）"),
+    type: str = Query("all", description="批注类型过滤：'all' | 'email' | 'code'"),
+    version: Optional[str] = Query(None, description="限定代码版本（code 类型时）"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
 ):
-    """批注列表 + 搜索。
+    """批注列表 + 搜索（统一，支持邮件批注和代码标注）。
 
     - 无 q 参数：返回全部批注分页列表
     - 有 q 参数：按关键词搜索批注正文
+    - type 参数：支持按类型过滤：'all'(全部), 'email'(仅邮件), 'code'(仅代码)
     """
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
 
     try:
-        if q and q.strip():
-            annotations, total = await _annotation_store.search(
-                keyword=q.strip(), page=page, page_size=page_size
-            )
+        # 代码版本过滤仅作用于 code 类型
+        if type == "code" and version:
+            # 代码版本过滤需要单独处理
+            async with _annotation_store.session_factory() as session:
+                from src.storage.models import AnnotationORM
+                from sqlalchemy import func
+                
+                query = select(AnnotationORM).where(
+                    AnnotationORM.annotation_type == "code",
+                    AnnotationORM.version == version
+                )
+                
+                if q and q.strip():
+                    query = query.where(AnnotationORM.body.ilike(f"%{q.strip()}%"))
+                
+                count_result = await session.execute(
+                    select(func.count()).select_from(AnnotationORM).where(
+                        AnnotationORM.annotation_type == "code",
+                        AnnotationORM.version == version,
+                        AnnotationORM.body.ilike(f"%{q.strip()}%") if q else True
+                    )
+                )
+                total = count_result.scalar() or 0
+                
+                offset = (page - 1) * page_size
+                result = await session.execute(
+                    query.order_by(AnnotationORM.created_at.desc())
+                    .offset(offset)
+                    .limit(page_size)
+                )
+                rows = result.scalars().all()
+                
+                annotations = []
+                for ann in rows:
+                    annotations.append({
+                        "annotation_id": ann.annotation_id,
+                        "annotation_type": ann.annotation_type,
+                        "author": ann.author,
+                        "body": ann.body,
+                        "created_at": ann.created_at.isoformat(),
+                        "updated_at": ann.updated_at.isoformat(),
+                        "version": ann.version or "",
+                        "file_path": ann.file_path or "",
+                        "start_line": ann.start_line or 0,
+                        "end_line": ann.end_line or 0,
+                    })
         else:
-            annotations, total = await _annotation_store.list_all(
-                page=page, page_size=page_size
-            )
+            # 普通搜索和列表
+            if q and q.strip():
+                annotations, total = await _annotation_store.search(
+                    keyword=q.strip(), 
+                    annotation_type=type,
+                    page=page, 
+                    page_size=page_size
+                )
+            else:
+                annotations, total = await _annotation_store.list_all(
+                    annotation_type=type,
+                    page=page, 
+                    page_size=page_size
+                )
+
+        # 代码版本过滤结果也需要标准化字段，补充 thread_id 等字段
+        if type == "code" and version:
+            normalized_annotations = []
+            for ann in annotations:
+                normalized_annotations.append({
+                    **ann,
+                    "thread_id": "",
+                    "in_reply_to": "",
+                    "email_subject": "",
+                    "email_sender": "",
+                })
+            annotations = normalized_annotations
 
         return {
             "annotations": annotations,
@@ -1179,36 +1264,68 @@ async def list_annotations(
 
 @app.post("/api/annotations", response_model=AnnotationResponse)
 async def create_annotation(request: AnnotationCreateRequest):
-    """创建批注（本地回复）。
+    """创建批注（统一，支持邮件批注和代码标注）。
 
-    在线程中添加本地批注，不是真正的邮件回复，
-    而是用户的本地评论，混合显示在线程树中。
+    邮件类型：需要提供 thread_id, in_reply_to
+    代码类型：需要提供 version, file_path, start_line, end_line
     """
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
 
+    # 验证必填字段
+    if request.annotation_type == "email" and not request.thread_id:
+        raise HTTPException(status_code=400, detail="thread_id is required for email annotations")
+    
+    if request.annotation_type == "code":
+        if not request.version or not request.file_path or request.start_line <= 0 or request.end_line <= 0:
+            raise HTTPException(status_code=400, detail="version, file_path, start_line and end_line are required for code annotations")
+        if request.start_line > request.end_line:
+            raise HTTPException(status_code=400, detail="start_line must not exceed end_line")
+
     annotation = await _annotation_store.create(
         AnnotationCreate(
+            annotation_type=request.annotation_type,
             thread_id=request.thread_id,
             in_reply_to=request.in_reply_to,
             author=request.author,
             body=request.body,
+            version=request.version,
+            file_path=request.file_path,
+            start_line=request.start_line,
+            end_line=request.end_line,
         )
     )
-    return AnnotationResponse(
-        annotation_id=annotation.annotation_id,
-        thread_id=annotation.thread_id,
-        in_reply_to=annotation.in_reply_to,
-        author=annotation.author,
-        body=annotation.body,
-        created_at=annotation.created_at.isoformat(),
-        updated_at=annotation.updated_at.isoformat(),
-    )
+    
+    # 根据类型构造响应
+    response = {
+        "annotation_id": annotation.annotation_id,
+        "annotation_type": annotation.annotation_type,
+        "author": annotation.author,
+        "body": annotation.body,
+        "created_at": annotation.created_at.isoformat(),
+        "updated_at": annotation.updated_at.isoformat(),
+    }
+    
+    # 类型特有字段
+    if annotation.annotation_type == "email":
+        response.update({
+            "thread_id": annotation.thread_id,
+            "in_reply_to": annotation.in_reply_to,
+        })
+    else:
+        response.update({
+            "version": annotation.version,
+            "file_path": annotation.file_path,
+            "start_line": annotation.start_line,
+            "end_line": annotation.end_line,
+        })
+    
+    return response
 
 
 @app.get("/api/annotations/{thread_id:path}", response_model=list[AnnotationResponse])
 async def get_annotations(thread_id: str):
-    """获取线程所有批注。"""
+    """获取线程所有批注（仅 email 类型）。"""
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
 
@@ -1216,6 +1333,7 @@ async def get_annotations(thread_id: str):
     return [
         AnnotationResponse(
             annotation_id=a.annotation_id,
+            annotation_type=a.annotation_type,
             thread_id=a.thread_id,
             in_reply_to=a.in_reply_to,
             author=a.author,
@@ -1598,10 +1716,10 @@ async def list_code_annotations(
 @app.get("/api/kernel/annotations/{version}/{path:path}")
 async def get_file_code_annotations(version: str, path: str):
     """获取指定文件的注释列表。"""
-    if not _code_annotation_store:
-        raise HTTPException(status_code=503, detail="Code annotation store not initialized")
+    if not _annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
 
-    annotations = await _code_annotation_store.list_by_file(version, path)
+    annotations = await _annotation_store.list_by_code(version, path)
     return [
         {
             "annotation_id": a.annotation_id,

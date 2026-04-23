@@ -1,84 +1,123 @@
 import { useState, useEffect, useCallback } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { listAnnotations } from '../api/client';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import AnnotationCard from '../components/AnnotationCard';
+import { listAnnotations, updateAnnotation, deleteAnnotation } from '../api/client';
 import type { AnnotationListItem } from '../api/types';
 import ThreadDrawer from '../components/ThreadDrawer';
+import PreviewModal from '../components/PreviewModal';
+
+type FilterType = 'all' | 'email' | 'code';
 
 export default function AnnotationsPage() {
-  const [annotations, setAnnotations] = useState<AnnotationListItem[]>([]);
-  const [total, setTotal] = useState(0);
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // 筛选和分页状态
+  const [filter, setFilter] = useState<FilterType>('all');
+  const [q, setQ] = useState(searchParams.get('q') || '');
+  const [searchInput, setSearchInput] = useState(q);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
-  const [query, setQuery] = useState('');
-  const [searchInput, setSearchInput] = useState('');
+  
+  // 数据状态
+  const [annotations, setAnnotations] = useState<AnnotationListItem[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // ThreadDrawer state
+  // ThreadDrawer 状态
   const [drawerThreadId, setDrawerThreadId] = useState<string | null>(null);
+  // PreviewModal 状态
+  const [previewAnnotation, setPreviewAnnotation] = useState<AnnotationListItem | null>(null);
 
-  const fetchAnnotations = useCallback(async () => {
+  // 分页
+  const totalPages = Math.ceil(total / pageSize);
+  const paginatedAnnotations = annotations.slice((page - 1) * pageSize, page * pageSize);
+
+  // 加载数据
+  const loadAnnotations = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await listAnnotations({
-        q: query || undefined,
-        page,
-        page_size: pageSize,
+      const res = await listAnnotations({ 
+        q: q || undefined, 
+        type: filter,
+        page: page, 
+        page_size: pageSize 
       });
+      
       setAnnotations(res.annotations);
       setTotal(res.total);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load annotations');
+      setAnnotations([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
-  }, [query, page, pageSize]);
+  }, [filter, q, page, pageSize]);
 
   useEffect(() => {
-    fetchAnnotations();
-  }, [fetchAnnotations]);
+    loadAnnotations();
+  }, [loadAnnotations]);
 
+  // 搜索
   const handleSearch = () => {
     setPage(1);
-    setQuery(searchInput.trim());
+    setQ(searchInput.trim());
+    setSearchParams(searchInput.trim() ? { q: searchInput.trim() } : {});
   };
 
   const handleClear = () => {
     setSearchInput('');
     setPage(1);
-    setQuery('');
+    setQ('');
+    setSearchParams({});
   };
 
-  const totalPages = Math.ceil(total / pageSize);
-
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('zh-CN', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+  // 筛选变化
+  const handleFilterChange = (newFilter: FilterType) => {
+    setPage(1);
+    setFilter(newFilter);
   };
 
-  const getAuthorInitial = (author: string) => {
-    return author ? author.charAt(0).toUpperCase() : '?';
+  // 删除批注
+  const handleDeleteAnnotation = async (annotationId: string) => {
+    if (!confirm('确定要删除这个批注吗？')) return;
+    try {
+      await deleteAnnotation(annotationId);
+      setAnnotations((prev) => prev.filter((a) => a.annotation_id !== annotationId));
+      setTotal((prev) => prev - 1);
+    } catch (e) {
+      alert('删除失败: ' + (e instanceof Error ? e.message : 'Unknown error'));
+    }
+  };
+
+  // 点击处理
+  const handleCardClick = (ann: AnnotationListItem) => {
+    // 邮件批注点击打开线程抽屉
+    if (ann.annotation_type === 'email' && ann.thread_id) {
+      console.log('Opening thread drawer for:', ann.thread_id); // 调试日志
+      setDrawerThreadId(ann.thread_id);
+    }
+    // 代码标注点击跳转内核浏览器
+    else if (ann.annotation_type === 'code') {
+      navigate(`/kernel-code?v=${encodeURIComponent(ann.version || '')}&path=${encodeURIComponent(ann.file_path || '')}&line=${ann.start_line}`);
+    }
   };
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
+      {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Annotations</h1>
         <p className="text-sm text-gray-500">
-          Browse and search all your annotations across email threads
+          Browse and search all your annotations across email threads and code
         </p>
       </div>
 
-      {/* Search bar */}
-      <div className="flex gap-2 mb-4">
+      {/* 筛选栏 */}
+      <div className="flex gap-3 mb-4">
         <input
           type="text"
           value={searchInput}
@@ -93,7 +132,7 @@ export default function AnnotationsPage() {
         >
           Search
         </button>
-        {query && (
+        {q && (
           <button
             onClick={handleClear}
             className="px-4 py-2.5 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300 transition-colors"
@@ -101,13 +140,23 @@ export default function AnnotationsPage() {
             Clear
           </button>
         )}
+        {/* 筛选下拉 */}
+        <select
+          value={filter}
+          onChange={(e) => handleFilterChange(e.target.value as FilterType)}
+          className="px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none"
+        >
+          <option value="all">全部</option>
+          <option value="email">邮件批注</option>
+          <option value="code">代码标注</option>
+        </select>
       </div>
 
       {/* Stats */}
       <div className="flex items-center gap-4 mb-4 text-sm text-gray-500">
         <span>
-          {total} annotation{total !== 1 ? 's' : ''}{' '}
-          {query && <span>matching "{query}"</span>}
+          {total} annotation{total !== 1 ? 's' : ''}
+          {q && <span> matching "{q}"</span>}
         </span>
         {totalPages > 1 && (
           <span>
@@ -131,56 +180,50 @@ export default function AnnotationsPage() {
         </div>
       )}
 
-      {/* Annotation cards */}
-      {!loading && annotations.length === 0 && (
+      {/* Empty state */}
+      {!loading && paginatedAnnotations.length === 0 && (
         <div className="text-center py-12 text-gray-400">
-          {query ? 'No annotations match your search' : 'No annotations yet'}
+          {q ? 'No annotations match your search' : 'No annotations yet'}
         </div>
       )}
 
-      {!loading && annotations.length > 0 && (
+      {/* Annotation cards */}
+      {!loading && paginatedAnnotations.length > 0 && (
         <div className="space-y-3">
-          {annotations.map((ann) => (
+          {paginatedAnnotations.map((ann) => (
             <div
               key={ann.annotation_id}
-              className="bg-white border border-gray-200 rounded-lg p-4 hover:border-blue-300 transition-colors cursor-pointer"
-              onClick={() => setDrawerThreadId(ann.thread_id)}
+              onClick={() => handleCardClick(ann)}
+              className="cursor-pointer hover:opacity-90 transition-opacity"
             >
-              {/* Header */}
-              <div className="flex items-center gap-2 mb-2">
-                <div
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                  style={{
-                    backgroundColor: `hsl(${ann.author.charCodeAt(0) * 15 % 360}, 65%, 50%)`,
-                  }}
-                >
-                  {getAuthorInitial(ann.author)}
-                </div>
-                <span className="font-medium text-gray-900 text-sm">{ann.author}</span>
-                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded font-medium">
-                  Annotation
-                </span>
-                <span className="text-xs text-gray-400 ml-auto">{formatDate(ann.created_at)}</span>
-              </div>
-
-              {/* Related email info */}
-              {(ann.email_subject || ann.email_sender) && (
-                <div className="mb-2 text-xs text-gray-500 bg-gray-50 px-3 py-1.5 rounded">
-                  {ann.email_subject && (
-                    <span className="font-medium text-gray-600">{ann.email_subject}</span>
-                  )}
-                  {ann.email_sender && (
-                    <span className="ml-2 text-gray-400">— {ann.email_sender}</span>
-                  )}
-                </div>
-              )}
-
-              {/* Body (Markdown) */}
-              <div className="annotation-markdown text-sm text-gray-700 leading-relaxed">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {ann.body.length > 500 ? ann.body.slice(0, 500) + '...' : ann.body}
-                </ReactMarkdown>
-              </div>
+              <AnnotationCard
+                author={ann.author}
+                body={ann.body}
+                created_at={ann.created_at}
+                updated_at={ann.updated_at}
+                variant={ann.annotation_type}
+                version={ann.version}
+                file_path={ann.file_path}
+                start_line={ann.start_line}
+                end_line={ann.end_line}
+                email_subject={ann.email_subject}
+                email_sender={ann.email_sender}
+                thread_id={ann.thread_id}
+                onEdit={(body) => {
+                  updateAnnotation(ann.annotation_id, body).then(() => {
+                    setAnnotations((prev) =>
+                      prev.map((a) =>
+                        a.annotation_id === ann.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
+                      )
+                    );
+                  });
+                }}
+                onDelete={() => handleDeleteAnnotation(ann.annotation_id)}
+                onPreview={ann.annotation_type === 'code' ? (e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  setPreviewAnnotation(ann);
+                } : undefined}
+              />
             </div>
           ))}
         </div>
@@ -236,6 +279,15 @@ export default function AnnotationsPage() {
         <ThreadDrawer
           threadId={drawerThreadId}
           onClose={() => setDrawerThreadId(null)}
+        />
+      )}
+
+      {/* Preview Modal */}
+      {previewAnnotation && previewAnnotation.annotation_type === 'code' && previewAnnotation.version && previewAnnotation.file_path && (
+        <PreviewModal
+          isOpen={true}
+          onClose={() => setPreviewAnnotation(null)}
+          annotation={previewAnnotation as any}
         />
       )}
     </div>
