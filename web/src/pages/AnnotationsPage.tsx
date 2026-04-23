@@ -99,13 +99,6 @@ export default function AnnotationsPage() {
         page_size: pageSize 
       });
       
-      console.log('Loaded annotations:', res.annotations.map(a => ({
-        id: a.annotation_id.slice(0, 15),
-        type: a.annotation_type,
-        subject: a.email_subject || 'no subject',
-        sender: a.email_sender || 'no sender'
-      })));
-      
       setAnnotations(res.annotations);
       setTotal(res.total);
     } catch (e) {
