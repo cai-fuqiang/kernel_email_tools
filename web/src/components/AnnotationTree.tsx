@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Mail, Code2, ChevronDown, ChevronRight } from 'lucide-react';
 import AnnotationCard from './AnnotationCard';
 import type { AnnotationListItem } from '../api/types';
 import { updateAnnotation, deleteAnnotation } from '../api/client';
@@ -141,6 +142,7 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
     const getHeaderInfo = () => {
       if (annotation.annotation_type === 'email') {
         return {
+          Icon: Mail,
           icon: 'mail',
           title: annotation.email_subject || annotation.thread_id?.slice(0, 30) || '无标题',
           subtitle: annotation.email_sender || '未知发件人',
@@ -150,6 +152,7 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
         };
       } else {
         return {
+          Icon: Code2,
           icon: 'code-2',
           title: annotation.file_path || '未知文件',
           subtitle: `${annotation.version || ''} 行 ${annotation.start_line}${annotation.end_line !== annotation.start_line ? `-${annotation.end_line}` : ''}`,
@@ -180,14 +183,16 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
               >
                 {hasChildren ? (
                   <>
-                    <i data-lucide={isExpanded ? "chevron-down" : "chevron-right"} className="w-4 h-4"></i>
+                  <>
+                    {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                     <span className="text-xs font-medium">{children.length} 条回复</span>
+                  </>
                   </>
                 ) : (
                   <span className="w-4"></span>
                 )}
               </button>
-              <i data-lucide={headerInfo.icon} className={`w-4 h-4 ${headerInfo.iconColor}`}></i>
+              {headerInfo.Icon && <headerInfo.Icon className={`w-4 h-4 ${headerInfo.iconColor}`} />}
               <div className="flex-1 min-w-0">
                 <div className={`text-sm font-medium text-slate-800 truncate ${annotation.annotation_type === 'code' ? 'font-mono' : ''}`}>
                   {headerInfo.title}

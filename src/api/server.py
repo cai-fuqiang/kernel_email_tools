@@ -1699,6 +1699,7 @@ async def list_code_annotations(
                 "end_line": a.end_line,
                 "body": a.body,
                 "author": a.author,
+                "in_reply_to": a.in_reply_to,
                 "created_at": a.created_at.isoformat(),
                 "updated_at": a.updated_at.isoformat(),
             }
