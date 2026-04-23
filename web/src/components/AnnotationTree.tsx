@@ -75,8 +75,24 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
   // 构建树形结构
   const tree = buildTree(annotations);
   
+  // 默认展开所有有回复的批注
+  useEffect(() => {
+    const idsToExpand = new Set<string>();
+    const collectExpandable = (nodes: TreeNode[]) => {
+      for (const node of nodes) {
+        if (node.children.length > 0) {
+          idsToExpand.add(node.annotation.annotation_id);
+          collectExpandable(node.children);
+        }
+      }
+    };
+    collectExpandable(tree);
+    setExpandedIds(idsToExpand);
+  }, [annotations]);
+  
   // 切换展开/折叠
-  const toggleExpand = (id: string) => {
+  const toggleExpand = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     setExpandedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -156,19 +172,21 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
             onClick={() => handleCardClick(annotation)}
           >
             <div className="flex items-center gap-3">
-              {hasChildren ? (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleExpand(annotation.annotation_id);
-                  }}
-                  className={`${headerInfo.iconColor} hover:opacity-70 transition-opacity`}
-                >
-                  <i data-lucide={isExpanded ? "chevron-down" : "chevron-right"} className="w-4 h-4"></i>
-                </button>
-              ) : (
-                <span className="w-4"></span>
-              )}
+              {/* 展开/折叠按钮 */}
+              <button
+                onClick={(e) => toggleExpand(annotation.annotation_id, e)}
+                className={`${headerInfo.iconColor} hover:opacity-70 transition-opacity flex items-center gap-1 px-2 py-1 rounded hover:bg-white/50`}
+                title={isExpanded ? '点击收起' : '点击展开'}
+              >
+                {hasChildren ? (
+                  <>
+                    <i data-lucide={isExpanded ? "chevron-down" : "chevron-right"} className="w-4 h-4"></i>
+                    <span className="text-xs font-medium">{children.length} 条回复</span>
+                  </>
+                ) : (
+                  <span className="w-4"></span>
+                )}
+              </button>
               <i data-lucide={headerInfo.icon} className={`w-4 h-4 ${headerInfo.iconColor}`}></i>
               <div className="flex-1 min-w-0">
                 <div className={`text-sm font-medium text-slate-800 truncate ${annotation.annotation_type === 'code' ? 'font-mono' : ''}`}>
@@ -180,11 +198,6 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
                   <span>{new Date(annotation.created_at).toLocaleDateString('zh-CN')}</span>
                 </div>
               </div>
-              {hasChildren && (
-                <span className={`px-2 py-1 text-xs rounded-full ${annotation.annotation_type === 'email' ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600'}`}>
-                  {children.length} 条回复
-                </span>
-              )}
             </div>
           </div>
           
