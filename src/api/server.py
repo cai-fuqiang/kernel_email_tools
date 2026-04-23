@@ -1247,19 +1247,6 @@ async def list_annotations(
                     page_size=page_size
                 )
 
-        # 代码版本过滤结果也需要标准化字段，补充 thread_id 等字段
-        if type == "code" and version:
-            normalized_annotations = []
-            for ann in annotations:
-                normalized_annotations.append({
-                    **ann,
-                    "thread_id": "",
-                    "in_reply_to": "",
-                    "email_subject": "",
-                    "email_sender": "",
-                })
-            annotations = normalized_annotations
-
         return {
             "annotations": annotations,
             "total": total,
