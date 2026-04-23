@@ -260,6 +260,8 @@ class UnifiedAnnotationStore:
                     items.append({
                         "annotation_id": ann.annotation_id,
                         "annotation_type": ann.annotation_type,
+                        "thread_id": ann.thread_id or "",
+                        "in_reply_to": ann.in_reply_to or "",
                         "author": ann.author,
                         "body": ann.body,
                         "created_at": ann.created_at.isoformat(),
@@ -352,6 +354,8 @@ class UnifiedAnnotationStore:
                     items.append({
                         "annotation_id": ann.annotation_id,
                         "annotation_type": ann.annotation_type,
+                        "thread_id": ann.thread_id or "",
+                        "in_reply_to": ann.in_reply_to or "",
                         "author": ann.author,
                         "body": ann.body,
                         "created_at": ann.created_at.isoformat(),

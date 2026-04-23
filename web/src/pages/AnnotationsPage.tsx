@@ -96,8 +96,8 @@ export default function AnnotationsPage() {
   // 点击处理
   const handleCardClick = (ann: AnnotationListItem) => {
     // 邮件批注点击打开线程抽屉
-    if (ann.annotation_type === 'email' && ann.thread_id) {
-      console.log('Opening thread drawer for:', ann.thread_id); // 调试日志
+    if (ann.annotation_type === 'email' && ann.thread_id && ann.thread_id !== '') {
+      console.log('Opening thread drawer for:', ann.thread_id);
       setDrawerThreadId(ann.thread_id);
     }
     // 代码标注点击跳转内核浏览器
@@ -128,68 +128,66 @@ export default function AnnotationsPage() {
         />
         <button
           onClick={handleSearch}
-          className="px-4 py-2.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors"
+          className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
         >
           Search
         </button>
         {q && (
           <button
             onClick={handleClear}
-            className="px-4 py-2.5 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300 transition-colors"
+            className="px-4 py-2.5 border border-gray-300 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
           >
             Clear
           </button>
         )}
-        {/* 筛选下拉 */}
-        <select
-          value={filter}
-          onChange={(e) => handleFilterChange(e.target.value as FilterType)}
-          className="px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none"
-        >
-          <option value="all">全部</option>
-          <option value="email">邮件批注</option>
-          <option value="code">代码标注</option>
-        </select>
       </div>
 
-      {/* Stats */}
-      <div className="flex items-center gap-4 mb-4 text-sm text-gray-500">
-        <span>
-          {total} annotation{total !== 1 ? 's' : ''}
-          {q && <span> matching "{q}"</span>}
-        </span>
-        {totalPages > 1 && (
-          <span>
-            Page {page} of {totalPages}
-          </span>
-        )}
+      {/* 筛选标签 */}
+      <div className="flex gap-2 mb-4">
+        {(['all', 'email', 'code'] as FilterType[]).map((f) => (
+          <button
+            key={f}
+            onClick={() => handleFilterChange(f)}
+            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+              filter === f
+                ? f === 'all' ? 'bg-gray-800 text-white' : f === 'email' ? 'bg-blue-600 text-white' : 'bg-green-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {f === 'all' ? 'All' : f === 'email' ? 'Email Annotations' : 'Code Annotations'}
+          </button>
+        ))}
       </div>
 
-      {/* Error */}
+      {/* Loading/Error state */}
+      {loading && (
+        <div className="flex justify-center items-center py-12">
+          <div className="animate-spin h-8 w-8 border-4 border-indigo-600 border-t-transparent rounded-full"></div>
+        </div>
+      )}
+
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-4">
           {error}
         </div>
       )}
 
-      {/* Loading */}
-      {loading && (
-        <div className="flex items-center justify-center py-12">
-          <div className="animate-spin h-6 w-6 border-2 border-indigo-400 border-t-transparent rounded-full" />
-          <span className="ml-3 text-gray-500">Loading...</span>
+      {/* Results count */}
+      {!loading && !error && (
+        <div className="text-sm text-gray-500 mb-4">
+          {q ? `Found ${total} result${total !== 1 ? 's' : ''} for "${q}"` : `${total} annotations`}
         </div>
       )}
 
-      {/* Empty state */}
-      {!loading && paginatedAnnotations.length === 0 && (
-        <div className="text-center py-12 text-gray-400">
-          {q ? 'No annotations match your search' : 'No annotations yet'}
+      {/* 列表 */}
+      {!loading && !error && paginatedAnnotations.length === 0 && (
+        <div className="text-center py-12 text-gray-500">
+          {q ? 'No annotations found matching your search.' : 'No annotations yet.'}
         </div>
       )}
 
-      {/* Annotation cards */}
-      {!loading && paginatedAnnotations.length > 0 && (
-        <div className="space-y-3">
+      {!loading && !error && paginatedAnnotations.length > 0 && (
+        <div className="space-y-4">
           {paginatedAnnotations.map((ann) => (
             <div
               key={ann.annotation_id}

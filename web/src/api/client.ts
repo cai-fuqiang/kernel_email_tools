@@ -213,7 +213,7 @@ export async function askQuestion(
 }
 
 export async function getThread(threadId: string): Promise<ThreadResponse> {
-  return fetchJSON<ThreadResponse>(`${API_BASE}/thread/${encodeURIComponent(threadId)}`);
+  return fetchJSON<ThreadResponse>(`${API_BASE}/thread/${threadId}`);
 }
 
 export async function getStats(): Promise<StatsResponse> {
@@ -442,7 +442,7 @@ export async function deleteAnnotation(annotationId: string): Promise<void> {
 }
 
 export async function exportAnnotations(threadId?: string): Promise<Record<string, unknown>> {
-  const params = threadId ? `?thread_id=${encodeURIComponent(threadId)}` : '';
+  const params = threadId ? `?thread_id=${threadId}` : '';
   const res = await fetch(`${API_BASE}/annotations/export${params}`, {
     method: 'POST',
   });
