@@ -581,6 +581,16 @@ function AnnotationPanel({
                     </span>
                     <div className="flex items-center gap-2">
                       <button
+                        onClick={() => {
+                          // 回复功能：复用创建模态框，自动填充 in_reply_to
+                          setEditingAnnotation(a);
+                          setShowCreateModal(true);
+                        }}
+                        className="text-[10px] text-gray-400 hover:text-green-500"
+                      >
+                        Reply
+                      </button>
+                      <button
                         onClick={() => setEditingAnnotation(a)}
                         className="text-[10px] text-gray-400 hover:text-blue-500"
                       >

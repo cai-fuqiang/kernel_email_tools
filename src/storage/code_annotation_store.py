@@ -84,6 +84,7 @@ class CodeAnnotationStore:
                 end_line=data.end_line,
                 anchor_context=anchor_context,
                 body=data.body,
+                in_reply_to=data.in_reply_to,
                 author=author,
                 created_at=now,
                 updated_at=now,

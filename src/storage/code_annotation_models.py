@@ -52,6 +52,7 @@ class CodeAnnotationORM(CodeAnnotationBase):
     start_line: Mapped[int] = mapped_column(Integer, nullable=False)
     end_line: Mapped[int] = mapped_column(Integer, nullable=False)
     anchor_context: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    in_reply_to: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)  # 回复的父 annotation_id
     body: Mapped[str] = mapped_column(Text, nullable=False)
     author: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
     created_at: Mapped[datetime] = mapped_column(
@@ -86,6 +87,7 @@ class CodeAnnotationCreate(BaseModel):
     end_line: int = Field(..., ge=1, description="结束行号")
     body: str = Field(..., min_length=1, description="注释正文（支持 Markdown）")
     author: Optional[str] = Field("me", description="作者名称")
+    in_reply_to: Optional[str] = Field(None, description="回复的父 annotation_id")
 
 
 class CodeAnnotationUpdate(BaseModel):
@@ -103,6 +105,7 @@ class CodeAnnotationRead(BaseModel):
     body: str
     author: str
     created_at: datetime
+    in_reply_to: Optional[str]
     updated_at: datetime
 
     class Config:
@@ -119,6 +122,7 @@ class CodeAnnotationListItem(BaseModel):
     body: str
     author: str
     created_at: datetime
+    in_reply_to: Optional[str]
     updated_at: datetime
     # 关联上下文（可选，用于总览页展示）
     context_snippet: Optional[str] = None

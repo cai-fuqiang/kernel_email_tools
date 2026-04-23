@@ -1656,6 +1656,7 @@ class CodeAnnotationCreateRequest(BaseModel):
     end_line: int = Field(..., ge=1, description="结束行号")
     body: str = Field(..., min_length=1, description="注释正文（支持 Markdown）")
     author: Optional[str] = Field(None, description="作者名称")
+    in_reply_to: Optional[str] = Field(None, description="回复的父 annotation_id")
 
 
 class CodeAnnotationUpdateRequest(BaseModel):
@@ -1730,6 +1731,7 @@ async def get_file_code_annotations(version: str, path: str):
             "body": a.body,
             "author": a.author,
             "created_at": a.created_at.isoformat(),
+            "in_reply_to": a.in_reply_to,
             "updated_at": a.updated_at.isoformat(),
         }
         for a in annotations
@@ -1747,6 +1749,7 @@ async def create_code_annotation(request: CodeAnnotationCreateRequest):
             CodeAnnotationCreate(
                 version=request.version,
                 file_path=request.file_path,
+                in_reply_to=request.in_reply_to,
                 start_line=request.start_line,
                 end_line=request.end_line,
                 body=request.body,
@@ -1759,6 +1762,7 @@ async def create_code_annotation(request: CodeAnnotationCreateRequest):
             "version": annotation.version,
             "file_path": annotation.file_path,
             "start_line": annotation.start_line,
+            "in_reply_to": annotation.in_reply_to,
             "end_line": annotation.end_line,
             "body": annotation.body,
             "author": annotation.author,
