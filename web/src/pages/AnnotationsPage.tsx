@@ -321,45 +321,114 @@ export default function AnnotationsPage() {
             });
           })()}
           
-          {/* Code 类型标注（不支持展开/折叠，保持原有样式） */}
+          {/* Code 类型标注（支持展开/折叠） */}
           {filter !== 'email' && (() => {
-            // 只显示 code 类型标注，避免与左侧 emailRoots 重复
+            // 只显示 code 类型根标注
             const codeAnnotations = annotations.filter(a => 
               a.annotation_type === 'code' && (!a.in_reply_to || a.in_reply_to === '')
             );
-            return codeAnnotations.map(ann => (
-              <div
-                key={ann.annotation_id}
-                className="cursor-pointer hover:opacity-90 transition-opacity"
-                onClick={() => handleCardClick(ann)}
-              >
-                <AnnotationCard
-                  author={ann.author}
-                  body={ann.body}
-                  created_at={ann.created_at}
-                  updated_at={ann.updated_at}
-                  variant={ann.annotation_type}
-                  version={ann.version}
-                  file_path={ann.file_path}
-                  start_line={ann.start_line}
-                  end_line={ann.end_line}
-                  onEdit={(body) => {
-                    updateAnnotation(ann.annotation_id, body).then(() => {
-                      setAnnotations(prev =>
-                        prev.map(a =>
-                          a.annotation_id === ann.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
-                        )
-                      );
-                    });
-                  }}
-                  onDelete={() => handleDeleteAnnotation(ann.annotation_id)}
-                  onPreview={ann.annotation_type === 'code' ? (e: React.MouseEvent) => {
-                    e.stopPropagation();
-                    setPreviewAnnotation(ann);
-                  } : undefined}
-                />
-              </div>
-            ));
+            return codeAnnotations.map(ann => {
+              const isExpanded = expandedIds.has(ann.annotation_id);
+              const replies = getReplies(ann.annotation_id);
+              const replyCount = replyCounts[ann.annotation_id] || 0;
+              
+              return (
+                <div key={ann.annotation_id} className="space-y-2">
+                  {/* 顶级标注 - 点击卡片展开/折叠，点击 Goto 跳转 */}
+                  <div className="flex items-start gap-2 mb-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleExpand(ann.annotation_id);
+                      }}
+                      className="text-xs text-gray-400 hover:text-gray-600 w-5 mt-0.5"
+                    >
+                      {isExpanded ? '▼' : '▶'}
+                    </button>
+                    <div className="flex-1 cursor-pointer hover:opacity-90 transition-opacity">
+                      <AnnotationCard
+                        author={ann.author}
+                        body={ann.body}
+                        created_at={ann.created_at}
+                        updated_at={ann.updated_at}
+                        variant={ann.annotation_type}
+                        version={ann.version}
+                        file_path={ann.file_path}
+                        start_line={ann.start_line}
+                        end_line={ann.end_line}
+                        showGoto={true}
+                        onGoto={() => {
+                          // Goto 按钮跳转到 KernelCodePage
+                          navigate(`/kernel-code?v=${encodeURIComponent(ann.version || '')}&path=${encodeURIComponent(ann.file_path || '')}&line=${ann.start_line}`);
+                        }}
+                        onEdit={(body) => {
+                          updateAnnotation(ann.annotation_id, body).then(() => {
+                            setAnnotations(prev =>
+                              prev.map(a =>
+                                a.annotation_id === ann.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
+                              )
+                            );
+                          });
+                        }}
+                        onDelete={() => handleDeleteAnnotation(ann.annotation_id)}
+                        onPreview={(e) => {
+                          e.stopPropagation();
+                          setPreviewAnnotation(ann);
+                        }}
+                      />
+                    </div>
+                  </div>
+                  {replyCount > 0 && (
+                    <span className="text-[10px] text-gray-400 ml-7">
+                      {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
+                    </span>
+                  )}
+                  
+                  {/* 展开的回复 */}
+                  {isExpanded && replies.map(reply => (
+                    <div key={reply.annotation_id} className="ml-7 border-l-4 border-l-green-500 pl-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-[10px] text-green-500 bg-green-50 px-1.5 py-0.5 rounded">
+                          Reply
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          {reply.author}
+                        </span>
+                      </div>
+                      <AnnotationCard
+                        author={reply.author}
+                        body={reply.body}
+                        created_at={reply.created_at}
+                        updated_at={reply.updated_at}
+                        variant={reply.annotation_type}
+                        version={reply.version}
+                        file_path={reply.file_path}
+                        start_line={reply.start_line}
+                        end_line={reply.end_line}
+                        showGoto={true}
+                        onGoto={() => {
+                          navigate(`/kernel-code?v=${encodeURIComponent(reply.version || '')}&path=${encodeURIComponent(reply.file_path || '')}&line=${reply.start_line}`);
+                        }}
+                        onEdit={(body) => {
+                          updateAnnotation(reply.annotation_id, body).then(() => {
+                            setAnnotations(prev =>
+                              prev.map(a =>
+                                a.annotation_id === reply.annotation_id ? { ...a, body, updated_at: new Date().toISOString() } : a
+                              )
+                            );
+                          });
+                        }}
+                        onDelete={() => handleDeleteAnnotation(reply.annotation_id)}
+                        onPreview={(e) => {
+                          e.stopPropagation();
+                          setPreviewAnnotation(reply);
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              );
+            });
           })()}
         </div>
       )}

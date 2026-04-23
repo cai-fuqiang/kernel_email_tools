@@ -24,6 +24,9 @@ interface AnnotationCardProps {
   thread_id?: string;
   // 点击回调
   onClick?: () => void;
+  // 是否显示 Goto 按钮（用于代码标注跳转）
+  showGoto?: boolean;
+  onGoto?: () => void;
 }
 
 /**
@@ -47,6 +50,8 @@ export default function AnnotationCard({
   email_subject,
   email_sender,
   onClick,
+  showGoto,
+  onGoto,
 }: AnnotationCardProps) {
   const [editing, setEditing] = useState(false);
   const [editBody, setEditBody] = useState(body);
@@ -159,6 +164,17 @@ export default function AnnotationCard({
                 </span>
               )}
             </span>
+          )}
+          {showGoto && onGoto && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onGoto();
+              }}
+              className="ml-auto text-[10px] text-blue-500 hover:text-blue-700 font-medium px-2 py-0.5 rounded hover:bg-blue-50 transition-colors"
+            >
+              Goto
+            </button>
           )}
         </div>
       )}
