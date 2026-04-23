@@ -1717,10 +1717,10 @@ async def list_code_annotations(
 @app.get("/api/kernel/annotations/{version}/{path:path}")
 async def get_file_code_annotations(version: str, path: str):
     """获取指定文件的注释列表。"""
-    if not _annotation_store:
-        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+    if not _code_annotation_store:
+        raise HTTPException(status_code=503, detail="Code annotation store not initialized")
 
-    annotations = await _annotation_store.list_by_code(version, path)
+    annotations = await _code_annotation_store.list_by_file(version, path)
     return [
         {
             "annotation_id": a.annotation_id,
