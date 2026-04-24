@@ -545,6 +545,10 @@ export interface TranslationJobItem {
 export interface TranslationJobResponse {
   job_id: string;
   thread_id: string;
+  subject: string;
+  sender: string;
+  date: string | null;
+  email_count: number;
   status: 'pending' | 'running' | 'completed' | 'completed_with_errors' | 'failed';
   total: number;
   completed: number;
@@ -555,6 +559,11 @@ export interface TranslationJobResponse {
   error: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface TranslationJobListResponse {
+  jobs: TranslationJobResponse[];
+  total: number;
 }
 
 export async function translateText(
@@ -611,6 +620,10 @@ export async function startThreadTranslation(
 
 export async function getTranslationJob(jobId: string): Promise<TranslationJobResponse> {
   return fetchJSON(`${API_BASE}/translate/jobs/${encodeURIComponent(jobId)}`);
+}
+
+export async function listTranslationJobs(status: 'active' | 'all' = 'active'): Promise<TranslationJobListResponse> {
+  return fetchJSON(`${API_BASE}/translate/jobs?status=${encodeURIComponent(status)}`);
 }
 
 export async function getTranslateHealth(): Promise<{

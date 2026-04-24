@@ -1,5 +1,6 @@
 """Google Translate 翻译器实现 - 直接调用 Google Translate API。"""
 
+import asyncio
 import logging
 import urllib.request
 import urllib.parse
@@ -59,9 +60,9 @@ class GoogleTranslator(BaseTranslator):
         source = _map_language_code(source_lang)
         target = _map_language_code(target_lang)
 
-        return await self._translate_direct(text, source, target)
+        return await asyncio.to_thread(self._translate_direct_sync, text, source, target)
 
-    async def _translate_direct(
+    def _translate_direct_sync(
         self,
         text: str,
         source_lang: str,

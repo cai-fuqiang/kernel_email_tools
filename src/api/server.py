@@ -925,6 +925,10 @@ class TranslationJobResponse(BaseModel):
     """线程翻译任务状态。"""
     job_id: str
     thread_id: str
+    subject: str = ""
+    sender: str = ""
+    date: Optional[str] = None
+    email_count: int = 0
     status: str
     total: int = 0
     completed: int = 0
@@ -935,6 +939,12 @@ class TranslationJobResponse(BaseModel):
     error: str = ""
     created_at: str
     updated_at: str
+
+
+class TranslationJobListResponse(BaseModel):
+    """运行中的线程翻译任务列表。"""
+    jobs: list[TranslationJobResponse]
+    total: int
 
 
 def _translation_job_to_response(job: dict) -> TranslationJobResponse:
@@ -954,6 +964,10 @@ def _translation_job_to_response(job: dict) -> TranslationJobResponse:
     return TranslationJobResponse(
         job_id=job["job_id"],
         thread_id=job["thread_id"],
+        subject=job.get("subject", ""),
+        sender=job.get("sender", ""),
+        date=job.get("date"),
+        email_count=int(job.get("email_count", 0) or 0),
         status=job["status"],
         total=total,
         completed=completed,
@@ -1123,6 +1137,15 @@ async def _run_thread_translation_job(job_id: str) -> None:
         emails = await _storage.get_thread(thread_id)
         if not emails:
             raise ValueError(f"Thread not found: {thread_id}")
+
+        first_email = emails[0]
+        _touch_translation_job(
+            job_id,
+            subject=first_email.subject or "",
+            sender=first_email.sender or "",
+            date=first_email.date.isoformat() if first_email.date else None,
+            email_count=len(emails),
+        )
 
         inputs = _extract_thread_translation_inputs(emails)
         _touch_translation_job(job_id, total=len(inputs))
@@ -2326,6 +2349,24 @@ async def get_translation_job(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail=f"Translation job not found: {job_id}")
     return _translation_job_to_response(job)
+
+
+@app.get("/api/translate/jobs", response_model=TranslationJobListResponse)
+async def list_translation_jobs(
+    status: str = Query("active", description="active | all"),
+):
+    """列出线程翻译任务。"""
+    if status == "active":
+        jobs = [
+            _translation_job_to_response(job)
+            for job in _translation_jobs.values()
+            if job.get("status") in {"pending", "running"}
+        ]
+    else:
+        jobs = [_translation_job_to_response(job) for job in _translation_jobs.values()]
+
+    jobs.sort(key=lambda job: job.updated_at, reverse=True)
+    return TranslationJobListResponse(jobs=jobs, total=len(jobs))
 
 
 @app.get("/api/translate/health")
