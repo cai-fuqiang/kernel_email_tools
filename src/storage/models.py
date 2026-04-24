@@ -156,7 +156,6 @@ class AnnotationORM(Base):
         UniqueConstraint("annotation_id", name="uq_annotations_annotation_id"),
         Index("ix_annotations_type", "annotation_type"),
         Index("ix_annotations_target", "target_type", "target_ref"),
-        Index("ix_annotations_thread_id", "thread_id"),
         Index("ix_annotations_code", "version", "file_path"),
     )
 

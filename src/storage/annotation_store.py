@@ -68,6 +68,34 @@ class UnifiedAnnotationStore:
         self.session_factory = session_factory
         self.default_author = default_author
 
+    def _to_annotation_read(self, ann: AnnotationORM) -> AnnotationRead:
+        """Normalize nullable ORM fields to the API's stable read shape."""
+        anchor = ann.anchor or {}
+        return AnnotationRead.model_validate(
+            {
+                "id": ann.id,
+                "annotation_id": ann.annotation_id,
+                "annotation_type": ann.annotation_type,
+                "author": ann.author,
+                "body": ann.body,
+                "parent_annotation_id": ann.parent_annotation_id or "",
+                "created_at": ann.created_at,
+                "updated_at": ann.updated_at,
+                "target_type": ann.target_type or "",
+                "target_ref": ann.target_ref or "",
+                "target_label": ann.target_label or "",
+                "target_subtitle": ann.target_subtitle or "",
+                "anchor": anchor,
+                "thread_id": ann.thread_id or "",
+                "in_reply_to": ann.in_reply_to or "",
+                "version": ann.version or "",
+                "file_path": ann.file_path or "",
+                "start_line": ann.start_line or int(anchor.get("start_line", 0) or 0),
+                "end_line": ann.end_line or int(anchor.get("end_line", 0) or 0),
+                "meta": ann.meta or {},
+            }
+        )
+
     async def create(self, annotation: AnnotationCreate, content_for_hash: str = "") -> AnnotationRead:
         """创建标注或回复。"""
         data = _normalize_annotation_payload(annotation)
@@ -149,7 +177,7 @@ class UnifiedAnnotationStore:
             await session.commit()
             await session.refresh(orm)
             logger.info("Created %s annotation %s", data.annotation_type, annotation_id)
-            return AnnotationRead.model_validate(orm)
+            return self._to_annotation_read(orm)
 
     async def list_by_thread(self, thread_id: str) -> list[AnnotationRead]:
         async with self.session_factory() as session:
@@ -159,7 +187,7 @@ class UnifiedAnnotationStore:
                 .order_by(AnnotationORM.created_at.asc())
             )
             result = await session.execute(stmt)
-            return [AnnotationRead.model_validate(row) for row in result.scalars().all()]
+            return [self._to_annotation_read(row) for row in result.scalars().all()]
 
     async def list_by_code(self, version: str, file_path: str) -> list[AnnotationRead]:
         async with self.session_factory() as session:
@@ -171,7 +199,7 @@ class UnifiedAnnotationStore:
                 .order_by(AnnotationORM.start_line.asc(), AnnotationORM.created_at.asc())
             )
             result = await session.execute(stmt)
-            return [AnnotationRead.model_validate(row) for row in result.scalars().all()]
+            return [self._to_annotation_read(row) for row in result.scalars().all()]
 
     async def list_all(
         self,
@@ -270,7 +298,7 @@ class UnifiedAnnotationStore:
             orm.updated_at = datetime.utcnow()
             await session.commit()
             await session.refresh(orm)
-            return AnnotationRead.model_validate(orm)
+            return self._to_annotation_read(orm)
 
     async def delete(self, annotation_id: str) -> bool:
         async with self.session_factory() as session:
@@ -286,7 +314,7 @@ class UnifiedAnnotationStore:
                 select(AnnotationORM).where(AnnotationORM.annotation_id == annotation_id)
             )
             orm = result.scalar_one_or_none()
-            return AnnotationRead.model_validate(orm) if orm else None
+            return self._to_annotation_read(orm) if orm else None
 
     async def export_thread(self, thread_id: str) -> dict:
         annotations = await self.list_by_thread(thread_id)
