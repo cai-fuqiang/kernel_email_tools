@@ -3,6 +3,8 @@ interface AnnotationActionsProps {
   onDelete: () => void;
   onReply?: () => void;
   onPreview?: (e: React.MouseEvent) => void;
+  showEdit?: boolean;
+  showDelete?: boolean;
   showReply?: boolean;
   showPreview?: boolean;
   variant: 'email' | 'code';
@@ -19,6 +21,8 @@ interface AnnotationActionsProps {
   onDelete: () => void;
   onReply?: () => void;
   onPreview?: (e: React.MouseEvent) => void;
+  showEdit?: boolean;
+  showDelete?: boolean;
   showReply?: boolean;
   showPreview?: boolean;
   variant: 'email' | 'code';
@@ -29,6 +33,8 @@ export default function AnnotationActions({
   onDelete, 
   onReply, 
   onPreview,
+  showEdit = true,
+  showDelete = true,
   showReply = false,
   showPreview = false,
   variant 
@@ -60,18 +66,22 @@ export default function AnnotationActions({
           Preview
         </button>
       )}
-      <button
-        onClick={onEdit}
-        className={`text-xs px-2 py-1 rounded transition-colors ${baseColorClass}`}
-      >
-        编辑
-      </button>
-      <button
-        onClick={onDelete}
-        className={`text-xs px-2 py-1 rounded transition-colors ${deleteColorClass}`}
-      >
-        删除
-      </button>
+      {showEdit && (
+        <button
+          onClick={onEdit}
+          className={`text-xs px-2 py-1 rounded transition-colors ${baseColorClass}`}
+        >
+          编辑
+        </button>
+      )}
+      {showDelete && (
+        <button
+          onClick={onDelete}
+          className={`text-xs px-2 py-1 rounded transition-colors ${deleteColorClass}`}
+        >
+          删除
+        </button>
+      )}
     </div>
   );
 }

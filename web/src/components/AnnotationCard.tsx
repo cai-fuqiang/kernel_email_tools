@@ -220,6 +220,8 @@ export default function AnnotationCard({
               onDelete={resolvedCanManage ? onDelete : () => {}}
               onReply={resolvedCanReply ? onReply : () => {}}
               onPreview={onJump ? (() => onJump()) : undefined}
+              showEdit={resolvedCanManage}
+              showDelete={resolvedCanManage}
               showReply={resolvedCanReply}
               showPreview={!!onJump}
               variant={annotationType === 'code' ? 'code' : 'email'}
