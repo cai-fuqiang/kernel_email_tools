@@ -129,7 +129,7 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
       await createAnnotation({
         annotation_type: parent.annotation_type,
         body: replyBody.trim(),
-        visibility: parent.visibility,
+        visibility: isAdmin ? parent.visibility : 'private',
         parent_annotation_id: parent.annotation_id,
         target_type: parent.target_type,
         target_ref: parent.target_ref,
