@@ -25,6 +25,7 @@ interface AnnotationCardProps {
   onWithdrawPublish?: () => void;
   onApprovePublish?: () => void;
   onRejectPublish?: () => void;
+  onPreview?: () => void;
   onJump?: () => void;
   canManage?: boolean;
   canReply?: boolean;
@@ -68,6 +69,7 @@ export default function AnnotationCard({
   onWithdrawPublish,
   onApprovePublish,
   onRejectPublish,
+  onPreview,
   onJump,
   canManage,
   canReply,
@@ -219,11 +221,11 @@ export default function AnnotationCard({
               }}
               onDelete={resolvedCanManage ? onDelete : () => {}}
               onReply={resolvedCanReply ? onReply : () => {}}
-              onPreview={onJump ? (() => onJump()) : undefined}
+              onPreview={onPreview ? (() => onPreview()) : undefined}
               showEdit={resolvedCanManage}
               showDelete={resolvedCanManage}
               showReply={resolvedCanReply}
-              showPreview={!!onJump}
+              showPreview={!!onPreview}
               variant={annotationType === 'code' ? 'code' : 'email'}
             />
           ) : onJump ? (

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight, FileText, Mail, ScrollText } from 'lucide-react';
 import AnnotationCard from './AnnotationCard';
+import PreviewModal from './PreviewModal';
 import ThreadDrawer from './ThreadDrawer';
 import {
   approveAnnotationPublication,
@@ -78,6 +79,7 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
   const { canWrite, currentUser, isAdmin } = useAuth();
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [drawerThreadId, setDrawerThreadId] = useState<string | null>(null);
+  const [previewAnnotation, setPreviewAnnotation] = useState<AnnotationListItem | null>(null);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyBody, setReplyBody] = useState('');
   const [replyLoading, setReplyLoading] = useState(false);
@@ -152,6 +154,20 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
     } finally {
       setReplyLoading(false);
     }
+  };
+
+  const handlePreview = (annotation: AnnotationListItem) => {
+    if (annotation.target_type === 'email_thread' && annotation.thread_id) {
+      setDrawerThreadId(annotation.thread_id);
+      return;
+    }
+
+    if (annotation.target_type === 'kernel_file' && annotation.version && annotation.file_path) {
+      setPreviewAnnotation(annotation);
+      return;
+    }
+
+    handleJump(annotation);
   };
 
   const renderNode = (node: TreeNode) => {
@@ -305,6 +321,7 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
                 setReplyingTo(annotation.annotation_id);
                 setReplyBody('');
               }}
+              onPreview={() => handlePreview(annotation)}
               onJump={() => handleJump(annotation)}
             />
           </div>
@@ -357,6 +374,7 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
   return (
     <>
       <div className="space-y-4">{tree.map((node) => renderNode(node))}</div>
+      <PreviewModal isOpen={!!previewAnnotation} onClose={() => setPreviewAnnotation(null)} annotation={previewAnnotation} />
       {drawerThreadId && <ThreadDrawer threadId={drawerThreadId} onClose={() => setDrawerThreadId(null)} />}
     </>
   );

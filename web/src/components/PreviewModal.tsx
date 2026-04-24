@@ -1,20 +1,20 @@
 import { useEffect, useState, useCallback } from 'react';
-import type { CodeAnnotation } from '../api/types';
+import type { AnnotationListItem, CodeAnnotation } from '../api/types';
 import { getKernelFile } from '../api/client';
 import AnnotationMarkdown from './AnnotationMarkdown';
 
 interface PreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
-  annotation: CodeAnnotation | null;
+  annotation: CodeAnnotation | AnnotationListItem | null;
 }
 
 export default function PreviewModal({ isOpen, onClose, annotation }: PreviewModalProps) {
   const [codeLines, setCodeLines] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [currentAnnotation, setCurrentAnnotation] = useState<CodeAnnotation | null>(null);
+  const [currentAnnotation, setCurrentAnnotation] = useState<CodeAnnotation | AnnotationListItem | null>(null);
 
-  const loadCode = useCallback(async (ann: CodeAnnotation) => {
+  const loadCode = useCallback(async (ann: CodeAnnotation | AnnotationListItem) => {
     setLoading(true);
     try {
       const file = await getKernelFile(ann.version, ann.file_path);
