@@ -33,6 +33,7 @@ from src.storage.models import (
     AnnotationUpdate,
     CurrentUserRead,
     EmailRead,
+    KernelSymbolRead,
     TagAssignmentCreate,
     TagAssignmentORM,
     TagAssignmentRead,
@@ -48,6 +49,7 @@ from src.storage.models import (
     UserUpdate,
 )
 from src.storage.postgres import PostgresStorage
+from src.storage.symbol_store import KernelSymbolStore
 from src.storage.tag_store import (
     TARGET_TYPE_ANNOTATION,
     TARGET_TYPE_EMAIL_MESSAGE,
@@ -87,6 +89,7 @@ _annotation_store: Optional[AnnotationStore] = None
 
 # 内核源码浏览组件
 _kernel_source: Optional[GitLocalSource] = None
+_symbol_store: Optional[KernelSymbolStore] = None
 
 # 认证配置
 _auth_config: dict = {}
@@ -94,6 +97,7 @@ _auth_config: dict = {}
 VALID_ROLES = {"admin", "editor", "viewer"}
 VALID_VISIBILITY = {"public", "private"}
 VALID_APPROVAL_STATUS = {"pending", "approved", "rejected"}
+SYMBOL_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def _load_config() -> dict:
@@ -231,6 +235,43 @@ def _fallback_user() -> Optional[CurrentUser]:
         status=str(fallback.get("status", "active")).strip() or "active",
         auth_source="fallback",
     )
+
+
+def _extract_symbol_at_position(content: str, line: int, column: int) -> Optional[str]:
+    if line <= 0 or column <= 0:
+        return None
+
+    lines = content.splitlines()
+    if line > len(lines):
+        return None
+
+    line_text = lines[line - 1]
+    if not line_text:
+        return None
+
+    zero_based = min(max(column - 1, 0), max(len(line_text) - 1, 0))
+    for match in SYMBOL_RE.finditer(line_text):
+        if match.start() <= zero_based < match.end():
+            return match.group(0)
+    return None
+
+
+def _serialize_symbol(symbol: KernelSymbolRead) -> dict:
+    return {
+        "id": symbol.id,
+        "version": symbol.version,
+        "file_path": symbol.file_path,
+        "symbol": symbol.symbol,
+        "kind": symbol.kind,
+        "line": symbol.line,
+        "column": symbol.column,
+        "end_line": symbol.end_line,
+        "end_column": symbol.end_column,
+        "signature": symbol.signature,
+        "scope": symbol.scope,
+        "language": symbol.language,
+        "meta": symbol.meta,
+    }
 
 
 async def _sync_user_record(current_user: CurrentUser) -> CurrentUser:
@@ -591,7 +632,7 @@ async def lifespan(app: FastAPI):
     global _manual_storage, _manual_retriever, _manual_qa
     global _translator, _translation_cache
     global _annotation_store
-    global _kernel_source
+    global _kernel_source, _symbol_store
     global _auth_config
 
     config = _load_config()
@@ -671,6 +712,9 @@ async def lifespan(app: FastAPI):
         default_author=annotations_cfg.get("default_author", "me"),
     )
     logger.info("Annotation store initialized")
+
+    _symbol_store = KernelSymbolStore(_storage.session_factory)
+    logger.info("Kernel symbol store initialized")
 
     # ========== 芯片手册存储初始化 ==========
     manual_storage_cfg = storage_cfg.get("manual", {})
@@ -3134,6 +3178,73 @@ async def kernel_file(version: str, path: str):
         "line_count": file_content.line_count,
         "size": file_content.size,
         "truncated": file_content.truncated,
+    }
+
+
+@app.get("/api/kernel/symbol/definition")
+async def kernel_symbol_definition(
+    version: str = Query(..., description="Kernel version tag"),
+    symbol: str = Query(..., description="Identifier name"),
+    current_path: Optional[str] = Query(None, description="Current file path for ranking"),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """按 symbol 查询定义候选。"""
+    if not _symbol_store:
+        raise HTTPException(status_code=503, detail="Kernel symbol store not initialized")
+
+    candidates = await _symbol_store.find_definitions(
+        version=version,
+        symbol=symbol,
+        current_path=current_path,
+        limit=limit,
+    )
+    return {
+        "version": version,
+        "symbol": symbol.strip(),
+        "candidates": [_serialize_symbol(item) for item in candidates],
+        "total": len(candidates),
+    }
+
+
+@app.get("/api/kernel/symbol/resolve")
+async def kernel_symbol_resolve(
+    version: str = Query(..., description="Kernel version tag"),
+    path: str = Query(..., description="Current file path"),
+    line: int = Query(..., ge=1),
+    column: int = Query(..., ge=1),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """根据文件位置提取 symbol 并返回定义候选。"""
+    if not _kernel_source:
+        raise HTTPException(status_code=503, detail="Kernel source not initialized")
+    if not _symbol_store:
+        raise HTTPException(status_code=503, detail="Kernel symbol store not initialized")
+
+    try:
+        file_content = await _kernel_source.get_file(version, path)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    symbol = _extract_symbol_at_position(file_content.content, line, column)
+    if not symbol:
+        raise HTTPException(status_code=404, detail="No symbol found at the requested position")
+
+    candidates = await _symbol_store.find_definitions(
+        version=version,
+        symbol=symbol,
+        current_path=path,
+        limit=limit,
+    )
+    return {
+        "version": version,
+        "path": path,
+        "line": line,
+        "column": column,
+        "symbol": symbol,
+        "candidates": [_serialize_symbol(item) for item in candidates],
+        "total": len(candidates),
     }
 
 

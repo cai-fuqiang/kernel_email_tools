@@ -10,6 +10,7 @@ import {
   getKernelVersions,
   getKernelTree,
   getKernelFile,
+  getKernelSymbolDefinition,
   getCodeAnnotations,
   createCodeAnnotation,
   updateCodeAnnotation,
@@ -20,6 +21,7 @@ import type {
   KernelTreeEntry,
   KernelFileResponse,
   CodeAnnotation,
+  KernelSymbol,
 } from '../api/types';
 import { useAuth } from '../auth';
 
@@ -191,6 +193,7 @@ function CodeView({
   highlightLine,
   onLineClick,
   onLineRangeSelect,
+  onSymbolSelect,
   selectedLines,
   selectedRange,
 }: {
@@ -199,6 +202,7 @@ function CodeView({
   highlightLine: number | null;
   onLineClick: (line: number, event?: MouseEvent) => void;
   onLineRangeSelect: (start: number, end: number) => void;
+  onSymbolSelect: (symbol: string | null) => void;
   selectedLines: Set<number>;
   selectedRange: [number, number] | null;
 }) {
@@ -268,6 +272,16 @@ function CodeView({
       }
       setSelStart(null);
     }
+  };
+
+  const handleCodeMouseUp = () => {
+    const selection = window.getSelection();
+    const selectedText = selection?.toString().trim() || '';
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(selectedText)) {
+      onSymbolSelect(selectedText);
+      return;
+    }
+    onSymbolSelect(null);
   };
 
   // 计算高亮行
@@ -359,7 +373,9 @@ function CodeView({
                       <span className="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full ml-1" />
                     )}
                   </td>
-                  <td className="pl-4 whitespace-pre"><code dangerouslySetInnerHTML={{ __html: highlightedLines[idx] }} /></td>
+                  <td className="pl-4 whitespace-pre" onMouseUp={handleCodeMouseUp}>
+                    <code dangerouslySetInnerHTML={{ __html: highlightedLines[idx] }} />
+                  </td>
                 </tr>
               );
             })}
@@ -799,6 +815,64 @@ function AnnotationPanel({
   );
 }
 
+function SymbolCandidatesModal({
+  symbol,
+  candidates,
+  onClose,
+  onSelect,
+}: {
+  symbol: string;
+  candidates: KernelSymbol[];
+  onClose: () => void;
+  onSelect: (candidate: KernelSymbol) => void;
+}) {
+  if (!symbol || candidates.length === 0) return null;
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30">
+      <div className="w-full max-w-2xl rounded-xl bg-white shadow-xl border border-gray-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700">Definition Candidates</h3>
+            <p className="text-xs text-gray-400 mt-0.5">{symbol}</p>
+          </div>
+          <button onClick={onClose} className="text-sm text-gray-400 hover:text-gray-600">
+            Close
+          </button>
+        </div>
+        <div className="max-h-[60vh] overflow-y-auto p-2">
+          {candidates.map((candidate) => (
+            <button
+              key={`${candidate.file_path}:${candidate.line}:${candidate.column}:${candidate.kind}`}
+              onClick={() => onSelect(candidate)}
+              className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center gap-2 text-xs">
+                <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-indigo-600 font-medium">
+                  {candidate.kind}
+                </span>
+                <span className="font-mono text-gray-700">{candidate.file_path}</span>
+                <span className="text-gray-400">:{candidate.line}</span>
+              </div>
+              {candidate.signature && (
+                <div className="mt-1 text-[11px] text-gray-500 font-mono">
+                  {candidate.symbol}
+                  {candidate.signature}
+                </div>
+              )}
+              {candidate.scope && (
+                <div className="mt-1 text-[11px] text-gray-400">
+                  scope: {candidate.scope}
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============================================================
 // 主页面
 // ============================================================
@@ -826,6 +900,9 @@ export default function KernelCodePage() {
   const [showAnnotations, setShowAnnotations] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewAnnotation, setPreviewAnnotation] = useState<CodeAnnotation | null>(null);
+  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+  const [symbolLoading, setSymbolLoading] = useState(false);
+  const [symbolCandidates, setSymbolCandidates] = useState<KernelSymbol[]>([]);
 
   // Keyboard handler for Escape to clear selection
   useEffect(() => {
@@ -937,7 +1014,7 @@ export default function KernelCodePage() {
     });
 
   const loadFile = useCallback(
-    async (path: string) => {
+    async (path: string, options?: { targetLine?: number | null }) => {
       if (!selectedVersion) return;
       setFileLoading(true);
       setCurrentPath(path);
@@ -951,11 +1028,11 @@ export default function KernelCodePage() {
         setCurrentFile(fileRes);
         setAnnotations(annotRes);
         setShowAnnotations(annotRes.length > 0);
-        updateUrl(selectedVersion, path);
-        
-        // 如果 URL 中有 line 参数，加载后保持该行选中状态
-        if (urlLine) {
-          setSelectedLines(new Set([urlLine]));
+        const nextLine = options?.targetLine ?? urlLine;
+        updateUrl(selectedVersion, path, nextLine || undefined);
+
+        if (nextLine) {
+          setSelectedLines(new Set([nextLine]));
         } else {
           setSelectedLines(new Set());
         }
@@ -1023,6 +1100,35 @@ export default function KernelCodePage() {
     setShowAnnotations(true);
   };
 
+  const jumpToSymbol = useCallback(
+    async (symbol: string) => {
+      if (!selectedVersion || !currentPath) return;
+      setSymbolLoading(true);
+      setError(null);
+      try {
+        const res = await getKernelSymbolDefinition(selectedVersion, symbol, currentPath);
+        setSelectedSymbol(res.symbol);
+        if (res.total === 0) {
+          setError(`No definition found for symbol "${symbol}" in ${selectedVersion}`);
+          setSymbolCandidates([]);
+          return;
+        }
+        if (res.total === 1) {
+          setSymbolCandidates([]);
+          const candidate = res.candidates[0];
+          await loadFile(candidate.file_path, { targetLine: candidate.line });
+          return;
+        }
+        setSymbolCandidates(res.candidates);
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setSymbolLoading(false);
+      }
+    },
+    [currentPath, loadFile, selectedVersion]
+  );
+
   const refreshAnnotations = useCallback(async () => {
     if (!selectedVersion || !currentPath) return;
     try {
@@ -1050,6 +1156,27 @@ export default function KernelCodePage() {
           </>
         )}
         <div className="ml-auto flex items-center gap-2">
+          {selectedSymbol && (
+            <div className="flex items-center gap-2 rounded-full bg-amber-50 px-2 py-1">
+              <span className="text-[10px] text-amber-700 font-mono">{selectedSymbol}</span>
+              <button
+                onClick={() => jumpToSymbol(selectedSymbol)}
+                disabled={symbolLoading || !currentPath}
+                className="text-[10px] font-medium text-amber-800 hover:text-amber-900 disabled:opacity-50"
+              >
+                {symbolLoading ? 'Resolving...' : 'Go to Definition'}
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedSymbol(null);
+                  setSymbolCandidates([]);
+                }}
+                className="text-[10px] text-amber-600 hover:text-amber-800"
+              >
+                Clear
+              </button>
+            </div>
+          )}
           {annotations.length > 0 && (
             <button
               onClick={() => setShowAnnotations(!showAnnotations)}
@@ -1106,6 +1233,7 @@ export default function KernelCodePage() {
             highlightLine={selectedLines.size === 1 ? Array.from(selectedLines)[0] : null}
             onLineClick={handleLineClick}
             onLineRangeSelect={handleLineRangeSelect}
+            onSymbolSelect={setSelectedSymbol}
             selectedLines={selectedLines}
             selectedRange={selectedRange}
           />
@@ -1130,6 +1258,16 @@ export default function KernelCodePage() {
         isOpen={!!previewAnnotation}
         onClose={() => setPreviewAnnotation(null)}
         annotation={previewAnnotation}
+      />
+
+      <SymbolCandidatesModal
+        symbol={selectedSymbol || ''}
+        candidates={symbolCandidates}
+        onClose={() => setSymbolCandidates([])}
+        onSelect={async (candidate) => {
+          setSymbolCandidates([]);
+          await loadFile(candidate.file_path, { targetLine: candidate.line });
+        }}
       />
     </div>
   );

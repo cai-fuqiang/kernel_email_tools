@@ -1,0 +1,1 @@
+"""Symbol indexer package."""
