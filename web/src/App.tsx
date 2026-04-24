@@ -12,6 +12,7 @@ import UsersPage from './pages/UsersPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import KnowledgePage from './pages/KnowledgePage';
+import AnnotationReviewPage from './pages/AnnotationReviewPage';
 import { AuthProvider, useAuth } from './auth';
 
 function ProtectedRoute() {
@@ -57,6 +58,7 @@ export default function App() {
               <Route path="/manual/ask" element={<ManualAskPage />} />
               <Route path="/kernel-code" element={<KernelCodePage />} />
               <Route path="/users" element={<UsersPage />} />
+              <Route path="/admin/annotation-review" element={<AnnotationReviewPage />} />
             </Route>
           </Route>
         </Routes>

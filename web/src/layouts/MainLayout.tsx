@@ -128,6 +128,12 @@ export default function MainLayout() {
                 </svg>
                 Users
               </NavLink>
+              <NavLink to="/admin/annotation-review" className={linkClass}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2zm0 0V2m10 2V2" />
+                </svg>
+                Annotation Review
+              </NavLink>
             </>
           )}
 
