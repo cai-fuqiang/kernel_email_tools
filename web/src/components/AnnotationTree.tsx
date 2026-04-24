@@ -3,7 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight, FileText, Mail, ScrollText } from 'lucide-react';
 import AnnotationCard from './AnnotationCard';
 import ThreadDrawer from './ThreadDrawer';
-import { createAnnotation, deleteAnnotation, updateAnnotation } from '../api/client';
+import {
+  approveAnnotationPublication,
+  createAnnotation,
+  deleteAnnotation,
+  rejectAnnotationPublication,
+  requestAnnotationPublication,
+  updateAnnotation,
+  withdrawAnnotationPublication,
+} from '../api/client';
 import { useAuth } from '../auth';
 import type { AnnotationListItem } from '../api/types';
 
@@ -214,9 +222,11 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
               author={annotation.author}
               authorUserId={annotation.author_user_id}
               visibility={annotation.visibility}
+              publishStatus={annotation.publish_status}
               body={annotation.body}
               createdAt={annotation.created_at}
               updatedAt={annotation.updated_at}
+              publishReviewComment={annotation.publish_review_comment}
               targetLabel={annotation.target_label || annotation.email_subject || annotation.file_path || annotation.target_ref}
               targetSubtitle={annotation.target_subtitle || annotation.email_sender || annotation.target_type}
               anchorLabel={anchorLabel}
@@ -225,21 +235,70 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
                 (isAdmin ||
                   (canWrite &&
                     annotation.visibility === 'private' &&
+                    annotation.publish_status !== 'pending' &&
                     annotation.author_user_id === currentUser.user_id))
               }
               canReply={canWrite}
+              canRequestPublish={
+                !!currentUser &&
+                !isAdmin &&
+                annotation.visibility === 'private' &&
+                annotation.author_user_id === currentUser.user_id &&
+                annotation.publish_status !== 'pending'
+              }
+              canWithdrawPublish={
+                !!currentUser &&
+                annotation.publish_status === 'pending' &&
+                (isAdmin || annotation.author_user_id === currentUser.user_id)
+              }
+              canApprovePublish={!!currentUser && isAdmin && annotation.publish_status === 'pending'}
+              canRejectPublish={!!currentUser && isAdmin && annotation.publish_status === 'pending'}
               onEdit={async (body) => {
                 if (!currentUser) return;
-                if (!(isAdmin || (annotation.visibility === 'private' && annotation.author_user_id === currentUser.user_id))) return;
+                if (!(isAdmin || (annotation.visibility === 'private' && annotation.publish_status !== 'pending' && annotation.author_user_id === currentUser.user_id))) return;
                 await updateAnnotation(annotation.annotation_id, body);
                 onAnnotationsChange?.();
               }}
               onDelete={async () => {
                 if (!currentUser) return;
-                if (!(isAdmin || (annotation.visibility === 'private' && annotation.author_user_id === currentUser.user_id))) return;
+                if (!(isAdmin || (annotation.visibility === 'private' && annotation.publish_status !== 'pending' && annotation.author_user_id === currentUser.user_id))) return;
                 if (!confirm('确定要删除这个标注吗？')) return;
                 await deleteAnnotation(annotation.annotation_id);
                 onAnnotationsChange?.();
+              }}
+              onRequestPublish={async () => {
+                try {
+                  await requestAnnotationPublication(annotation.annotation_id);
+                  onAnnotationsChange?.();
+                } catch (error) {
+                  alert(error instanceof Error ? error.message : '申请公开失败');
+                }
+              }}
+              onWithdrawPublish={async () => {
+                try {
+                  await withdrawAnnotationPublication(annotation.annotation_id);
+                  onAnnotationsChange?.();
+                } catch (error) {
+                  alert(error instanceof Error ? error.message : '撤回申请失败');
+                }
+              }}
+              onApprovePublish={async () => {
+                try {
+                  const reviewComment = window.prompt('审核备注（可选）', '') || '';
+                  await approveAnnotationPublication(annotation.annotation_id, reviewComment);
+                  onAnnotationsChange?.();
+                } catch (error) {
+                  alert(error instanceof Error ? error.message : '审核通过失败');
+                }
+              }}
+              onRejectPublish={async () => {
+                try {
+                  const reviewComment = window.prompt('驳回原因（可选）', '') || '';
+                  await rejectAnnotationPublication(annotation.annotation_id, reviewComment);
+                  onAnnotationsChange?.();
+                } catch (error) {
+                  alert(error instanceof Error ? error.message : '驳回失败');
+                }
               }}
               onReply={() => {
                 if (!canWrite) return;

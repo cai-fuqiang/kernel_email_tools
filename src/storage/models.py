@@ -231,8 +231,14 @@ class AnnotationORM(Base):
     author: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
     author_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="public", index=True)
+    publish_status: Mapped[str] = mapped_column(String(16), nullable=False, default="none", index=True)
     body: Mapped[str] = mapped_column(Text, nullable=False, default="")
     parent_annotation_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    publish_requested_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    publish_requested_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    publish_reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    publish_reviewed_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    publish_review_comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=datetime.utcnow
     )
@@ -564,8 +570,14 @@ class AnnotationRead(BaseModel):
     author: str
     author_user_id: Optional[str] = None
     visibility: str = "public"
+    publish_status: str = "none"
     body: str
     parent_annotation_id: str = ""
+    publish_requested_at: Optional[datetime] = None
+    publish_requested_by_user_id: Optional[str] = None
+    publish_reviewed_at: Optional[datetime] = None
+    publish_reviewed_by_user_id: Optional[str] = None
+    publish_review_comment: str = ""
     created_at: datetime
     updated_at: datetime
 

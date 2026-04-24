@@ -7,6 +7,7 @@ import 'highlight.js/styles/github.css';
 import PreviewModal from '../components/PreviewModal';
 import EmailTagEditor from '../components/EmailTagEditor';
 import {
+  approveAnnotationPublication,
   getKernelVersions,
   getKernelTree,
   getKernelFile,
@@ -15,6 +16,9 @@ import {
   createCodeAnnotation,
   updateCodeAnnotation,
   deleteCodeAnnotation,
+  rejectAnnotationPublication,
+  requestAnnotationPublication,
+  withdrawAnnotationPublication,
 } from '../api/client';
 import type {
   KernelVersionInfo,
@@ -520,6 +524,7 @@ function AnnotationPanel({
     (isAdmin ||
       (canWrite &&
         annotation.visibility === 'private' &&
+        annotation.publish_status !== 'pending' &&
         annotation.author_user_id === currentUser.user_id));
 
   // 切换展开/折叠
@@ -692,6 +697,17 @@ function AnnotationPanel({
                               ({replyCount} {replyCount === 1 ? 'reply' : 'replies'})
                             </span>
                           )}
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                            rootAnn.publish_status === 'pending'
+                              ? 'bg-amber-100 text-amber-800'
+                              : rootAnn.publish_status === 'approved'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : rootAnn.publish_status === 'rejected'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {rootAnn.publish_status}
+                          </span>
                         </div>
                         <div className="flex items-center gap-2">
                           <button
@@ -711,6 +727,72 @@ function AnnotationPanel({
                               >
                                 Reply
                               </button>
+                              {!isAdmin &&
+                                rootAnn.visibility === 'private' &&
+                                rootAnn.author_user_id === currentUser?.user_id &&
+                                rootAnn.publish_status !== 'pending' && (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await requestAnnotationPublication(rootAnn.annotation_id);
+                                        onAnnotationCreated();
+                                      } catch (e: unknown) {
+                                        alert(`Failed to request publication: ${e instanceof Error ? e.message : e}`);
+                                      }
+                                    }}
+                                    className="text-[10px] text-amber-600 hover:text-amber-800"
+                                  >
+                                    Publish
+                                  </button>
+                                )}
+                              {rootAnn.publish_status === 'pending' &&
+                                (isAdmin || rootAnn.author_user_id === currentUser?.user_id) && (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await withdrawAnnotationPublication(rootAnn.annotation_id);
+                                        onAnnotationCreated();
+                                      } catch (e: unknown) {
+                                        alert(`Failed to withdraw request: ${e instanceof Error ? e.message : e}`);
+                                      }
+                                    }}
+                                    className="text-[10px] text-slate-500 hover:text-slate-700"
+                                  >
+                                    Withdraw
+                                  </button>
+                                )}
+                              {isAdmin && rootAnn.publish_status === 'pending' && (
+                                <>
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        const reviewComment = window.prompt('审核备注（可选）', '') || '';
+                                        await approveAnnotationPublication(rootAnn.annotation_id, reviewComment);
+                                        onAnnotationCreated();
+                                      } catch (e: unknown) {
+                                        alert(`Failed to approve: ${e instanceof Error ? e.message : e}`);
+                                      }
+                                    }}
+                                    className="text-[10px] text-emerald-600 hover:text-emerald-800"
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        const reviewComment = window.prompt('驳回原因（可选）', '') || '';
+                                        await rejectAnnotationPublication(rootAnn.annotation_id, reviewComment);
+                                        onAnnotationCreated();
+                                      } catch (e: unknown) {
+                                        alert(`Failed to reject: ${e instanceof Error ? e.message : e}`);
+                                      }
+                                    }}
+                                    className="text-[10px] text-rose-600 hover:text-rose-800"
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              )}
                               {canManageAnnotation(rootAnn) && (
                                 <>
                                   <button
@@ -735,6 +817,11 @@ function AnnotationPanel({
                         <div className="markdown-content line-clamp-3 overflow-hidden">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{rootAnn.body}</ReactMarkdown>
                         </div>
+                        {rootAnn.publish_review_comment && (
+                          <div className="mt-2 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[10px] text-gray-600">
+                            审核备注：{rootAnn.publish_review_comment}
+                          </div>
+                        )}
                         <div className="mt-2">
                           <EmailTagEditor targetType="annotation" targetRef={rootAnn.annotation_id} compact />
                         </div>
@@ -756,6 +843,17 @@ function AnnotationPanel({
                               L{reply.start_line}
                               {reply.end_line !== reply.start_line && `-${reply.end_line}`}
                             </span>
+                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                              reply.publish_status === 'pending'
+                                ? 'bg-amber-100 text-amber-800'
+                                : reply.publish_status === 'approved'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : reply.publish_status === 'rejected'
+                                    ? 'bg-rose-100 text-rose-800'
+                                    : 'bg-slate-100 text-slate-700'
+                            }`}>
+                              {reply.publish_status}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <button
@@ -764,6 +862,72 @@ function AnnotationPanel({
                             >
                               Goto
                             </button>
+                            {!isAdmin &&
+                              reply.visibility === 'private' &&
+                              reply.author_user_id === currentUser?.user_id &&
+                              reply.publish_status !== 'pending' && (
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      await requestAnnotationPublication(reply.annotation_id);
+                                      onAnnotationCreated();
+                                    } catch (e: unknown) {
+                                      alert(`Failed to request publication: ${e instanceof Error ? e.message : e}`);
+                                    }
+                                  }}
+                                  className="text-[10px] text-amber-600 hover:text-amber-800"
+                                >
+                                  Publish
+                                </button>
+                              )}
+                            {reply.publish_status === 'pending' &&
+                              (isAdmin || reply.author_user_id === currentUser?.user_id) && (
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      await withdrawAnnotationPublication(reply.annotation_id);
+                                      onAnnotationCreated();
+                                    } catch (e: unknown) {
+                                      alert(`Failed to withdraw request: ${e instanceof Error ? e.message : e}`);
+                                    }
+                                  }}
+                                  className="text-[10px] text-slate-500 hover:text-slate-700"
+                                >
+                                  Withdraw
+                                </button>
+                              )}
+                            {isAdmin && reply.publish_status === 'pending' && (
+                              <>
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const reviewComment = window.prompt('审核备注（可选）', '') || '';
+                                      await approveAnnotationPublication(reply.annotation_id, reviewComment);
+                                      onAnnotationCreated();
+                                    } catch (e: unknown) {
+                                      alert(`Failed to approve: ${e instanceof Error ? e.message : e}`);
+                                    }
+                                  }}
+                                  className="text-[10px] text-emerald-600 hover:text-emerald-800"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const reviewComment = window.prompt('驳回原因（可选）', '') || '';
+                                      await rejectAnnotationPublication(reply.annotation_id, reviewComment);
+                                      onAnnotationCreated();
+                                    } catch (e: unknown) {
+                                      alert(`Failed to reject: ${e instanceof Error ? e.message : e}`);
+                                    }
+                                  }}
+                                  className="text-[10px] text-rose-600 hover:text-rose-800"
+                                >
+                                  Reject
+                                </button>
+                              </>
+                            )}
                             {canManageAnnotation(reply) && (
                               <button
                                 onClick={() => handleDelete(reply.annotation_id)}
@@ -778,6 +942,11 @@ function AnnotationPanel({
                           <div className="markdown-content line-clamp-3 overflow-hidden">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{reply.body}</ReactMarkdown>
                           </div>
+                          {reply.publish_review_comment && (
+                            <div className="mt-2 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[10px] text-gray-600">
+                              审核备注：{reply.publish_review_comment}
+                            </div>
+                          )}
                           <div className="mt-2">
                             <EmailTagEditor targetType="annotation" targetRef={reply.annotation_id} compact />
                           </div>

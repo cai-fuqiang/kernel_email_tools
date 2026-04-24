@@ -75,7 +75,9 @@ class UnifiedAnnotationStore:
         self.session_factory = session_factory
         self.default_author = default_author
 
-    def _visibility_filters(self, viewer_user_id: Optional[str]) -> list:
+    def _visibility_filters(self, viewer_user_id: Optional[str], include_all_private: bool = False) -> list:
+        if include_all_private:
+            return []
         if viewer_user_id:
             return [
                 or_(
@@ -96,8 +98,14 @@ class UnifiedAnnotationStore:
                 "author": ann.author,
                 "author_user_id": ann.author_user_id,
                 "visibility": ann.visibility or "public",
+                "publish_status": ann.publish_status or "none",
                 "body": ann.body,
                 "parent_annotation_id": ann.parent_annotation_id or "",
+                "publish_requested_at": ann.publish_requested_at,
+                "publish_requested_by_user_id": ann.publish_requested_by_user_id,
+                "publish_reviewed_at": ann.publish_reviewed_at,
+                "publish_reviewed_by_user_id": ann.publish_reviewed_by_user_id,
+                "publish_review_comment": ann.publish_review_comment or "",
                 "created_at": ann.created_at,
                 "updated_at": ann.updated_at,
                 "target_type": ann.target_type or "",
@@ -176,14 +184,28 @@ class UnifiedAnnotationStore:
                     content_for_hash,
                 )
 
+            publish_status = "none"
+            publish_reviewed_at = None
+            publish_reviewed_by_user_id = None
+            if data.visibility == "public":
+                publish_status = "approved"
+                publish_reviewed_at = now
+                publish_reviewed_by_user_id = actor_user_id or data.author_user_id
+
             orm = AnnotationORM(
                 annotation_id=annotation_id,
                 annotation_type=data.annotation_type,
                 author=actor_display_name or data.author or self.default_author,
                 author_user_id=actor_user_id or data.author_user_id,
                 visibility=data.visibility or "public",
+                publish_status=publish_status,
                 body=data.body,
                 parent_annotation_id=data.parent_annotation_id or None,
+                publish_requested_at=None,
+                publish_requested_by_user_id=None,
+                publish_reviewed_at=publish_reviewed_at,
+                publish_reviewed_by_user_id=publish_reviewed_by_user_id,
+                publish_review_comment="",
                 target_type=data.target_type,
                 target_ref=data.target_ref,
                 target_label=data.target_label or "",
@@ -206,12 +228,17 @@ class UnifiedAnnotationStore:
             logger.info("Created %s annotation %s", data.annotation_type, annotation_id)
             return self._to_annotation_read(orm)
 
-    async def list_by_thread(self, thread_id: str, viewer_user_id: Optional[str] = None) -> list[AnnotationRead]:
+    async def list_by_thread(
+        self,
+        thread_id: str,
+        viewer_user_id: Optional[str] = None,
+        include_all_private: bool = False,
+    ) -> list[AnnotationRead]:
         async with self.session_factory() as session:
             stmt = (
                 select(AnnotationORM)
                 .where(AnnotationORM.thread_id == thread_id)
-                .where(*self._visibility_filters(viewer_user_id))
+                .where(*self._visibility_filters(viewer_user_id, include_all_private=include_all_private))
                 .order_by(AnnotationORM.created_at.asc())
             )
             result = await session.execute(stmt)
@@ -222,6 +249,7 @@ class UnifiedAnnotationStore:
         version: str,
         file_path: str,
         viewer_user_id: Optional[str] = None,
+        include_all_private: bool = False,
     ) -> list[AnnotationRead]:
         async with self.session_factory() as session:
             stmt = (
@@ -229,7 +257,7 @@ class UnifiedAnnotationStore:
                 .where(AnnotationORM.annotation_type == "code")
                 .where(AnnotationORM.version == version)
                 .where(AnnotationORM.file_path == file_path)
-                .where(*self._visibility_filters(viewer_user_id))
+                .where(*self._visibility_filters(viewer_user_id, include_all_private=include_all_private))
                 .order_by(AnnotationORM.start_line.asc(), AnnotationORM.created_at.asc())
             )
             result = await session.execute(stmt)
@@ -242,8 +270,9 @@ class UnifiedAnnotationStore:
         page_size: int = 20,
         extra_filters: Optional[list] = None,
         viewer_user_id: Optional[str] = None,
+        include_all_private: bool = False,
     ) -> tuple[list[dict], int]:
-        filters = [*self._visibility_filters(viewer_user_id), *(extra_filters or [])]
+        filters = [*self._visibility_filters(viewer_user_id, include_all_private=include_all_private), *(extra_filters or [])]
         if annotation_type != "all":
             filters.append(AnnotationORM.annotation_type == annotation_type)
         return await self._list_with_filters(filters, page, page_size)
@@ -256,10 +285,11 @@ class UnifiedAnnotationStore:
         page_size: int = 20,
         extra_filters: Optional[list] = None,
         viewer_user_id: Optional[str] = None,
+        include_all_private: bool = False,
     ) -> tuple[list[dict], int]:
         filters = [
             AnnotationORM.body.ilike(f"%{keyword}%"),
-            *self._visibility_filters(viewer_user_id),
+            *self._visibility_filters(viewer_user_id, include_all_private=include_all_private),
             *(extra_filters or []),
         ]
         if annotation_type != "all":
@@ -307,8 +337,14 @@ class UnifiedAnnotationStore:
             "author": ann.author,
             "author_user_id": ann.author_user_id,
             "visibility": ann.visibility or "public",
+            "publish_status": ann.publish_status or "none",
             "body": ann.body,
             "parent_annotation_id": ann.parent_annotation_id or "",
+            "publish_requested_at": ann.publish_requested_at.isoformat() if ann.publish_requested_at else None,
+            "publish_requested_by_user_id": ann.publish_requested_by_user_id,
+            "publish_reviewed_at": ann.publish_reviewed_at.isoformat() if ann.publish_reviewed_at else None,
+            "publish_reviewed_by_user_id": ann.publish_reviewed_by_user_id,
+            "publish_review_comment": ann.publish_review_comment or "",
             "created_at": ann.created_at.isoformat(),
             "updated_at": ann.updated_at.isoformat(),
             "target_type": ann.target_type,
@@ -338,6 +374,75 @@ class UnifiedAnnotationStore:
 
             orm.body = data.body
             orm.updated_at = datetime.utcnow()
+            await session.commit()
+            await session.refresh(orm)
+            return self._to_annotation_read(orm)
+
+    async def request_publication(self, annotation_id: str, request_user_id: str) -> Optional[AnnotationRead]:
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(AnnotationORM).where(AnnotationORM.annotation_id == annotation_id)
+            )
+            orm = result.scalar_one_or_none()
+            if not orm:
+                return None
+
+            now = datetime.utcnow()
+            orm.publish_status = "pending"
+            orm.publish_requested_at = now
+            orm.publish_requested_by_user_id = request_user_id
+            orm.publish_reviewed_at = None
+            orm.publish_reviewed_by_user_id = None
+            orm.publish_review_comment = ""
+            orm.updated_at = now
+            await session.commit()
+            await session.refresh(orm)
+            return self._to_annotation_read(orm)
+
+    async def withdraw_publication_request(self, annotation_id: str) -> Optional[AnnotationRead]:
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(AnnotationORM).where(AnnotationORM.annotation_id == annotation_id)
+            )
+            orm = result.scalar_one_or_none()
+            if not orm:
+                return None
+
+            now = datetime.utcnow()
+            orm.publish_status = "none"
+            orm.publish_requested_at = None
+            orm.publish_requested_by_user_id = None
+            orm.publish_reviewed_at = None
+            orm.publish_reviewed_by_user_id = None
+            orm.publish_review_comment = ""
+            orm.updated_at = now
+            await session.commit()
+            await session.refresh(orm)
+            return self._to_annotation_read(orm)
+
+    async def review_publication(
+        self,
+        annotation_id: str,
+        *,
+        approved: bool,
+        reviewer_user_id: str,
+        review_comment: str = "",
+    ) -> Optional[AnnotationRead]:
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(AnnotationORM).where(AnnotationORM.annotation_id == annotation_id)
+            )
+            orm = result.scalar_one_or_none()
+            if not orm:
+                return None
+
+            now = datetime.utcnow()
+            orm.publish_status = "approved" if approved else "rejected"
+            orm.visibility = "public" if approved else "private"
+            orm.publish_reviewed_at = now
+            orm.publish_reviewed_by_user_id = reviewer_user_id
+            orm.publish_review_comment = review_comment.strip()
+            orm.updated_at = now
             await session.commit()
             await session.refresh(orm)
             return self._to_annotation_read(orm)

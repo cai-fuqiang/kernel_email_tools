@@ -102,6 +102,7 @@ _auth_config: dict = {}
 VALID_ROLES = {"admin", "editor", "viewer"}
 VALID_VISIBILITY = {"public", "private"}
 VALID_APPROVAL_STATUS = {"pending", "approved", "rejected"}
+VALID_PUBLISH_STATUS = {"none", "pending", "approved", "rejected"}
 SYMBOL_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
@@ -138,6 +139,11 @@ def _normalize_visibility(value: str) -> str:
 def _normalize_approval_status(value: str) -> str:
     status = (value or "pending").strip().lower()
     return status if status in VALID_APPROVAL_STATUS else "pending"
+
+
+def _normalize_publish_status(value: str) -> str:
+    status = (value or "none").strip().lower()
+    return status if status in VALID_PUBLISH_STATUS else "none"
 
 
 def _capabilities_for_role(role: str) -> list[str]:
@@ -625,9 +631,20 @@ async def _ensure_annotation_manage_access(annotation_id: str, current_user: Cur
         return annotation
     if annotation.visibility == "public":
         raise HTTPException(status_code=403, detail="Only admin can modify public annotations")
+    if annotation.publish_status == "pending":
+        raise HTTPException(status_code=403, detail="Pending publication annotations must be withdrawn before editing")
     if annotation.author_user_id == current_user.user_id:
         return annotation
     raise HTTPException(status_code=403, detail="Editors can only modify their own private annotations")
+
+
+async def _ensure_annotation_publish_request_access(annotation_id: str, current_user: CurrentUser) -> AnnotationRead:
+    annotation = await _ensure_annotation_manage_access(annotation_id, current_user)
+    if _is_admin(current_user):
+        raise HTTPException(status_code=400, detail="Admins can directly review publication requests")
+    if annotation.publish_status == "pending":
+        raise HTTPException(status_code=400, detail="Annotation already pending publication review")
+    return annotation
 
 
 @asynccontextmanager
@@ -2703,6 +2720,11 @@ class AnnotationUpdateRequest(BaseModel):
     body: str = Field(..., min_length=1, description="批注正文（支持 Markdown）")
 
 
+class AnnotationPublicationReviewRequest(BaseModel):
+    """管理员审核公开申请。"""
+    review_comment: str = Field("", max_length=2000, description="审核说明")
+
+
 class AnnotationResponse(BaseModel):
     """统一标注响应。"""
     annotation_id: str
@@ -2710,8 +2732,14 @@ class AnnotationResponse(BaseModel):
     author: str
     author_user_id: Optional[str] = None
     visibility: str = "public"
+    publish_status: str = "none"
     body: str
     parent_annotation_id: str = ""
+    publish_requested_at: Optional[str] = None
+    publish_requested_by_user_id: Optional[str] = None
+    publish_reviewed_at: Optional[str] = None
+    publish_reviewed_by_user_id: Optional[str] = None
+    publish_review_comment: str = ""
     created_at: str
     updated_at: str
     target_type: str = ""
@@ -2735,8 +2763,14 @@ def _annotation_to_response(annotation: AnnotationRead) -> AnnotationResponse:
         author=annotation.author,
         author_user_id=annotation.author_user_id,
         visibility=annotation.visibility,
+        publish_status=annotation.publish_status,
         body=annotation.body,
         parent_annotation_id=annotation.parent_annotation_id,
+        publish_requested_at=annotation.publish_requested_at.isoformat() if annotation.publish_requested_at else None,
+        publish_requested_by_user_id=annotation.publish_requested_by_user_id,
+        publish_reviewed_at=annotation.publish_reviewed_at.isoformat() if annotation.publish_reviewed_at else None,
+        publish_reviewed_by_user_id=annotation.publish_reviewed_by_user_id,
+        publish_review_comment=annotation.publish_review_comment or "",
         created_at=annotation.created_at.isoformat(),
         updated_at=annotation.updated_at.isoformat(),
         target_type=annotation.target_type,
@@ -2761,6 +2795,7 @@ async def list_annotations(
     version: Optional[str] = Query(None, description="限定代码版本（code 类型时）"),
     target_type: Optional[str] = Query(None, description="限定目标类型"),
     target_ref: Optional[str] = Query(None, description="限定目标引用"),
+    publish_status: Optional[str] = Query(None, description="公开申请状态过滤"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     current_user: Optional[CurrentUser] = Depends(get_optional_current_user),
@@ -2777,6 +2812,9 @@ async def list_annotations(
             extra_filters.append(AnnotationORM.target_type == target_type)
         if target_ref:
             extra_filters.append(AnnotationORM.target_ref == target_ref)
+        normalized_publish_status = _normalize_publish_status(publish_status or "")
+        if publish_status and normalized_publish_status != "none":
+            extra_filters.append(AnnotationORM.publish_status == normalized_publish_status)
 
         if q and q.strip():
             annotations, total = await _annotation_store.search(
@@ -2786,6 +2824,7 @@ async def list_annotations(
                 page_size=page_size,
                 extra_filters=extra_filters or None,
                 viewer_user_id=current_user.user_id if current_user else None,
+                include_all_private=bool(current_user and _is_admin(current_user)),
             )
         else:
             annotations, total = await _annotation_store.list_all(
@@ -2794,6 +2833,7 @@ async def list_annotations(
                 page_size=page_size,
                 extra_filters=extra_filters or None,
                 viewer_user_id=current_user.user_id if current_user else None,
+                include_all_private=bool(current_user and _is_admin(current_user)),
             )
 
         return {
@@ -2873,8 +2913,104 @@ async def get_annotations(
     annotations = await _annotation_store.list_by_thread(
         thread_id,
         viewer_user_id=current_user.user_id if current_user else None,
+        include_all_private=bool(current_user and _is_admin(current_user)),
     )
     return [_annotation_to_response(a) for a in annotations]
+
+
+@app.post("/api/annotations/{annotation_id}/publish-request", response_model=AnnotationResponse)
+async def request_annotation_publication(
+    annotation_id: str,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not _annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+
+    annotation = await _ensure_annotation_publish_request_access(annotation_id, current_user)
+    if annotation.visibility != "private":
+        raise HTTPException(status_code=400, detail="Only private annotations can request publication")
+
+    updated = await _annotation_store.request_publication(annotation_id, current_user.user_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Annotation {annotation_id} not found")
+    return _annotation_to_response(updated)
+
+
+@app.post("/api/annotations/{annotation_id}/publish-withdraw", response_model=AnnotationResponse)
+async def withdraw_annotation_publication_request(
+    annotation_id: str,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not _annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+
+    annotation = await _annotation_store.get(annotation_id)
+    if not annotation:
+        raise HTTPException(status_code=404, detail=f"Annotation {annotation_id} not found")
+    if not _is_admin(current_user):
+        if annotation.author_user_id != current_user.user_id:
+            raise HTTPException(status_code=403, detail="Editors can only withdraw their own publication requests")
+        if annotation.visibility == "public":
+            raise HTTPException(status_code=400, detail="Public annotations do not have a withdrawable publication request")
+    if annotation.publish_status != "pending":
+        raise HTTPException(status_code=400, detail="Annotation is not pending publication review")
+
+    updated = await _annotation_store.withdraw_publication_request(annotation_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Annotation {annotation_id} not found")
+    return _annotation_to_response(updated)
+
+
+@app.post("/api/admin/annotations/{annotation_id}/approve-publication", response_model=AnnotationResponse)
+async def approve_annotation_publication(
+    annotation_id: str,
+    request: AnnotationPublicationReviewRequest,
+    current_user: CurrentUser = Depends(require_roles("admin")),
+):
+    if not _annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+
+    annotation = await _annotation_store.get(annotation_id)
+    if not annotation:
+        raise HTTPException(status_code=404, detail=f"Annotation {annotation_id} not found")
+    if annotation.publish_status != "pending":
+        raise HTTPException(status_code=400, detail="Annotation is not pending publication review")
+
+    updated = await _annotation_store.review_publication(
+        annotation_id,
+        approved=True,
+        reviewer_user_id=current_user.user_id,
+        review_comment=request.review_comment,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Annotation {annotation_id} not found")
+    return _annotation_to_response(updated)
+
+
+@app.post("/api/admin/annotations/{annotation_id}/reject-publication", response_model=AnnotationResponse)
+async def reject_annotation_publication(
+    annotation_id: str,
+    request: AnnotationPublicationReviewRequest,
+    current_user: CurrentUser = Depends(require_roles("admin")),
+):
+    if not _annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+
+    annotation = await _annotation_store.get(annotation_id)
+    if not annotation:
+        raise HTTPException(status_code=404, detail=f"Annotation {annotation_id} not found")
+    if annotation.publish_status != "pending":
+        raise HTTPException(status_code=400, detail="Annotation is not pending publication review")
+
+    updated = await _annotation_store.review_publication(
+        annotation_id,
+        approved=False,
+        reviewer_user_id=current_user.user_id,
+        review_comment=request.review_comment,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Annotation {annotation_id} not found")
+    return _annotation_to_response(updated)
 
 
 @app.put("/api/annotations/{annotation_id}")
@@ -2930,6 +3066,12 @@ async def export_annotations(
 
     if thread_id:
         annotations = await _annotation_store.list_by_thread(thread_id, viewer_user_id=current_user.user_id)
+        if _is_admin(current_user):
+            annotations = await _annotation_store.list_by_thread(
+                thread_id,
+                viewer_user_id=current_user.user_id,
+                include_all_private=True,
+            )
         return {
             "thread_id": thread_id,
             "exported_at": datetime.utcnow().isoformat(),
@@ -2941,6 +3083,7 @@ async def export_annotations(
             page=1,
             page_size=10_000,
             viewer_user_id=current_user.user_id,
+            include_all_private=_is_admin(current_user),
         )
         grouped: dict[str, list[dict]] = {}
         for item in items:
@@ -3408,6 +3551,7 @@ class KnowledgeEntityUpdateRequest(BaseModel):
 async def list_code_annotations(
     q: Optional[str] = Query(None, description="搜索关键词"),
     version: Optional[str] = Query(None, description="限定版本"),
+    publish_status: Optional[str] = Query(None, description="公开申请状态过滤"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: Optional[CurrentUser] = Depends(get_optional_current_user),
@@ -3417,21 +3561,31 @@ async def list_code_annotations(
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
 
     if q and q.strip():
+        extra_filters = [AnnotationORM.version == version] if version else []
+        normalized_publish_status = _normalize_publish_status(publish_status or "")
+        if publish_status and normalized_publish_status != "none":
+            extra_filters.append(AnnotationORM.publish_status == normalized_publish_status)
         annotations, total = await _annotation_store.search(
             keyword=q.strip(),
             annotation_type="code",
             page=page,
             page_size=page_size,
-            extra_filters=[AnnotationORM.version == version] if version else None,
+            extra_filters=extra_filters or None,
             viewer_user_id=current_user.user_id if current_user else None,
+            include_all_private=bool(current_user and _is_admin(current_user)),
         )
     else:
+        extra_filters = [AnnotationORM.version == version] if version else []
+        normalized_publish_status = _normalize_publish_status(publish_status or "")
+        if publish_status and normalized_publish_status != "none":
+            extra_filters.append(AnnotationORM.publish_status == normalized_publish_status)
         annotations, total = await _annotation_store.list_all(
             annotation_type="code",
             page=page,
             page_size=page_size,
-            extra_filters=[AnnotationORM.version == version] if version else None,
+            extra_filters=extra_filters or None,
             viewer_user_id=current_user.user_id if current_user else None,
+            include_all_private=bool(current_user and _is_admin(current_user)),
         )
 
     return {
@@ -3456,6 +3610,7 @@ async def get_file_code_annotations(
         version,
         path,
         viewer_user_id=current_user.user_id if current_user else None,
+        include_all_private=bool(current_user and _is_admin(current_user)),
     )
     return [_annotation_to_response(a).model_dump() for a in annotations]
 

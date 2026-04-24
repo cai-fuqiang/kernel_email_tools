@@ -10,18 +10,28 @@ interface AnnotationCardProps {
   author: string;
   authorUserId?: string | null;
   visibility?: 'public' | 'private';
+  publishStatus?: 'none' | 'pending' | 'approved' | 'rejected';
   body: string;
   createdAt: string;
   updatedAt: string;
+  publishReviewComment?: string;
   targetLabel: string;
   targetSubtitle: string;
   anchorLabel?: string;
   onEdit: (body: string) => void;
   onDelete: () => void;
   onReply: () => void;
+  onRequestPublish?: () => void;
+  onWithdrawPublish?: () => void;
+  onApprovePublish?: () => void;
+  onRejectPublish?: () => void;
   onJump?: () => void;
   canManage?: boolean;
   canReply?: boolean;
+  canRequestPublish?: boolean;
+  canWithdrawPublish?: boolean;
+  canApprovePublish?: boolean;
+  canRejectPublish?: boolean;
 }
 
 const TYPE_THEME: Record<string, { chip: string; panel: string; text: string }> = {
@@ -43,18 +53,28 @@ export default function AnnotationCard({
   author,
   authorUserId,
   visibility = 'public',
+  publishStatus = 'none',
   body,
   createdAt,
   updatedAt,
+  publishReviewComment,
   targetLabel,
   targetSubtitle,
   anchorLabel,
   onEdit,
   onDelete,
   onReply,
+  onRequestPublish,
+  onWithdrawPublish,
+  onApprovePublish,
+  onRejectPublish,
   onJump,
   canManage,
   canReply,
+  canRequestPublish,
+  canWithdrawPublish,
+  canApprovePublish,
+  canRejectPublish,
 }: AnnotationCardProps) {
   const { canWrite, currentUser, isAdmin } = useAuth();
   const [editing, setEditing] = useState(false);
@@ -67,6 +87,14 @@ export default function AnnotationCard({
           !!authorUserId &&
           authorUserId === currentUser.user_id)));
   const resolvedCanReply = canReply ?? canWrite;
+  const statusTone =
+    publishStatus === 'pending'
+      ? 'bg-amber-50 text-amber-700'
+      : publishStatus === 'approved'
+        ? 'bg-emerald-50 text-emerald-700'
+        : publishStatus === 'rejected'
+          ? 'bg-rose-50 text-rose-700'
+          : 'bg-slate-100 text-slate-600';
   const [editBody, setEditBody] = useState(body);
   const theme = TYPE_THEME[annotationType] || {
     chip: 'bg-amber-100 text-amber-700 border border-amber-200',
@@ -85,6 +113,9 @@ export default function AnnotationCard({
         {anchorLabel && <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">{anchorLabel}</span>}
         <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${visibility === 'private' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
           {visibility}
+        </span>
+        <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${statusTone}`}>
+          {publishStatus}
         </span>
       </div>
 
@@ -133,6 +164,11 @@ export default function AnnotationCard({
       ) : (
         <>
           <AnnotationMarkdown body={body} className={`mt-4 text-sm leading-7 ${theme.text}`} />
+          {publishReviewComment && (
+            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              审核备注：{publishReviewComment}
+            </div>
+          )}
           <div className="mt-3">
             <EmailTagEditor
               targetType="annotation"
@@ -140,6 +176,42 @@ export default function AnnotationCard({
               compact
             />
           </div>
+          {(canRequestPublish || canWithdrawPublish || canApprovePublish || canRejectPublish) && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {canRequestPublish && (
+                <button
+                  onClick={() => onRequestPublish?.()}
+                  className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700"
+                >
+                  申请公开
+                </button>
+              )}
+              {canWithdrawPublish && (
+                <button
+                  onClick={() => onWithdrawPublish?.()}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
+                >
+                  撤回申请
+                </button>
+              )}
+              {canApprovePublish && (
+                <button
+                  onClick={() => onApprovePublish?.()}
+                  className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700"
+                >
+                  通过公开
+                </button>
+              )}
+              {canRejectPublish && (
+                <button
+                  onClick={() => onRejectPublish?.()}
+                  className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700"
+                >
+                  驳回
+                </button>
+              )}
+            </div>
+          )}
           {resolvedCanManage || resolvedCanReply ? (
             <AnnotationActions
               onEdit={() => {

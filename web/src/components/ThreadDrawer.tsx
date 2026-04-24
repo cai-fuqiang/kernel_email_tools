@@ -6,12 +6,16 @@ import {
   startThreadTranslation,
   getTranslationJob,
   clearTranslationCache,
+  approveAnnotationPublication,
   createAnnotation,
   updateAnnotation,
   deleteAnnotation,
   exportAnnotations,
   importAnnotations,
+  rejectAnnotationPublication,
+  requestAnnotationPublication,
   type TranslationJobResponse,
+  withdrawAnnotationPublication,
 } from '../api/client';
 import type { ThreadResponse, ThreadEmail, Annotation } from '../api/types';
 import EmailTagEditor from './EmailTagEditor';
@@ -423,7 +427,27 @@ function AnnotationCard({
     (isAdmin ||
       (canWrite &&
         annotation.visibility === 'private' &&
+        annotation.publish_status !== 'pending' &&
         annotation.author_user_id === currentUser.user_id));
+  const canRequestPublish =
+    !!currentUser &&
+    !isAdmin &&
+    annotation.visibility === 'private' &&
+    annotation.author_user_id === currentUser.user_id &&
+    annotation.publish_status !== 'pending';
+  const canWithdrawPublish =
+    !!currentUser &&
+    annotation.publish_status === 'pending' &&
+    (isAdmin || annotation.author_user_id === currentUser.user_id);
+  const canReviewPublish = !!currentUser && isAdmin && annotation.publish_status === 'pending';
+  const publishTone =
+    annotation.publish_status === 'pending'
+      ? 'bg-amber-100 text-amber-800'
+      : annotation.publish_status === 'approved'
+        ? 'bg-emerald-100 text-emerald-800'
+        : annotation.publish_status === 'rejected'
+          ? 'bg-rose-100 text-rose-800'
+          : 'bg-slate-100 text-slate-700';
 
   return (
     <div
@@ -438,6 +462,9 @@ function AnnotationCard({
         <span className="text-sm font-medium text-blue-900">{annotation.author}</span>
         <span className={`px-2 py-0.5 text-xs rounded font-medium ${annotation.visibility === 'private' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
           {annotation.visibility}
+        </span>
+        <span className={`px-2 py-0.5 text-xs rounded font-medium ${publishTone}`}>
+          {annotation.publish_status}
         </span>
         <span className="text-xs text-blue-500 ml-auto">
           {new Date(annotation.created_at).toLocaleDateString('zh-CN', {
@@ -462,6 +489,11 @@ function AnnotationCard({
           <div className="annotation-markdown text-sm text-blue-900 leading-relaxed">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{annotation.body}</ReactMarkdown>
           </div>
+          {annotation.publish_review_comment && (
+            <div className="mt-2 rounded-lg border border-blue-200 bg-white/70 px-3 py-2 text-xs text-blue-800">
+              审核备注：{annotation.publish_review_comment}
+            </div>
+          )}
           <div className="mt-2">
             <EmailTagEditor
               targetType="annotation"
@@ -469,6 +501,72 @@ function AnnotationCard({
               compact
             />
           </div>
+          {(canRequestPublish || canWithdrawPublish || canReviewPublish) && (
+            <div className="flex gap-2 mt-2">
+              {canRequestPublish && (
+                <button
+                  onClick={async () => {
+                    try {
+                      await requestAnnotationPublication(annotation.annotation_id);
+                      window.location.reload();
+                    } catch (e) {
+                      alert(e instanceof Error ? e.message : '申请公开失败');
+                    }
+                  }}
+                  className="text-xs px-2 py-1 text-amber-700 bg-amber-100 hover:bg-amber-200 rounded transition-colors"
+                >
+                  申请公开
+                </button>
+              )}
+              {canWithdrawPublish && (
+                <button
+                  onClick={async () => {
+                    try {
+                      await withdrawAnnotationPublication(annotation.annotation_id);
+                      window.location.reload();
+                    } catch (e) {
+                      alert(e instanceof Error ? e.message : '撤回申请失败');
+                    }
+                  }}
+                  className="text-xs px-2 py-1 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded transition-colors"
+                >
+                  撤回申请
+                </button>
+              )}
+              {canReviewPublish && (
+                <>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const reviewComment = window.prompt('审核备注（可选）', '') || '';
+                        await approveAnnotationPublication(annotation.annotation_id, reviewComment);
+                        window.location.reload();
+                      } catch (e) {
+                        alert(e instanceof Error ? e.message : '审核通过失败');
+                      }
+                    }}
+                    className="text-xs px-2 py-1 text-emerald-700 bg-emerald-100 hover:bg-emerald-200 rounded transition-colors"
+                  >
+                    通过公开
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const reviewComment = window.prompt('驳回原因（可选）', '') || '';
+                        await rejectAnnotationPublication(annotation.annotation_id, reviewComment);
+                        window.location.reload();
+                      } catch (e) {
+                        alert(e instanceof Error ? e.message : '驳回失败');
+                      }
+                    }}
+                    className="text-xs px-2 py-1 text-rose-700 bg-rose-100 hover:bg-rose-200 rounded transition-colors"
+                  >
+                    驳回
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           <div className="flex gap-2 mt-2">
             {canWrite && (
               <>

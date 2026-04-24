@@ -3,16 +3,19 @@ import { useSearchParams } from 'react-router-dom';
 import AnnotationTree from '../components/AnnotationTree';
 import { listAnnotations } from '../api/client';
 import type { AnnotationListItem } from '../api/types';
+import { useAuth } from '../auth';
 
 type FilterType = 'all' | 'email' | 'code' | 'sdm_spec';
 
 export default function AnnotationsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { isAdmin } = useAuth();
 
   // 筛选和分页状态
   const [filter, setFilter] = useState<FilterType>('all');
   const [q, setQ] = useState(searchParams.get('q') || '');
   const [searchInput, setSearchInput] = useState(q);
+  const [publishStatus, setPublishStatus] = useState<'all' | 'pending'>(searchParams.get('publish_status') === 'pending' ? 'pending' : 'all');
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   
@@ -38,6 +41,7 @@ export default function AnnotationsPage() {
       const res = await listAnnotations({ 
         q: q || undefined, 
         type: filter,
+        publish_status: publishStatus === 'pending' ? 'pending' : undefined,
         page: page, 
         page_size: pageSize 
       });
@@ -51,7 +55,7 @@ export default function AnnotationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filter, q, page, pageSize]);
+  }, [filter, q, page, pageSize, publishStatus]);
 
   useEffect(() => {
     loadAnnotations();
@@ -164,6 +168,38 @@ export default function AnnotationsPage() {
             </button>
           ))}
         </div>
+
+        {isAdmin && (
+          <div className="flex items-center gap-2 mb-6">
+            <span className="text-sm text-slate-500 mr-2">审核筛选:</span>
+            <button
+              onClick={() => {
+                setPage(1);
+                setPublishStatus('all');
+              }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                publishStatus === 'all'
+                  ? 'bg-slate-800 text-white shadow-md'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              全部
+            </button>
+            <button
+              onClick={() => {
+                setPage(1);
+                setPublishStatus('pending');
+              }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                publishStatus === 'pending'
+                  ? 'bg-amber-600 text-white shadow-md'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              待审核公开
+            </button>
+          </div>
+        )}
 
         {/* Loading/Error state */}
         {loading && (

@@ -746,6 +746,34 @@ export async function updateAnnotation(annotationId: string, body: string): Prom
   return normalizeAnnotation(await res.json()) as Annotation;
 }
 
+export async function requestAnnotationPublication(annotationId: string): Promise<Annotation> {
+  return fetchWithBody<Annotation>(`${API_BASE}/annotations/${encodeURIComponent(annotationId)}/publish-request`, {
+    method: 'POST',
+  }).then((data) => normalizeAnnotation(data) as Annotation);
+}
+
+export async function withdrawAnnotationPublication(annotationId: string): Promise<Annotation> {
+  return fetchWithBody<Annotation>(`${API_BASE}/annotations/${encodeURIComponent(annotationId)}/publish-withdraw`, {
+    method: 'POST',
+  }).then((data) => normalizeAnnotation(data) as Annotation);
+}
+
+export async function approveAnnotationPublication(annotationId: string, reviewComment: string = ''): Promise<Annotation> {
+  return fetchWithBody<Annotation>(`${API_BASE}/admin/annotations/${encodeURIComponent(annotationId)}/approve-publication`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ review_comment: reviewComment }),
+  }).then((data) => normalizeAnnotation(data) as Annotation);
+}
+
+export async function rejectAnnotationPublication(annotationId: string, reviewComment: string = ''): Promise<Annotation> {
+  return fetchWithBody<Annotation>(`${API_BASE}/admin/annotations/${encodeURIComponent(annotationId)}/reject-publication`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ review_comment: reviewComment }),
+  }).then((data) => normalizeAnnotation(data) as Annotation);
+}
+
 export async function deleteAnnotation(annotationId: string): Promise<void> {
   const res = await fetch(`${API_BASE}/annotations/${encodeURIComponent(annotationId)}`, {
     method: 'DELETE',
@@ -787,6 +815,7 @@ export async function listAnnotations(opts?: {
   version?: string;
   target_type?: string;
   target_ref?: string;
+  publish_status?: 'none' | 'pending' | 'approved' | 'rejected';
   page?: number;
   page_size?: number;
 }): Promise<AnnotationListResponse> {
@@ -796,6 +825,7 @@ export async function listAnnotations(opts?: {
   if (opts?.version) params.set('version', opts.version);
   if (opts?.target_type) params.set('target_type', opts.target_type);
   if (opts?.target_ref) params.set('target_ref', opts.target_ref);
+  if (opts?.publish_status) params.set('publish_status', opts.publish_status);
   if (opts?.page) params.set('page', String(opts.page));
   if (opts?.page_size) params.set('page_size', String(opts.page_size));
   const data = await fetchJSON<AnnotationListResponse>(`${API_BASE}/annotations?${params}`);
@@ -935,12 +965,14 @@ export async function resolveKernelSymbol(
 export async function listCodeAnnotations(opts?: {
   q?: string;
   version?: string;
+  publish_status?: 'none' | 'pending' | 'approved' | 'rejected';
   page?: number;
   page_size?: number;
 }): Promise<CodeAnnotationListResponse> {
   const params = new URLSearchParams();
   if (opts?.q) params.set('q', opts.q);
   if (opts?.version) params.set('version', opts.version);
+  if (opts?.publish_status) params.set('publish_status', opts.publish_status);
   if (opts?.page) params.set('page', String(opts.page));
   if (opts?.page_size) params.set('page_size', String(opts.page_size));
   const data = await fetchJSON<CodeAnnotationListResponse>(`${API_BASE}/kernel/annotations?${params}`);
