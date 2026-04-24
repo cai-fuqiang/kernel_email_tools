@@ -9,12 +9,34 @@ interface PreviewModalProps {
   annotation: CodeAnnotation | AnnotationListItem | null;
 }
 
+function hasCodePreviewData(
+  annotation: CodeAnnotation | AnnotationListItem | null,
+): annotation is CodeAnnotation | (AnnotationListItem & {
+  version: string;
+  file_path: string;
+  start_line: number;
+  end_line: number;
+}) {
+  return !!(
+    annotation &&
+    annotation.version &&
+    annotation.file_path &&
+    typeof annotation.start_line === 'number' &&
+    typeof annotation.end_line === 'number'
+  );
+}
+
 export default function PreviewModal({ isOpen, onClose, annotation }: PreviewModalProps) {
   const [codeLines, setCodeLines] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentAnnotation, setCurrentAnnotation] = useState<CodeAnnotation | AnnotationListItem | null>(null);
 
   const loadCode = useCallback(async (ann: CodeAnnotation | AnnotationListItem) => {
+    if (!hasCodePreviewData(ann)) {
+      setCodeLines([]);
+      return;
+    }
+
     setLoading(true);
     try {
       const file = await getKernelFile(ann.version, ann.file_path);
@@ -56,6 +78,7 @@ export default function PreviewModal({ isOpen, onClose, annotation }: PreviewMod
   }, [isOpen]);
 
   if (!isOpen || !currentAnnotation) return null;
+  if (!hasCodePreviewData(currentAnnotation)) return null;
 
   const ann = currentAnnotation;
   const startLine = Math.max(0, ann.start_line - 6);
