@@ -15,7 +15,14 @@ from typing import Optional
 from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from src.storage.models import AnnotationCreate, AnnotationORM, AnnotationRead, AnnotationUpdate, EmailORM
+from src.storage.models import (
+    AnnotationCreate,
+    AnnotationORM,
+    AnnotationRead,
+    AnnotationUpdate,
+    EmailORM,
+    TagAssignmentORM,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -302,6 +309,11 @@ class UnifiedAnnotationStore:
 
     async def delete(self, annotation_id: str) -> bool:
         async with self.session_factory() as session:
+            await session.execute(
+                delete(TagAssignmentORM)
+                .where(TagAssignmentORM.target_type == "annotation")
+                .where(TagAssignmentORM.target_ref == annotation_id)
+            )
             result = await session.execute(
                 delete(AnnotationORM).where(AnnotationORM.annotation_id == annotation_id)
             )
