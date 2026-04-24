@@ -2855,12 +2855,15 @@ async def create_annotation(
     """创建统一标注。"""
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
-    visibility = _normalize_visibility(request.visibility)
-    _ensure_public_write_allowed(visibility, current_user)
 
     parent_annotation_id = request.parent_annotation_id
     if not parent_annotation_id and request.in_reply_to.startswith(("annotation-", "code-annot-")):
         parent_annotation_id = request.in_reply_to
+
+    visibility = _normalize_visibility(request.visibility)
+    if parent_annotation_id and not _is_admin(current_user):
+        visibility = "private"
+    _ensure_public_write_allowed(visibility, current_user)
 
     if request.annotation_type == "email" and not request.thread_id:
         raise HTTPException(status_code=400, detail="thread_id is required for email annotations")
@@ -3624,6 +3627,8 @@ async def create_code_annotation(
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
     visibility = _normalize_visibility(request.visibility)
+    if request.in_reply_to and not _is_admin(current_user):
+        visibility = "private"
     _ensure_public_write_allowed(visibility, current_user)
 
     try:
