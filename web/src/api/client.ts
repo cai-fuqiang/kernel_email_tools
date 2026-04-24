@@ -3,6 +3,7 @@ import type {
   AskResponse, 
   ThreadResponse, 
   StatsResponse,
+  CurrentUser,
   ManualSearchResponse,
   ManualAskResponse,
   ManualStatsResponse,
@@ -15,6 +16,7 @@ import type {
   TagTargetsResponse,
   TagTargetBundle,
   TagTree,
+  UserRead,
   KernelVersionsResponse,
   KernelTreeResponse,
   KernelFileResponse,
@@ -32,8 +34,15 @@ const API_BASE = '/api';
 async function fetchJSON<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API error ${res.status}: ${text}`);
+    let detail = '';
+    try {
+      const data = await res.json();
+      detail = typeof data?.detail === 'string' ? data.detail : JSON.stringify(data);
+    } catch {
+      detail = await res.text();
+    }
+    const prefix = res.status === 401 ? 'Authentication required' : res.status === 403 ? 'Permission denied' : `API error ${res.status}`;
+    throw new Error(detail ? `${prefix}: ${detail}` : prefix);
   }
   return res.json();
 }
@@ -96,12 +105,48 @@ export async function getTagStats(): Promise<TagStats[]> {
   return fetchJSON<TagStats[]>(`${API_BASE}/tags/stats`);
 }
 
+export async function getCurrentUser(): Promise<CurrentUser> {
+  return fetchJSON<CurrentUser>(`${API_BASE}/me`);
+}
+
+export async function listUsers(): Promise<UserRead[]> {
+  return fetchJSON<UserRead[]>(`${API_BASE}/admin/users`);
+}
+
+export async function updateUser(
+  userId: string,
+  patch: {
+    display_name?: string;
+    email?: string;
+    role?: 'admin' | 'editor' | 'viewer';
+    status?: string;
+  },
+): Promise<UserRead> {
+  const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const data = await res.json();
+      detail = typeof data?.detail === 'string' ? data.detail : JSON.stringify(data);
+    } catch {
+      detail = await res.text();
+    }
+    throw new Error(detail || `API error ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function createTag(
   name: string,
   parentTagId?: number,
   color?: string,
   description: string = '',
   tagKind: string = 'topic',
+  visibility: 'public' | 'private' = 'public',
 ): Promise<TagRead> {
   const res = await fetch(`${API_BASE}/tags`, {
     method: 'POST',
@@ -112,6 +157,7 @@ export async function createTag(
       color,
       description,
       tag_kind: tagKind,
+      visibility,
     }),
   });
   if (!res.ok) {
@@ -130,6 +176,7 @@ export async function updateTag(
     parent_tag_id?: number | null;
     status?: string;
     tag_kind?: string;
+    visibility?: 'public' | 'private';
     aliases?: string[];
   },
 ): Promise<TagRead> {
@@ -194,7 +241,6 @@ export async function createTagAssignment(data: {
   assignment_scope?: string;
   source_type?: string;
   evidence?: Record<string, unknown>;
-  created_by?: string;
 }): Promise<TagAssignment> {
   const res = await fetch(`${API_BASE}/tag-assignments`, {
     method: 'POST',

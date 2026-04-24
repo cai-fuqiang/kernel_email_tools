@@ -1,9 +1,11 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { getStats } from '../api/client';
+import { useAuth } from '../auth';
 
 export default function MainLayout() {
   const [totalEmails, setTotalEmails] = useState<number | null>(null);
+  const { currentUser, loading: authLoading, isAdmin, canWrite, error: authError } = useAuth();
 
   useEffect(() => {
     getStats().then(s => setTotalEmails(s.total_emails)).catch(() => {});
@@ -26,6 +28,18 @@ export default function MainLayout() {
             Kernel Mail KB
           </h1>
           <p className="text-xs text-gray-500 mt-1">Linux Kernel Mailing List Knowledge Base</p>
+          <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            {authLoading ? (
+              <span>Loading user...</span>
+            ) : currentUser ? (
+              <>
+                <div className="font-medium text-slate-800">{currentUser.display_name}</div>
+                <div>{currentUser.role} via {currentUser.auth_source}</div>
+              </>
+            ) : (
+              <span>{authError || 'Unauthenticated'}</span>
+            )}
+          </div>
         </div>
 
         <nav className="flex-1 p-4 space-y-1">
@@ -60,6 +74,11 @@ export default function MainLayout() {
             </svg>
             Translations
           </NavLink>
+          {!canWrite && (
+            <div className="mx-4 mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              Current role is read-only.
+            </div>
+          )}
 
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-6 px-4">Kernel Code</div>
           <NavLink to="/kernel-code" className={linkClass}>
@@ -68,6 +87,18 @@ export default function MainLayout() {
             </svg>
             Code Browser
           </NavLink>
+
+          {isAdmin && (
+            <>
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-6 px-4">Admin</div>
+              <NavLink to="/users" className={linkClass}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5V9H2v11h5m10 0v-2a4 4 0 00-4-4H11a4 4 0 00-4 4v2m10 0H7m5-7a3 3 0 100-6 3 3 0 000 6z" />
+                </svg>
+                Users
+              </NavLink>
+            </>
+          )}
 
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-6 px-4">Chip Manuals</div>
           <NavLink to="/manual/search" className={linkClass}>

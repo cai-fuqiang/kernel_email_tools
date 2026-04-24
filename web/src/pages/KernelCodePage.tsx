@@ -21,6 +21,7 @@ import type {
   KernelFileResponse,
   CodeAnnotation,
 } from '../api/types';
+import { useAuth } from '../auth';
 
 // ============================================================
 // 子组件：版本选择器
@@ -380,20 +381,27 @@ function AnnotationModal({
   lineInfo,
   onSave,
   saving,
+  initialVisibility = 'public',
 }: {
   isOpen: boolean;
   onClose: () => void;
   mode: 'create' | 'edit';
   initialBody: string;
   lineInfo: string;
-  onSave: (body: string) => void;
+  onSave: (body: string, visibility: 'public' | 'private') => void;
   saving: boolean;
+  initialVisibility?: 'public' | 'private';
 }) {
   const [body, setBody] = useState(initialBody);
+  const [visibility, setVisibility] = useState<'public' | 'private'>(initialVisibility);
 
   useEffect(() => {
     setBody(initialBody);
   }, [initialBody]);
+
+  useEffect(() => {
+    setVisibility(initialVisibility);
+  }, [initialVisibility]);
 
   if (!isOpen) return null;
 
@@ -416,9 +424,22 @@ function AnnotationModal({
               autoFocus
             />
           </div>
+          {mode === 'create' && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-gray-500">Visibility</span>
+              <select
+                value={visibility}
+                onChange={(e) => setVisibility(e.target.value as 'public' | 'private')}
+                className="rounded-lg border border-gray-300 px-2 py-1 text-sm"
+              >
+                <option value="public">Public</option>
+                <option value="private">Private</option>
+              </select>
+            </div>
+          )}
           <div className="flex gap-2">
             <button
-              onClick={() => onSave(body)}
+              onClick={() => onSave(body, visibility)}
               disabled={saving || !body.trim()}
               className="px-4 py-2 text-sm font-medium text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 disabled:opacity-50"
             >
@@ -459,6 +480,7 @@ function AnnotationPanel({
   onAnnotationDeleted: () => void;
   onGoToLine?: (line: number) => void;
 }) {
+  const { canWrite } = useAuth();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAnnotation, setEditingAnnotation] = useState<CodeAnnotation | null>(null);
   const [saving, setSaving] = useState(false);
@@ -497,7 +519,7 @@ function AnnotationPanel({
     setExpandedIds(newExpanded);
   }, [annotations]);
 
-  const handleCreate = async (body: string) => {
+  const handleCreate = async (body: string, visibility: 'public' | 'private') => {
     setSaving(true);
     try {
       let start: number, end: number;
@@ -519,6 +541,7 @@ function AnnotationPanel({
         start_line: start,
         end_line: end,
         body: body.trim(),
+        visibility,
         in_reply_to: replyToId || undefined,
       });
       setShowCreateModal(false);
@@ -585,7 +608,7 @@ function AnnotationPanel({
             <h3 className="text-sm font-semibold text-gray-700">Annotations</h3>
             {lineInfo && <p className="text-[10px] text-gray-400 mt-0.5">{lineInfo}</p>}
           </div>
-          {(selectedLines.size > 0 || selectedRange) && (
+          {canWrite && (selectedLines.size > 0 || selectedRange) && (
             <button
               onClick={() => setShowCreateModal(true)}
               className="px-3 py-1.5 text-xs font-medium text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 flex items-center gap-1"
@@ -654,27 +677,31 @@ function AnnotationPanel({
                           >
                             Goto
                           </button>
-                          <button
-                            onClick={() => {
-                              setReplyToId(rootAnn.annotation_id);
-                              setShowCreateModal(true);
-                            }}
-                            className="text-[10px] text-gray-400 hover:text-green-500"
-                          >
-                            Reply
-                          </button>
-                          <button
-                            onClick={() => setEditingAnnotation(rootAnn)}
-                            className="text-[10px] text-gray-400 hover:text-blue-500"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDelete(rootAnn.annotation_id)}
-                            className="text-[10px] text-gray-400 hover:text-red-500"
-                          >
-                            Delete
-                          </button>
+                          {canWrite && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setReplyToId(rootAnn.annotation_id);
+                                  setShowCreateModal(true);
+                                }}
+                                className="text-[10px] text-gray-400 hover:text-green-500"
+                              >
+                                Reply
+                              </button>
+                              <button
+                                onClick={() => setEditingAnnotation(rootAnn)}
+                                className="text-[10px] text-gray-400 hover:text-blue-500"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDelete(rootAnn.annotation_id)}
+                                className="text-[10px] text-gray-400 hover:text-red-500"
+                              >
+                                Delete
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                       <div className="px-3 py-2 overflow-hidden">
@@ -710,12 +737,14 @@ function AnnotationPanel({
                             >
                               Goto
                             </button>
-                            <button
-                              onClick={() => handleDelete(reply.annotation_id)}
-                              className="text-[10px] text-gray-400 hover:text-red-500"
-                            >
-                              Delete
-                            </button>
+                            {canWrite && (
+                              <button
+                                onClick={() => handleDelete(reply.annotation_id)}
+                                className="text-[10px] text-gray-400 hover:text-red-500"
+                              >
+                                Delete
+                              </button>
+                            )}
                           </div>
                         </div>
                         <div className="px-3 py-2 overflow-hidden">
@@ -752,7 +781,7 @@ function AnnotationPanel({
         mode="edit"
         initialBody={editingAnnotation?.body || ''}
         lineInfo={editingAnnotation ? `L${editingAnnotation.start_line}${editingAnnotation.end_line !== editingAnnotation.start_line ? `-${editingAnnotation.end_line}` : ''}` : ''}
-        onSave={handleUpdate}
+        onSave={(body, _visibility) => handleUpdate(body)}
         saving={saving}
       />
     </>

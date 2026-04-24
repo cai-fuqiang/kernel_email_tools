@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import and_, delete, func, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.storage.models import (
@@ -75,6 +75,16 @@ class UnifiedAnnotationStore:
         self.session_factory = session_factory
         self.default_author = default_author
 
+    def _visibility_filters(self, viewer_user_id: Optional[str]) -> list:
+        if viewer_user_id:
+            return [
+                or_(
+                    AnnotationORM.visibility == "public",
+                    AnnotationORM.author_user_id == viewer_user_id,
+                )
+            ]
+        return [AnnotationORM.visibility == "public"]
+
     def _to_annotation_read(self, ann: AnnotationORM) -> AnnotationRead:
         """Normalize nullable ORM fields to the API's stable read shape."""
         anchor = ann.anchor or {}
@@ -84,6 +94,8 @@ class UnifiedAnnotationStore:
                 "annotation_id": ann.annotation_id,
                 "annotation_type": ann.annotation_type,
                 "author": ann.author,
+                "author_user_id": ann.author_user_id,
+                "visibility": ann.visibility or "public",
                 "body": ann.body,
                 "parent_annotation_id": ann.parent_annotation_id or "",
                 "created_at": ann.created_at,
@@ -103,7 +115,13 @@ class UnifiedAnnotationStore:
             }
         )
 
-    async def create(self, annotation: AnnotationCreate, content_for_hash: str = "") -> AnnotationRead:
+    async def create(
+        self,
+        annotation: AnnotationCreate,
+        content_for_hash: str = "",
+        actor_user_id: str = "",
+        actor_display_name: str = "",
+    ) -> AnnotationRead:
         """创建标注或回复。"""
         data = _normalize_annotation_payload(annotation)
         now = datetime.utcnow()
@@ -161,7 +179,9 @@ class UnifiedAnnotationStore:
             orm = AnnotationORM(
                 annotation_id=annotation_id,
                 annotation_type=data.annotation_type,
-                author=data.author or self.default_author,
+                author=actor_display_name or data.author or self.default_author,
+                author_user_id=actor_user_id or data.author_user_id,
+                visibility=data.visibility or "public",
                 body=data.body,
                 parent_annotation_id=data.parent_annotation_id or None,
                 target_type=data.target_type,
@@ -186,23 +206,30 @@ class UnifiedAnnotationStore:
             logger.info("Created %s annotation %s", data.annotation_type, annotation_id)
             return self._to_annotation_read(orm)
 
-    async def list_by_thread(self, thread_id: str) -> list[AnnotationRead]:
+    async def list_by_thread(self, thread_id: str, viewer_user_id: Optional[str] = None) -> list[AnnotationRead]:
         async with self.session_factory() as session:
             stmt = (
                 select(AnnotationORM)
                 .where(AnnotationORM.thread_id == thread_id)
+                .where(*self._visibility_filters(viewer_user_id))
                 .order_by(AnnotationORM.created_at.asc())
             )
             result = await session.execute(stmt)
             return [self._to_annotation_read(row) for row in result.scalars().all()]
 
-    async def list_by_code(self, version: str, file_path: str) -> list[AnnotationRead]:
+    async def list_by_code(
+        self,
+        version: str,
+        file_path: str,
+        viewer_user_id: Optional[str] = None,
+    ) -> list[AnnotationRead]:
         async with self.session_factory() as session:
             stmt = (
                 select(AnnotationORM)
                 .where(AnnotationORM.annotation_type == "code")
                 .where(AnnotationORM.version == version)
                 .where(AnnotationORM.file_path == file_path)
+                .where(*self._visibility_filters(viewer_user_id))
                 .order_by(AnnotationORM.start_line.asc(), AnnotationORM.created_at.asc())
             )
             result = await session.execute(stmt)
@@ -214,8 +241,9 @@ class UnifiedAnnotationStore:
         page: int = 1,
         page_size: int = 20,
         extra_filters: Optional[list] = None,
+        viewer_user_id: Optional[str] = None,
     ) -> tuple[list[dict], int]:
-        filters = list(extra_filters or [])
+        filters = [*self._visibility_filters(viewer_user_id), *(extra_filters or [])]
         if annotation_type != "all":
             filters.append(AnnotationORM.annotation_type == annotation_type)
         return await self._list_with_filters(filters, page, page_size)
@@ -227,8 +255,13 @@ class UnifiedAnnotationStore:
         page: int = 1,
         page_size: int = 20,
         extra_filters: Optional[list] = None,
+        viewer_user_id: Optional[str] = None,
     ) -> tuple[list[dict], int]:
-        filters = [AnnotationORM.body.ilike(f"%{keyword}%"), *(extra_filters or [])]
+        filters = [
+            AnnotationORM.body.ilike(f"%{keyword}%"),
+            *self._visibility_filters(viewer_user_id),
+            *(extra_filters or []),
+        ]
         if annotation_type != "all":
             filters.append(AnnotationORM.annotation_type == annotation_type)
         return await self._list_with_filters(filters, page, page_size)
@@ -272,6 +305,8 @@ class UnifiedAnnotationStore:
             "annotation_id": ann.annotation_id,
             "annotation_type": ann.annotation_type,
             "author": ann.author,
+            "author_user_id": ann.author_user_id,
+            "visibility": ann.visibility or "public",
             "body": ann.body,
             "parent_annotation_id": ann.parent_annotation_id or "",
             "created_at": ann.created_at.isoformat(),

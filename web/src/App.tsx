@@ -8,22 +8,27 @@ import AnnotationsPage from './pages/AnnotationsPage';
 import ManualSearchPage from './pages/ManualSearchPage';
 import ManualAskPage from './pages/ManualAskPage';
 import KernelCodePage from './pages/KernelCodePage';
+import UsersPage from './pages/UsersPage';
+import { AuthProvider } from './auth';
 
 export default function App() {
   return (
-    <BrowserRouter basename="/app">
-      <Routes>
-        <Route element={<MainLayout />}>
-          <Route path="/" element={<SearchPage />} />
-          <Route path="/ask" element={<AskPage />} />
-          <Route path="/tags" element={<TagsPage />} />
-          <Route path="/annotations" element={<AnnotationsPage />} />
-          <Route path="/translations" element={<TranslationsPage />} />
-          <Route path="/manual/search" element={<ManualSearchPage />} />
-          <Route path="/manual/ask" element={<ManualAskPage />} />
-          <Route path="/kernel-code" element={<KernelCodePage />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <AuthProvider>
+      <BrowserRouter basename="/app">
+        <Routes>
+          <Route element={<MainLayout />}>
+            <Route path="/" element={<SearchPage />} />
+            <Route path="/ask" element={<AskPage />} />
+            <Route path="/tags" element={<TagsPage />} />
+            <Route path="/annotations" element={<AnnotationsPage />} />
+            <Route path="/translations" element={<TranslationsPage />} />
+            <Route path="/manual/search" element={<ManualSearchPage />} />
+            <Route path="/manual/ask" element={<ManualAskPage />} />
+            <Route path="/kernel-code" element={<KernelCodePage />} />
+            <Route path="/users" element={<UsersPage />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }

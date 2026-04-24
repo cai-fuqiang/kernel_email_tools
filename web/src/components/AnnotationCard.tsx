@@ -2,11 +2,13 @@ import { useState } from 'react';
 import AnnotationMarkdown from './AnnotationMarkdown';
 import AnnotationActions from './AnnotationActions';
 import EmailTagEditor from './EmailTagEditor';
+import { useAuth } from '../auth';
 
 interface AnnotationCardProps {
   annotationId: string;
   annotationType: string;
   author: string;
+  visibility?: 'public' | 'private';
   body: string;
   createdAt: string;
   updatedAt: string;
@@ -36,6 +38,7 @@ export default function AnnotationCard({
   annotationId,
   annotationType,
   author,
+  visibility = 'public',
   body,
   createdAt,
   updatedAt,
@@ -47,6 +50,7 @@ export default function AnnotationCard({
   onReply,
   onJump,
 }: AnnotationCardProps) {
+  const { canWrite } = useAuth();
   const [editing, setEditing] = useState(false);
   const [editBody, setEditBody] = useState(body);
   const theme = TYPE_THEME[annotationType] || {
@@ -64,6 +68,9 @@ export default function AnnotationCard({
         <span className="text-sm font-semibold text-slate-900">{targetLabel || 'Untitled target'}</span>
         {targetSubtitle && <span className="text-xs text-slate-500">{targetSubtitle}</span>}
         {anchorLabel && <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">{anchorLabel}</span>}
+        <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${visibility === 'private' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+          {visibility}
+        </span>
       </div>
 
       <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
@@ -118,15 +125,28 @@ export default function AnnotationCard({
               compact
             />
           </div>
-          <AnnotationActions
-            onEdit={() => setEditing(true)}
-            onDelete={onDelete}
-            onReply={onReply}
-            onPreview={onJump ? (() => onJump()) : undefined}
-            showReply
-            showPreview={!!onJump}
-            variant={annotationType === 'code' ? 'code' : 'email'}
-          />
+          {canWrite ? (
+            <AnnotationActions
+              onEdit={() => {
+                setEditing(true);
+              }}
+              onDelete={onDelete}
+              onReply={onReply}
+              onPreview={onJump ? (() => onJump()) : undefined}
+              showReply
+              showPreview={!!onJump}
+              variant={annotationType === 'code' ? 'code' : 'email'}
+            />
+          ) : onJump ? (
+            <div className="mt-2">
+              <button
+                onClick={() => onJump()}
+                className="text-xs px-2 py-1 rounded transition-colors text-slate-600 hover:bg-slate-100"
+              >
+                Jump
+              </button>
+            </div>
+          ) : null}
         </>
       )}
     </div>

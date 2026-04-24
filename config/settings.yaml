@@ -111,6 +111,25 @@ qa:
 annotations:
   default_author: "me"                   # 默认批注作者名称
 
+# 多用户认证配置
+auth:
+  mode: header
+  allow_auto_provision: true
+  headers:
+    user_id: X-User-Id
+    username: X-Username
+    display_name: X-Display-Name
+    email: X-User-Email
+    role: X-User-Role
+  dev_fallback_user:
+    enabled: true
+    user_id: dev-admin
+    username: dev-admin
+    display_name: Dev Admin
+    email: dev@example.com
+    role: admin
+    status: active
+
 # 内核源码浏览配置（PLAN-10000）
 kernel_source:
   # 主仓库路径（指向 .git 目录，因为 GitLocalSource 使用 --git-dir）

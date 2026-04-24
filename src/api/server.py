@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
-from fastapi import FastAPI, HTTPException, Query, Body
+from fastapi import FastAPI, HTTPException, Query, Body, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -25,6 +25,7 @@ from src.storage.models import (
     AnnotationORM,
     AnnotationRead,
     AnnotationUpdate,
+    CurrentUserRead,
     EmailRead,
     TagAssignmentCreate,
     TagAssignmentRead,
@@ -32,6 +33,9 @@ from src.storage.models import (
     TagCreate,
     TagRead,
     TagTree,
+    UserORM,
+    UserRead,
+    UserUpdate,
 )
 from src.storage.postgres import PostgresStorage
 from src.storage.tag_store import (
@@ -72,6 +76,12 @@ _annotation_store: Optional[AnnotationStore] = None
 # 内核源码浏览组件
 _kernel_source: Optional[GitLocalSource] = None
 
+# 认证配置
+_auth_config: dict = {}
+
+VALID_ROLES = {"admin", "editor", "viewer"}
+VALID_VISIBILITY = {"public", "private"}
+
 
 def _load_config() -> dict:
     """加载配置文件。"""
@@ -82,6 +92,158 @@ def _load_config() -> dict:
     return {}
 
 
+class CurrentUser(BaseModel):
+    user_id: str
+    username: str
+    display_name: str
+    email: str
+    role: str
+    status: str
+    auth_source: str
+
+
+def _normalize_role(role: str) -> str:
+    role_value = (role or "viewer").strip().lower()
+    return role_value if role_value in VALID_ROLES else "viewer"
+
+
+def _normalize_visibility(value: str) -> str:
+    visibility = (value or "public").strip().lower()
+    return visibility if visibility in VALID_VISIBILITY else "public"
+
+
+def _capabilities_for_role(role: str) -> list[str]:
+    if role == "admin":
+        return ["read", "write", "manage_users"]
+    if role == "editor":
+        return ["read", "write"]
+    return ["read"]
+
+
+def _header_name(name: str, default: str) -> str:
+    return str(_auth_config.get("headers", {}).get(name, default))
+
+
+def _fallback_user() -> Optional[CurrentUser]:
+    fallback = _auth_config.get("dev_fallback_user", {}) or {}
+    if not fallback.get("enabled", False):
+        return None
+    role = _normalize_role(str(fallback.get("role", "admin")))
+    user_id = str(fallback.get("user_id", "dev-admin")).strip()
+    return CurrentUser(
+        user_id=user_id,
+        username=str(fallback.get("username", user_id)).strip(),
+        display_name=str(fallback.get("display_name", user_id)).strip(),
+        email=str(fallback.get("email", "")).strip(),
+        role=role,
+        status=str(fallback.get("status", "active")).strip() or "active",
+        auth_source="fallback",
+    )
+
+
+async def _sync_user_record(current_user: CurrentUser) -> CurrentUser:
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+
+    allow_auto_provision = _auth_config.get("allow_auto_provision", True)
+    now = datetime.utcnow()
+    async with _storage.session_factory() as session:
+        result = await session.execute(
+            select(UserORM).where(UserORM.user_id == current_user.user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if user is None:
+            if not allow_auto_provision:
+                raise HTTPException(status_code=401, detail="User provisioning disabled")
+            user = UserORM(
+                user_id=current_user.user_id,
+                username=current_user.username,
+                display_name=current_user.display_name,
+                email=current_user.email,
+                role=_normalize_role(current_user.role or "viewer"),
+                status=current_user.status,
+                auth_source=current_user.auth_source,
+                last_seen_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(user)
+        else:
+            user.username = current_user.username or user.username
+            user.display_name = current_user.display_name or user.display_name
+            user.email = current_user.email or user.email
+            if current_user.role:
+                user.role = _normalize_role(current_user.role)
+            user.status = current_user.status or user.status
+            user.auth_source = current_user.auth_source or user.auth_source
+            user.last_seen_at = now
+            user.updated_at = now
+
+        await session.commit()
+        await session.refresh(user)
+
+        if user.status != "active":
+            raise HTTPException(status_code=403, detail="User is disabled")
+
+        return CurrentUser(
+            user_id=user.user_id,
+            username=user.username,
+            display_name=user.display_name,
+            email=user.email,
+            role=_normalize_role(user.role),
+            status=user.status,
+            auth_source=user.auth_source,
+        )
+
+
+async def _resolve_current_user(request: Request, required: bool = True) -> Optional[CurrentUser]:
+    user_id = request.headers.get(_header_name("user_id", "X-User-Id"), "").strip()
+    username = request.headers.get(_header_name("username", "X-Username"), "").strip()
+    display_name = request.headers.get(_header_name("display_name", "X-Display-Name"), "").strip()
+    email = request.headers.get(_header_name("email", "X-User-Email"), "").strip()
+    role = request.headers.get(_header_name("role", "X-User-Role"), "").strip()
+
+    if not user_id:
+        fallback = _fallback_user()
+        if fallback is None:
+            if required:
+                raise HTTPException(status_code=401, detail="Authentication required")
+            return None
+        return await _sync_user_record(fallback)
+
+    current_user = CurrentUser(
+        user_id=user_id,
+        username=username or user_id,
+        display_name=display_name or username or user_id,
+        email=email,
+        role=role.strip().lower(),
+        status="active",
+        auth_source="header",
+    )
+    return await _sync_user_record(current_user)
+
+
+async def get_current_user(request: Request) -> CurrentUser:
+    user = await _resolve_current_user(request, required=True)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return user
+
+
+async def get_optional_current_user(request: Request) -> Optional[CurrentUser]:
+    return await _resolve_current_user(request, required=False)
+
+
+def require_roles(*roles: str):
+    async def dependency(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+        if current_user.role not in roles:
+            raise HTTPException(status_code=403, detail="Permission denied")
+        return current_user
+
+    return dependency
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理：启动时初始化组件，关闭时释放资源。"""
@@ -90,12 +252,14 @@ async def lifespan(app: FastAPI):
     global _translator, _translation_cache
     global _annotation_store
     global _kernel_source
+    global _auth_config
 
     config = _load_config()
     storage_cfg = config.get("storage", {})
     retriever_cfg = config.get("retriever", {})
     qa_cfg = config.get("qa", {})
     indexer_cfg = config.get("indexer", {})
+    _auth_config = config.get("auth", {})
 
     # ========== 邮件存储初始化 ==========
     email_storage_cfg = storage_cfg.get("email", {})
@@ -271,6 +435,7 @@ class TagCreateRequest(BaseModel):
     color: str = Field("#6366f1", description="标签颜色（十六进制）")
     status: str = Field("active", description="active | deprecated | draft")
     tag_kind: str = Field("topic", description="topic | subsystem | concept | status | person | org | process | evidence")
+    visibility: str = Field("public", description="public | private")
     aliases: list[str] = Field(default_factory=list, description="标签别名")
     created_by: str = Field("me", description="创建者")
 
@@ -284,6 +449,7 @@ class TagUpdateRequest(BaseModel):
     parent_tag_id: Optional[int] = None
     status: Optional[str] = None
     tag_kind: Optional[str] = None
+    visibility: Optional[str] = None
     aliases: Optional[list[str]] = None
     updated_by: Optional[str] = None
 
@@ -398,6 +564,59 @@ class TranslateBatchResponse(BaseModel):
     cached_count: int = 0
 
 
+@app.get("/api/me", response_model=CurrentUserRead)
+async def get_me(current_user: CurrentUser = Depends(get_current_user)):
+    return CurrentUserRead(
+        user_id=current_user.user_id,
+        username=current_user.username,
+        display_name=current_user.display_name,
+        email=current_user.email,
+        role=current_user.role,
+        status=current_user.status,
+        auth_source=current_user.auth_source,
+        capabilities=_capabilities_for_role(current_user.role),
+    )
+
+
+@app.get("/api/admin/users", response_model=list[UserRead])
+async def list_users(current_user: CurrentUser = Depends(require_roles("admin"))):
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+
+    async with _storage.session_factory() as session:
+        result = await session.execute(select(UserORM).order_by(UserORM.updated_at.desc(), UserORM.user_id.asc()))
+        return [UserRead.model_validate(user) for user in result.scalars().all()]
+
+
+@app.patch("/api/admin/users/{user_id}", response_model=UserRead)
+async def update_user(
+    user_id: str,
+    request: UserUpdate,
+    current_user: CurrentUser = Depends(require_roles("admin")),
+):
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+
+    async with _storage.session_factory() as session:
+        result = await session.execute(select(UserORM).where(UserORM.user_id == user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise HTTPException(status_code=404, detail=f"User not found: {user_id}")
+
+        if request.display_name is not None:
+            user.display_name = request.display_name.strip()
+        if request.email is not None:
+            user.email = request.email.strip()
+        if request.role is not None:
+            user.role = _normalize_role(request.role)
+        if request.status is not None:
+            user.status = request.status.strip() or user.status
+        user.updated_at = datetime.utcnow()
+        await session.commit()
+        await session.refresh(user)
+        return UserRead.model_validate(user)
+
+
 
 
 # ============================================================
@@ -405,7 +624,10 @@ class TranslateBatchResponse(BaseModel):
 # ============================================================
 
 @app.post("/api/tags", response_model=TagRead)
-async def create_tag(request: TagCreateRequest):
+async def create_tag(
+    request: TagCreateRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
     """创建标签。
 
     支持父子层级，子标签通过 parent_id 指定父标签。
@@ -423,9 +645,14 @@ async def create_tag(request: TagCreateRequest):
                 color=request.color,
                 status=request.status,
                 tag_kind=request.tag_kind,
+                visibility=_normalize_visibility(request.visibility),
                 aliases=request.aliases,
-                created_by=request.created_by,
-            )
+                created_by=current_user.display_name,
+                owner_user_id=current_user.user_id,
+                created_by_user_id=current_user.user_id,
+            ),
+            actor_user_id=current_user.user_id,
+            actor_display_name=current_user.display_name,
         )
         return _tag_store._to_tag_read(tag)
     except ValueError as e:
@@ -433,7 +660,10 @@ async def create_tag(request: TagCreateRequest):
 
 
 @app.get("/api/tags", response_model=list[TagTree])
-async def get_tags(flat: bool = Query(False, description="是否返回平铺列表")):
+async def get_tags(
+    flat: bool = Query(False, description="是否返回平铺列表"),
+    current_user: Optional[CurrentUser] = Depends(get_optional_current_user),
+):
     """获取标签树形结构。
 
     返回所有标签，按父子关系组织成树形结构。
@@ -441,11 +671,18 @@ async def get_tags(flat: bool = Query(False, description="是否返回平铺列�
     if not _tag_store:
         raise HTTPException(status_code=503, detail="Tag store not initialized")
 
-    return await _tag_store.list_tags(flat=flat)
+    return await _tag_store.list_tags(
+        flat=flat,
+        viewer_user_id=current_user.user_id if current_user else None,
+    )
 
 
 @app.patch("/api/tags/{tag_id}", response_model=TagRead)
-async def update_tag(tag_id: int, request: TagUpdateRequest):
+async def update_tag(
+    tag_id: int,
+    request: TagUpdateRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
     if not _tag_store:
         raise HTTPException(status_code=503, detail="Tag store not initialized")
 
@@ -458,8 +695,10 @@ async def update_tag(tag_id: int, request: TagUpdateRequest):
             parent_tag_id=request.parent_tag_id if request.parent_tag_id is not None else request.parent_id,
             status=request.status,
             tag_kind=request.tag_kind,
+            visibility=_normalize_visibility(request.visibility) if request.visibility is not None else None,
             aliases=request.aliases,
-            updated_by=request.updated_by or "",
+            updated_by=current_user.display_name,
+            updated_by_user_id=current_user.user_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -470,7 +709,7 @@ async def update_tag(tag_id: int, request: TagUpdateRequest):
 
 
 @app.get("/api/tags/stats", response_model=list[dict])
-async def get_tag_stats():
+async def get_tag_stats(current_user: Optional[CurrentUser] = Depends(get_optional_current_user)):
     """获取标签统计信息。
 
     返回所有标签及其被使用的邮件数量。
@@ -478,7 +717,9 @@ async def get_tag_stats():
     if not _storage:
         raise HTTPException(status_code=503, detail="Storage not initialized")
 
-    return await _storage.get_all_tags_with_count()
+    return await _storage.get_all_tags_with_count(
+        viewer_user_id=current_user.user_id if current_user else None
+    )
 
 
 @app.get("/api/tags/{tag_name}/emails")
@@ -486,6 +727,7 @@ async def get_tag_emails(
     tag_name: str,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    current_user: Optional[CurrentUser] = Depends(get_optional_current_user),
 ):
     """获取指定标签下的邮件列表。
 
@@ -504,6 +746,7 @@ async def get_tag_emails(
         tag_name=tag_name,
         page=page,
         page_size=page_size,
+        viewer_user_id=current_user.user_id if current_user else None,
     )
 
     return {
@@ -528,7 +771,10 @@ async def get_tag_emails(
 
 
 @app.delete("/api/tags/{tag_id}")
-async def delete_tag(tag_id: int):
+async def delete_tag(
+    tag_id: int,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
     """删除标签。
 
     会级联删除所有子标签。
@@ -543,7 +789,10 @@ async def delete_tag(tag_id: int):
 
 
 @app.post("/api/tag-assignments", response_model=TagAssignmentRead)
-async def create_tag_assignment(request: TagAssignmentCreateRequest):
+async def create_tag_assignment(
+    request: TagAssignmentCreateRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
     if not _tag_store:
         raise HTTPException(status_code=503, detail="Tag store not initialized")
 
@@ -559,8 +808,11 @@ async def create_tag_assignment(request: TagAssignmentCreateRequest):
                 assignment_scope=request.assignment_scope,
                 source_type=request.source_type,
                 evidence=request.evidence,
-                created_by=request.created_by,
-            )
+                created_by=current_user.display_name,
+                created_by_user_id=current_user.user_id,
+            ),
+            actor_user_id=current_user.user_id,
+            actor_display_name=current_user.display_name,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -574,6 +826,7 @@ async def list_tag_assignments(
     tag: Optional[str] = Query(None),
     tag_kind: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    current_user: Optional[CurrentUser] = Depends(get_optional_current_user),
 ):
     if not _tag_store:
         raise HTTPException(status_code=503, detail="Tag store not initialized")
@@ -586,11 +839,15 @@ async def list_tag_assignments(
         tag=tag,
         tag_kind=tag_kind,
         status=status,
+        viewer_user_id=current_user.user_id if current_user else None,
     )
 
 
 @app.delete("/api/tag-assignments/{assignment_id}")
-async def delete_tag_assignment(assignment_id: str):
+async def delete_tag_assignment(
+    assignment_id: str,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
     if not _tag_store:
         raise HTTPException(status_code=503, detail="Tag store not initialized")
 
@@ -606,6 +863,7 @@ async def get_tag_targets(
     target_type: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    current_user: Optional[CurrentUser] = Depends(get_optional_current_user),
 ):
     if not _tag_store:
         raise HTTPException(status_code=503, detail="Tag store not initialized")
@@ -615,6 +873,7 @@ async def get_tag_targets(
         target_type=target_type,
         page=page,
         page_size=page_size,
+        viewer_user_id=current_user.user_id if current_user else None,
     )
     return {
         "tag": tag,
@@ -627,10 +886,14 @@ async def get_tag_targets(
 
 
 @app.get("/api/tag-summary")
-async def get_tag_summary():
+async def get_tag_summary(current_user: Optional[CurrentUser] = Depends(get_optional_current_user)):
     if not _tag_store:
         raise HTTPException(status_code=503, detail="Tag store not initialized")
-    return {"tags": await _tag_store.get_tag_stats()}
+    return {
+        "tags": await _tag_store.get_tag_stats(
+            viewer_user_id=current_user.user_id if current_user else None
+        )
+    }
 
 
 @app.get("/api/tag-targets/{target_type}/{target_ref:path}/tags", response_model=TagTargetBundleResponse)
@@ -638,6 +901,7 @@ async def get_target_tags(
     target_type: str,
     target_ref: str,
     anchor_json: Optional[str] = Query(None),
+    current_user: Optional[CurrentUser] = Depends(get_optional_current_user),
 ):
     if not _tag_store:
         raise HTTPException(status_code=503, detail="Tag store not initialized")
@@ -645,6 +909,7 @@ async def get_target_tags(
         target_type,
         target_ref,
         anchor=json.loads(anchor_json) if anchor_json else None,
+        viewer_user_id=current_user.user_id if current_user else None,
     )
     return TagTargetBundleResponse(
         target_type=target_type,
@@ -656,17 +921,27 @@ async def get_target_tags(
 
 
 @app.get("/api/email/{message_id}/tags")
-async def get_email_tags(message_id: str):
+async def get_email_tags(
+    message_id: str,
+    current_user: Optional[CurrentUser] = Depends(get_optional_current_user),
+):
     """获取邮件的标签列表。"""
     if not _storage:
         raise HTTPException(status_code=503, detail="Storage not initialized")
 
-    tags = await _storage.get_email_tags(message_id)
+    tags = await _storage.get_email_tags(
+        message_id,
+        viewer_user_id=current_user.user_id if current_user else None,
+    )
     return {"message_id": message_id, "tags": tags}
 
 
 @app.post("/api/email/{message_id}/tags")
-async def add_email_tag(message_id: str, request: TagAddRequest):
+async def add_email_tag(
+    message_id: str,
+    request: TagAddRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
     """为邮件添加标签。
 
     单封邮件最多 16 个标签。
@@ -675,9 +950,18 @@ async def add_email_tag(message_id: str, request: TagAddRequest):
         raise HTTPException(status_code=503, detail="Storage not initialized")
 
     # 确保标签存在（不存在则自动创建）
-    await _tag_store.get_or_create_tag(request.tag_name)
+    await _tag_store.get_or_create_tag(
+        request.tag_name,
+        actor_user_id=current_user.user_id,
+        actor_display_name=current_user.display_name,
+    )
 
-    added = await _storage.add_email_tag(message_id, request.tag_name)
+    added = await _storage.add_email_tag(
+        message_id,
+        request.tag_name,
+        actor_user_id=current_user.user_id,
+        actor_display_name=current_user.display_name,
+    )
     if not added:
         raise HTTPException(
             status_code=400,
@@ -692,7 +976,11 @@ async def add_email_tag(message_id: str, request: TagAddRequest):
 
 
 @app.delete("/api/email/{message_id}/tags/{tag_name}")
-async def remove_email_tag(message_id: str, tag_name: str):
+async def remove_email_tag(
+    message_id: str,
+    tag_name: str,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
     """从邮件移除标签。"""
     if not _storage:
         raise HTTPException(status_code=503, detail="Storage not initialized")
@@ -866,7 +1154,10 @@ async def ask(
 
 
 @app.get("/api/thread/{thread_id:path}", response_model=ThreadResponse)
-async def get_thread(thread_id: str):
+async def get_thread(
+    thread_id: str,
+    current_user: Optional[CurrentUser] = Depends(get_optional_current_user),
+):
     """获取邮件线程 — 返回线程内所有邮件及批注（按时间排序）。"""
     if not _storage:
         raise HTTPException(status_code=503, detail="Service not initialized")
@@ -878,7 +1169,10 @@ async def get_thread(thread_id: str):
     # 获取线程批注
     annotations_data = []
     if _annotation_store:
-        annotations = await _annotation_store.list_by_thread(thread_id)
+        annotations = await _annotation_store.list_by_thread(
+            thread_id,
+            viewer_user_id=current_user.user_id if current_user else None,
+        )
         annotations_data = [_annotation_to_response(a).model_dump() for a in annotations]
 
     return ThreadResponse(
@@ -1279,6 +1573,7 @@ class AnnotationCreateRequest(BaseModel):
     annotation_type: str = Field("email", description="标注类型：email / code / sdm_spec ...")
     body: str = Field(..., min_length=1, description="批注正文（支持 Markdown）")
     author: str = Field("", description="批注作者（留空使用默认作者）")
+    visibility: str = Field("public", description="public | private")
 
     parent_annotation_id: str = Field("", description="父批注 ID，用于回复")
     target_type: str = Field("", description="标注目标类型，如 email_thread / kernel_file / sdm_spec")
@@ -1309,6 +1604,8 @@ class AnnotationResponse(BaseModel):
     annotation_id: str
     annotation_type: str = "email"
     author: str
+    author_user_id: Optional[str] = None
+    visibility: str = "public"
     body: str
     parent_annotation_id: str = ""
     created_at: str
@@ -1332,6 +1629,8 @@ def _annotation_to_response(annotation: AnnotationRead) -> AnnotationResponse:
         annotation_id=annotation.annotation_id,
         annotation_type=annotation.annotation_type,
         author=annotation.author,
+        author_user_id=annotation.author_user_id,
+        visibility=annotation.visibility,
         body=annotation.body,
         parent_annotation_id=annotation.parent_annotation_id,
         created_at=annotation.created_at.isoformat(),
@@ -1358,6 +1657,7 @@ async def list_annotations(
     version: Optional[str] = Query(None, description="限定代码版本（code 类型时）"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
+    current_user: Optional[CurrentUser] = Depends(get_optional_current_user),
 ):
     """统一标注列表与搜索。"""
     if not _annotation_store:
@@ -1371,6 +1671,7 @@ async def list_annotations(
                 page=page,
                 page_size=page_size,
                 extra_filters=[AnnotationORM.version == version] if type == "code" and version else None,
+                viewer_user_id=current_user.user_id if current_user else None,
             )
         else:
             annotations, total = await _annotation_store.list_all(
@@ -1378,6 +1679,7 @@ async def list_annotations(
                 page=page,
                 page_size=page_size,
                 extra_filters=[AnnotationORM.version == version] if type == "code" and version else None,
+                viewer_user_id=current_user.user_id if current_user else None,
             )
 
         return {
@@ -1392,7 +1694,10 @@ async def list_annotations(
 
 
 @app.post("/api/annotations", response_model=AnnotationResponse)
-async def create_annotation(request: AnnotationCreateRequest):
+async def create_annotation(
+    request: AnnotationCreateRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
     """创建统一标注。"""
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
@@ -1415,7 +1720,9 @@ async def create_annotation(request: AnnotationCreateRequest):
             AnnotationCreate(
                 annotation_type=request.annotation_type,
                 body=request.body,
-                author=request.author,
+                author=current_user.display_name,
+                author_user_id=current_user.user_id,
+                visibility=_normalize_visibility(request.visibility),
                 parent_annotation_id=parent_annotation_id,
                 target_type=request.target_type,
                 target_ref=request.target_ref,
@@ -1429,7 +1736,9 @@ async def create_annotation(request: AnnotationCreateRequest):
                 file_path=request.file_path,
                 start_line=request.start_line,
                 end_line=request.end_line,
-            )
+            ),
+            actor_user_id=current_user.user_id,
+            actor_display_name=current_user.display_name,
         )
         return _annotation_to_response(annotation)
     except ValueError as e:
@@ -1437,17 +1746,27 @@ async def create_annotation(request: AnnotationCreateRequest):
 
 
 @app.get("/api/annotations/{thread_id:path}", response_model=list[AnnotationResponse])
-async def get_annotations(thread_id: str):
+async def get_annotations(
+    thread_id: str,
+    current_user: Optional[CurrentUser] = Depends(get_optional_current_user),
+):
     """获取线程所有批注（仅 email 类型）。"""
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
 
-    annotations = await _annotation_store.list_by_thread(thread_id)
+    annotations = await _annotation_store.list_by_thread(
+        thread_id,
+        viewer_user_id=current_user.user_id if current_user else None,
+    )
     return [_annotation_to_response(a) for a in annotations]
 
 
 @app.put("/api/annotations/{annotation_id}")
-async def update_annotation(annotation_id: str, request: AnnotationUpdateRequest):
+async def update_annotation(
+    annotation_id: str,
+    request: AnnotationUpdateRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
     """编辑批注。"""
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
@@ -1463,7 +1782,10 @@ async def update_annotation(annotation_id: str, request: AnnotationUpdateRequest
 
 
 @app.delete("/api/annotations/{annotation_id}")
-async def delete_annotation(annotation_id: str):
+async def delete_annotation(
+    annotation_id: str,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
     """删除批注。"""
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
@@ -1478,6 +1800,7 @@ async def delete_annotation(annotation_id: str):
 @app.post("/api/annotations/export")
 async def export_annotations(
     thread_id: Optional[str] = Query(None, description="线程 ID（留空导出全部）"),
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
 ):
     """导出批注为 JSON（满足 git 固化需求）。
 
@@ -1488,13 +1811,34 @@ async def export_annotations(
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
 
     if thread_id:
-        return await _annotation_store.export_thread(thread_id)
+        annotations = await _annotation_store.list_by_thread(thread_id, viewer_user_id=current_user.user_id)
+        return {
+            "thread_id": thread_id,
+            "exported_at": datetime.utcnow().isoformat(),
+            "annotations": [item.model_dump(mode="json") for item in annotations],
+        }
     else:
-        return await _annotation_store.export_all()
+        items, _ = await _annotation_store.list_all(
+            annotation_type="all",
+            page=1,
+            page_size=10_000,
+            viewer_user_id=current_user.user_id,
+        )
+        grouped: dict[str, list[dict]] = {}
+        for item in items:
+            grouped.setdefault(item["target_ref"], []).append(item)
+        return {
+            "exported_at": datetime.utcnow().isoformat(),
+            "total_annotations": len(items),
+            "targets": grouped,
+        }
 
 
 @app.post("/api/annotations/import")
-async def import_annotations(data: dict = Body(...)):
+async def import_annotations(
+    data: dict = Body(...),
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
     """从 JSON 导入批注（已存在的会跳过）。
 
     支持两种格式：
@@ -1749,6 +2093,7 @@ class CodeAnnotationCreateRequest(BaseModel):
     end_line: int = Field(..., ge=1, description="结束行号")
     body: str = Field(..., min_length=1, description="注释正文（支持 Markdown）")
     author: Optional[str] = Field(None, description="作者名称")
+    visibility: str = Field("public", description="public | private")
     in_reply_to: Optional[str] = Field(None, description="回复的父 annotation_id")
 
 
@@ -1763,6 +2108,7 @@ async def list_code_annotations(
     version: Optional[str] = Query(None, description="限定版本"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    current_user: Optional[CurrentUser] = Depends(get_optional_current_user),
 ):
     """代码标注总览，基于统一 annotation store。"""
     if not _annotation_store:
@@ -1775,6 +2121,7 @@ async def list_code_annotations(
             page=page,
             page_size=page_size,
             extra_filters=[AnnotationORM.version == version] if version else None,
+            viewer_user_id=current_user.user_id if current_user else None,
         )
     else:
         annotations, total = await _annotation_store.list_all(
@@ -1782,6 +2129,7 @@ async def list_code_annotations(
             page=page,
             page_size=page_size,
             extra_filters=[AnnotationORM.version == version] if version else None,
+            viewer_user_id=current_user.user_id if current_user else None,
         )
 
     return {
@@ -1793,17 +2141,28 @@ async def list_code_annotations(
 
 
 @app.get("/api/kernel/annotations/{version}/{path:path}")
-async def get_file_code_annotations(version: str, path: str):
+async def get_file_code_annotations(
+    version: str,
+    path: str,
+    current_user: Optional[CurrentUser] = Depends(get_optional_current_user),
+):
     """获取指定文件的注释列表。"""
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
 
-    annotations = await _annotation_store.list_by_code(version, path)
+    annotations = await _annotation_store.list_by_code(
+        version,
+        path,
+        viewer_user_id=current_user.user_id if current_user else None,
+    )
     return [_annotation_to_response(a).model_dump() for a in annotations]
 
 
 @app.post("/api/kernel/annotations")
-async def create_code_annotation(request: CodeAnnotationCreateRequest):
+async def create_code_annotation(
+    request: CodeAnnotationCreateRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
     """创建代码注释。"""
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
@@ -1813,7 +2172,9 @@ async def create_code_annotation(request: CodeAnnotationCreateRequest):
             AnnotationCreate(
                 annotation_type="code",
                 body=request.body,
-                author=request.author or "",
+                author=current_user.display_name,
+                author_user_id=current_user.user_id,
+                visibility=_normalize_visibility(request.visibility),
                 parent_annotation_id=request.in_reply_to or "",
                 target_type="kernel_file",
                 target_ref=f"{request.version}:{request.file_path}",
@@ -1828,6 +2189,8 @@ async def create_code_annotation(request: CodeAnnotationCreateRequest):
                 start_line=request.start_line,
                 end_line=request.end_line,
             ),
+            actor_user_id=current_user.user_id,
+            actor_display_name=current_user.display_name,
         )
         return _annotation_to_response(annotation)
     except ValueError as e:
@@ -1835,7 +2198,11 @@ async def create_code_annotation(request: CodeAnnotationCreateRequest):
 
 
 @app.put("/api/kernel/annotations/{annotation_id}")
-async def update_code_annotation(annotation_id: str, request: CodeAnnotationUpdateRequest):
+async def update_code_annotation(
+    annotation_id: str,
+    request: CodeAnnotationUpdateRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
     """更新代码注释正文。"""
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
@@ -1851,7 +2218,10 @@ async def update_code_annotation(annotation_id: str, request: CodeAnnotationUpda
 
 
 @app.delete("/api/kernel/annotations/{annotation_id}")
-async def delete_code_annotation(annotation_id: str):
+async def delete_code_annotation(
+    annotation_id: str,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
     """删除代码注释。"""
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")

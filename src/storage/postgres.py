@@ -66,6 +66,7 @@ class PostgresStorage(BaseStorage):
         """创建表和索引，设置全文搜索触发器。"""
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all, checkfirst=True)
+            await self._ensure_multi_user_columns(conn)
 
             # 创建全文搜索触发器：自动更新 search_vector 列
             await conn.execute(text("""
@@ -95,6 +96,36 @@ class PostgresStorage(BaseStorage):
             """))
 
         logger.info("Database initialized: tables, indexes, and triggers created")
+
+    async def _ensure_multi_user_columns(self, conn) -> None:
+        """为已有部署补充多用户相关列。"""
+        statements = [
+            "ALTER TABLE tags ADD COLUMN IF NOT EXISTS visibility VARCHAR(16) NOT NULL DEFAULT 'public'",
+            "ALTER TABLE tags ADD COLUMN IF NOT EXISTS owner_user_id VARCHAR(128)",
+            "ALTER TABLE tags ADD COLUMN IF NOT EXISTS created_by_user_id VARCHAR(128)",
+            "ALTER TABLE tags ADD COLUMN IF NOT EXISTS updated_by_user_id VARCHAR(128)",
+            "CREATE INDEX IF NOT EXISTS ix_tags_visibility ON tags (visibility)",
+            "CREATE INDEX IF NOT EXISTS ix_tags_owner_user_id ON tags (owner_user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_tags_created_by_user_id ON tags (created_by_user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_tags_updated_by_user_id ON tags (updated_by_user_id)",
+            "ALTER TABLE tag_assignments ADD COLUMN IF NOT EXISTS created_by_user_id VARCHAR(128)",
+            "CREATE INDEX IF NOT EXISTS ix_tag_assignments_created_by_user_id ON tag_assignments (created_by_user_id)",
+            "ALTER TABLE annotations ADD COLUMN IF NOT EXISTS author_user_id VARCHAR(128)",
+            "ALTER TABLE annotations ADD COLUMN IF NOT EXISTS visibility VARCHAR(16) NOT NULL DEFAULT 'public'",
+            "CREATE INDEX IF NOT EXISTS ix_annotations_author_user_id ON annotations (author_user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_annotations_visibility ON annotations (visibility)",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(128) NOT NULL DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(128) NOT NULL DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(256) NOT NULL DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(32) NOT NULL DEFAULT 'viewer'",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'active'",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_source VARCHAR(32) NOT NULL DEFAULT 'header'",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+        ]
+        for statement in statements:
+            await conn.execute(text(statement))
 
     async def save_emails(self, emails: list[EmailCreate]) -> int:
         """批量写入邮件，基于 message_id 去重（ON CONFLICT DO NOTHING）。
@@ -332,7 +363,7 @@ class PostgresStorage(BaseStorage):
     # 邮件标签管理
     # ============================================================
 
-    async def get_email_tags(self, message_id: str) -> list[str]:
+    async def get_email_tags(self, message_id: str, viewer_user_id: Optional[str] = None) -> list[str]:
         """获取邮件的标签列表。
 
         Args:
@@ -341,9 +372,15 @@ class PostgresStorage(BaseStorage):
         Returns:
             标签名称列表。
         """
-        return await self.tag_store.get_email_tags(message_id)
+        return await self.tag_store.get_email_tags(message_id, viewer_user_id=viewer_user_id)
 
-    async def add_email_tag(self, message_id: str, tag_name: str) -> bool:
+    async def add_email_tag(
+        self,
+        message_id: str,
+        tag_name: str,
+        actor_user_id: str = "",
+        actor_display_name: str = "",
+    ) -> bool:
         """为邮件添加标签。
 
         Args:
@@ -353,7 +390,12 @@ class PostgresStorage(BaseStorage):
         Returns:
             添加成功返回 True，邮件不存在或已达上限返回 False。
         """
-        return await self.tag_store.add_email_tag(message_id, tag_name)
+        return await self.tag_store.add_email_tag(
+            message_id,
+            tag_name,
+            actor_user_id=actor_user_id,
+            actor_display_name=actor_display_name,
+        )
 
     async def remove_email_tag(self, message_id: str, tag_name: str) -> bool:
         """从邮件移除标签。
@@ -372,6 +414,7 @@ class PostgresStorage(BaseStorage):
         tag_name: str,
         page: int = 1,
         page_size: int = 20,
+        viewer_user_id: Optional[str] = None,
     ) -> tuple[list[EmailSearchResult], int]:
         """获取某个标签下的所有邮件。
 
@@ -383,7 +426,12 @@ class PostgresStorage(BaseStorage):
         Returns:
             (邮件列表, 总数)。
         """
-        items, total = await self.tag_store.get_emails_by_tag(tag_name, page, page_size)
+        items, total = await self.tag_store.get_emails_by_tag(
+            tag_name,
+            page,
+            page_size,
+            viewer_user_id=viewer_user_id,
+        )
         results = [
             EmailSearchResult(
                 id=0,
@@ -402,13 +450,13 @@ class PostgresStorage(BaseStorage):
         ]
         return results, total
 
-    async def get_all_tags_with_count(self) -> list[dict]:
+    async def get_all_tags_with_count(self, viewer_user_id: Optional[str] = None) -> list[dict]:
         """获取所有标签及其邮件数量。
 
         Returns:
             [{name: str, count: int}] 列表。
         """
-        return await self.tag_store.get_tag_stats()
+        return await self.tag_store.get_tag_stats(viewer_user_id=viewer_user_id)
 
     def _tag_match_query(self, tag_value: str):
         return or_(TagORM.name == tag_value, TagORM.slug == tag_value, TagAliasORM.alias == tag_value)

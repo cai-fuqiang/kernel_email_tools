@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { getThread, translateBatch, clearTranslationCache, createAnnotation, updateAnnotation, deleteAnnotation, exportAnnotations, importAnnotations } from '../api/client';
 import type { ThreadResponse, ThreadEmail, Annotation } from '../api/types';
 import EmailTagEditor from './EmailTagEditor';
+import { useAuth } from '../auth';
 
 // 线程节点类型（支持邮件和批注两种）
 interface ThreadNode {
@@ -325,13 +326,17 @@ function AnnotationInput({
   onCancel,
   initialBody,
   submitLabel,
+  showVisibility = true,
 }: { 
-  onSubmit: (body: string) => void; 
+  onSubmit: (body: string, visibility: 'public' | 'private') => void; 
   onCancel: () => void;
   initialBody?: string;
   submitLabel?: string;
+  showVisibility?: boolean;
 }) {
+  const { canWrite } = useAuth();
   const [body, setBody] = useState(initialBody || '');
+  const [visibility, setVisibility] = useState<'public' | 'private'>('public');
   return (
     <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
       <textarea
@@ -340,11 +345,26 @@ function AnnotationInput({
         className="w-full min-h-[80px] p-2 text-sm border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 bg-white"
         placeholder="输入批注内容（支持 Markdown）..."
         autoFocus
+        disabled={!canWrite}
       />
+      {showVisibility && (
+        <div className="mt-2 flex items-center gap-2 text-xs text-blue-700">
+          <span>Visibility</span>
+          <select
+            value={visibility}
+            onChange={(e) => setVisibility(e.target.value as 'public' | 'private')}
+            className="rounded border border-blue-300 bg-white px-2 py-1"
+            disabled={!canWrite}
+          >
+            <option value="public">Public</option>
+            <option value="private">Private</option>
+          </select>
+        </div>
+      )}
       <div className="flex gap-2 mt-2">
         <button
-          onClick={() => { if (body.trim()) onSubmit(body.trim()); }}
-          disabled={!body.trim()}
+          onClick={() => { if (body.trim()) onSubmit(body.trim(), visibility); }}
+          disabled={!canWrite || !body.trim()}
           className="px-3 py-1.5 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {submitLabel || '提交批注'}
@@ -378,6 +398,7 @@ function AnnotationCard({
   onDelete: (annotationId: string) => void;
   onReply: (annotationId: string) => void;
 }) {
+  const { canWrite } = useAuth();
   const [editing, setEditing] = useState(false);
 
   return (
@@ -391,6 +412,9 @@ function AnnotationCard({
       <div className="flex items-center gap-2 mb-2">
         <span className="px-2 py-0.5 bg-blue-200 text-blue-800 text-xs rounded font-medium">我的批注</span>
         <span className="text-sm font-medium text-blue-900">{annotation.author}</span>
+        <span className={`px-2 py-0.5 text-xs rounded font-medium ${annotation.visibility === 'private' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+          {annotation.visibility}
+        </span>
         <span className="text-xs text-blue-500 ml-auto">
           {new Date(annotation.created_at).toLocaleDateString('zh-CN', {
             year: 'numeric', month: 'short', day: 'numeric',
@@ -405,8 +429,9 @@ function AnnotationCard({
         <AnnotationInput
           initialBody={annotation.body}
           submitLabel="保存修改"
-          onSubmit={(body) => { onEdit(annotation.annotation_id, body); setEditing(false); }}
+          onSubmit={(body, _visibility) => { onEdit(annotation.annotation_id, body); setEditing(false); }}
           onCancel={() => setEditing(false)}
+          showVisibility={false}
         />
       ) : (
         <>
@@ -421,24 +446,28 @@ function AnnotationCard({
             />
           </div>
           <div className="flex gap-2 mt-2">
-            <button
-              onClick={() => onReply(annotation.annotation_id)}
-              className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-100 rounded transition-colors"
-            >
-              回复
-            </button>
-            <button
-              onClick={() => setEditing(true)}
-              className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-100 rounded transition-colors"
-            >
-              编辑
-            </button>
-            <button
-              onClick={() => onDelete(annotation.annotation_id)}
-              className="text-xs px-2 py-1 text-red-500 hover:bg-red-50 rounded transition-colors"
-            >
-              删除
-            </button>
+            {canWrite && (
+              <>
+                <button
+                  onClick={() => onReply(annotation.annotation_id)}
+                  className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+                >
+                  回复
+                </button>
+                <button
+                  onClick={() => setEditing(true)}
+                  className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+                >
+                  编辑
+                </button>
+                <button
+                  onClick={() => onDelete(annotation.annotation_id)}
+                  className="text-xs px-2 py-1 text-red-500 hover:bg-red-50 rounded transition-colors"
+                >
+                  删除
+                </button>
+              </>
+            )}
           </div>
         </>
       )}
@@ -519,12 +548,13 @@ function LayeredEmailCard({
   translations: TranslationMap;
   onTranslationUpdate: (para: string, translation: string) => void;
   onClearParagraphCache: (paragraph: string) => void;
-  onAddAnnotation: (threadId: string, inReplyTo: string, body: string) => void;
+  onAddAnnotation: (threadId: string, inReplyTo: string, body: string, visibility: 'public' | 'private') => void;
   onEditAnnotation: (annotationId: string, body: string) => void;
   onDeleteAnnotation: (annotationId: string) => void;
   replyingTo: string | null;
   onSetReplyingTo: (id: string | null) => void;
 }) {
+  const { canWrite } = useAuth();
   const { email, children, depth } = node;
   const paragraphs = parseParagraphs(getDisplayBody(email));
   const [editingPara, setEditingPara] = useState<string | null>(null);
@@ -753,19 +783,19 @@ function LayeredEmailCard({
           )}
           {/* 添加批注按钮 */}
           <div className="mt-3">
-            {replyingTo === email.message_id ? (
+            {canWrite && replyingTo === email.message_id ? (
               <AnnotationInput
-                onSubmit={(body) => { onAddAnnotation(node.email.message_id, email.message_id, body); onSetReplyingTo(null); }}
+                onSubmit={(body, visibility) => { onAddAnnotation(node.email.message_id, email.message_id, body, visibility); onSetReplyingTo(null); }}
                 onCancel={() => onSetReplyingTo(null)}
               />
-            ) : (
+            ) : canWrite ? (
               <button
                 onClick={() => onSetReplyingTo(email.message_id)}
                 className="text-xs px-3 py-1.5 text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg transition-colors"
               >
                 + 添加批注
               </button>
-            )}
+            ) : null}
           </div>
         </div>
       )}
@@ -797,12 +827,13 @@ function TreeEmailCard({
   translations: TranslationMap;
   onTranslationUpdate: (para: string, translation: string) => void;
   onClearParagraphCache: (paragraph: string) => void;
-  onAddAnnotation: (threadId: string, inReplyTo: string, body: string) => void;
+  onAddAnnotation: (threadId: string, inReplyTo: string, body: string, visibility: 'public' | 'private') => void;
   onEditAnnotation: (annotationId: string, body: string) => void;
   onDeleteAnnotation: (annotationId: string) => void;
   replyingTo: string | null;
   onSetReplyingTo: (id: string | null) => void;
 }) {
+  const { canWrite } = useAuth();
   const { email, children, depth } = node;
   const isExpanded = expandedIds.has(email.id);
   const paragraphs = parseParagraphs(getDisplayBody(email));
@@ -970,7 +1001,7 @@ function TreeEmailCard({
         {replyingTo === node.annotation.annotation_id && (
           <div style={{ marginLeft: '16px' }}>
             <AnnotationInput
-              onSubmit={(body) => { onAddAnnotation(node.annotation!.thread_id, node.annotation!.annotation_id, body); onSetReplyingTo(null); }}
+              onSubmit={(body, visibility) => { onAddAnnotation(node.annotation!.thread_id, node.annotation!.annotation_id, body, visibility); onSetReplyingTo(null); }}
               onCancel={() => onSetReplyingTo(null)}
             />
           </div>
@@ -1006,19 +1037,19 @@ function TreeEmailCard({
           )}
           {/* 添加批注按钮 */}
           <div className="mt-3">
-            {replyingTo === email.message_id ? (
+            {canWrite && replyingTo === email.message_id ? (
               <AnnotationInput
-                onSubmit={(body) => { onAddAnnotation(node.email.message_id, email.message_id, body); onSetReplyingTo(null); }}
+                onSubmit={(body, visibility) => { onAddAnnotation(node.email.message_id, email.message_id, body, visibility); onSetReplyingTo(null); }}
                 onCancel={() => onSetReplyingTo(null)}
               />
-            ) : (
+            ) : canWrite ? (
               <button
                 onClick={() => onSetReplyingTo(email.message_id)}
                 className="text-xs px-3 py-1.5 text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg transition-colors"
               >
                 + 添加批注
               </button>
-            )}
+            ) : null}
           </div>
         </div>
       </details>
@@ -1150,12 +1181,13 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
     return tree;
   }, []);
 
-  const handleAddAnnotation = useCallback(async (_threadId: string, inReplyTo: string, body: string) => {
+  const handleAddAnnotation = useCallback(async (_threadId: string, inReplyTo: string, body: string, visibility: 'public' | 'private') => {
     try {
       await createAnnotation({
         thread_id: threadId,
         in_reply_to: inReplyTo,
         body,
+        visibility,
       });
       // 重新加载线程数据
       const t = await getThread(threadId);

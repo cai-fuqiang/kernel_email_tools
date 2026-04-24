@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, FileText, Mail, ScrollText } from 'lucide-re
 import AnnotationCard from './AnnotationCard';
 import ThreadDrawer from './ThreadDrawer';
 import { createAnnotation, deleteAnnotation, updateAnnotation } from '../api/client';
+import { useAuth } from '../auth';
 import type { AnnotationListItem } from '../api/types';
 
 interface AnnotationTreeProps {
@@ -65,6 +66,7 @@ function getAnchorLabel(annotation: AnnotationListItem): string {
 
 export default function AnnotationTree({ annotations, onAnnotationsChange }: AnnotationTreeProps) {
   const navigate = useNavigate();
+  const { canWrite } = useAuth();
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [drawerThreadId, setDrawerThreadId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -113,6 +115,7 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
       await createAnnotation({
         annotation_type: parent.annotation_type,
         body: replyBody.trim(),
+        visibility: parent.visibility,
         parent_annotation_id: parent.annotation_id,
         target_type: parent.target_type,
         target_ref: parent.target_ref,
@@ -203,6 +206,7 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
               annotationId={annotation.annotation_id}
               annotationType={annotation.annotation_type}
               author={annotation.author}
+              visibility={annotation.visibility}
               body={annotation.body}
               createdAt={annotation.created_at}
               updatedAt={annotation.updated_at}
@@ -210,15 +214,18 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
               targetSubtitle={annotation.target_subtitle || annotation.email_sender || annotation.target_type}
               anchorLabel={anchorLabel}
               onEdit={async (body) => {
+                if (!canWrite) return;
                 await updateAnnotation(annotation.annotation_id, body);
                 onAnnotationsChange?.();
               }}
               onDelete={async () => {
+                if (!canWrite) return;
                 if (!confirm('确定要删除这个标注吗？')) return;
                 await deleteAnnotation(annotation.annotation_id);
                 onAnnotationsChange?.();
               }}
               onReply={() => {
+                if (!canWrite) return;
                 setReplyingTo(annotation.annotation_id);
                 setReplyBody('');
               }}
@@ -226,7 +233,7 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
             />
           </div>
 
-          {replyingTo === annotation.annotation_id && (
+          {canWrite && replyingTo === annotation.annotation_id && (
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
               <div className="mb-2 text-sm font-medium text-slate-700">回复此标注</div>
               <textarea

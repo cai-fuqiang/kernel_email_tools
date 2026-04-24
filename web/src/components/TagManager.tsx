@@ -11,6 +11,7 @@ import {
   type TagTree,
 } from '../api/client';
 import ThreadDrawer from './ThreadDrawer';
+import { useAuth } from '../auth';
 
 interface TagManagerProps {
   onTagsChanged?: () => void;
@@ -18,12 +19,14 @@ interface TagManagerProps {
 
 export default function TagManager({ onTagsChanged }: TagManagerProps) {
   const navigate = useNavigate();
+  const { canWrite } = useAuth();
   const [tags, setTags] = useState<TagTree[]>([]);
   const [tagStats, setTagStats] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('#6366f1');
   const [newTagParentId, setNewTagParentId] = useState<number | undefined>(undefined);
+  const [newTagVisibility, setNewTagVisibility] = useState<'public' | 'private'>('public');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [expandedTag, setExpandedTag] = useState<string | null>(null);
@@ -56,9 +59,10 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
     setCreating(true);
     setError('');
     try {
-      await createTag(newTagName.trim(), newTagParentId, newTagColor);
+      await createTag(newTagName.trim(), newTagParentId, newTagColor, '', 'topic', newTagVisibility);
       setNewTagName('');
       setNewTagParentId(undefined);
+      setNewTagVisibility('public');
       await loadTags();
       onTagsChanged?.();
     } catch (e: unknown) {
@@ -145,7 +149,7 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
     <div className="space-y-4">
       <div className="bg-white border border-gray-200 rounded-xl p-4">
         <h4 className="text-sm font-semibold text-gray-900 mb-3">Create Tag</h4>
-        <div className="flex gap-2 items-end">
+        <div className="flex gap-2 items-end flex-wrap">
           <div className="flex-1">
             <input
               type="text"
@@ -160,6 +164,7 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
             value={newTagParentId ?? ''}
             onChange={(e) => setNewTagParentId(e.target.value ? Number(e.target.value) : undefined)}
             className="px-3 py-2 text-sm border border-gray-300 rounded-lg"
+            disabled={!canWrite}
           >
             <option value="">No parent</option>
             {flatTags.map((t) => (
@@ -168,9 +173,18 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
               </option>
             ))}
           </select>
+          <select
+            value={newTagVisibility}
+            onChange={(e) => setNewTagVisibility(e.target.value as 'public' | 'private')}
+            className="px-3 py-2 text-sm border border-gray-300 rounded-lg"
+            disabled={!canWrite}
+          >
+            <option value="public">Public</option>
+            <option value="private">Private</option>
+          </select>
           <button
             onClick={handleCreate}
-            disabled={creating || !newTagName.trim()}
+            disabled={!canWrite || creating || !newTagName.trim()}
             className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
           >
             {creating ? '...' : 'Add'}
@@ -183,9 +197,11 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
               onClick={() => setNewTagColor(c)}
               className={`w-6 h-6 rounded-full border-2 transition-transform ${newTagColor === c ? 'border-gray-900 scale-110' : 'border-transparent'}`}
               style={{ backgroundColor: c }}
+              disabled={!canWrite}
             />
           ))}
         </div>
+        {!canWrite && <p className="mt-2 text-xs text-amber-700">Current role is read-only. Tag creation is disabled.</p>}
       </div>
 
       {error && <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs">{error}</div>}
@@ -205,6 +221,7 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
             expandedTag={expandedTag}
             onToggleExpand={handleToggleExpand}
             onJumpToTarget={handleJumpToTarget}
+            canWrite={canWrite}
           />
         )}
       </div>
@@ -229,6 +246,7 @@ function TagNodeList({
   expandedTag,
   onToggleExpand,
   onJumpToTarget,
+  canWrite,
 }: {
   nodes: TagTree[];
   onDelete: (id: number, name: string) => void;
@@ -237,6 +255,7 @@ function TagNodeList({
   expandedTag: string | null;
   onToggleExpand: (tagName: string) => void;
   onJumpToTarget: (target: TagTargetItem) => void;
+  canWrite: boolean;
 }) {
   return (
     <ul className={depth > 0 ? 'ml-4 border-l border-gray-100 pl-3' : ''}>
@@ -253,6 +272,9 @@ function TagNodeList({
                 className={`text-sm flex-1 text-left flex items-center gap-1.5 ${count > 0 ? 'text-gray-800 hover:text-indigo-600 cursor-pointer' : 'text-gray-400 cursor-default'}`}
               >
                 <span className={isExpanded ? 'font-semibold text-indigo-700' : ''}>{tag.name}</span>
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${tag.visibility === 'private' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                  {tag.visibility}
+                </span>
                 {count > 0 && <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">{count}</span>}
                 {count > 0 && (
                   <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -260,9 +282,11 @@ function TagNodeList({
                   </svg>
                 )}
               </button>
-              <button onClick={() => onDelete(tag.id, tag.name)} className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                Delete
-              </button>
+              {canWrite && (
+                <button onClick={() => onDelete(tag.id, tag.name)} className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                  Delete
+                </button>
+              )}
             </div>
             {isExpanded && <TagTargetList tagName={tag.name} onJumpToTarget={onJumpToTarget} />}
             {tag.children.length > 0 && (
@@ -274,6 +298,7 @@ function TagNodeList({
                 expandedTag={expandedTag}
                 onToggleExpand={onToggleExpand}
                 onJumpToTarget={onJumpToTarget}
+                canWrite={canWrite}
               />
             )}
           </li>

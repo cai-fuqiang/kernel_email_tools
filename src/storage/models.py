@@ -19,6 +19,30 @@ class Base(DeclarativeBase):
     pass
 
 
+class UserORM(Base):
+    """系统用户。"""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    username: Mapped[str] = mapped_column(String(128), nullable=False, default="", index=True)
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    email: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="viewer", index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True)
+    auth_source: Mapped[str] = mapped_column(String(32), nullable=False, default="header")
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 class TagORM(Base):
     """知识标签本体。"""
 
@@ -34,8 +58,12 @@ class TagORM(Base):
     color: Mapped[str] = mapped_column(String(7), nullable=False, default="#6366f1")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True)
     tag_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="topic", index=True)
+    visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="public", index=True)
+    owner_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     created_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
     updated_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
+    created_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    updated_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=datetime.utcnow
     )
@@ -97,6 +125,7 @@ class TagAssignmentORM(Base):
     source_type: Mapped[str] = mapped_column(String(32), nullable=False, default="manual", index=True)
     evidence: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     created_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
+    created_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=datetime.utcnow
     )
@@ -175,6 +204,8 @@ class AnnotationORM(Base):
 
     # 公共字段
     author: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
+    author_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="public", index=True)
     body: Mapped[str] = mapped_column(Text, nullable=False, default="")
     parent_annotation_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -226,8 +257,11 @@ class TagCreate(BaseModel):
     color: str = Field("#6366f1", pattern=r"^#[0-9A-Fa-f]{6}$", description="标签颜色")
     status: str = Field("active", description="active | deprecated | draft")
     tag_kind: str = Field("topic", description="标签语义分类")
+    visibility: str = Field("public", description="public | private")
     aliases: list[str] = Field(default_factory=list, description="标签别名")
     created_by: str = Field("me", description="创建者")
+    owner_user_id: Optional[str] = Field(None, description="创建者用户 ID")
+    created_by_user_id: Optional[str] = Field(None, description="创建者用户 ID")
 
     model_config = {"from_attributes": True}
 
@@ -251,9 +285,13 @@ class TagRead(BaseModel):
     color: str
     status: str
     tag_kind: str
+    visibility: str = "public"
     aliases: list[str] = Field(default_factory=list)
+    owner_user_id: Optional[str] = None
     created_by: str = "me"
     updated_by: str = "me"
+    created_by_user_id: Optional[str] = None
+    updated_by_user_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -270,6 +308,7 @@ class TagTree(BaseModel):
     color: str
     status: str = "active"
     tag_kind: str = "topic"
+    visibility: str = "public"
     assignment_count: int = 0
     children: list["TagTree"] = Field(default_factory=list)
 
@@ -287,6 +326,7 @@ class TagAssignmentCreate(BaseModel):
     source_type: str = Field("manual")
     evidence: dict = Field(default_factory=dict)
     created_by: str = Field("me")
+    created_by_user_id: Optional[str] = Field(None)
 
     model_config = {"from_attributes": True}
 
@@ -305,6 +345,7 @@ class TagAssignmentRead(BaseModel):
     source_type: str = "manual"
     evidence: dict = Field(default_factory=dict)
     created_by: str = "me"
+    created_by_user_id: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -383,6 +424,8 @@ class AnnotationCreate(BaseModel):
     annotation_type: str = Field("email", description="批注类型：'email' | 'code'")
     body: str = Field(..., min_length=1, description="批注正文（支持 Markdown）")
     author: str = Field("", description="批注作者")
+    author_user_id: Optional[str] = Field(None, description="批注作者用户 ID")
+    visibility: str = Field("public", description="public | private")
     parent_annotation_id: str = Field("", description="父批注 ID，支持回复")
 
     target_type: str = Field("", description="标注目标类型，如 email_thread / kernel_file / sdm_spec")
@@ -420,6 +463,8 @@ class AnnotationRead(BaseModel):
     annotation_id: str
     annotation_type: str
     author: str
+    author_user_id: Optional[str] = None
+    visibility: str = "public"
     body: str
     parent_annotation_id: str = ""
     created_at: datetime
@@ -439,6 +484,43 @@ class AnnotationRead(BaseModel):
     start_line: int = 0
     end_line: int = 0
     meta: dict = Field(default_factory=dict)
+
+    model_config = {"from_attributes": True}
+
+
+class CurrentUserRead(BaseModel):
+    user_id: str
+    username: str
+    display_name: str
+    email: str
+    role: str
+    status: str
+    auth_source: str
+    capabilities: list[str] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class UserRead(BaseModel):
+    user_id: str
+    username: str
+    display_name: str
+    email: str
+    role: str
+    status: str
+    auth_source: str
+    last_seen_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class UserUpdate(BaseModel):
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = None
+    status: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

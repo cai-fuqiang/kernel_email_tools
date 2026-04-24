@@ -9,6 +9,7 @@ import {
   type TagRead,
   type TagTree,
 } from '../api/client';
+import { useAuth } from '../auth';
 
 interface EmailTagEditorProps {
   messageId?: string;
@@ -32,6 +33,7 @@ export default function EmailTagEditor({
   const resolvedTargetType = targetType ?? 'email_message';
   const resolvedTargetRef = targetRef ?? messageId ?? '';
   const resolvedAnchor = anchor ?? {};
+  const { canWrite } = useAuth();
 
   const [directAssignments, setDirectAssignments] = useState<TagAssignment[]>([]);
   const [directTags, setDirectTags] = useState<TagRead[]>(
@@ -45,9 +47,13 @@ export default function EmailTagEditor({
         color: '#6366f1',
         status: 'active',
         tag_kind: 'topic',
+        visibility: 'public',
         aliases: [],
+        owner_user_id: null,
         created_by: 'me',
         updated_by: 'me',
+        created_by_user_id: null,
+        updated_by_user_id: null,
         created_at: '',
         updated_at: '',
       })),
@@ -171,7 +177,7 @@ export default function EmailTagEditor({
               handleRemove(tag.name);
             }}
             className="opacity-0 group-hover:opacity-100 ml-0.5"
-            disabled={loading}
+            disabled={loading || !canWrite}
           >
             &times;
           </button>
@@ -191,9 +197,10 @@ export default function EmailTagEditor({
       <button
         onClick={(e) => {
           e.stopPropagation();
+          if (!canWrite) return;
           setShowPopover((prev) => !prev);
         }}
-        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors ${compact ? '' : ''}`}
+        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs rounded transition-colors ${canWrite ? 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-50' : 'text-gray-300 cursor-not-allowed'} ${compact ? '' : ''}`}
       >
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -216,6 +223,7 @@ export default function EmailTagEditor({
             placeholder={placeholder}
             className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded mb-1.5 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
             autoFocus
+            disabled={!canWrite}
           />
 
           {aggregatedOnly.length > 0 && (

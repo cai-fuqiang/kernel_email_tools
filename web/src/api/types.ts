@@ -60,9 +60,13 @@ export interface TagRead {
   color: string;
   status: string;
   tag_kind: string;
+  visibility: 'public' | 'private';
   aliases: string[];
+  owner_user_id?: string | null;
   created_by: string;
   updated_by: string;
+  created_by_user_id?: string | null;
+  updated_by_user_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -75,6 +79,7 @@ export interface TagTree {
   color: string;
   status: string;
   tag_kind: string;
+  visibility: 'public' | 'private';
   assignment_count: number;
   children: TagTree[];
 }
@@ -100,7 +105,32 @@ export interface TagAssignment {
   source_type: string;
   evidence: Record<string, unknown>;
   created_by: string;
+  created_by_user_id?: string | null;
   created_at: string;
+}
+
+export interface CurrentUser {
+  user_id: string;
+  username: string;
+  display_name: string;
+  email: string;
+  role: 'admin' | 'editor' | 'viewer';
+  status: string;
+  auth_source: string;
+  capabilities: string[];
+}
+
+export interface UserRead {
+  user_id: string;
+  username: string;
+  display_name: string;
+  email: string;
+  role: 'admin' | 'editor' | 'viewer';
+  status: string;
+  auth_source: string;
+  last_seen_at: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface TagTargetBundle {
@@ -141,6 +171,8 @@ export interface Annotation {
   annotation_id: string;
   annotation_type: string;
   author: string;
+  author_user_id?: string | null;
+  visibility: 'public' | 'private';
   body: string;
   parent_annotation_id: string;
   created_at: string;
@@ -164,6 +196,7 @@ export interface AnnotationCreate {
   annotation_type?: string;
   body: string;
   author?: string;
+  visibility?: 'public' | 'private';
   parent_annotation_id?: string;
   target_type?: string;
   target_ref?: string;
@@ -244,6 +277,8 @@ export interface AnnotationListItem {
   annotation_id: string;
   annotation_type: string;
   author: string;
+  author_user_id?: string | null;
+  visibility: 'public' | 'private';
   body: string;
   parent_annotation_id: string;
   created_at: string;
@@ -321,6 +356,8 @@ export interface CodeAnnotation {
   end_line: number;
   body: string;
   author: string;
+  author_user_id?: string | null;
+  visibility: 'public' | 'private';
   created_at: string;
   parent_annotation_id?: string;
   in_reply_to?: string;
@@ -340,6 +377,7 @@ export interface CodeAnnotationCreate {
   end_line: number;
   body: string;
   author?: string;
+  visibility?: 'public' | 'private';
   in_reply_to?: string;
 }
 

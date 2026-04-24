@@ -1,0 +1,42 @@
+---
+globs:
+  - src/api/server.py
+  - src/storage/models.py
+  - src/storage/postgres.py
+  - src/storage/tag_store.py
+  - src/storage/annotation_store.py
+  - web/src/**
+alwaysApply: false
+---
+
+# Multi User Mode Rules
+
+## 服务端身份规则
+
+- 任何写接口都不得信任前端传入的 `author` / `created_by` / `updated_by`
+- 所有操作者字段必须由服务端当前用户上下文写入
+- 所有新增写接口必须接入认证解析与 RBAC 校验
+
+## 可见性规则
+
+- `public` 资源对所有已认证用户可见
+- `private` 资源仅资源创建者本人可见
+- 标签列表、标注列表、线程视图、代码视图、目标 tag 聚合都必须遵循同一可见性规则
+
+## RBAC 规则
+
+- `admin`：可管理用户，拥有全部读写权限
+- `editor`：可读写业务对象，不可管理用户
+- `viewer`：只读
+- 前端按钮显隐不是安全边界，后端必须做最终裁决
+
+## 兼容性规则
+
+- 历史读接口保持兼容，允许旧记录没有 `*_user_id`
+- 新增字段优先可空，避免破坏历史数据和脚本
+- public/private 首版允许标签名全局唯一；私有标签独立命名空间属于后续高级功能
+
+## 测试规则
+
+- 新测试至少覆盖：未认证、越权、正常写入三类场景
+- 对 public/private 的测试必须覆盖“自己可见、他人不可见、公开可见”
