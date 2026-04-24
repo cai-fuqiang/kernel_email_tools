@@ -31,13 +31,33 @@ async function fetchJSON<T>(url: string): Promise<T> {
   return res.json();
 }
 
-function normalizeAnnotation(annotation: Record<string, unknown>) {
+type AnnotationTargetPayload = {
+  target_type?: string;
+  target_ref?: string;
+  target_label?: string;
+  target_subtitle?: string;
+  anchor?: Record<string, unknown>;
+};
+
+type AnnotationTargetView = {
+  target: {
+    type: string;
+    ref: string;
+    label: string;
+    subtitle: string;
+    anchor: Record<string, unknown>;
+  };
+};
+
+function normalizeAnnotation<T extends AnnotationTargetPayload>(
+  annotation: T,
+): T & AnnotationTargetView {
   const target = {
     type: String(annotation.target_type || ''),
     ref: String(annotation.target_ref || ''),
     label: String(annotation.target_label || ''),
     subtitle: String(annotation.target_subtitle || ''),
-    anchor: (annotation.anchor as Record<string, unknown> | undefined) || {},
+    anchor: annotation.anchor || {},
   };
 
   return {
@@ -46,7 +66,9 @@ function normalizeAnnotation(annotation: Record<string, unknown>) {
   };
 }
 
-function normalizeAnnotations(annotations: Record<string, unknown>[]) {
+function normalizeAnnotations<T extends AnnotationTargetPayload>(
+  annotations: T[],
+): Array<T & AnnotationTargetView> {
   return annotations.map((annotation) => normalizeAnnotation(annotation));
 }
 
