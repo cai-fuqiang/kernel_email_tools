@@ -534,6 +534,29 @@ export interface TranslateBatchResponse {
   cached_count: number;
 }
 
+export interface TranslationJobItem {
+  source_text: string;
+  translated_text: string;
+  message_id: string;
+  cached: boolean;
+  error: string;
+}
+
+export interface TranslationJobResponse {
+  job_id: string;
+  thread_id: string;
+  status: 'pending' | 'running' | 'completed' | 'completed_with_errors' | 'failed';
+  total: number;
+  completed: number;
+  cached_count: number;
+  failed_count: number;
+  progress_percent: number;
+  items: TranslationJobItem[];
+  error: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export async function translateText(
   text: string,
   sourceLang: string = "auto",
@@ -567,6 +590,27 @@ export async function translateBatch(
     throw new Error(`Translation error ${res.status}: ${text}`);
   }
   return res.json();
+}
+
+export async function startThreadTranslation(
+  threadId: string,
+  sourceLang: string = 'auto',
+  targetLang: string = 'zh-CN',
+): Promise<TranslationJobResponse> {
+  const res = await fetch(`${API_BASE}/translate/thread`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ thread_id: threadId, source_lang: sourceLang, target_lang: targetLang }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Translation job error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export async function getTranslationJob(jobId: string): Promise<TranslationJobResponse> {
+  return fetchJSON(`${API_BASE}/translate/jobs/${encodeURIComponent(jobId)}`);
 }
 
 export async function getTranslateHealth(): Promise<{

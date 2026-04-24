@@ -1,7 +1,18 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { getThread, translateBatch, clearTranslationCache, createAnnotation, updateAnnotation, deleteAnnotation, exportAnnotations, importAnnotations } from '../api/client';
+import {
+  getThread,
+  startThreadTranslation,
+  getTranslationJob,
+  clearTranslationCache,
+  createAnnotation,
+  updateAnnotation,
+  deleteAnnotation,
+  exportAnnotations,
+  importAnnotations,
+  type TranslationJobResponse,
+} from '../api/client';
 import type { ThreadResponse, ThreadEmail, Annotation } from '../api/types';
 import EmailTagEditor from './EmailTagEditor';
 import { useAuth } from '../auth';
@@ -1128,6 +1139,7 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
   const [threadTree, setThreadTree] = useState<ThreadNode[]>([]);
   const [translations, setTranslations] = useState<TranslationMap>(new Map());
   const [translating, setTranslating] = useState(false);
+  const [translationJob, setTranslationJob] = useState<TranslationJobResponse | null>(null);
   const [cacheMessage, setCacheMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [, setFoldLevel] = useState<FoldLevel>('expanded');
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
@@ -1281,6 +1293,9 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
 
   useEffect(() => {
     setLoading(true);
+    setTranslations(new Map());
+    setTranslationJob(null);
+    setTranslating(false);
     getThread(threadId)
       .then(t => {
         setThread(t);
@@ -1292,6 +1307,39 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, [threadId, rebuildTree]);
+
+  useEffect(() => {
+    if (!translationJob || !['pending', 'running'].includes(translationJob.status)) {
+      return;
+    }
+
+    const timer = window.setInterval(async () => {
+      try {
+        const nextJob = await getTranslationJob(translationJob.job_id);
+        setTranslationJob(nextJob);
+      } catch (e) {
+        console.error('Failed to poll translation job:', e);
+      }
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [translationJob]);
+
+  useEffect(() => {
+    if (!translationJob) return;
+    setTranslating(['pending', 'running'].includes(translationJob.status));
+    setTranslations(prev => {
+      const next = new Map(prev);
+      translationJob.items.forEach((item) => {
+        next.set(item.source_text, {
+          translation: item.translated_text,
+          loading: ['pending', 'running'].includes(translationJob.status) && !item.translated_text,
+          error: item.error || undefined,
+        });
+      });
+      return next;
+    });
+  }, [translationJob]);
 
   useEffect(() => {
     if (!thread) return;
@@ -1383,64 +1431,25 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
 
   const handleTranslate = useCallback(async () => {
     if (!thread || translating) return;
-    setTranslating(true);
-
-    // 按邮件分组提取可翻译段落，以便传入各自的 message_id
-    const emailParagraphs: { messageId: string; paragraphs: string[] }[] = [];
-    const allNeedTrans: string[] = [];
-    for (const email of thread.emails) {
-      const paras = parseParagraphs(getDisplayBody(email))
-        .filter(b => shouldTranslate(b) && (!translations.has(b.text) || !translations.get(b.text)?.translation))
-        .map(b => b.text);
-      if (paras.length > 0) {
-        emailParagraphs.push({ messageId: email.message_id, paragraphs: paras });
-        allNeedTrans.push(...paras);
-      }
-    }
-    if (allNeedTrans.length === 0) { setTranslating(false); return; }
-
-    // 标记所有段落为加载中
-    setTranslations(prev => {
-      const next = new Map(prev);
-      for (const p of allNeedTrans) { next.set(p, { translation: '', loading: true }); }
-      return next;
-    });
-
     try {
-      const batchSize = 50;
-
-      for (const { messageId, paragraphs } of emailParagraphs) {
-        for (let i = 0; i < paragraphs.length; i += batchSize) {
-          const batch = paragraphs.slice(i, i + batchSize);
-          const result = await translateBatch(batch, 'auto', 'zh-CN', messageId);
-          // 每个 batch 完成后立即更新进度
-          setTranslations(prev => {
-            const next = new Map(prev);
-            batch.forEach((para, idx) => {
-              next.set(para, { translation: result.translations[idx] || para, loading: false });
-            });
-            return next;
-          });
-        }
-      }
-    } catch {
-      setTranslations(prev => {
-        const next = new Map(prev);
-        for (const p of allNeedTrans) {
-          next.set(p, { translation: '', loading: false, error: '翻译服务暂时不可用' });
-        }
-        return next;
-      });
-    } finally {
+      setTranslating(true);
+      const job = await startThreadTranslation(thread.thread_id || threadId, 'auto', 'zh-CN');
+      setTranslationJob(job);
+    } catch (e) {
+      console.error('Failed to start translation job:', e);
       setTranslating(false);
     }
-  }, [thread, translations, translating]);
+  }, [thread, threadId, translating]);
 
   const translationStats = useMemo(() => {
     const total = extractTranslatableParagraphs(thread).length;
     const translated = Array.from(translations.values()).filter(t => !!t.translation).length;
     return { total, translated };
   }, [thread, translations]);
+
+  const translationProgress = translationJob?.total
+    ? Math.min(100, Math.round((translationJob.completed / translationJob.total) * 100))
+    : 0;
 
   return (
     <div className="fixed inset-0 z-50 flex">
@@ -1548,6 +1557,27 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
             </button>
           </div>
         </div>
+        {(translating || (translationJob && translationJob.total > 0)) && (
+          <div className="bg-white border-b border-gray-100 px-6 py-3">
+            <div className="flex items-center justify-between text-xs text-gray-500 mb-1.5">
+              <span>
+                翻译进度 {translationJob?.completed ?? translationStats.translated}/{translationJob?.total ?? translationStats.total}
+                {translationJob?.cached_count ? `，缓存命中 ${translationJob.cached_count}` : ''}
+                {translationJob?.failed_count ? `，失败 ${translationJob.failed_count}` : ''}
+              </span>
+              <span>{translationJob ? `${translationProgress}%` : ''}</span>
+            </div>
+            <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+              <div
+                className={`h-full transition-all duration-500 ${translationJob?.status === 'failed' ? 'bg-red-400' : 'bg-blue-500'}`}
+                style={{ width: `${translationProgress}%` }}
+              />
+            </div>
+            {translationJob?.error && (
+              <div className="mt-2 text-xs text-red-600">{translationJob.error}</div>
+            )}
+          </div>
+        )}
         {/* 内容区域 */}
         <div className="flex-1 overflow-y-auto p-6">
           {loading && (

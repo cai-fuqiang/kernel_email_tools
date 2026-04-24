@@ -2,6 +2,18 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { getTranslatedThreads, type TranslatedThreadInfo } from '../api/client';
 import ThreadDrawer from '../components/ThreadDrawer';
 
+function mergeTranslatedThreads(
+  previous: TranslatedThreadInfo[],
+  incoming: TranslatedThreadInfo[],
+): TranslatedThreadInfo[] {
+  const merged = new Map<string, TranslatedThreadInfo>();
+  previous.forEach((thread) => merged.set(thread.thread_id, thread));
+  incoming.forEach((thread) => merged.set(thread.thread_id, thread));
+  return Array.from(merged.values()).sort((a, b) =>
+    (b.last_translated_at || '').localeCompare(a.last_translated_at || ''),
+  );
+}
+
 export default function TranslationsPage() {
   const [threads, setThreads] = useState<TranslatedThreadInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -15,7 +27,15 @@ export default function TranslationsPage() {
     setError('');
     try {
       const resp = await getTranslatedThreads();
-      setThreads(resp.threads);
+      setThreads((prev) => {
+        if (silent) {
+          if (resp.threads.length === 0 && prev.length > 0) {
+            return prev;
+          }
+          return mergeTranslatedThreads(prev, resp.threads);
+        }
+        return resp.threads;
+      });
     } catch (e) {
       if (!silent) setError(e instanceof Error ? e.message : 'Failed to load translated threads');
     } finally {
