@@ -16,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -106,13 +107,13 @@ class EmailORM(Base):
 # ============================================================
 
 class AnnotationORM(Base):
-    """统一批注 ORM 模型，对应 annotations 表。
+    """统一批注 ORM 模型。
 
-    支持两种批注类型：
-    - 'email': 邮件批注，存储在线程树中的本地评论
-    - 'code': 代码标注，对内核源码的行级/范围级注释
-
-    通过 annotation_type 字段区分类型，类型特定字段存储在相应列中。
+    设计目标：
+    - 标注本体统一：正文、作者、回复关系、时间戳
+    - 标注目标统一：target_type + target_ref + target_label/subtitle
+    - 标注锚点统一：anchor JSON，容纳行号、message_id、页面范围等
+    - 兼容现有邮件/代码场景，同时能自然扩展到 SDM spec 等新目标
     """
 
     __tablename__ = "annotations"
@@ -120,12 +121,13 @@ class AnnotationORM(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     annotation_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
 
-    # 类型标识
-    annotation_type: Mapped[str] = mapped_column(String(20), nullable=False, default="email")
+    # 类型标识（当前主要用于 UI 分类；未来可扩展如 sdm_spec/manual）
+    annotation_type: Mapped[str] = mapped_column(String(32), nullable=False, default="email")
 
     # 公共字段
     author: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
     body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    parent_annotation_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=datetime.utcnow
     )
@@ -133,25 +135,27 @@ class AnnotationORM(Base):
         DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
-    # 邮件批注字段（annotation_type='email' 时使用）
-    thread_id: Mapped[str] = mapped_column(String(512), nullable=False, default="")
-    in_reply_to: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    # 通用目标与锚点
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_ref: Mapped[str] = mapped_column(String(1024), nullable=False, index=True)
+    target_label: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    target_subtitle: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    anchor: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    meta: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
-    # 代码标注字段（annotation_type='code' 时使用）
-    version: Mapped[str] = mapped_column(String(32), nullable=True)
-    file_path: Mapped[str] = mapped_column(String(512), nullable=True)
+    # 便捷冗余字段：便于当前邮件/代码查询与前端兼容
+    thread_id: Mapped[str] = mapped_column(String(512), nullable=False, default="", index=True)
+    in_reply_to: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    version: Mapped[str] = mapped_column(String(32), nullable=True, index=True)
+    file_path: Mapped[str] = mapped_column(String(512), nullable=True, index=True)
     start_line: Mapped[int] = mapped_column(Integer, nullable=True)
     end_line: Mapped[int] = mapped_column(Integer, nullable=True)
     anchor_context: Mapped[str] = mapped_column(String(128), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("annotation_id", name="uq_annotations_annotation_id"),
-        # 代码标注唯一约束：同一位置不能有完全重复的注释
-        UniqueConstraint(
-            "version", "file_path", "start_line", "end_line", "body",
-            name="uq_annotation_position_body"
-        ),
         Index("ix_annotations_type", "annotation_type"),
+        Index("ix_annotations_target", "target_type", "target_ref"),
         Index("ix_annotations_thread_id", "thread_id"),
         Index("ix_annotations_code", "version", "file_path"),
     )
@@ -258,21 +262,29 @@ class EmailSearchResult(BaseModel):
 
 
 class AnnotationCreate(BaseModel):
-    """创建批注时的输入模型（统一，支持 email 和 code 类型）。"""
+    """创建批注时的输入模型。"""
 
     annotation_type: str = Field("email", description="批注类型：'email' | 'code'")
     body: str = Field(..., min_length=1, description="批注正文（支持 Markdown）")
     author: str = Field("", description="批注作者")
+    parent_annotation_id: str = Field("", description="父批注 ID，支持回复")
 
-    # email 类型字段
+    target_type: str = Field("", description="标注目标类型，如 email_thread / kernel_file / sdm_spec")
+    target_ref: str = Field("", description="目标唯一引用，如 thread_id 或 version:path")
+    target_label: str = Field("", description="目标主标题")
+    target_subtitle: str = Field("", description="目标副标题")
+    anchor: dict = Field(default_factory=dict, description="通用锚点，例如 message_id/line/page")
+
+    # 便捷字段：邮件
     thread_id: str = Field("", description="所属线程 ID（email 类型）")
-    in_reply_to: str = Field("", description="回复的目标 message_id 或 annotation_id（email 类型）")
+    in_reply_to: str = Field("", description="目标位置，例如 message_id")
 
-    # code 类型字段
+    # 便捷字段：代码
     version: str = Field("", description="内核版本 tag（code 类型）")
     file_path: str = Field("", description="文件相对路径（code 类型）")
     start_line: int = Field(0, ge=0, description="起始行号（code 类型）")
     end_line: int = Field(0, ge=0, description="结束行号（code 类型）")
+    meta: dict = Field(default_factory=dict, description="通用扩展元数据，用于承载 target/anchor 等")
 
     model_config = {"from_attributes": True}
 
@@ -286,23 +298,31 @@ class AnnotationUpdate(BaseModel):
 
 
 class AnnotationRead(BaseModel):
-    """查询批注时的输出模型（统一）。"""
+    """查询批注时的输出模型。"""
 
     id: int
     annotation_id: str
     annotation_type: str
     author: str
     body: str
+    parent_annotation_id: str = ""
     created_at: datetime
     updated_at: datetime
-    # email 类型字段
+
+    target_type: str = ""
+    target_ref: str = ""
+    target_label: str = ""
+    target_subtitle: str = ""
+    anchor: dict = Field(default_factory=dict)
+
+    # 便捷字段
     thread_id: str = ""
     in_reply_to: str = ""
-    # code 类型字段
     version: str = ""
     file_path: str = ""
     start_line: int = 0
     end_line: int = 0
+    meta: dict = Field(default_factory=dict)
 
     model_config = {"from_attributes": True}
 

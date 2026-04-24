@@ -31,6 +31,25 @@ async function fetchJSON<T>(url: string): Promise<T> {
   return res.json();
 }
 
+function normalizeAnnotation(annotation: Record<string, unknown>) {
+  const target = {
+    type: String(annotation.target_type || ''),
+    ref: String(annotation.target_ref || ''),
+    label: String(annotation.target_label || ''),
+    subtitle: String(annotation.target_subtitle || ''),
+    anchor: (annotation.anchor as Record<string, unknown> | undefined) || {},
+  };
+
+  return {
+    ...annotation,
+    target,
+  };
+}
+
+function normalizeAnnotations(annotations: Record<string, unknown>[]) {
+  return annotations.map((annotation) => normalizeAnnotation(annotation));
+}
+
 // ============================================================
 // 标签管理 API
 // ============================================================
@@ -213,7 +232,11 @@ export async function askQuestion(
 }
 
 export async function getThread(threadId: string): Promise<ThreadResponse> {
-  return fetchJSON<ThreadResponse>(`${API_BASE}/thread/${threadId}`);
+  const data = await fetchJSON<ThreadResponse>(`${API_BASE}/thread/${threadId}`);
+  return {
+    ...data,
+    annotations: normalizeAnnotations(data.annotations as unknown as Record<string, unknown>[]) as ThreadResponse['annotations'],
+  };
 }
 
 export async function getStats(): Promise<StatsResponse> {
@@ -411,11 +434,12 @@ export async function createAnnotation(data: AnnotationCreate): Promise<Annotati
     const text = await res.text();
     throw new Error(`API error ${res.status}: ${text}`);
   }
-  return res.json();
+  return normalizeAnnotation(await res.json()) as Annotation;
 }
 
 export async function getAnnotations(threadId: string): Promise<Annotation[]> {
-  return fetchJSON<Annotation[]>(`${API_BASE}/annotations/${encodeURIComponent(threadId)}`);
+  const data = await fetchJSON<Annotation[]>(`${API_BASE}/annotations/${encodeURIComponent(threadId)}`);
+  return normalizeAnnotations(data) as Annotation[];
 }
 
 export async function updateAnnotation(annotationId: string, body: string): Promise<Annotation> {
@@ -428,7 +452,7 @@ export async function updateAnnotation(annotationId: string, body: string): Prom
     const text = await res.text();
     throw new Error(`API error ${res.status}: ${text}`);
   }
-  return res.json();
+  return normalizeAnnotation(await res.json()) as Annotation;
 }
 
 export async function deleteAnnotation(annotationId: string): Promise<void> {
@@ -468,7 +492,7 @@ export async function importAnnotations(data: Record<string, unknown>): Promise<
 
 export async function listAnnotations(opts?: {
   q?: string;
-  type?: 'all' | 'email' | 'code';
+  type?: 'all' | 'email' | 'code' | 'sdm_spec';
   version?: string;
   page?: number;
   page_size?: number;
@@ -479,7 +503,11 @@ export async function listAnnotations(opts?: {
   if (opts?.version) params.set('version', opts.version);
   if (opts?.page) params.set('page', String(opts.page));
   if (opts?.page_size) params.set('page_size', String(opts.page_size));
-  return fetchJSON<AnnotationListResponse>(`${API_BASE}/annotations?${params}`);
+  const data = await fetchJSON<AnnotationListResponse>(`${API_BASE}/annotations?${params}`);
+  return {
+    ...data,
+    annotations: normalizeAnnotations(data.annotations) as AnnotationListResponse['annotations'],
+  };
 }
 
 // ============================================================
@@ -517,9 +545,10 @@ export async function getCodeAnnotations(
   version: string,
   path: string,
 ): Promise<CodeAnnotation[]> {
-  return fetchJSON<CodeAnnotation[]>(
+  const data = await fetchJSON<CodeAnnotation[]>(
     `${API_BASE}/kernel/annotations/${encodeURIComponent(version)}/${path}`
   );
+  return normalizeAnnotations(data) as CodeAnnotation[];
 }
 
 export async function listCodeAnnotations(opts?: {
@@ -533,7 +562,11 @@ export async function listCodeAnnotations(opts?: {
   if (opts?.version) params.set('version', opts.version);
   if (opts?.page) params.set('page', String(opts.page));
   if (opts?.page_size) params.set('page_size', String(opts.page_size));
-  return fetchJSON<CodeAnnotationListResponse>(`${API_BASE}/kernel/annotations?${params}`);
+  const data = await fetchJSON<CodeAnnotationListResponse>(`${API_BASE}/kernel/annotations?${params}`);
+  return {
+    ...data,
+    annotations: normalizeAnnotations(data.annotations) as CodeAnnotationListResponse['annotations'],
+  };
 }
 
 export async function createCodeAnnotation(data: CodeAnnotationCreate): Promise<CodeAnnotation> {
@@ -546,7 +579,7 @@ export async function createCodeAnnotation(data: CodeAnnotationCreate): Promise<
     const text = await res.text();
     throw new Error(`API error ${res.status}: ${text}`);
   }
-  return res.json();
+  return normalizeAnnotation(await res.json()) as CodeAnnotation;
 }
 
 export async function updateCodeAnnotation(
@@ -562,7 +595,7 @@ export async function updateCodeAnnotation(
     const text = await res.text();
     throw new Error(`API error ${res.status}: ${text}`);
   }
-  return res.json();
+  return normalizeAnnotation(await res.json()) as CodeAnnotation;
 }
 
 export async function deleteCodeAnnotation(annotationId: string): Promise<void> {

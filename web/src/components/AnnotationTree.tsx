@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Code2, ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, Mail, ScrollText } from 'lucide-react';
 import AnnotationCard from './AnnotationCard';
-import type { AnnotationListItem } from '../api/types';
-import { updateAnnotation, deleteAnnotation, createAnnotation } from '../api/client';
 import ThreadDrawer from './ThreadDrawer';
+import { createAnnotation, deleteAnnotation, updateAnnotation } from '../api/client';
+import type { AnnotationListItem } from '../api/types';
 
 interface AnnotationTreeProps {
   annotations: AnnotationListItem[];
@@ -17,318 +17,263 @@ interface TreeNode {
   level: number;
 }
 
-/**
- * 构建批注树形结构
- * - 根批注：in_reply_to 为空，或指向邮件 message_id（不是 annotation_id 格式）
- * - 回复：in_reply_to 指向另一个 annotation_id
- */
 function buildTree(annotations: AnnotationListItem[]): TreeNode[] {
-  const annotationMap = new Map<string, TreeNode>();
+  const nodes = new Map<string, TreeNode>();
   const roots: TreeNode[] = [];
-  
-  // 判断是否为批注回复（in_reply_to 指向 annotation_id）
-  const isAnnotationReply = (inReplyTo: string): boolean => {
-    if (!inReplyTo || inReplyTo === '') return false;
-    return inReplyTo.startsWith('annotation-') || inReplyTo.startsWith('code-annot-');
-  };
-  
-  // 第一遍：创建所有节点
-  for (const ann of annotations) {
-    annotationMap.set(ann.annotation_id, {
-      annotation: ann,
+
+  for (const annotation of annotations) {
+    nodes.set(annotation.annotation_id, {
+      annotation,
       children: [],
       level: 0,
     });
   }
-  
-  // 第二遍：建立父子关系
-  for (const ann of annotations) {
-    const node = annotationMap.get(ann.annotation_id)!;
-    
-    if (isAnnotationReply(ann.in_reply_to || '')) {
-      // 有父节点（批注回复）
-      const parent = annotationMap.get(ann.in_reply_to || '');
-      if (parent) {
-        node.level = parent.level + 1;
-        parent.children.push(node);
-      } else {
-        // 父节点不在当前列表中，当作根节点
-        roots.push(node);
-      }
+
+  for (const annotation of annotations) {
+    const node = nodes.get(annotation.annotation_id);
+    if (!node) continue;
+
+    const parentId = annotation.parent_annotation_id || '';
+    if (parentId && nodes.has(parentId)) {
+      const parent = nodes.get(parentId)!;
+      node.level = parent.level + 1;
+      parent.children.push(node);
     } else {
-      // 根节点
       roots.push(node);
     }
   }
-  
+
   return roots;
 }
 
-/**
- * 统一批注树组件
- * 统一处理 email 和 code 批注的层级关系
- */
+function getTargetIcon(type: string) {
+  if (type === 'email_thread') return Mail;
+  if (type === 'kernel_file') return FileText;
+  return ScrollText;
+}
+
+function getAnchorLabel(annotation: AnnotationListItem): string {
+  if (annotation.annotation_type === 'code') {
+    const start = annotation.start_line || Number(annotation.anchor?.['start_line'] || 0);
+    const end = annotation.end_line || Number(annotation.anchor?.['end_line'] || start);
+    return start > 0 ? `L${start}${end > start ? `-${end}` : ''}` : '';
+  }
+
+  const messageId = String(annotation.anchor?.['message_id'] || annotation.in_reply_to || '');
+  return messageId ? '邮件节点' : '';
+}
+
 export default function AnnotationTree({ annotations, onAnnotationsChange }: AnnotationTreeProps) {
   const navigate = useNavigate();
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [drawerThreadId, setDrawerThreadId] = useState<string | null>(null);
-  
-  // 回复状态
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyBody, setReplyBody] = useState('');
   const [replyLoading, setReplyLoading] = useState(false);
-  
-  // 构建树形结构
-  const tree = buildTree(annotations);
-  
-  // 默认展开所有有回复的批注
+
+  const tree = useMemo(() => buildTree(annotations), [annotations]);
+
   useEffect(() => {
-    const idsToExpand = new Set<string>();
-    const collectExpandable = (nodes: TreeNode[]) => {
+    const expandable = new Set<string>();
+    const walk = (nodes: TreeNode[]) => {
       for (const node of nodes) {
         if (node.children.length > 0) {
-          idsToExpand.add(node.annotation.annotation_id);
-          collectExpandable(node.children);
+          expandable.add(node.annotation.annotation_id);
+          walk(node.children);
         }
       }
     };
-    collectExpandable(tree);
-    setExpandedIds(idsToExpand);
-  }, [annotations]);
-  
-  // 切换展开/折叠
-  const toggleExpand = (id: string, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    setExpandedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-  
-  // 删除批注
-  const handleDelete = async (annotationId: string) => {
-    if (!confirm('确定要删除这个批注吗？')) return;
-    try {
-      await deleteAnnotation(annotationId);
-      onAnnotationsChange?.();
-    } catch (e) {
-      alert('删除失败: ' + (e instanceof Error ? e.message : 'Unknown error'));
+    walk(tree);
+    setExpandedIds(expandable);
+  }, [tree]);
+
+  const handleJump = (annotation: AnnotationListItem) => {
+    if (annotation.target_type === 'email_thread' && annotation.thread_id) {
+      setDrawerThreadId(annotation.thread_id);
+      return;
+    }
+
+    if (annotation.target_type === 'kernel_file' && annotation.version && annotation.file_path) {
+      const line = annotation.start_line || Number(annotation.anchor?.['start_line'] || 1);
+      navigate(`/kernel-code?v=${encodeURIComponent(annotation.version)}&path=${encodeURIComponent(annotation.file_path)}&line=${line}`);
+      return;
+    }
+
+    if (annotation.target_type === 'sdm_spec') {
+      const query = annotation.target_label || annotation.target_ref;
+      navigate(`/manual/search?q=${encodeURIComponent(query)}`);
     }
   };
-  
-  // 回复批注
-  const handleReply = (annotationId: string) => {
-    setReplyingTo(annotationId);
-    setReplyBody('');
-  };
-  
-  const handleCancelReply = () => {
-    setReplyingTo(null);
-    setReplyBody('');
-  };
-  
-  const handleSubmitReply = async (annotationId: string) => {
+
+  const handleReplySubmit = async (parent: AnnotationListItem) => {
     if (!replyBody.trim()) return;
-    
-    // 找到被回复的批注，获取其 thread_id 和 in_reply_to
-    const parentAnnotation = annotations.find(a => a.annotation_id === annotationId);
-    if (!parentAnnotation) return;
-    
+
     setReplyLoading(true);
     try {
       await createAnnotation({
-        thread_id: parentAnnotation.thread_id || '',
+        annotation_type: parent.annotation_type,
         body: replyBody.trim(),
-        in_reply_to: annotationId, // 回复指向批注，而非邮件
+        parent_annotation_id: parent.annotation_id,
+        target_type: parent.target_type,
+        target_ref: parent.target_ref,
+        target_label: parent.target_label,
+        target_subtitle: parent.target_subtitle,
+        anchor: parent.anchor,
+        thread_id: parent.thread_id,
+        in_reply_to: parent.in_reply_to,
+        version: parent.version,
+        file_path: parent.file_path,
+        start_line: parent.start_line,
+        end_line: parent.end_line,
+        meta: parent.meta,
       });
       setReplyingTo(null);
       setReplyBody('');
       onAnnotationsChange?.();
-    } catch (e) {
-      alert('回复失败: ' + (e instanceof Error ? e.message : 'Unknown error'));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : '回复失败');
     } finally {
       setReplyLoading(false);
     }
   };
-  
-  // 编辑批注
-  const handleEdit = async (annotationId: string, body: string) => {
-    await updateAnnotation(annotationId, body);
-    onAnnotationsChange?.();
-  };
-  
-  // 点击处理
-  const handleCardClick = (ann: AnnotationListItem) => {
-    if (ann.annotation_type === 'email' && ann.thread_id) {
-      setDrawerThreadId(ann.thread_id);
-    } else if (ann.annotation_type === 'code') {
-      navigate(`/kernel-code?v=${encodeURIComponent(ann.version || '')}&path=${encodeURIComponent(ann.file_path || '')}&line=${ann.start_line}`);
-    }
-  };
-  
-  // 递归渲染节点
+
   const renderNode = (node: TreeNode) => {
-    const { annotation, children } = node;
+    const { annotation, children, level } = node;
     const isExpanded = expandedIds.has(annotation.annotation_id);
     const hasChildren = children.length > 0;
-    const isReply = node.level > 0;
-    
-    // 主题/路径显示
-    const getHeaderInfo = () => {
-      if (annotation.annotation_type === 'email') {
-        return {
-          Icon: Mail,
-          icon: 'mail',
-          title: annotation.email_subject || annotation.thread_id?.slice(0, 30) || '无标题',
-          subtitle: annotation.email_sender || '未知发件人',
-          bgColor: isReply ? 'bg-green-50' : 'bg-blue-50',
-          borderColor: isReply ? 'border-green-100' : 'border-blue-100',
-          iconColor: isReply ? 'text-green-500' : 'text-blue-500',
-        };
-      } else {
-        return {
-          Icon: Code2,
-          icon: 'code-2',
-          title: annotation.file_path || '未知文件',
-          subtitle: `${annotation.version || ''} 行 ${annotation.start_line}${annotation.end_line !== annotation.start_line ? `-${annotation.end_line}` : ''}`,
-          bgColor: isReply ? 'bg-green-50' : 'bg-indigo-50',
-          borderColor: isReply ? 'border-green-100' : 'border-indigo-100',
-          iconColor: isReply ? 'text-green-500' : 'text-indigo-500',
-        };
-      }
-    };
-    
-    const headerInfo = getHeaderInfo();
-    
+    const Icon = getTargetIcon(annotation.target_type);
+    const anchorLabel = getAnchorLabel(annotation);
+
     return (
-      <div key={annotation.annotation_id} className="space-y-2">
-        {/* 卡片主体 */}
-        <div className={`${headerInfo.bgColor} rounded-xl border ${headerInfo.borderColor} shadow-sm overflow-hidden`}>
-          {/* 卡片头部 */}
-          <div 
-            className="px-4 py-3 cursor-pointer hover:opacity-90 transition-opacity"
-            onClick={() => handleCardClick(annotation)}
-          >
-            <div className="flex items-center gap-3">
-              {/* 展开/折叠按钮 */}
-              <button
-                onClick={(e) => toggleExpand(annotation.annotation_id, e)}
-                className={`${headerInfo.iconColor} hover:opacity-70 transition-opacity flex items-center gap-1 px-2 py-1 rounded hover:bg-white/50`}
-                title={isExpanded ? '点击收起' : '点击展开'}
-              >
-                {hasChildren ? (
-                  <>
-                  <>
-                    {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                    <span className="text-xs font-medium">{children.length} 条回复</span>
-                  </>
-                  </>
-                ) : (
-                  <span className="w-4"></span>
-                )}
-              </button>
-              {headerInfo.Icon && <headerInfo.Icon className={`w-4 h-4 ${headerInfo.iconColor}`} />}
-              <div className="flex-1 min-w-0">
-                <div className={`text-sm font-medium text-slate-800 truncate ${annotation.annotation_type === 'code' ? 'font-mono' : ''}`}>
-                  {headerInfo.title}
-                </div>
-                <div className="text-xs text-slate-500 flex items-center gap-2">
-                  <span>{headerInfo.subtitle}</span>
-                  <span>•</span>
-                  <span>{new Date(annotation.created_at).toLocaleDateString('zh-CN')}</span>
-                </div>
+      <div key={annotation.annotation_id} className="space-y-3">
+        <div className="rounded-[28px] border border-slate-200 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-[0_12px_40px_rgba(15,23,42,0.06)]">
+          <div className="flex flex-wrap items-start gap-3">
+            <button
+              onClick={() => {
+                if (!hasChildren) return;
+                setExpandedIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(annotation.annotation_id)) next.delete(annotation.annotation_id);
+                  else next.add(annotation.annotation_id);
+                  return next;
+                });
+              }}
+              className="mt-0.5 flex min-w-[74px] items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600"
+            >
+              {hasChildren ? (
+                <>
+                  {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                  {children.length} 回复
+                </>
+              ) : (
+                <span>单条</span>
+              )}
+            </button>
+
+            <div className="flex min-w-0 flex-1 items-start gap-3">
+              <div className="rounded-2xl bg-slate-900 p-2 text-white">
+                <Icon className="h-4 w-4" />
               </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="truncate text-base font-semibold text-slate-900">
+                    {annotation.target_label || annotation.email_subject || annotation.file_path || annotation.target_ref}
+                  </h3>
+                  {anchorLabel && (
+                    <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
+                      {anchorLabel}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-sm text-slate-500">
+                  {annotation.target_subtitle || annotation.email_sender || annotation.target_type}
+                </p>
+              </div>
+              <button
+                onClick={() => handleJump(annotation)}
+                className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:border-slate-300 hover:text-slate-900"
+              >
+                跳转定位
+              </button>
             </div>
           </div>
-          
-          {/* 卡片内容 */}
-          <div className="p-4">
+
+          <div className="mt-4">
             <AnnotationCard
+              annotationType={annotation.annotation_type}
               author={annotation.author}
               body={annotation.body}
-              created_at={annotation.created_at}
-              updated_at={annotation.updated_at}
-              variant={annotation.annotation_type}
-              thread_id={annotation.thread_id}
-              email_subject={annotation.email_subject}
-              email_sender={annotation.email_sender}
-              version={annotation.version}
-              file_path={annotation.file_path}
-              start_line={annotation.start_line}
-              end_line={annotation.end_line}
-              showGoto={annotation.annotation_type === 'code'}
-              onGoto={() => {
-                navigate(`/kernel-code?v=${encodeURIComponent(annotation.version || '')}&path=${encodeURIComponent(annotation.file_path || '')}&line=${annotation.start_line}`);
+              createdAt={annotation.created_at}
+              updatedAt={annotation.updated_at}
+              targetLabel={annotation.target_label || annotation.email_subject || annotation.file_path || annotation.target_ref}
+              targetSubtitle={annotation.target_subtitle || annotation.email_sender || annotation.target_type}
+              anchorLabel={anchorLabel}
+              onEdit={async (body) => {
+                await updateAnnotation(annotation.annotation_id, body);
+                onAnnotationsChange?.();
               }}
-              onEdit={(body) => handleEdit(annotation.annotation_id, body)}
-              onDelete={() => handleDelete(annotation.annotation_id)}
-              onReply={() => handleReply(annotation.annotation_id)}
+              onDelete={async () => {
+                if (!confirm('确定要删除这个标注吗？')) return;
+                await deleteAnnotation(annotation.annotation_id);
+                onAnnotationsChange?.();
+              }}
+              onReply={() => {
+                setReplyingTo(annotation.annotation_id);
+                setReplyBody('');
+              }}
+              onJump={() => handleJump(annotation)}
             />
-            
-            {/* 回复表单 */}
-            {replyingTo === annotation.annotation_id && (
-              <div className="mt-4 p-4 bg-white rounded-lg border border-slate-200 shadow-sm">
-                <div className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
-                  <span className="text-green-500">↩</span>
-                  回复此批注
-                </div>
-                <textarea
-                  value={replyBody}
-                  onChange={(e) => setReplyBody(e.target.value)}
-                  className="w-full min-h-[80px] p-3 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-green-400 outline-none resize-none"
-                  placeholder="输入回复内容（支持 Markdown）..."
-                  autoFocus
-                />
-                <div className="flex gap-2 mt-3">
-                  <button
-                    onClick={() => handleSubmitReply(annotation.annotation_id)}
-                    disabled={!replyBody.trim() || replyLoading}
-                    className="px-4 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {replyLoading ? '提交中...' : '提交回复'}
-                  </button>
-                  <button
-                    onClick={handleCancelReply}
-                    className="px-4 py-2 bg-gray-100 text-slate-600 text-sm rounded-lg hover:bg-gray-200 transition-colors"
-                  >
-                    取消
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
+
+          {replyingTo === annotation.annotation_id && (
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="mb-2 text-sm font-medium text-slate-700">回复此标注</div>
+              <textarea
+                value={replyBody}
+                onChange={(e) => setReplyBody(e.target.value)}
+                className="min-h-[96px] w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                placeholder="输入回复内容，支持 Markdown"
+              />
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => handleReplySubmit(annotation)}
+                  disabled={!replyBody.trim() || replyLoading}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {replyLoading ? '提交中...' : '提交回复'}
+                </button>
+                <button
+                  onClick={() => {
+                    setReplyingTo(null);
+                    setReplyBody('');
+                  }}
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600"
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-        
-        {/* 子节点（回复列表） */}
+
         {hasChildren && isExpanded && (
-          <div className={`ml-${Math.min(node.level * 4 + 6, 10)} pl-4 border-l-2 border-green-200 space-y-3`}>
-            {children.map(child => renderNode(child))}
+          <div
+            className="space-y-3 border-l-2 border-slate-200 pl-4"
+            style={{ marginLeft: `${Math.min(level * 20 + 12, 72)}px` }}
+          >
+            {children.map((child) => renderNode(child))}
           </div>
         )}
       </div>
     );
   };
-  
-  if (tree.length === 0) {
-    return null;
-  }
-  
+
+  if (tree.length === 0) return null;
+
   return (
-    <div className="space-y-4">
-      {tree.map(node => renderNode(node))}
-      
-      {/* Thread Drawer */}
-      {drawerThreadId && (
-        <ThreadDrawer
-          threadId={drawerThreadId}
-          onClose={() => setDrawerThreadId(null)}
-        />
-      )}
-    </div>
+    <>
+      <div className="space-y-4">{tree.map((node) => renderNode(node))}</div>
+      {drawerThreadId && <ThreadDrawer threadId={drawerThreadId} onClose={() => setDrawerThreadId(null)} />}
+    </>
   );
 }

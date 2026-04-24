@@ -4,7 +4,7 @@ import AnnotationTree from '../components/AnnotationTree';
 import { listAnnotations } from '../api/client';
 import type { AnnotationListItem } from '../api/types';
 
-type FilterType = 'all' | 'email' | 'code';
+type FilterType = 'all' | 'email' | 'code' | 'sdm_spec';
 
 export default function AnnotationsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -28,6 +28,7 @@ export default function AnnotationsPage() {
   // 统计
   const emailCount = annotations.filter(a => a.annotation_type === 'email').length;
   const codeCount = annotations.filter(a => a.annotation_type === 'code').length;
+  const specCount = annotations.filter(a => a.annotation_type === 'sdm_spec').length;
 
   // 加载数据
   const loadAnnotations = useCallback(async () => {
@@ -86,13 +87,13 @@ export default function AnnotationsPage() {
               <i data-lucide="message-square" className="w-5 h-5 text-white"></i>
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-800">批注管理</h1>
-              <p className="text-sm text-slate-500">统一管理邮件批注和代码标注</p>
+              <h1 className="text-2xl font-bold text-slate-800">统一标注中心</h1>
+              <p className="text-sm text-slate-500">一套标注框架，统一承载邮件、代码和后续 spec 类目标</p>
             </div>
           </div>
           
           {/* 统计卡片 */}
-          <div className="flex gap-4 mt-4">
+          <div className="flex flex-wrap gap-4 mt-4">
             <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg border border-blue-100">
               <i data-lucide="mail" className="w-4 h-4 text-blue-500"></i>
               <span className="text-sm text-blue-700 font-medium">{emailCount} 邮件批注</span>
@@ -100,6 +101,10 @@ export default function AnnotationsPage() {
             <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 rounded-lg border border-indigo-100">
               <i data-lucide="code-2" className="w-4 h-4 text-indigo-500"></i>
               <span className="text-sm text-indigo-700 font-medium">{codeCount} 代码标注</span>
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 rounded-lg border border-amber-100">
+              <i data-lucide="scroll-text" className="w-4 h-4 text-amber-500"></i>
+              <span className="text-sm text-amber-700 font-medium">{specCount} Spec 标注</span>
             </div>
           </div>
         </div>
@@ -116,7 +121,7 @@ export default function AnnotationsPage() {
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                placeholder="搜索批注内容..."
+                placeholder="搜索标注内容、文件路径或讨论主题..."
                 className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none transition-all"
               />
             </div>
@@ -142,19 +147,20 @@ export default function AnnotationsPage() {
         {/* 筛选标签 */}
         <div className="flex items-center gap-2 mb-6">
           <span className="text-sm text-slate-500 mr-2">类型筛选:</span>
-          {(['all', 'email', 'code'] as FilterType[]).map((f) => (
+          {(['all', 'email', 'code', 'sdm_spec'] as FilterType[]).map((f) => (
             <button
               key={f}
               onClick={() => handleFilterChange(f)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
                 filter === f
-                  ? f === 'all' ? 'bg-slate-800 text-white shadow-md' : f === 'email' ? 'bg-blue-600 text-white shadow-md' : 'bg-indigo-600 text-white shadow-md'
+                  ? f === 'all' ? 'bg-slate-800 text-white shadow-md' : f === 'email' ? 'bg-blue-600 text-white shadow-md' : f === 'code' ? 'bg-indigo-600 text-white shadow-md' : 'bg-amber-600 text-white shadow-md'
                   : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
               }`}
             >
               {f === 'all' && <><i data-lucide="layers" className="w-4 h-4"></i>全部</>}
               {f === 'email' && <><i data-lucide="mail" className="w-4 h-4"></i>邮件批注</>}
               {f === 'code' && <><i data-lucide="code-2" className="w-4 h-4"></i>代码标注</>}
+              {f === 'sdm_spec' && <><i data-lucide="scroll-text" className="w-4 h-4"></i>Spec 标注</>}
             </button>
           ))}
         </div>
@@ -195,7 +201,7 @@ export default function AnnotationsPage() {
               {q ? '未找到匹配的批注' : '暂无批注'}
             </h3>
             <p className="text-sm text-slate-500">
-              {q ? '尝试使用其他关键词搜索' : '在邮件或代码中添加批注开始使用'}
+              {q ? '尝试更换关键词或切换标注类型' : '可以先从邮件线程、内核代码或后续 spec 目标开始创建标注'}
             </p>
           </div>
         )}

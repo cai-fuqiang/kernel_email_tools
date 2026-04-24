@@ -1,7 +1,9 @@
-"""统一批注存储层 — 支持邮件批注和代码标注。
+"""统一标注存储层。
 
-将 AnnotationStore 和 CodeAnnotationStore 合并为单一存储类。
-遵循 session_factory 模式，每次操作创建新 session，避免长生命周期 session 过期。
+核心抽象：
+- annotation：评论/回复本体
+- target：被标注对象，例如 email_thread、kernel_file、sdm_spec
+- anchor：目标内的具体位置，例如 message_id、行号范围、页码范围
 """
 
 import hashlib
@@ -10,7 +12,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import delete, select, func, or_, and_
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.storage.models import AnnotationCreate, AnnotationORM, AnnotationRead, AnnotationUpdate, EmailORM
@@ -19,268 +21,169 @@ logger = logging.getLogger(__name__)
 
 
 def _compute_context_hash(version: str, file_path: str, start_line: int, content: str) -> str:
-    """计算上下文哈希，用于检测版本漂移。
-
-    以 "version:path:line:content_prefix" 的前 64 字符 SHA256 作为锚点哈希。
-    """
+    """计算代码锚点上下文哈希。"""
     prefix = content[:200] if content else ""
     raw = f"{version}:{file_path}:{start_line}:{prefix}"
     return hashlib.sha256(raw.encode()).hexdigest()[:64]
 
 
+def _normalize_annotation_payload(annotation: AnnotationCreate) -> AnnotationCreate:
+    """将邮件/代码便捷字段折叠到统一 target/anchor 结构。"""
+    data = annotation.model_copy(deep=True)
+
+    if not data.annotation_type:
+        data.annotation_type = "email"
+
+    if data.annotation_type == "email":
+        if not data.target_type:
+            data.target_type = "email_thread"
+        if not data.target_ref:
+            data.target_ref = data.thread_id
+        if not data.anchor and data.in_reply_to:
+            data.anchor = {"message_id": data.in_reply_to}
+        if not data.meta:
+            data.meta = {}
+    elif data.annotation_type == "code":
+        if not data.target_type:
+            data.target_type = "kernel_file"
+        if not data.target_ref and data.version and data.file_path:
+            data.target_ref = f"{data.version}:{data.file_path}"
+        if not data.target_label:
+            data.target_label = data.file_path
+        if not data.target_subtitle:
+            data.target_subtitle = data.version
+        if not data.anchor and data.start_line > 0:
+            data.anchor = {
+                "start_line": data.start_line,
+                "end_line": data.end_line or data.start_line,
+            }
+
+    return data
+
+
 class UnifiedAnnotationStore:
-    """统一批注存储器。
-
-    支持两种批注类型：
-    - 'email': 邮件批注，存储在线程树中的本地评论
-    - 'code': 代码标注，对内核源码的行级/范围级注释
-
-    使用 session_factory 每次操作创建新 session。
-
-    Attributes:
-        session_factory: SQLAlchemy 异步会话工厂。
-        default_author: 默认批注作者名。
-    """
+    """统一标注存储器。"""
 
     def __init__(self, session_factory: async_sessionmaker, default_author: str = "me"):
-        """初始化统一批注存储器。
-
-        Args:
-            session_factory: SQLAlchemy 异步会话工厂（async context manager）。
-            default_author: 默认批注作者名称。
-        """
         self.session_factory = session_factory
         self.default_author = default_author
 
     async def create(self, annotation: AnnotationCreate, content_for_hash: str = "") -> AnnotationRead:
-        """创建新批注。
-
-        Args:
-            annotation: 批注创建模型。
-            content_for_hash: 用于计算代码标注锚点哈希的代码内容。
-
-        Returns:
-            创建后的批注读取模型。
-        """
-        annotation_id = f"annotation-{uuid.uuid4().hex[:12]}"
-        author = annotation.author or self.default_author
+        """创建标注或回复。"""
+        data = _normalize_annotation_payload(annotation)
         now = datetime.utcnow()
-        annotation_type = annotation.annotation_type or "email"
-
-        # 计算代码标注的锚点哈希
-        anchor_context = None
-        if annotation_type == "code" and annotation.version and annotation.file_path:
-            anchor_context = _compute_context_hash(
-                annotation.version, annotation.file_path, annotation.start_line, content_for_hash
-            )
-            annotation_id = f"code-annot-{uuid.uuid4().hex[:12]}"
-
-        orm = AnnotationORM(
-            annotation_id=annotation_id,
-            annotation_type=annotation_type,
-            author=author,
-            body=annotation.body,
-            created_at=now,
-            updated_at=now,
-            # email 类型字段
-            thread_id=annotation.thread_id or "",
-            in_reply_to=annotation.in_reply_to or "",
-            # code 类型字段
-            version=annotation.version or None,
-            file_path=annotation.file_path or None,
-            start_line=annotation.start_line or None,
-            end_line=annotation.end_line or None,
-            anchor_context=anchor_context,
-        )
 
         async with self.session_factory() as session:
+            parent = None
+            if data.parent_annotation_id:
+                result = await session.execute(
+                    select(AnnotationORM).where(AnnotationORM.annotation_id == data.parent_annotation_id)
+                )
+                parent = result.scalar_one_or_none()
+                if not parent:
+                    raise ValueError(f"parent annotation not found: {data.parent_annotation_id}")
+
+            if parent:
+                if not data.target_type:
+                    data.target_type = parent.target_type
+                if not data.target_ref:
+                    data.target_ref = parent.target_ref
+                if not data.target_label:
+                    data.target_label = parent.target_label
+                if not data.target_subtitle:
+                    data.target_subtitle = parent.target_subtitle
+                if not data.anchor:
+                    data.anchor = parent.anchor or {}
+                if not data.thread_id:
+                    data.thread_id = parent.thread_id or ""
+                if not data.in_reply_to:
+                    data.in_reply_to = parent.annotation_id
+                if not data.version:
+                    data.version = parent.version or ""
+                if not data.file_path:
+                    data.file_path = parent.file_path or ""
+                if not data.start_line and parent.start_line:
+                    data.start_line = parent.start_line
+                if not data.end_line and parent.end_line:
+                    data.end_line = parent.end_line
+
+            if not data.target_type or not data.target_ref:
+                raise ValueError("target_type and target_ref are required")
+
+            annotation_id = f"annotation-{uuid.uuid4().hex[:12]}"
+            if data.annotation_type == "code":
+                annotation_id = f"code-annot-{uuid.uuid4().hex[:12]}"
+
+            anchor_context = None
+            if data.annotation_type == "code" and data.version and data.file_path and data.start_line:
+                anchor_context = _compute_context_hash(
+                    data.version,
+                    data.file_path,
+                    data.start_line,
+                    content_for_hash,
+                )
+
+            orm = AnnotationORM(
+                annotation_id=annotation_id,
+                annotation_type=data.annotation_type,
+                author=data.author or self.default_author,
+                body=data.body,
+                parent_annotation_id=data.parent_annotation_id or None,
+                target_type=data.target_type,
+                target_ref=data.target_ref,
+                target_label=data.target_label or "",
+                target_subtitle=data.target_subtitle or "",
+                anchor=data.anchor or {},
+                meta=data.meta or {},
+                thread_id=data.thread_id or "",
+                in_reply_to=data.in_reply_to or "",
+                version=data.version or None,
+                file_path=data.file_path or None,
+                start_line=data.start_line or None,
+                end_line=data.end_line or None,
+                anchor_context=anchor_context,
+                created_at=now,
+                updated_at=now,
+            )
             session.add(orm)
-            try:
-                await session.commit()
-                await session.refresh(orm)
-                logger.info(f"Created {annotation_type} annotation {annotation_id}")
-                return AnnotationRead.model_validate(orm)
-            except Exception as e:
-                await session.rollback()
-                # 忽略重复注释（唯一约束冲突）
-                if "duplicate key" in str(e).lower() or "unique" in str(e).lower():
-                    logger.warning(f"Duplicate annotation ignored: {annotation_id}")
-                    # 查询已存在的
-                    result = await session.execute(
-                        select(AnnotationORM).where(AnnotationORM.annotation_id == annotation_id)
-                    )
-                    existing = result.scalar_one_or_none()
-                    if existing:
-                        return AnnotationRead.model_validate(existing)
-                raise
+            await session.commit()
+            await session.refresh(orm)
+            logger.info("Created %s annotation %s", data.annotation_type, annotation_id)
+            return AnnotationRead.model_validate(orm)
 
     async def list_by_thread(self, thread_id: str) -> list[AnnotationRead]:
-        """获取线程下所有批注（email 类型，按创建时间排序）。
-
-        Args:
-            thread_id: 线程 ID。
-
-        Returns:
-            批注列表。
-        """
         async with self.session_factory() as session:
             stmt = (
                 select(AnnotationORM)
-                .where(AnnotationORM.annotation_type == "email")
                 .where(AnnotationORM.thread_id == thread_id)
                 .order_by(AnnotationORM.created_at.asc())
             )
             result = await session.execute(stmt)
-            rows = result.scalars().all()
-            
-            # 处理 None 值，避免 Pydantic 验证错误
-            annotations = []
-            for r in rows:
-                annotations.append(AnnotationRead(
-                    id=r.id,
-                    annotation_id=r.annotation_id,
-                    annotation_type=r.annotation_type,
-                    author=r.author,
-                    body=r.body,
-                    created_at=r.created_at,
-                    updated_at=r.updated_at,
-                    thread_id=r.thread_id or "",
-                    in_reply_to=r.in_reply_to or "",
-                    version=r.version or "",
-                    file_path=r.file_path or "",
-                    start_line=r.start_line or 0,
-                    end_line=r.end_line or 0,
-                ))
-            
-            return annotations
+            return [AnnotationRead.model_validate(row) for row in result.scalars().all()]
 
-    async def list_by_code(
-        self,
-        version: str,
-        file_path: str,
-    ) -> list[AnnotationRead]:
-        """获取指定文件的代码标注列表（code 类型，按行号排序）。
-
-        Args:
-            version: 版本 tag。
-            file_path: 文件路径。
-
-        Returns:
-            标注列表。
-        """
+    async def list_by_code(self, version: str, file_path: str) -> list[AnnotationRead]:
         async with self.session_factory() as session:
             stmt = (
                 select(AnnotationORM)
                 .where(AnnotationORM.annotation_type == "code")
                 .where(AnnotationORM.version == version)
                 .where(AnnotationORM.file_path == file_path)
-                .order_by(AnnotationORM.start_line)
+                .order_by(AnnotationORM.start_line.asc(), AnnotationORM.created_at.asc())
             )
             result = await session.execute(stmt)
-            rows = result.scalars().all()
-            return [AnnotationRead.model_validate(r) for r in rows]
+            return [AnnotationRead.model_validate(row) for row in result.scalars().all()]
 
     async def list_all(
         self,
         annotation_type: str = "all",
         page: int = 1,
         page_size: int = 20,
+        extra_filters: Optional[list] = None,
     ) -> tuple[list[dict], int]:
-        """全量批注分页列表，按 created_at 倒序。
-
-        Args:
-            annotation_type: 批注类型过滤：'email' | 'code' | 'all'
-            page: 页码（从 1 开始）。
-            page_size: 每页数量。
-
-        Returns:
-            (批注列表, 总数) 元组。
-        """
-        async with self.session_factory() as session:
-            # 构建查询条件
-            base_filter = []
-            if annotation_type == "email":
-                base_filter.append(AnnotationORM.annotation_type == "email")
-            elif annotation_type == "code":
-                base_filter.append(AnnotationORM.annotation_type == "code")
-
-            # 计算总数
-            count_stmt = select(func.count()).select_from(AnnotationORM)
-            if base_filter:
-                count_stmt = count_stmt.where(and_(*base_filter))
-            total = (await session.execute(count_stmt)).scalar() or 0
-
-            if total == 0:
-                return [], 0
-
-            # 分页查询
-            offset = (page - 1) * page_size
-
-            if annotation_type == "email":
-                # email 类型：LEFT JOIN emails 获取 subject/sender
-                stmt = (
-                    select(AnnotationORM, EmailORM.subject, EmailORM.sender)
-                    .outerjoin(EmailORM, AnnotationORM.in_reply_to == EmailORM.message_id)
-                    .where(and_(*base_filter))
-                    .order_by(AnnotationORM.created_at.desc())
-                    .offset(offset)
-                    .limit(page_size)
-                )
-                result = await session.execute(stmt)
-                rows = result.all()
-
-                items = []
-                for ann, email_subject, email_sender in rows:
-                    items.append({
-                        "annotation_id": ann.annotation_id,
-                        "annotation_type": ann.annotation_type,
-                        "thread_id": ann.thread_id,
-                        "in_reply_to": ann.in_reply_to,
-                        "author": ann.author,
-                        "body": ann.body,
-                        "created_at": ann.created_at.isoformat(),
-                        "updated_at": ann.updated_at.isoformat(),
-                        "email_subject": email_subject or "",
-                        "email_sender": email_sender or "",
-                        # email 类型也包含 code 字段占位，避免前端类型不兼容
-                        "version": ann.version or "",
-                        "file_path": ann.file_path or "",
-                        "start_line": ann.start_line or 0,
-                        "end_line": ann.end_line or 0,
-                    })
-            else:
-                # code 类型或其他：直接查询（也使用 LEFT JOIN 获取 email 信息）
-                stmt = (
-                    select(AnnotationORM, EmailORM.subject, EmailORM.sender)
-                    .outerjoin(EmailORM, AnnotationORM.in_reply_to == EmailORM.message_id)
-                    .where(and_(*base_filter)) if base_filter else select(AnnotationORM, EmailORM.subject, EmailORM.sender).outerjoin(EmailORM, AnnotationORM.in_reply_to == EmailORM.message_id)
-                    .order_by(AnnotationORM.created_at.desc())
-                    .offset(offset)
-                    .limit(page_size)
-                )
-                result = await session.execute(stmt)
-                rows = result.all()
-
-                items = []
-                for ann, email_subject, email_sender in rows:
-                    items.append({
-                        "annotation_id": ann.annotation_id,
-                        "annotation_type": ann.annotation_type,
-                        "thread_id": ann.thread_id or "",
-                        "in_reply_to": ann.in_reply_to or "",
-                        "author": ann.author,
-                        "body": ann.body,
-                        "created_at": ann.created_at.isoformat(),
-                        "updated_at": ann.updated_at.isoformat(),
-                        "email_subject": email_subject or "",
-                        "email_sender": email_sender or "",
-                        "version": ann.version or "",
-                        "file_path": ann.file_path or "",
-                        "start_line": ann.start_line or 0,
-                        "end_line": ann.end_line or 0,
-                    })
-
-            return items, total
+        filters = list(extra_filters or [])
+        if annotation_type != "all":
+            filters.append(AnnotationORM.annotation_type == annotation_type)
+        return await self._list_with_filters(filters, page, page_size)
 
     async def search(
         self,
@@ -288,116 +191,77 @@ class UnifiedAnnotationStore:
         annotation_type: str = "all",
         page: int = 1,
         page_size: int = 20,
+        extra_filters: Optional[list] = None,
     ) -> tuple[list[dict], int]:
-        """按批注 body 内容模糊搜索。
+        filters = [AnnotationORM.body.ilike(f"%{keyword}%"), *(extra_filters or [])]
+        if annotation_type != "all":
+            filters.append(AnnotationORM.annotation_type == annotation_type)
+        return await self._list_with_filters(filters, page, page_size)
 
-        Args:
-            keyword: 搜索关键词。
-            annotation_type: 批注类型过滤：'email' | 'code' | 'all'
-            page: 页码（从 1 开始）。
-            page_size: 每页数量。
-
-        Returns:
-            (匹配批注列表, 总数) 元组。
-        """
-        pattern = f"%{keyword}%"
+    async def _list_with_filters(
+        self,
+        filters: list,
+        page: int,
+        page_size: int,
+    ) -> tuple[list[dict], int]:
         async with self.session_factory() as session:
-            # 构建查询条件
-            base_filter = [AnnotationORM.body.ilike(pattern)]
-            if annotation_type == "email":
-                base_filter.append(AnnotationORM.annotation_type == "email")
-            elif annotation_type == "code":
-                base_filter.append(AnnotationORM.annotation_type == "code")
-
-            # 计算总数
             count_stmt = select(func.count()).select_from(AnnotationORM)
-            count_stmt = count_stmt.where(and_(*base_filter))
+            if filters:
+                count_stmt = count_stmt.where(and_(*filters))
             total = (await session.execute(count_stmt)).scalar() or 0
-
             if total == 0:
                 return [], 0
 
-            # 分页查询
-            offset = (page - 1) * page_size
+            stmt = (
+                select(AnnotationORM, EmailORM.subject, EmailORM.sender)
+                .outerjoin(EmailORM, AnnotationORM.in_reply_to == EmailORM.message_id)
+                .order_by(AnnotationORM.created_at.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+            if filters:
+                stmt = stmt.where(and_(*filters))
 
-            if annotation_type == "email":
-                stmt = (
-                    select(AnnotationORM, EmailORM.subject, EmailORM.sender)
-                    .outerjoin(EmailORM, AnnotationORM.in_reply_to == EmailORM.message_id)
-                    .where(and_(*base_filter))
-                    .order_by(AnnotationORM.created_at.desc())
-                    .offset(offset)
-                    .limit(page_size)
-                )
-                result = await session.execute(stmt)
-                rows = result.all()
+            result = await session.execute(stmt)
+            rows = result.all()
+            return [self._serialize_row(ann, email_subject, email_sender) for ann, email_subject, email_sender in rows], total
 
-                items = []
-                for ann, email_subject, email_sender in rows:
-                    items.append({
-                        "annotation_id": ann.annotation_id,
-                        "annotation_type": ann.annotation_type,
-                        "thread_id": ann.thread_id,
-                        "in_reply_to": ann.in_reply_to,
-                        "author": ann.author,
-                        "body": ann.body,
-                        "created_at": ann.created_at.isoformat(),
-                        "updated_at": ann.updated_at.isoformat(),
-                        "email_subject": email_subject or "",
-                        "email_sender": email_sender or "",
-                        # email 类型也包含 code 字段占位，避免前端类型不兼容
-                        "version": ann.version or "",
-                        "file_path": ann.file_path or "",
-                        "start_line": ann.start_line or 0,
-                        "end_line": ann.end_line or 0,
-                    })
-            else:
-                # code 类型或其他：直接查询（也使用 LEFT JOIN 获取 email 信息）
-                stmt = (
-                    select(AnnotationORM, EmailORM.subject, EmailORM.sender)
-                    .outerjoin(EmailORM, AnnotationORM.in_reply_to == EmailORM.message_id)
-                    .where(and_(*base_filter))
-                    .order_by(AnnotationORM.created_at.desc())
-                    .offset(offset)
-                    .limit(page_size)
-                )
-                result = await session.execute(stmt)
-                rows = result.all()
-
-                items = []
-                for ann, email_subject, email_sender in rows:
-                    items.append({
-                        "annotation_id": ann.annotation_id,
-                        "annotation_type": ann.annotation_type,
-                        "thread_id": ann.thread_id or "",
-                        "in_reply_to": ann.in_reply_to or "",
-                        "author": ann.author,
-                        "body": ann.body,
-                        "created_at": ann.created_at.isoformat(),
-                        "updated_at": ann.updated_at.isoformat(),
-                        "email_subject": email_subject or "",
-                        "email_sender": email_sender or "",
-                        "version": ann.version or "",
-                        "file_path": ann.file_path or "",
-                        "start_line": ann.start_line or 0,
-                        "end_line": ann.end_line or 0,
-                    })
-
-            return items, total
+    def _serialize_row(
+        self,
+        ann: AnnotationORM,
+        email_subject: Optional[str] = None,
+        email_sender: Optional[str] = None,
+    ) -> dict:
+        anchor = ann.anchor or {}
+        return {
+            "annotation_id": ann.annotation_id,
+            "annotation_type": ann.annotation_type,
+            "author": ann.author,
+            "body": ann.body,
+            "parent_annotation_id": ann.parent_annotation_id or "",
+            "created_at": ann.created_at.isoformat(),
+            "updated_at": ann.updated_at.isoformat(),
+            "target_type": ann.target_type,
+            "target_ref": ann.target_ref,
+            "target_label": ann.target_label or "",
+            "target_subtitle": ann.target_subtitle or "",
+            "anchor": anchor,
+            "meta": ann.meta or {},
+            "thread_id": ann.thread_id or "",
+            "in_reply_to": ann.in_reply_to or "",
+            "version": ann.version or "",
+            "file_path": ann.file_path or "",
+            "start_line": ann.start_line or int(anchor.get("start_line", 0) or 0),
+            "end_line": ann.end_line or int(anchor.get("end_line", 0) or 0),
+            "email_subject": email_subject or "",
+            "email_sender": email_sender or "",
+        }
 
     async def update(self, annotation_id: str, data: AnnotationUpdate) -> Optional[AnnotationRead]:
-        """更新批注内容。
-
-        Args:
-            annotation_id: 批注唯一标识。
-            data: 更新数据。
-
-        Returns:
-            更新后的批注读取模型，不存在返回 None。
-        """
         async with self.session_factory() as session:
-            stmt = select(AnnotationORM).where(AnnotationORM.annotation_id == annotation_id)
-            result = await session.execute(stmt)
+            result = await session.execute(
+                select(AnnotationORM).where(AnnotationORM.annotation_id == annotation_id)
+            )
             orm = result.scalar_one_or_none()
             if not orm:
                 return None
@@ -406,199 +270,59 @@ class UnifiedAnnotationStore:
             orm.updated_at = datetime.utcnow()
             await session.commit()
             await session.refresh(orm)
-            logger.info(f"Updated annotation {annotation_id}")
             return AnnotationRead.model_validate(orm)
 
     async def delete(self, annotation_id: str) -> bool:
-        """删除批注。
-
-        Args:
-            annotation_id: 批注唯一标识。
-
-        Returns:
-            是否成功删除。
-        """
         async with self.session_factory() as session:
-            stmt = delete(AnnotationORM).where(AnnotationORM.annotation_id == annotation_id)
-            result = await session.execute(stmt)
+            result = await session.execute(
+                delete(AnnotationORM).where(AnnotationORM.annotation_id == annotation_id)
+            )
             await session.commit()
-            deleted = result.rowcount > 0
-            if deleted:
-                logger.info(f"Deleted annotation {annotation_id}")
-            return deleted
+            return result.rowcount > 0
 
     async def get(self, annotation_id: str) -> Optional[AnnotationRead]:
-        """获取单个批注。
-
-        Args:
-            annotation_id: 批注 ID。
-
-        Returns:
-            批注读取模型，或 None（不存在）。
-        """
         async with self.session_factory() as session:
-            stmt = select(AnnotationORM).where(AnnotationORM.annotation_id == annotation_id)
-            result = await session.execute(stmt)
+            result = await session.execute(
+                select(AnnotationORM).where(AnnotationORM.annotation_id == annotation_id)
+            )
             orm = result.scalar_one_or_none()
-            if orm:
-                return AnnotationRead.model_validate(orm)
-            return None
+            return AnnotationRead.model_validate(orm) if orm else None
 
     async def export_thread(self, thread_id: str) -> dict:
-        """导出线程的所有批注为 JSON 格式。
-
-        Args:
-            thread_id: 线程 ID。
-
-        Returns:
-            包含线程 ID、批注列表、导出时间的字典。
-        """
         annotations = await self.list_by_thread(thread_id)
         return {
             "thread_id": thread_id,
             "exported_at": datetime.utcnow().isoformat(),
-            "annotations": [
-                {
-                    "annotation_id": a.annotation_id,
-                    "annotation_type": a.annotation_type,
-                    "in_reply_to": a.in_reply_to,
-                    "author": a.author,
-                    "body": a.body,
-                    "created_at": a.created_at.isoformat(),
-                    "updated_at": a.updated_at.isoformat(),
-                }
-                for a in annotations
-            ],
+            "annotations": [item.model_dump(mode="json") for item in annotations],
         }
 
     async def import_thread(self, data: dict) -> int:
-        """从 JSON 导入单个线程的批注（跳过已存在的）。
-
-        Args:
-            data: 导出格式的字典，包含 thread_id 和 annotations 列表。
-
-        Returns:
-            成功导入的批注数量。
-        """
-        thread_id = data.get("thread_id", "")
         items = data.get("annotations", [])
-        if not thread_id or not items:
-            return 0
-
         count = 0
-        async with self.session_factory() as session:
-            for item in items:
-                aid = item.get("annotation_id", "")
-                if not aid:
-                    continue
-                # 检查是否已存在
-                stmt = select(AnnotationORM).where(AnnotationORM.annotation_id == aid)
-                result = await session.execute(stmt)
-                if result.scalar_one_or_none():
-                    continue
-
-                orm = AnnotationORM(
-                    annotation_id=aid,
-                    annotation_type=item.get("annotation_type", "email"),
-                    thread_id=thread_id,
-                    in_reply_to=item.get("in_reply_to", ""),
-                    author=item.get("author", self.default_author),
-                    body=item.get("body", ""),
-                    created_at=datetime.fromisoformat(item["created_at"]) if item.get("created_at") else datetime.utcnow(),
-                    updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else datetime.utcnow(),
-                )
-                session.add(orm)
-                count += 1
-
-            if count > 0:
-                await session.commit()
-            logger.info(f"Imported {count} annotations for thread {thread_id}")
+        for item in items:
+            await self.create(AnnotationCreate(**item))
+            count += 1
         return count
 
     async def import_all(self, data: dict) -> dict:
-        """从 JSON 导入所有批注。
-
-        Args:
-            data: 导出格式的字典，包含 threads 字典（thread_id -> annotations 列表）。
-
-        Returns:
-            导入统计：total_imported, threads_count。
-        """
-        threads = data.get("threads", {})
+        groups = data.get("targets", {})
         total = 0
-        for thread_id, annotations in threads.items():
-            count = await self.import_thread({
-                "thread_id": thread_id,
-                "annotations": annotations,
-            })
-            total += count
-
-        return {
-            "total_imported": total,
-            "threads_count": len(threads),
-        }
+        for _, annotations in groups.items():
+            for item in annotations:
+                await self.create(AnnotationCreate(**item))
+                total += 1
+        return {"total_imported": total, "targets_count": len(groups)}
 
     async def export_all(self, annotation_type: str = "all") -> dict:
-        """导出所有批注为 JSON 格式（按线程分组）。
-
-        Args:
-            annotation_type: 批注类型过滤：'email' | 'code' | 'all'
-
-        Returns:
-            包含所有批注的字典。
-        """
-        async with self.session_factory() as session:
-            # 构建查询条件
-            filter_cond = []
-            if annotation_type == "email":
-                filter_cond.append(AnnotationORM.annotation_type == "email")
-            elif annotation_type == "code":
-                filter_cond.append(AnnotationORM.annotation_type == "code")
-
-            stmt = select(AnnotationORM).order_by(AnnotationORM.thread_id, AnnotationORM.created_at)
-            if filter_cond:
-                stmt = stmt.where(and_(*filter_cond))
-            result = await session.execute(stmt)
-            rows = result.scalars().all()
-
-        # 按类型分组导出
-        email_threads: dict[str, list] = {}
-        code_annotations: list = []
-
-        for orm in rows:
-            if orm.annotation_type == "code":
-                code_annotations.append({
-                    "annotation_id": orm.annotation_id,
-                    "version": orm.version,
-                    "file_path": orm.file_path,
-                    "start_line": orm.start_line,
-                    "end_line": orm.end_line,
-                    "author": orm.author,
-                    "body": orm.body,
-                    "created_at": orm.created_at.isoformat(),
-                    "updated_at": orm.updated_at.isoformat(),
-                })
-            else:
-                tid = orm.thread_id
-                if tid not in email_threads:
-                    email_threads[tid] = []
-                email_threads[tid].append({
-                    "annotation_id": orm.annotation_id,
-                    "annotation_type": orm.annotation_type,
-                    "in_reply_to": orm.in_reply_to,
-                    "author": orm.author,
-                    "body": orm.body,
-                    "created_at": orm.created_at.isoformat(),
-                    "updated_at": orm.updated_at.isoformat(),
-                })
-
+        items, _ = await self.list_all(annotation_type=annotation_type, page=1, page_size=10_000)
+        grouped: dict[str, list[dict]] = {}
+        for item in items:
+            grouped.setdefault(item["target_ref"], []).append(item)
         return {
             "exported_at": datetime.utcnow().isoformat(),
-            "total_annotations": len(rows),
-            "email_threads": email_threads if annotation_type != "code" else {},
-            "code_annotations": code_annotations if annotation_type != "email" else [],
+            "total_annotations": len(items),
+            "targets": grouped,
         }
 
 
-# 向后兼容别名
 AnnotationStore = UnifiedAnnotationStore

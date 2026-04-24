@@ -51,20 +51,49 @@ export interface ThreadEmail {
   body_raw: string;
 }
 
+export interface AnnotationTarget {
+  type: string;
+  ref: string;
+  label: string;
+  subtitle: string;
+  anchor: Record<string, unknown>;
+}
+
 export interface Annotation {
   annotation_id: string;
-  thread_id: string;
-  in_reply_to: string;
+  annotation_type: string;
   author: string;
   body: string;
+  parent_annotation_id: string;
   created_at: string;
   updated_at: string;
+  thread_id: string;
+  in_reply_to: string;
+  version?: string;
+  file_path?: string;
+  start_line?: number;
+  end_line?: number;
+  meta?: Record<string, unknown>;
+  target: AnnotationTarget;
 }
 
 export interface AnnotationCreate {
-  thread_id: string;
+  annotation_type?: string;
   body: string;
+  author?: string;
+  parent_annotation_id?: string;
+  target_type?: string;
+  target_ref?: string;
+  target_label?: string;
+  target_subtitle?: string;
+  anchor?: Record<string, unknown>;
+  thread_id?: string;
   in_reply_to?: string;
+  version?: string;
+  file_path?: string;
+  start_line?: number;
+  end_line?: number;
+  meta?: Record<string, unknown>;
 }
 
 export interface ThreadResponse {
@@ -130,17 +159,22 @@ export interface ManualStatsResponse {
 // 批注列表相关类型
 export interface AnnotationListItem {
   annotation_id: string;
-  annotation_type: 'email' | 'code';
+  annotation_type: string;
   author: string;
   body: string;
+  parent_annotation_id: string;
   created_at: string;
   updated_at: string;
-  // email 类型特有字段
+  target_type: string;
+  target_ref: string;
+  target_label: string;
+  target_subtitle: string;
+  anchor: Record<string, unknown>;
+  meta?: Record<string, unknown>;
   thread_id?: string;
   in_reply_to?: string;
   email_subject?: string;
   email_sender?: string;
-  // code 类型特有字段
   version?: string;
   file_path?: string;
   start_line?: number;
@@ -197,6 +231,7 @@ export interface KernelFileResponse {
 
 export interface CodeAnnotation {
   annotation_id: string;
+  annotation_type: string;
   version: string;
   file_path: string;
   start_line: number;
@@ -204,8 +239,15 @@ export interface CodeAnnotation {
   body: string;
   author: string;
   created_at: string;
+  parent_annotation_id?: string;
   in_reply_to?: string;
   updated_at: string;
+  target_type: string;
+  target_ref: string;
+  target_label: string;
+  target_subtitle: string;
+  anchor: Record<string, unknown>;
+  meta?: Record<string, unknown>;
 }
 
 export interface CodeAnnotationCreate {
