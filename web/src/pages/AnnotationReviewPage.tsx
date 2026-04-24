@@ -30,7 +30,7 @@ export default function AnnotationReviewPage() {
         type: filter,
         publish_status: 'pending',
         page: 1,
-        page_size: 200,
+        page_size: 100,
       });
       setAnnotations(data.annotations);
     } catch (err) {
