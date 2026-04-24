@@ -50,6 +50,7 @@ function buildTree(annotations: AnnotationListItem[]): TreeNode[] {
 function getTargetIcon(type: string) {
   if (type === 'email_thread') return Mail;
   if (type === 'kernel_file') return FileText;
+  if (type === 'knowledge_entity') return ScrollText;
   return ScrollText;
 }
 
@@ -104,6 +105,11 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
     if (annotation.target_type === 'sdm_spec') {
       const query = annotation.target_label || annotation.target_ref;
       navigate(`/manual/search?q=${encodeURIComponent(query)}`);
+      return;
+    }
+
+    if (annotation.target_type === 'knowledge_entity') {
+      navigate(`/knowledge?entity_id=${encodeURIComponent(annotation.target_ref)}`);
     }
   };
 

@@ -137,6 +137,13 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
       if (version && filePath) {
         navigate(`/kernel-code?v=${encodeURIComponent(version)}&path=${encodeURIComponent(filePath)}&line=${line}`);
       }
+      return;
+    }
+    if (target.target_type === 'knowledge_entity') {
+      const entityId = String(meta.entity_id || target.target_ref || '');
+      if (entityId) {
+        navigate(`/knowledge?entity_id=${encodeURIComponent(entityId)}`);
+      }
     }
   };
 
@@ -470,6 +477,9 @@ function getTargetTitle(target: TagTargetItem): string {
   if (target.target_type === 'kernel_line_range') {
     return `${String(meta.file_path || target.target_ref)}:${meta.start_line || target.anchor?.start_line || 0}`;
   }
+  if (target.target_type === 'knowledge_entity') {
+    return String(meta.canonical_name || meta.entity_id || target.target_ref);
+  }
   return String(meta.subject || meta.message_id || meta.thread_id || target.target_ref);
 }
 
@@ -488,6 +498,11 @@ function getTargetMeta(target: TagTargetItem): string {
   }
   if (target.target_type === 'email_thread') {
     return [extractName(String(meta.sender || '')), formatDate((meta.date as string | null) ?? null), String(meta.list_name || ''), String(meta.thread_id || '')]
+      .filter(Boolean)
+      .join(' · ');
+  }
+  if (target.target_type === 'knowledge_entity') {
+    return [String(meta.entity_type || ''), String(meta.status || ''), ...(Array.isArray(meta.aliases) ? [meta.aliases.join(', ')] : [])]
       .filter(Boolean)
       .join(' · ');
   }

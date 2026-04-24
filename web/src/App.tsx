@@ -11,6 +11,7 @@ import KernelCodePage from './pages/KernelCodePage';
 import UsersPage from './pages/UsersPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import KnowledgePage from './pages/KnowledgePage';
 import { AuthProvider, useAuth } from './auth';
 
 function ProtectedRoute() {
@@ -49,6 +50,7 @@ export default function App() {
               <Route path="/" element={<SearchPage />} />
               <Route path="/ask" element={<AskPage />} />
               <Route path="/tags" element={<TagsPage />} />
+              <Route path="/knowledge" element={<KnowledgePage />} />
               <Route path="/annotations" element={<AnnotationsPage />} />
               <Route path="/translations" element={<TranslationsPage />} />
               <Route path="/manual/search" element={<ManualSearchPage />} />

@@ -34,6 +34,9 @@ from src.storage.models import (
     CurrentUserRead,
     EmailRead,
     KernelSymbolRead,
+    KnowledgeEntityCreate,
+    KnowledgeEntityRead,
+    KnowledgeEntityUpdate,
     TagAssignmentCreate,
     TagAssignmentORM,
     TagAssignmentRead,
@@ -48,6 +51,7 @@ from src.storage.models import (
     UserSessionORM,
     UserUpdate,
 )
+from src.storage.knowledge_store import KnowledgeStore
 from src.storage.postgres import PostgresStorage
 from src.storage.symbol_store import KernelSymbolStore
 from src.storage.tag_store import (
@@ -90,6 +94,7 @@ _annotation_store: Optional[AnnotationStore] = None
 # 内核源码浏览组件
 _kernel_source: Optional[GitLocalSource] = None
 _symbol_store: Optional[KernelSymbolStore] = None
+_knowledge_store: Optional[KnowledgeStore] = None
 
 # 认证配置
 _auth_config: dict = {}
@@ -632,7 +637,7 @@ async def lifespan(app: FastAPI):
     global _manual_storage, _manual_retriever, _manual_qa
     global _translator, _translation_cache
     global _annotation_store
-    global _kernel_source, _symbol_store
+    global _kernel_source, _symbol_store, _knowledge_store
     global _auth_config
 
     config = _load_config()
@@ -715,6 +720,9 @@ async def lifespan(app: FastAPI):
 
     _symbol_store = KernelSymbolStore(_storage.session_factory)
     logger.info("Kernel symbol store initialized")
+
+    _knowledge_store = KnowledgeStore(_storage.session_factory)
+    logger.info("Knowledge store initialized")
 
     # ========== 芯片手册存储初始化 ==========
     manual_storage_cfg = storage_cfg.get("manual", {})
@@ -2751,6 +2759,8 @@ async def list_annotations(
     q: Optional[str] = Query(None, description="搜索关键词（模糊匹配批注正文）"),
     type: str = Query("all", description="批注类型过滤：'all' | 'email' | 'code'"),
     version: Optional[str] = Query(None, description="限定代码版本（code 类型时）"),
+    target_type: Optional[str] = Query(None, description="限定目标类型"),
+    target_ref: Optional[str] = Query(None, description="限定目标引用"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     current_user: Optional[CurrentUser] = Depends(get_optional_current_user),
@@ -2760,13 +2770,21 @@ async def list_annotations(
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
 
     try:
+        extra_filters = []
+        if type == "code" and version:
+            extra_filters.append(AnnotationORM.version == version)
+        if target_type:
+            extra_filters.append(AnnotationORM.target_type == target_type)
+        if target_ref:
+            extra_filters.append(AnnotationORM.target_ref == target_ref)
+
         if q and q.strip():
             annotations, total = await _annotation_store.search(
                 keyword=q.strip(),
                 annotation_type=type,
                 page=page,
                 page_size=page_size,
-                extra_filters=[AnnotationORM.version == version] if type == "code" and version else None,
+                extra_filters=extra_filters or None,
                 viewer_user_id=current_user.user_id if current_user else None,
             )
         else:
@@ -2774,7 +2792,7 @@ async def list_annotations(
                 annotation_type=type,
                 page=page,
                 page_size=page_size,
-                extra_filters=[AnnotationORM.version == version] if type == "code" and version else None,
+                extra_filters=extra_filters or None,
                 viewer_user_id=current_user.user_id if current_user else None,
             )
 
@@ -3249,6 +3267,102 @@ async def kernel_symbol_resolve(
 
 
 # ============================================================
+# 统一知识实体 API 路由 (PLAN-31000 Phase 1)
+# ============================================================
+
+@app.get("/api/knowledge/entities")
+async def list_knowledge_entities(
+    q: str = Query("", description="模糊搜索 canonical_name / alias / summary"),
+    entity_type: str = Query("", description="实体类型过滤"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+
+    items, total = await _knowledge_store.list_entities(
+        q=q,
+        entity_type=entity_type,
+        page=page,
+        page_size=page_size,
+    )
+    return {
+        "entities": [item.model_dump(mode="json") for item in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@app.post("/api/knowledge/entities", response_model=KnowledgeEntityRead)
+async def create_knowledge_entity(
+    request: "KnowledgeEntityCreateRequest",
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+
+    try:
+        return await _knowledge_store.create(
+            KnowledgeEntityCreate(
+                entity_type=request.entity_type,
+                canonical_name=request.canonical_name,
+                slug=request.slug,
+                entity_id=request.entity_id,
+                aliases=request.aliases,
+                summary=request.summary,
+                description=request.description,
+                status=request.status,
+                meta=request.meta,
+                created_by=current_user.display_name,
+                updated_by=current_user.display_name,
+                created_by_user_id=current_user.user_id,
+                updated_by_user_id=current_user.user_id,
+            )
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/knowledge/entities/{entity_id:path}", response_model=KnowledgeEntityRead)
+async def get_knowledge_entity(entity_id: str):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+
+    entity = await _knowledge_store.get(entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Knowledge entity not found")
+    return entity
+
+
+@app.patch("/api/knowledge/entities/{entity_id:path}", response_model=KnowledgeEntityRead)
+async def update_knowledge_entity(
+    entity_id: str,
+    request: "KnowledgeEntityUpdateRequest",
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+
+    entity = await _knowledge_store.update(
+        entity_id=entity_id,
+        data=KnowledgeEntityUpdate(
+            canonical_name=request.canonical_name,
+            aliases=request.aliases,
+            summary=request.summary,
+            description=request.description,
+            status=request.status,
+            meta=request.meta,
+        ),
+        updated_by=current_user.display_name,
+        updated_by_user_id=current_user.user_id,
+    )
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Knowledge entity not found")
+    return entity
+
+
+# ============================================================
 # 代码注释 API 路由 (PLAN-10000 Phase B)
 # ============================================================
 
@@ -3267,6 +3381,27 @@ class CodeAnnotationCreateRequest(BaseModel):
 class CodeAnnotationUpdateRequest(BaseModel):
     """更新代码注释请求。"""
     body: str = Field(..., min_length=1, description="注释正文")
+
+
+class KnowledgeEntityCreateRequest(BaseModel):
+    entity_type: str = Field(..., min_length=1, max_length=64)
+    canonical_name: str = Field(..., min_length=1, max_length=256)
+    slug: str = Field("", max_length=160)
+    entity_id: str = Field("", max_length=160)
+    aliases: list[str] = Field(default_factory=list)
+    summary: str = Field("", max_length=2000)
+    description: str = Field("", max_length=20000)
+    status: str = Field("active", max_length=32)
+    meta: dict = Field(default_factory=dict)
+
+
+class KnowledgeEntityUpdateRequest(BaseModel):
+    canonical_name: Optional[str] = Field(None, min_length=1, max_length=256)
+    aliases: Optional[list[str]] = None
+    summary: Optional[str] = Field(None, max_length=2000)
+    description: Optional[str] = Field(None, max_length=20000)
+    status: Optional[str] = Field(None, max_length=32)
+    meta: Optional[dict] = None
 
 
 @app.get("/api/kernel/annotations")

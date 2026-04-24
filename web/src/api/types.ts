@@ -331,6 +331,31 @@ export interface AnnotationListResponse {
   page_size: number;
 }
 
+export interface KnowledgeEntity {
+  entity_id: string;
+  entity_type: string;
+  canonical_name: string;
+  slug: string;
+  aliases: string[];
+  summary: string;
+  description: string;
+  status: string;
+  meta: Record<string, unknown>;
+  created_by: string;
+  updated_by: string;
+  created_by_user_id?: string | null;
+  updated_by_user_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeEntityListResponse {
+  entities: KnowledgeEntity[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 // ============================================================
 // 内核源码浏览相关类型 (PLAN-10000)
 // ============================================================

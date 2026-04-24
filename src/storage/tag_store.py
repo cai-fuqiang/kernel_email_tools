@@ -16,6 +16,7 @@ from sqlalchemy.orm import selectinload
 from src.storage.models import (
     AnnotationORM,
     EmailORM,
+    KnowledgeEntityORM,
     TagAliasORM,
     TagAssignmentCreate,
     TagAssignmentORM,
@@ -34,6 +35,7 @@ TARGET_TYPE_EMAIL_MESSAGE = "email_message"
 TARGET_TYPE_EMAIL_PARAGRAPH = "email_paragraph"
 TARGET_TYPE_KERNEL_LINE_RANGE = "kernel_line_range"
 TARGET_TYPE_ANNOTATION = "annotation"
+TARGET_TYPE_KNOWLEDGE_ENTITY = "knowledge_entity"
 
 DEFAULT_TAG_COLOR = "#6366f1"
 
@@ -735,6 +737,27 @@ class TagStore:
                         "start_line": assignment.anchor.get("start_line", 0),
                         "end_line": assignment.anchor.get("end_line", 0),
                     }
+                elif assignment.target_type == TARGET_TYPE_KNOWLEDGE_ENTITY:
+                    entity_result = await session.execute(
+                        select(
+                            KnowledgeEntityORM.entity_id,
+                            KnowledgeEntityORM.entity_type,
+                            KnowledgeEntityORM.canonical_name,
+                            KnowledgeEntityORM.summary,
+                            KnowledgeEntityORM.status,
+                            KnowledgeEntityORM.aliases,
+                        ).where(KnowledgeEntityORM.entity_id == assignment.target_ref)
+                    )
+                    row = entity_result.first()
+                    if row:
+                        target_meta = {
+                            "entity_id": row.entity_id,
+                            "entity_type": row.entity_type,
+                            "canonical_name": row.canonical_name,
+                            "summary": row.summary or "",
+                            "status": row.status or "",
+                            "aliases": row.aliases or [],
+                        }
 
                 items.append(
                     {

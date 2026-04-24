@@ -304,6 +304,42 @@ class KernelSymbolORM(Base):
         )
 
 
+class KnowledgeEntityORM(Base):
+    """统一知识实体。"""
+
+    __tablename__ = "knowledge_entities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entity_id: Mapped[str] = mapped_column(String(160), nullable=False, unique=True, index=True)
+    entity_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    canonical_name: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
+    slug: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    aliases: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True)
+    meta: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
+    updated_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
+    created_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    updated_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint("entity_id", name="uq_knowledge_entities_entity_id"),
+        UniqueConstraint("entity_type", "slug", name="uq_knowledge_entities_type_slug"),
+        Index("ix_knowledge_entities_type_name", "entity_type", "canonical_name"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<KnowledgeEntityORM entity_id={self.entity_id!r} canonical_name={self.canonical_name!r}>"
+
+
 # ============================================================
 # Pydantic 数据校验模型
 # ============================================================
@@ -579,6 +615,55 @@ class KernelSymbolRead(BaseModel):
     scope: Optional[str] = None
     language: str = "c"
     meta: dict = Field(default_factory=dict)
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeEntityCreate(BaseModel):
+    entity_type: str = Field(..., min_length=1, max_length=64)
+    canonical_name: str = Field(..., min_length=1, max_length=256)
+    slug: str = Field("", max_length=160)
+    entity_id: str = Field("", max_length=160)
+    aliases: list[str] = Field(default_factory=list)
+    summary: str = Field("", max_length=2000)
+    description: str = Field("", max_length=20000)
+    status: str = Field("active", max_length=32)
+    meta: dict = Field(default_factory=dict)
+    created_by: str = Field("me", max_length=128)
+    updated_by: str = Field("me", max_length=128)
+    created_by_user_id: Optional[str] = None
+    updated_by_user_id: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeEntityUpdate(BaseModel):
+    canonical_name: Optional[str] = Field(None, min_length=1, max_length=256)
+    aliases: Optional[list[str]] = None
+    summary: Optional[str] = Field(None, max_length=2000)
+    description: Optional[str] = Field(None, max_length=20000)
+    status: Optional[str] = Field(None, max_length=32)
+    meta: Optional[dict] = None
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeEntityRead(BaseModel):
+    entity_id: str
+    entity_type: str
+    canonical_name: str
+    slug: str
+    aliases: list[str] = Field(default_factory=list)
+    summary: str = ""
+    description: str = ""
+    status: str = "active"
+    meta: dict = Field(default_factory=dict)
+    created_by: str = "me"
+    updated_by: str = "me"
+    created_by_user_id: Optional[str] = None
+    updated_by_user_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}
 

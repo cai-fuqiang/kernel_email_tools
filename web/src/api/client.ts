@@ -12,6 +12,8 @@ import type {
   Annotation,
   AnnotationCreate,
   AnnotationListResponse,
+  KnowledgeEntity,
+  KnowledgeEntityListResponse,
   TagAssignment,
   TagRead,
   TagStats,
@@ -783,6 +785,8 @@ export async function listAnnotations(opts?: {
   q?: string;
   type?: 'all' | 'email' | 'code' | 'sdm_spec';
   version?: string;
+  target_type?: string;
+  target_ref?: string;
   page?: number;
   page_size?: number;
 }): Promise<AnnotationListResponse> {
@@ -790,6 +794,8 @@ export async function listAnnotations(opts?: {
   if (opts?.q) params.set('q', opts.q);
   if (opts?.type) params.set('type', opts.type);
   if (opts?.version) params.set('version', opts.version);
+  if (opts?.target_type) params.set('target_type', opts.target_type);
+  if (opts?.target_ref) params.set('target_ref', opts.target_ref);
   if (opts?.page) params.set('page', String(opts.page));
   if (opts?.page_size) params.set('page_size', String(opts.page_size));
   const data = await fetchJSON<AnnotationListResponse>(`${API_BASE}/annotations?${params}`);
@@ -797,6 +803,60 @@ export async function listAnnotations(opts?: {
     ...data,
     annotations: normalizeAnnotations(data.annotations) as AnnotationListResponse['annotations'],
   };
+}
+
+export async function listKnowledgeEntities(opts?: {
+  q?: string;
+  entity_type?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<KnowledgeEntityListResponse> {
+  const params = new URLSearchParams();
+  if (opts?.q) params.set('q', opts.q);
+  if (opts?.entity_type) params.set('entity_type', opts.entity_type);
+  if (opts?.page) params.set('page', String(opts.page));
+  if (opts?.page_size) params.set('page_size', String(opts.page_size));
+  return fetchJSON<KnowledgeEntityListResponse>(`${API_BASE}/knowledge/entities?${params}`);
+}
+
+export async function getKnowledgeEntity(entityId: string): Promise<KnowledgeEntity> {
+  return fetchJSON<KnowledgeEntity>(`${API_BASE}/knowledge/entities/${encodeURIComponent(entityId)}`);
+}
+
+export async function createKnowledgeEntity(data: {
+  entity_type: string;
+  canonical_name: string;
+  slug?: string;
+  entity_id?: string;
+  aliases?: string[];
+  summary?: string;
+  description?: string;
+  status?: string;
+  meta?: Record<string, unknown>;
+}): Promise<KnowledgeEntity> {
+  return fetchWithBody<KnowledgeEntity>(`${API_BASE}/knowledge/entities`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateKnowledgeEntity(
+  entityId: string,
+  patch: {
+    canonical_name?: string;
+    aliases?: string[];
+    summary?: string;
+    description?: string;
+    status?: string;
+    meta?: Record<string, unknown>;
+  },
+): Promise<KnowledgeEntity> {
+  return fetchWithBody<KnowledgeEntity>(`${API_BASE}/knowledge/entities/${encodeURIComponent(entityId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
 }
 
 // ============================================================
