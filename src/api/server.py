@@ -1,6 +1,7 @@
 """FastAPI 服务层 — 提供搜索、问答、线程查询、翻译接口。"""
 
 import logging
+import json
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -19,9 +20,27 @@ from src.retriever.keyword import KeywordRetriever
 from src.retriever.manual import ManualRetriever, ManualSearchQuery
 from src.retriever.semantic import SemanticRetriever
 from src.storage.document_store import DocumentStorage
-from src.storage.models import AnnotationCreate, AnnotationORM, AnnotationRead, AnnotationUpdate, EmailRead, TagRead, TagTree
+from src.storage.models import (
+    AnnotationCreate,
+    AnnotationORM,
+    AnnotationRead,
+    AnnotationUpdate,
+    EmailRead,
+    TagAssignmentCreate,
+    TagAssignmentRead,
+    TagBundle,
+    TagCreate,
+    TagRead,
+    TagTree,
+)
 from src.storage.postgres import PostgresStorage
-from src.storage.tag_store import TagStore
+from src.storage.tag_store import (
+    TARGET_TYPE_ANNOTATION,
+    TARGET_TYPE_EMAIL_MESSAGE,
+    TARGET_TYPE_EMAIL_THREAD,
+    TARGET_TYPE_KERNEL_LINE_RANGE,
+    TagStore,
+)
 from src.storage.translation_cache import TranslationCacheStore
 from src.storage.annotation_store import AnnotationStore
 from src.kernel_source.git_local import GitLocalSource
@@ -91,7 +110,10 @@ async def lifespan(app: FastAPI):
     await _storage.init_db()
 
     # 初始化标签存储
-    _tag_store = TagStore(session=await _storage.session_factory().__aenter__())
+    _tag_store = TagStore(
+        session_factory=_storage.session_factory,
+        default_actor=config.get("annotations", {}).get("default_author", "me"),
+    )
 
     # 初始化检索层
     keyword_retriever = KeywordRetriever(storage=_storage)
@@ -241,21 +263,55 @@ if os.path.isdir(static_dir):
 
 class TagCreateRequest(BaseModel):
     """创建标签请求。"""
-    name: str = Field(..., min_length=1, max_length=64, description="标签名称")
-    parent_id: Optional[int] = Field(None, description="父标签 ID（用于层级标签）")
+    name: str = Field(..., min_length=1, max_length=128, description="标签名称")
+    slug: str = Field("", description="稳定 slug")
+    description: str = Field("", description="标签描述")
+    parent_id: Optional[int] = Field(None, description="父标签 ID（兼容字段）")
+    parent_tag_id: Optional[int] = Field(None, description="父标签 ID")
     color: str = Field("#6366f1", description="标签颜色（十六进制）")
+    status: str = Field("active", description="active | deprecated | draft")
+    tag_kind: str = Field("topic", description="topic | subsystem | concept | status | person | org | process | evidence")
+    aliases: list[str] = Field(default_factory=list, description="标签别名")
+    created_by: str = Field("me", description="创建者")
 
 
 class TagUpdateRequest(BaseModel):
     """更新标签请求。"""
-    name: Optional[str] = Field(None, min_length=1, max_length=64)
+    name: Optional[str] = Field(None, min_length=1, max_length=128)
+    description: Optional[str] = None
     color: Optional[str] = None
     parent_id: Optional[int] = None
+    parent_tag_id: Optional[int] = None
+    status: Optional[str] = None
+    tag_kind: Optional[str] = None
+    aliases: Optional[list[str]] = None
+    updated_by: Optional[str] = None
 
 
 class TagAddRequest(BaseModel):
     """为邮件添加标签请求。"""
     tag_name: str = Field(..., min_length=1, max_length=64, description="标签名称")
+
+
+class TagAssignmentCreateRequest(BaseModel):
+    tag_id: Optional[int] = None
+    tag_slug: str = ""
+    tag_name: str = ""
+    target_type: str = Field(..., min_length=1, max_length=64)
+    target_ref: str = Field(..., min_length=1, max_length=1024)
+    anchor: dict = Field(default_factory=dict)
+    assignment_scope: str = Field("direct")
+    source_type: str = Field("manual")
+    evidence: dict = Field(default_factory=dict)
+    created_by: str = Field("me")
+
+
+class TagTargetBundleResponse(BaseModel):
+    target_type: str
+    target_ref: str
+    direct_tags: list[TagRead] = Field(default_factory=list)
+    inherited_tags: list[TagRead] = Field(default_factory=list)
+    aggregated_tags: list[TagRead] = Field(default_factory=list)
 
 
 class SearchResponse(BaseModel):
@@ -359,17 +415,25 @@ async def create_tag(request: TagCreateRequest):
 
     try:
         tag = await _tag_store.create_tag(
-            name=request.name,
-            parent_id=request.parent_id,
-            color=request.color,
+            TagCreate(
+                name=request.name,
+                slug=request.slug,
+                description=request.description,
+                parent_tag_id=request.parent_tag_id if request.parent_tag_id is not None else request.parent_id,
+                color=request.color,
+                status=request.status,
+                tag_kind=request.tag_kind,
+                aliases=request.aliases,
+                created_by=request.created_by,
+            )
         )
-        return TagRead.model_validate(tag)
+        return _tag_store._to_tag_read(tag)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.get("/api/tags", response_model=list[TagTree])
-async def get_tags():
+async def get_tags(flat: bool = Query(False, description="是否返回平铺列表")):
     """获取标签树形结构。
 
     返回所有标签，按父子关系组织成树形结构。
@@ -377,7 +441,32 @@ async def get_tags():
     if not _tag_store:
         raise HTTPException(status_code=503, detail="Tag store not initialized")
 
-    return await _tag_store.get_tag_tree()
+    return await _tag_store.list_tags(flat=flat)
+
+
+@app.patch("/api/tags/{tag_id}", response_model=TagRead)
+async def update_tag(tag_id: int, request: TagUpdateRequest):
+    if not _tag_store:
+        raise HTTPException(status_code=503, detail="Tag store not initialized")
+
+    try:
+        tag = await _tag_store.update_tag(
+            tag_id=tag_id,
+            name=request.name,
+            description=request.description,
+            color=request.color,
+            parent_tag_id=request.parent_tag_id if request.parent_tag_id is not None else request.parent_id,
+            status=request.status,
+            tag_kind=request.tag_kind,
+            aliases=request.aliases,
+            updated_by=request.updated_by or "",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not tag:
+        raise HTTPException(status_code=404, detail=f"Tag {tag_id} not found")
+    return _tag_store._to_tag_read(tag)
 
 
 @app.get("/api/tags/stats", response_model=list[dict])
@@ -451,6 +540,119 @@ async def delete_tag(tag_id: int):
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Tag {tag_id} not found")
     return {"status": "ok", "message": f"Tag {tag_id} deleted"}
+
+
+@app.post("/api/tag-assignments", response_model=TagAssignmentRead)
+async def create_tag_assignment(request: TagAssignmentCreateRequest):
+    if not _tag_store:
+        raise HTTPException(status_code=503, detail="Tag store not initialized")
+
+    try:
+        return await _tag_store.assign_tag(
+            TagAssignmentCreate(
+                tag_id=request.tag_id,
+                tag_slug=request.tag_slug,
+                tag_name=request.tag_name,
+                target_type=request.target_type,
+                target_ref=request.target_ref,
+                anchor=request.anchor,
+                assignment_scope=request.assignment_scope,
+                source_type=request.source_type,
+                evidence=request.evidence,
+                created_by=request.created_by,
+            )
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/tag-assignments", response_model=list[TagAssignmentRead])
+async def list_tag_assignments(
+    target_type: Optional[str] = Query(None),
+    target_ref: Optional[str] = Query(None),
+    anchor_json: Optional[str] = Query(None),
+    tag: Optional[str] = Query(None),
+    tag_kind: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+):
+    if not _tag_store:
+        raise HTTPException(status_code=503, detail="Tag store not initialized")
+
+    anchor = json.loads(anchor_json) if anchor_json else None
+    return await _tag_store.list_assignments(
+        target_type=target_type,
+        target_ref=target_ref,
+        anchor=anchor,
+        tag=tag,
+        tag_kind=tag_kind,
+        status=status,
+    )
+
+
+@app.delete("/api/tag-assignments/{assignment_id}")
+async def delete_tag_assignment(assignment_id: str):
+    if not _tag_store:
+        raise HTTPException(status_code=503, detail="Tag store not initialized")
+
+    deleted = await _tag_store.remove_assignment(assignment_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Tag assignment {assignment_id} not found")
+    return {"status": "ok", "assignment_id": assignment_id, "deleted": True}
+
+
+@app.get("/api/tag-targets")
+async def get_tag_targets(
+    tag: str = Query(..., min_length=1),
+    target_type: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    if not _tag_store:
+        raise HTTPException(status_code=503, detail="Tag store not initialized")
+
+    items, total = await _tag_store.get_targets_by_tag(
+        tag=tag,
+        target_type=target_type,
+        page=page,
+        page_size=page_size,
+    )
+    return {
+        "tag": tag,
+        "target_type": target_type,
+        "targets": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@app.get("/api/tag-summary")
+async def get_tag_summary():
+    if not _tag_store:
+        raise HTTPException(status_code=503, detail="Tag store not initialized")
+    return {"tags": await _tag_store.get_tag_stats()}
+
+
+@app.get("/api/tag-targets/{target_type}/{target_ref:path}/tags", response_model=TagTargetBundleResponse)
+async def get_target_tags(
+    target_type: str,
+    target_ref: str,
+    anchor_json: Optional[str] = Query(None),
+):
+    if not _tag_store:
+        raise HTTPException(status_code=503, detail="Tag store not initialized")
+    bundle = await _tag_store.get_target_bundle(
+        target_type,
+        target_ref,
+        anchor=json.loads(anchor_json) if anchor_json else None,
+    )
+    return TagTargetBundleResponse(
+        target_type=target_type,
+        target_ref=target_ref,
+        direct_tags=bundle.direct_tags,
+        inherited_tags=bundle.inherited_tags,
+        aggregated_tags=bundle.aggregated_tags,
+    )
 
 
 @app.get("/api/email/{message_id}/tags")
@@ -982,8 +1184,12 @@ async def get_translated_threads():
                 cache_info = cache_map.get(email.message_id, {})
                 group["cached_paragraphs"] += cache_info.get("cached_count", 0)
                 # 合并标签
-                if email.tags:
-                    group["tags"].update(email.tags)
+                if _tag_store:
+                    thread_tags = await _tag_store.get_target_tag_names(
+                        TARGET_TYPE_EMAIL_THREAD,
+                        tid,
+                    )
+                    group["tags"].update(thread_tags)
                 # 更新最近翻译时间
                 lt = cache_info.get("last_translated")
                 if lt:

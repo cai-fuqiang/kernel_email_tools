@@ -2,19 +2,31 @@
 
 import logging
 from datetime import datetime
+from collections import defaultdict
 from typing import Optional
 
-from sqlalchemy import func, literal, select, text
+from sqlalchemy import func, literal, or_, select, text, union
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.storage.base import BaseStorage
 from src.storage.models import (
+    AnnotationORM,
     Base,
     EmailCreate,
     EmailORM,
     EmailRead,
     EmailSearchResult,
+    TagAliasORM,
+    TagAssignmentORM,
+    TagORM,
+)
+from src.storage.tag_store import (
+    TARGET_TYPE_ANNOTATION,
+    TARGET_TYPE_EMAIL_MESSAGE,
+    TARGET_TYPE_EMAIL_PARAGRAPH,
+    TARGET_TYPE_EMAIL_THREAD,
+    TagStore,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,6 +60,7 @@ class PostgresStorage(BaseStorage):
         self.session_factory = async_sessionmaker(
             self.engine, class_=AsyncSession, expire_on_commit=False
         )
+        self.tag_store = TagStore(self.session_factory)
 
     async def init_db(self) -> None:
         """创建表和索引，设置全文搜索触发器。"""
@@ -113,6 +126,7 @@ class PostgresStorage(BaseStorage):
                 d["body"] = d.get("body", "")[:1000000]
                 d["body_raw"] = d.get("body_raw", "")[:1000000]
                 d["patch_content"] = d.get("patch_content", "")[:1000000]
+                d.pop("tags", None)
                 values.append(d)
 
             # 每批独立 session，失败不影响其他批次
@@ -227,15 +241,15 @@ class PostgresStorage(BaseStorage):
             if has_patch is not None:
                 conditions.append(EmailORM.has_patch == has_patch)
 
-            # 标签过滤
+            # 标签过滤：统一走 tag_assignments
             if tags:
                 if tag_mode == "all":
-                    # 全部匹配：邮件必须包含所有指定标签
                     for tag in tags:
-                        conditions.append(EmailORM.tags.contains([tag]))
+                        conditions.append(EmailORM.message_id.in_(self._message_ids_for_tag(tag)))
                 else:
-                    # 任一匹配：邮件包含任一指定标签
-                    conditions.append(EmailORM.tags.overlap(tags))
+                    subqueries = [self._message_ids_for_tag(tag) for tag in tags]
+                    merged = subqueries[0] if len(subqueries) == 1 else union(*subqueries)
+                    conditions.append(EmailORM.message_id.in_(merged))
 
             # 计算总匹配数
             count_stmt = select(func.count()).select_from(EmailORM).where(*conditions)
@@ -281,6 +295,10 @@ class PostgresStorage(BaseStorage):
             )
             result = await session.execute(search_stmt)
             rows = result.all()
+            tag_map = await self._get_message_tag_map(
+                session,
+                [(row.message_id, row.thread_id) for row in rows],
+            )
 
             results = [
                 EmailSearchResult(
@@ -292,6 +310,7 @@ class PostgresStorage(BaseStorage):
                     list_name=row.list_name,
                     thread_id=row.thread_id,
                     has_patch=row.has_patch,
+                    tags=tag_map.get(row.message_id, []),
                     rank=float(row.rank),
                     snippet=row.snippet or "",
                 )
@@ -322,11 +341,7 @@ class PostgresStorage(BaseStorage):
         Returns:
             标签名称列表。
         """
-        async with self.session_factory() as session:
-            stmt = select(EmailORM.tags).where(EmailORM.message_id == message_id)
-            result = await session.execute(stmt)
-            row = result.scalar_one_or_none()
-            return row or []
+        return await self.tag_store.get_email_tags(message_id)
 
     async def add_email_tag(self, message_id: str, tag_name: str) -> bool:
         """为邮件添加标签。
@@ -338,36 +353,7 @@ class PostgresStorage(BaseStorage):
         Returns:
             添加成功返回 True，邮件不存在或已达上限返回 False。
         """
-        from src.storage.tag_store import MAX_TAGS_PER_EMAIL
-
-        async with self.session_factory() as session:
-            stmt = select(EmailORM).where(EmailORM.message_id == message_id)
-            result = await session.execute(stmt)
-            email = result.scalar_one_or_none()
-
-            if not email:
-                logger.warning(f"Email not found: {message_id}")
-                return False
-
-            # 获取当前标签
-            current_tags = email.tags or []
-
-            # 检查是否已达上限
-            if len(current_tags) >= MAX_TAGS_PER_EMAIL:
-                logger.warning(
-                    f"Max tags ({MAX_TAGS_PER_EMAIL}) reached for email: {message_id}"
-                )
-                return False
-
-            # 检查标签是否已存在
-            if tag_name in current_tags:
-                return True  # 已存在，视为成功
-
-            # 添加标签
-            email.tags = current_tags + [tag_name]
-            await session.commit()
-            logger.info(f"Added tag '{tag_name}' to email: {message_id}")
-            return True
+        return await self.tag_store.add_email_tag(message_id, tag_name)
 
     async def remove_email_tag(self, message_id: str, tag_name: str) -> bool:
         """从邮件移除标签。
@@ -379,23 +365,7 @@ class PostgresStorage(BaseStorage):
         Returns:
             移除成功返回 True，邮件不存在返回 False。
         """
-        async with self.session_factory() as session:
-            stmt = select(EmailORM).where(EmailORM.message_id == message_id)
-            result = await session.execute(stmt)
-            email = result.scalar_one_or_none()
-
-            if not email:
-                logger.warning(f"Email not found: {message_id}")
-                return False
-
-            current_tags = email.tags or []
-            if tag_name not in current_tags:
-                return True  # 不存在，视为成功
-
-            email.tags = [t for t in current_tags if t != tag_name]
-            await session.commit()
-            logger.info(f"Removed tag '{tag_name}' from email: {message_id}")
-            return True
+        return await self.tag_store.remove_email_tag(message_id, tag_name)
 
     async def get_emails_by_tag(
         self,
@@ -413,55 +383,23 @@ class PostgresStorage(BaseStorage):
         Returns:
             (邮件列表, 总数)。
         """
-        async with self.session_factory() as session:
-            condition = EmailORM.tags.contains([tag_name])
-
-            # 总数
-            count_stmt = select(func.count()).select_from(EmailORM).where(condition)
-            total = (await session.execute(count_stmt)).scalar() or 0
-
-            if total == 0:
-                return [], 0
-
-            # 分页查询
-            snippet_col = func.substring(EmailORM.body, 1, 200)
-            stmt = (
-                select(
-                    EmailORM.id,
-                    EmailORM.message_id,
-                    EmailORM.subject,
-                    EmailORM.sender,
-                    EmailORM.date,
-                    EmailORM.list_name,
-                    EmailORM.thread_id,
-                    EmailORM.has_patch,
-                    literal(0.0).label("rank"),
-                    snippet_col.label("snippet"),
-                )
-                .where(condition)
-                .order_by(EmailORM.date.desc())
-                .offset((page - 1) * page_size)
-                .limit(page_size)
+        items, total = await self.tag_store.get_emails_by_tag(tag_name, page, page_size)
+        results = [
+            EmailSearchResult(
+                id=0,
+                message_id=item["message_id"],
+                subject=item["subject"],
+                sender=item["sender"],
+                date=item["date"],
+                list_name=item["list_name"],
+                thread_id=item["thread_id"],
+                has_patch=item["has_patch"],
+                tags=[],
+                rank=0.0,
+                snippet=item["snippet"] or "",
             )
-            result = await session.execute(stmt)
-            rows = result.all()
-
-            results = [
-                EmailSearchResult(
-                    id=row.id,
-                    message_id=row.message_id,
-                    subject=row.subject,
-                    sender=row.sender,
-                    date=row.date,
-                    list_name=row.list_name,
-                    thread_id=row.thread_id,
-                    has_patch=row.has_patch,
-                    rank=0.0,
-                    snippet=row.snippet or "",
-                )
-                for row in rows
-            ]
-
+            for item in items
+        ]
         return results, total
 
     async def get_all_tags_with_count(self) -> list[dict]:
@@ -470,17 +408,113 @@ class PostgresStorage(BaseStorage):
         Returns:
             [{name: str, count: int}] 列表。
         """
-        async with self.session_factory() as session:
-            # PostgreSQL unnest 展开 tags 数组并统计
-            stmt = text("""
-                SELECT tag, COUNT(*) as count
-                FROM emails,
-                     LATERAL unnest(COALESCE(tags, ARRAY[]::text[])) as tag
-                GROUP BY tag
-                ORDER BY count DESC, tag ASC
-            """)
-            result = await session.execute(stmt)
-            return [{"name": row.tag, "count": row.count} for row in result.all()]
+        return await self.tag_store.get_tag_stats()
+
+    def _tag_match_query(self, tag_value: str):
+        return or_(TagORM.name == tag_value, TagORM.slug == tag_value, TagAliasORM.alias == tag_value)
+
+    def _message_ids_for_tag(self, tag_value: str):
+        tag_match = self._tag_match_query(tag_value)
+        direct_messages = (
+            select(TagAssignmentORM.target_ref.label("message_id"))
+            .select_from(TagAssignmentORM)
+            .join(TagORM, TagORM.id == TagAssignmentORM.tag_id)
+            .outerjoin(TagAliasORM, TagAliasORM.tag_id == TagORM.id)
+            .where(TagAssignmentORM.target_type.in_([TARGET_TYPE_EMAIL_MESSAGE, TARGET_TYPE_EMAIL_PARAGRAPH]))
+            .where(tag_match)
+        )
+        from_thread = (
+            select(EmailORM.message_id.label("message_id"))
+            .where(
+                EmailORM.thread_id.in_(
+                    select(TagAssignmentORM.target_ref)
+                    .select_from(TagAssignmentORM)
+                    .join(TagORM, TagORM.id == TagAssignmentORM.tag_id)
+                    .outerjoin(TagAliasORM, TagAliasORM.tag_id == TagORM.id)
+                    .where(TagAssignmentORM.target_type == TARGET_TYPE_EMAIL_THREAD)
+                    .where(tag_match)
+                )
+            )
+        )
+        from_annotations = (
+            select(AnnotationORM.in_reply_to.label("message_id"))
+            .select_from(AnnotationORM)
+            .join(TagAssignmentORM, TagAssignmentORM.target_ref == AnnotationORM.annotation_id)
+            .join(TagORM, TagORM.id == TagAssignmentORM.tag_id)
+            .outerjoin(TagAliasORM, TagAliasORM.tag_id == TagORM.id)
+            .where(TagAssignmentORM.target_type == TARGET_TYPE_ANNOTATION)
+            .where(AnnotationORM.in_reply_to != "")
+            .where(tag_match)
+        )
+        from_annotation_threads = (
+            select(EmailORM.message_id.label("message_id"))
+            .where(
+                EmailORM.thread_id.in_(
+                    select(AnnotationORM.thread_id)
+                    .select_from(AnnotationORM)
+                    .join(TagAssignmentORM, TagAssignmentORM.target_ref == AnnotationORM.annotation_id)
+                    .join(TagORM, TagORM.id == TagAssignmentORM.tag_id)
+                    .outerjoin(TagAliasORM, TagAliasORM.tag_id == TagORM.id)
+                    .where(TagAssignmentORM.target_type == TARGET_TYPE_ANNOTATION)
+                    .where(AnnotationORM.thread_id != "")
+                    .where(tag_match)
+                )
+            )
+        )
+        return union(direct_messages, from_thread, from_annotations, from_annotation_threads)
+
+    async def _get_message_tag_map(
+        self,
+        session: AsyncSession,
+        message_pairs: list[tuple[str, str]],
+    ) -> dict[str, list[str]]:
+        if not message_pairs:
+            return {}
+
+        message_ids = [message_id for message_id, _ in message_pairs]
+        thread_map = {message_id: thread_id for message_id, thread_id in message_pairs}
+        thread_ids = {thread_id for _, thread_id in message_pairs if thread_id}
+        tags_by_message: dict[str, set[str]] = defaultdict(set)
+
+        direct_stmt = (
+            select(TagAssignmentORM.target_ref, TagAssignmentORM.target_type, TagORM.name)
+            .join(TagORM, TagORM.id == TagAssignmentORM.tag_id)
+            .where(TagAssignmentORM.target_type.in_([TARGET_TYPE_EMAIL_MESSAGE, TARGET_TYPE_EMAIL_PARAGRAPH]))
+            .where(TagAssignmentORM.target_ref.in_(message_ids))
+        )
+        for target_ref, _, tag_name in (await session.execute(direct_stmt)).all():
+            tags_by_message[target_ref].add(tag_name)
+
+        if thread_ids:
+            thread_stmt = (
+                select(TagAssignmentORM.target_ref, TagORM.name)
+                .join(TagORM, TagORM.id == TagAssignmentORM.tag_id)
+                .where(TagAssignmentORM.target_type == TARGET_TYPE_EMAIL_THREAD)
+                .where(TagAssignmentORM.target_ref.in_(thread_ids))
+            )
+            thread_tags: dict[str, set[str]] = defaultdict(set)
+            for thread_id, tag_name in (await session.execute(thread_stmt)).all():
+                thread_tags[thread_id].add(tag_name)
+            for message_id, thread_id in thread_map.items():
+                tags_by_message[message_id].update(thread_tags.get(thread_id, set()))
+
+        annotation_stmt = (
+            select(AnnotationORM.in_reply_to, AnnotationORM.thread_id, TagORM.name)
+            .select_from(AnnotationORM)
+            .join(TagAssignmentORM, TagAssignmentORM.target_ref == AnnotationORM.annotation_id)
+            .join(TagORM, TagORM.id == TagAssignmentORM.tag_id)
+            .where(TagAssignmentORM.target_type == TARGET_TYPE_ANNOTATION)
+            .where(or_(AnnotationORM.in_reply_to.in_(message_ids), AnnotationORM.thread_id.in_(thread_ids)))
+        )
+        for in_reply_to, thread_id, tag_name in (await session.execute(annotation_stmt)).all():
+            if in_reply_to and in_reply_to in tags_by_message:
+                tags_by_message[in_reply_to].add(tag_name)
+            elif thread_id:
+                for message_id, mapped_thread_id in thread_map.items():
+                    if mapped_thread_id == thread_id:
+                        tags_by_message[message_id].add(tag_name)
+
+        return {message_id: sorted(values) for message_id, values in tags_by_message.items()}
 
     async def close(self) -> None:
         """关闭连接池。"""

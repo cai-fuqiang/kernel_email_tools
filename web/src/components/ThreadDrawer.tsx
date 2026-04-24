@@ -100,6 +100,13 @@ function hashCode(str: string): number {
   return Math.abs(hash);
 }
 
+function getParagraphAnchor(text: string, index: number): Record<string, unknown> {
+  return {
+    paragraph_index: index,
+    paragraph_hash: String(hashCode(text.trim())).padStart(8, '0'),
+  };
+}
+
 function getAuthorName(sender: string): string {
   const match = sender.match(/^([^<]+)/);
   return match ? match[1].trim() : sender;
@@ -399,8 +406,15 @@ function AnnotationCard({
       ) : (
         <>
           <div className="annotation-markdown text-sm text-blue-900 leading-relaxed">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{annotation.body}</ReactMarkdown>
-              </div>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{annotation.body}</ReactMarkdown>
+          </div>
+          <div className="mt-2">
+            <EmailTagEditor
+              targetType="annotation"
+              targetRef={annotation.annotation_id}
+              compact
+            />
+          </div>
           <div className="flex gap-2 mt-2">
             <button
               onClick={() => onReply(annotation.annotation_id)}
@@ -612,6 +626,7 @@ function LayeredEmailCard({
 
   const renderParagraph = (block: ParagraphBlock, idx: number) => {
     const { text: para, type: blockType } = block;
+    const paragraphAnchor = getParagraphAnchor(para, idx);
 
     // 引用块：展示但不翻译
     if (blockType === 'quoted') {
@@ -631,6 +646,14 @@ function LayeredEmailCard({
     if (!needTrans) {
       return (
         <div key={idx} className="email-paragraph">
+          <div className="mb-1">
+            <EmailTagEditor
+              targetType="email_paragraph"
+              targetRef={email.message_id}
+              anchor={paragraphAnchor}
+              compact
+            />
+          </div>
           <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
         </div>
       );
@@ -639,6 +662,14 @@ function LayeredEmailCard({
     return (
       <div key={idx} className="bilingual-block">
         <div className="bilingual-original">
+          <div className="mb-1">
+            <EmailTagEditor
+              targetType="email_paragraph"
+              targetRef={email.message_id}
+              anchor={paragraphAnchor}
+              compact
+            />
+          </div>
           <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
         </div>
         <div className="bilingual-translation">
@@ -1433,6 +1464,9 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
                 {translationStats.total > 0 && (
                   <span><strong className="text-gray-900">{translationStats.total}</strong> 段落可翻译</span>
                 )}
+                <div className="ml-auto">
+                  <EmailTagEditor targetType="email_thread" targetRef={threadId} />
+                </div>
               </div>
               <div className="space-y-3">
                 {viewMode === 'tree' ? (

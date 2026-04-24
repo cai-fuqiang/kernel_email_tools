@@ -51,6 +51,66 @@ export interface ThreadEmail {
   body_raw: string;
 }
 
+export interface TagRead {
+  id: number;
+  slug: string;
+  name: string;
+  description: string;
+  parent_tag_id?: number | null;
+  color: string;
+  status: string;
+  tag_kind: string;
+  aliases: string[];
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TagTree {
+  id: number;
+  slug: string;
+  name: string;
+  description: string;
+  color: string;
+  status: string;
+  tag_kind: string;
+  assignment_count: number;
+  children: TagTree[];
+}
+
+export interface TagStats {
+  slug: string;
+  name: string;
+  count: number;
+  target_count: number;
+}
+
+export interface TagAssignment {
+  id: number;
+  assignment_id: string;
+  tag_id: number;
+  tag_slug: string;
+  tag_name: string;
+  target_type: string;
+  target_ref: string;
+  anchor: Record<string, unknown>;
+  anchor_hash: string;
+  assignment_scope: string;
+  source_type: string;
+  evidence: Record<string, unknown>;
+  created_by: string;
+  created_at: string;
+}
+
+export interface TagTargetBundle {
+  target_type: string;
+  target_ref: string;
+  direct_tags: TagRead[];
+  inherited_tags: TagRead[];
+  aggregated_tags: TagRead[];
+}
+
 export interface AnnotationTarget {
   type: string;
   ref: string;

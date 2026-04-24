@@ -4,17 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, Field
-from sqlalchemy import (
-    Column,
-    DateTime,
-    ForeignKey,
-    Integer,
-    String,
-    Text,
-    Boolean,
-    Index,
-    UniqueConstraint,
-)
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Boolean, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -30,21 +20,27 @@ class Base(DeclarativeBase):
 
 
 class TagORM(Base):
-    """标签 ORM 模型，对应 tags 表。
-
-    支持父子层级（树形结构），通过 parent_id 自关联实现。
-    """
+    """知识标签本体。"""
 
     __tablename__ = "tags"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
-    parent_id: Mapped[Optional[int]] = mapped_column(
+    slug: Mapped[str] = mapped_column(String(96), nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    parent_tag_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("tags.id", ondelete="CASCADE"), nullable=True, index=True
     )
     color: Mapped[str] = mapped_column(String(7), nullable=False, default="#6366f1")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True)
+    tag_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="topic", index=True)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
+    updated_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
     # 自关联：父标签 -> 子标签
@@ -54,13 +50,69 @@ class TagORM(Base):
     parent: Mapped[Optional["TagORM"]] = relationship(
         "TagORM", back_populates="children", remote_side=[id]
     )
+    aliases: Mapped[list["TagAliasORM"]] = relationship(
+        "TagAliasORM", back_populates="tag", cascade="all, delete-orphan"
+    )
+    assignments: Mapped[list["TagAssignmentORM"]] = relationship(
+        "TagAssignmentORM", back_populates="tag", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
+        UniqueConstraint("slug", name="uq_tags_slug"),
         UniqueConstraint("name", name="uq_tags_name"),
     )
 
     def __repr__(self) -> str:
-        return f"<TagORM id={self.id} name={self.name!r}>"
+        return f"<TagORM id={self.id} slug={self.slug!r} name={self.name!r}>"
+
+
+class TagAliasORM(Base):
+    """标签别名。"""
+
+    __tablename__ = "tag_aliases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tag_id: Mapped[int] = mapped_column(Integer, ForeignKey("tags.id", ondelete="CASCADE"), nullable=False, index=True)
+    alias: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+
+    tag: Mapped["TagORM"] = relationship("TagORM", back_populates="aliases")
+
+
+class TagAssignmentORM(Base):
+    """标签和目标对象之间的绑定。"""
+
+    __tablename__ = "tag_assignments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    assignment_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    tag_id: Mapped[int] = mapped_column(Integer, ForeignKey("tags.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_ref: Mapped[str] = mapped_column(String(1024), nullable=False, index=True)
+    anchor: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    anchor_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)
+    assignment_scope: Mapped[str] = mapped_column(String(32), nullable=False, default="direct", index=True)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False, default="manual", index=True)
+    evidence: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+
+    tag: Mapped["TagORM"] = relationship("TagORM", back_populates="assignments")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tag_id",
+            "target_type",
+            "target_ref",
+            "anchor_hash",
+            name="uq_tag_assignments_target",
+        ),
+        Index("ix_tag_assignments_lookup", "target_type", "target_ref"),
+    )
 
 
 class EmailORM(Base):
@@ -83,9 +135,6 @@ class EmailORM(Base):
     thread_id: Mapped[str] = mapped_column(String(512), nullable=False, default="", index=True)
     epoch: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    # 标签列表（存储 tag name，最多 16 个）
-    tags: Mapped[Optional[list[str]]] = mapped_column(ARRAY(String), nullable=True)
-
     # 全文搜索向量列 — 由触发器或应用层维护
     search_vector: Mapped[Optional[str]] = mapped_column(
         TSVECTOR, nullable=True
@@ -95,7 +144,6 @@ class EmailORM(Base):
         UniqueConstraint("message_id", name="uq_emails_message_id"),
         Index("ix_emails_search_vector", "search_vector", postgresql_using="gin"),
         Index("ix_emails_list_thread", "list_name", "thread_id"),
-        Index("ix_emails_tags", "tags", postgresql_using="gin"),
     )
 
     def __repr__(self) -> str:
@@ -170,9 +218,23 @@ class AnnotationORM(Base):
 class TagCreate(BaseModel):
     """创建标签时的输入模型。"""
 
-    name: str = Field(..., min_length=1, max_length=64, description="标签名称")
-    parent_id: Optional[int] = Field(None, description="父标签 ID（用于层级标签）")
+    name: str = Field(..., min_length=1, max_length=128, description="标签名称")
+    slug: str = Field("", description="稳定 slug；为空时自动生成")
+    description: str = Field("", description="标签说明")
+    parent_tag_id: Optional[int] = Field(None, description="父标签 ID（用于层级标签）")
     color: str = Field("#6366f1", pattern=r"^#[0-9A-Fa-f]{6}$", description="标签颜色")
+    status: str = Field("active", description="active | deprecated | draft")
+    tag_kind: str = Field("topic", description="标签语义分类")
+    aliases: list[str] = Field(default_factory=list, description="标签别名")
+    created_by: str = Field("me", description="创建者")
+
+    model_config = {"from_attributes": True}
+
+
+class TagAliasRead(BaseModel):
+    id: int
+    alias: str
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 
@@ -181,10 +243,18 @@ class TagRead(BaseModel):
     """查询标签时的输出模型。"""
 
     id: int
+    slug: str
     name: str
-    parent_id: Optional[int] = None
+    description: str = ""
+    parent_tag_id: Optional[int] = None
     color: str
+    status: str
+    tag_kind: str
+    aliases: list[str] = Field(default_factory=list)
+    created_by: str = "me"
+    updated_by: str = "me"
     created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}
 
@@ -193,9 +263,56 @@ class TagTree(BaseModel):
     """树形标签结构（用于前端展示）。"""
 
     id: int
+    slug: str
     name: str
+    description: str = ""
     color: str
+    status: str = "active"
+    tag_kind: str = "topic"
+    assignment_count: int = 0
     children: list["TagTree"] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class TagAssignmentCreate(BaseModel):
+    tag_id: Optional[int] = None
+    tag_slug: str = ""
+    tag_name: str = ""
+    target_type: str = Field(..., min_length=1, max_length=64)
+    target_ref: str = Field(..., min_length=1, max_length=1024)
+    anchor: dict = Field(default_factory=dict)
+    assignment_scope: str = Field("direct")
+    source_type: str = Field("manual")
+    evidence: dict = Field(default_factory=dict)
+    created_by: str = Field("me")
+
+    model_config = {"from_attributes": True}
+
+
+class TagAssignmentRead(BaseModel):
+    id: int
+    assignment_id: str
+    tag_id: int
+    tag_slug: str
+    tag_name: str
+    target_type: str
+    target_ref: str
+    anchor: dict = Field(default_factory=dict)
+    anchor_hash: str = ""
+    assignment_scope: str = "direct"
+    source_type: str = "manual"
+    evidence: dict = Field(default_factory=dict)
+    created_by: str = "me"
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TagBundle(BaseModel):
+    direct_tags: list[TagRead] = Field(default_factory=list)
+    inherited_tags: list[TagRead] = Field(default_factory=list)
+    aggregated_tags: list[TagRead] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -216,8 +333,6 @@ class EmailCreate(BaseModel):
     list_name: str = ""
     thread_id: str = ""
     epoch: int = 0
-    tags: list[str] = Field(default_factory=list, description="标签列表，最多 16 个")
-
     model_config = {"from_attributes": True}
 
 
@@ -254,6 +369,7 @@ class EmailSearchResult(BaseModel):
     list_name: str
     thread_id: str
     has_patch: bool
+    tags: list[str] = Field(default_factory=list)
     rank: float = 0.0  # 全文搜索排名分数
     snippet: str = ""  # 匹配片段
 
@@ -353,5 +469,4 @@ def parsed_email_to_create(parsed) -> EmailCreate:
         list_name=parsed.list_name,
         thread_id=parsed.thread_id,
         epoch=parsed.epoch,
-        tags=[],  # 新邮件默认无标签
     )

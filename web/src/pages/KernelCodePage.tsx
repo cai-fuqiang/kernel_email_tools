@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github.css';
 import PreviewModal from '../components/PreviewModal';
+import EmailTagEditor from '../components/EmailTagEditor';
 import {
   getKernelVersions,
   getKernelTree,
@@ -594,6 +595,20 @@ function AnnotationPanel({
           )}
         </div>
 
+        {(selectedLines.size > 0 || selectedRange) && (
+          <div className="px-3 py-2 bg-white border-b border-gray-100">
+            <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">Range Tags</div>
+            <EmailTagEditor
+              targetType="kernel_line_range"
+              targetRef={`${version}:${filePath}`}
+              anchor={{
+                start_line: selectedRange ? selectedRange[0] : Math.min(...Array.from(selectedLines)),
+                end_line: selectedRange ? selectedRange[1] : Math.max(...Array.from(selectedLines)),
+              }}
+            />
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto p-2">
           {relevantAnnotations.length === 0 ? (
             <p className="text-xs text-gray-400 text-center py-8">
@@ -666,6 +681,9 @@ function AnnotationPanel({
                         <div className="markdown-content line-clamp-3 overflow-hidden">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{rootAnn.body}</ReactMarkdown>
                         </div>
+                        <div className="mt-2">
+                          <EmailTagEditor targetType="annotation" targetRef={rootAnn.annotation_id} compact />
+                        </div>
                       </div>
                     </div>
                     
@@ -703,6 +721,9 @@ function AnnotationPanel({
                         <div className="px-3 py-2 overflow-hidden">
                           <div className="markdown-content line-clamp-3 overflow-hidden">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{reply.body}</ReactMarkdown>
+                          </div>
+                          <div className="mt-2">
+                            <EmailTagEditor targetType="annotation" targetRef={reply.annotation_id} compact />
                           </div>
                         </div>
                       </div>

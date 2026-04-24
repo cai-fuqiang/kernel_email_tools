@@ -41,7 +41,16 @@ async def rebuild_email_db() -> None:
     email_url = settings.storage["email"]["database_url"]
 
     print("Dropping email tables...")
-    await drop_all_tables(email_url, ["email_tags", "tags", "emails"])
+    await drop_all_tables(
+        email_url,
+        [
+            "tag_assignments",
+            "tag_aliases",
+            "tags",
+            "annotations",
+            "emails",
+        ],
+    )
 
     print("Recreating email tables, indexes, triggers...")
     storage = PostgresStorage(email_url)

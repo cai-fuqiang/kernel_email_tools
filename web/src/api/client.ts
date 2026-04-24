@@ -9,6 +9,11 @@ import type {
   Annotation,
   AnnotationCreate,
   AnnotationListResponse,
+  TagAssignment,
+  TagRead,
+  TagStats,
+  TagTargetBundle,
+  TagTree,
   KernelVersionsResponse,
   KernelTreeResponse,
   KernelFileResponse,
@@ -16,6 +21,7 @@ import type {
   CodeAnnotationCreate,
   CodeAnnotationListResponse,
 } from './types';
+export type { TagAssignment, TagRead, TagStats, TagTargetBundle, TagTree } from './types';
 
 // 使用相对路径，同源请求不会有 CORS 问题
 // 开发环境：Vite 代理 /api -> localhost:8000
@@ -80,20 +86,9 @@ function normalizeAnnotations<T extends object>(
 // 标签管理 API
 // ============================================================
 
-export interface TagTree {
-  id: number;
-  name: string;
-  color: string;
-  children: TagTree[];
-}
-
-export interface TagStats {
-  name: string;
-  count: number;
-}
-
-export async function getTagTree(): Promise<TagTree[]> {
-  return fetchJSON<TagTree[]>(`${API_BASE}/tags`);
+export async function getTagTree(flat: boolean = false): Promise<TagTree[]> {
+  const params = flat ? '?flat=true' : '';
+  return fetchJSON<TagTree[]>(`${API_BASE}/tags${params}`);
 }
 
 export async function getTagStats(): Promise<TagStats[]> {
@@ -102,13 +97,45 @@ export async function getTagStats(): Promise<TagStats[]> {
 
 export async function createTag(
   name: string,
-  parentId?: number,
+  parentTagId?: number,
   color?: string,
-): Promise<TagTree> {
+  description: string = '',
+  tagKind: string = 'topic',
+): Promise<TagRead> {
   const res = await fetch(`${API_BASE}/tags`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, parent_id: parentId, color }),
+    body: JSON.stringify({
+      name,
+      parent_tag_id: parentTagId,
+      color,
+      description,
+      tag_kind: tagKind,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export async function updateTag(
+  tagId: number,
+  patch: {
+    name?: string;
+    description?: string;
+    color?: string;
+    parent_tag_id?: number | null;
+    status?: string;
+    tag_kind?: string;
+    aliases?: string[];
+  },
+): Promise<TagRead> {
+  const res = await fetch(`${API_BASE}/tags/${tagId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
   });
   if (!res.ok) {
     const text = await res.text();
@@ -155,6 +182,70 @@ export async function deleteTag(tagId: number): Promise<void> {
   }
 }
 
+export async function listTagAssignments(opts?: {
+  target_type?: string;
+  target_ref?: string;
+  anchor?: Record<string, unknown>;
+  tag?: string;
+  tag_kind?: string;
+  status?: string;
+}): Promise<TagAssignment[]> {
+  const params = new URLSearchParams();
+  if (opts?.target_type) params.set('target_type', opts.target_type);
+  if (opts?.target_ref) params.set('target_ref', opts.target_ref);
+  if (opts?.anchor) params.set('anchor_json', JSON.stringify(opts.anchor));
+  if (opts?.tag) params.set('tag', opts.tag);
+  if (opts?.tag_kind) params.set('tag_kind', opts.tag_kind);
+  if (opts?.status) params.set('status', opts.status);
+  return fetchJSON<TagAssignment[]>(`${API_BASE}/tag-assignments?${params}`);
+}
+
+export async function createTagAssignment(data: {
+  tag_id?: number;
+  tag_slug?: string;
+  tag_name?: string;
+  target_type: string;
+  target_ref: string;
+  anchor?: Record<string, unknown>;
+  assignment_scope?: string;
+  source_type?: string;
+  evidence?: Record<string, unknown>;
+  created_by?: string;
+}): Promise<TagAssignment> {
+  const res = await fetch(`${API_BASE}/tag-assignments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export async function deleteTagAssignment(assignmentId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/tag-assignments/${encodeURIComponent(assignmentId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+}
+
+export async function getTargetTags(
+  targetType: string,
+  targetRef: string,
+  anchor?: Record<string, unknown>,
+): Promise<TagTargetBundle> {
+  const params = new URLSearchParams();
+  if (anchor) params.set('anchor_json', JSON.stringify(anchor));
+  return fetchJSON<TagTargetBundle>(
+    `${API_BASE}/tag-targets/${encodeURIComponent(targetType)}/${encodeURIComponent(targetRef)}/tags${params.toString() ? `?${params}` : ''}`
+  );
+}
+
 // 邮件标签 API
 export async function getEmailTags(messageId: string): Promise<string[]> {
   const data = await fetchJSON<{ message_id: string; tags: string[] }>(
@@ -167,31 +258,24 @@ export async function addEmailTag(
   messageId: string,
   tagName: string,
 ): Promise<void> {
-  const res = await fetch(
-    `${API_BASE}/email/${encodeURIComponent(messageId)}/tags`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tag_name: tagName }),
-    }
-  );
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API error ${res.status}: ${text}`);
-  }
+  await createTagAssignment({
+    tag_name: tagName,
+    target_type: 'email_message',
+    target_ref: messageId,
+  });
 }
 
 export async function removeEmailTag(
   messageId: string,
   tagName: string,
 ): Promise<void> {
-  const res = await fetch(
-    `${API_BASE}/email/${encodeURIComponent(messageId)}/tags/${encodeURIComponent(tagName)}`,
-    { method: 'DELETE' }
-  );
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API error ${res.status}: ${text}`);
+  const assignments = await listTagAssignments({
+    target_type: 'email_message',
+    target_ref: messageId,
+    tag: tagName,
+  });
+  for (const item of assignments) {
+    await deleteTagAssignment(item.assignment_id);
   }
 }
 

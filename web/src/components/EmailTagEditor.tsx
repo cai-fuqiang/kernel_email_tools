@@ -1,45 +1,81 @@
-import { useState, useEffect, useRef } from 'react';
-import { getEmailTags, addEmailTag, removeEmailTag, getTagTree, type TagTree } from '../api/client';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createTagAssignment,
+  deleteTagAssignment,
+  getTagTree,
+  getTargetTags,
+  listTagAssignments,
+  type TagAssignment,
+  type TagRead,
+  type TagTree,
+} from '../api/client';
 
 interface EmailTagEditorProps {
-  messageId: string;
-  /** 初始标签（从搜索结果传入，避免额外请求） */
-  initialTags?: string[];
+  messageId?: string;
+  targetType?: string;
+  targetRef?: string;
+  anchor?: Record<string, unknown>;
+  compact?: boolean;
+  placeholder?: string;
 }
 
-export default function EmailTagEditor({ messageId, initialTags }: EmailTagEditorProps) {
-  const [tags, setTags] = useState<string[]>(initialTags ?? []);
+export default function EmailTagEditor({
+  messageId,
+  targetType,
+  targetRef,
+  anchor,
+  compact = false,
+  placeholder = 'Type tag name...',
+}: EmailTagEditorProps) {
+  const resolvedTargetType = targetType ?? 'email_message';
+  const resolvedTargetRef = targetRef ?? messageId ?? '';
+  const resolvedAnchor = anchor ?? {};
+
+  const [directAssignments, setDirectAssignments] = useState<TagAssignment[]>([]);
+  const [directTags, setDirectTags] = useState<TagRead[]>([]);
+  const [aggregatedTags, setAggregatedTags] = useState<TagRead[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [showPopover, setShowPopover] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  // 加载邮件当前标签（如果没有 initialTags）
-  useEffect(() => {
-    if (!initialTags) {
-      getEmailTags(messageId).then(setTags).catch(() => {});
-    }
-  }, [messageId, initialTags]);
+  const loadTargetTags = async () => {
+    if (!resolvedTargetRef) return;
+    const [bundle, assignments] = await Promise.all([
+      getTargetTags(resolvedTargetType, resolvedTargetRef, resolvedAnchor),
+      listTagAssignments({
+        target_type: resolvedTargetType,
+        target_ref: resolvedTargetRef,
+        anchor: resolvedAnchor,
+      }),
+    ]);
+    setDirectTags(bundle.direct_tags);
+    setAggregatedTags(bundle.aggregated_tags);
+    setDirectAssignments(assignments);
+  };
 
-  // 加载所有可用标签
   useEffect(() => {
-    if (showPopover) {
-      getTagTree().then(tree => {
+    loadTargetTags().catch(() => {});
+  }, [resolvedTargetType, resolvedTargetRef, JSON.stringify(resolvedAnchor)]);
+
+  useEffect(() => {
+    if (!showPopover) return;
+    getTagTree(true)
+      .then((tree) => {
         const names: string[] = [];
         const collect = (nodes: TagTree[]) => {
-          for (const n of nodes) {
-            names.push(n.name);
-            collect(n.children);
+          for (const node of nodes) {
+            names.push(node.name);
+            collect(node.children);
           }
         };
         collect(tree);
         setAllTags(names);
-      }).catch(() => {});
-    }
+      })
+      .catch(() => {});
   }, [showPopover]);
 
-  // 点击外部关闭
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
@@ -50,15 +86,35 @@ export default function EmailTagEditor({ messageId, initialTags }: EmailTagEdito
     return () => document.removeEventListener('mousedown', handler);
   }, [showPopover]);
 
+  const directTagNames = useMemo(() => directTags.map((tag) => tag.name), [directTags]);
+  const aggregatedOnly = useMemo(
+    () => aggregatedTags.filter((tag) => !directTagNames.includes(tag.name)),
+    [aggregatedTags, directTagNames],
+  );
+
+  const suggestions = useMemo(
+    () =>
+      allTags
+        .filter((tag) => !directTagNames.includes(tag))
+        .filter((tag) => !inputValue || tag.toLowerCase().includes(inputValue.toLowerCase())),
+    [allTags, directTagNames, inputValue],
+  );
+
   const handleAdd = async (tagName: string) => {
-    if (!tagName.trim() || tags.includes(tagName.trim())) return;
+    const value = tagName.trim();
+    if (!value || !resolvedTargetRef || directTagNames.includes(value)) return;
     setLoading(true);
     try {
-      await addEmailTag(messageId, tagName.trim());
-      setTags(prev => [...prev, tagName.trim()]);
+      await createTagAssignment({
+        tag_name: value,
+        target_type: resolvedTargetType,
+        target_ref: resolvedTargetRef,
+        anchor: resolvedAnchor,
+      });
       setInputValue('');
+      await loadTargetTags();
     } catch {
-      // 静默失败
+      // keep UI quiet for now
     } finally {
       setLoading(false);
     }
@@ -67,32 +123,35 @@ export default function EmailTagEditor({ messageId, initialTags }: EmailTagEdito
   const handleRemove = async (tagName: string) => {
     setLoading(true);
     try {
-      await removeEmailTag(messageId, tagName);
-      setTags(prev => prev.filter(t => t !== tagName));
+      const match = directAssignments.filter((item) => item.tag_name === tagName);
+      for (const assignment of match) {
+        await deleteTagAssignment(assignment.assignment_id);
+      }
+      await loadTargetTags();
     } catch {
-      // 静默失败
+      // keep UI quiet for now
     } finally {
       setLoading(false);
     }
   };
 
-  // 过滤建议：排除已有标签，匹配输入
-  const suggestions = allTags
-    .filter(t => !tags.includes(t))
-    .filter(t => !inputValue || t.toLowerCase().includes(inputValue.toLowerCase()));
+  if (!resolvedTargetRef) return null;
 
   return (
     <div className="relative inline-flex items-center gap-1 flex-wrap">
-      {/* 已有标签 */}
-      {tags.map(tag => (
+      {directTags.map((tag) => (
         <span
-          key={tag}
-          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-xs group"
+          key={`direct-${tag.slug}`}
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs group"
+          style={{ backgroundColor: `${tag.color}22`, color: tag.color }}
         >
-          {tag}
+          {tag.name}
           <button
-            onClick={e => { e.stopPropagation(); handleRemove(tag); }}
-            className="text-indigo-400 hover:text-red-500 opacity-0 group-hover:opacity-100 ml-0.5"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleRemove(tag.name);
+            }}
+            className="opacity-0 group-hover:opacity-100 ml-0.5"
             disabled={loading}
           >
             &times;
@@ -100,10 +159,22 @@ export default function EmailTagEditor({ messageId, initialTags }: EmailTagEdito
         </span>
       ))}
 
-      {/* 添加按钮 */}
+      {aggregatedOnly.map((tag) => (
+        <span
+          key={`agg-${tag.slug}`}
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-xs"
+          title="Aggregated from related targets"
+        >
+          {tag.name}
+        </span>
+      ))}
+
       <button
-        onClick={e => { e.stopPropagation(); setShowPopover(!showPopover); }}
-        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowPopover((prev) => !prev);
+        }}
+        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors ${compact ? '' : ''}`}
       >
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -111,18 +182,36 @@ export default function EmailTagEditor({ messageId, initialTags }: EmailTagEdito
         tag
       </button>
 
-      {/* 弹出层 */}
       {showPopover && (
-        <div ref={popoverRef} className="absolute top-full left-0 mt-1 z-50 w-56 bg-white border border-gray-200 rounded-lg shadow-lg p-2">
+        <div
+          ref={popoverRef}
+          className="absolute top-full left-0 mt-1 z-50 w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-2"
+        >
           <input
             type="text"
             value={inputValue}
-            onChange={e => setInputValue(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && inputValue.trim()) handleAdd(inputValue); }}
-            placeholder="Type tag name..."
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && inputValue.trim()) handleAdd(inputValue);
+            }}
+            placeholder={placeholder}
             className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded mb-1.5 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
             autoFocus
           />
+
+          {aggregatedOnly.length > 0 && (
+            <div className="mb-2">
+              <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">Aggregated</div>
+              <div className="flex flex-wrap gap-1">
+                {aggregatedOnly.map((tag) => (
+                  <span key={tag.slug} className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px]">
+                    {tag.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="max-h-32 overflow-y-auto space-y-0.5">
             {suggestions.length === 0 && inputValue.trim() && (
               <button
@@ -132,13 +221,13 @@ export default function EmailTagEditor({ messageId, initialTags }: EmailTagEdito
                 Create "{inputValue.trim()}"
               </button>
             )}
-            {suggestions.map(t => (
+            {suggestions.map((tag) => (
               <button
-                key={t}
-                onClick={() => handleAdd(t)}
+                key={tag}
+                onClick={() => handleAdd(tag)}
                 className="w-full text-left px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 rounded"
               >
-                {t}
+                {tag}
               </button>
             ))}
           </div>
