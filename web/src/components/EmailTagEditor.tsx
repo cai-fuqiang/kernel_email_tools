@@ -17,6 +17,7 @@ interface EmailTagEditorProps {
   anchor?: Record<string, unknown>;
   compact?: boolean;
   placeholder?: string;
+  initialTags?: string[];
 }
 
 export default function EmailTagEditor({
@@ -26,13 +27,31 @@ export default function EmailTagEditor({
   anchor,
   compact = false,
   placeholder = 'Type tag name...',
+  initialTags,
 }: EmailTagEditorProps) {
   const resolvedTargetType = targetType ?? 'email_message';
   const resolvedTargetRef = targetRef ?? messageId ?? '';
   const resolvedAnchor = anchor ?? {};
 
   const [directAssignments, setDirectAssignments] = useState<TagAssignment[]>([]);
-  const [directTags, setDirectTags] = useState<TagRead[]>([]);
+  const [directTags, setDirectTags] = useState<TagRead[]>(
+    () =>
+      (initialTags ?? []).map((name, index) => ({
+        id: -(index + 1),
+        slug: name,
+        name,
+        description: '',
+        parent_tag_id: null,
+        color: '#6366f1',
+        status: 'active',
+        tag_kind: 'topic',
+        aliases: [],
+        created_by: 'me',
+        updated_by: 'me',
+        created_at: '',
+        updated_at: '',
+      })),
+  );
   const [aggregatedTags, setAggregatedTags] = useState<TagRead[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [showPopover, setShowPopover] = useState(false);

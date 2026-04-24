@@ -200,6 +200,7 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
 
           <div className="mt-4">
             <AnnotationCard
+              annotationId={annotation.annotation_id}
               annotationType={annotation.annotation_type}
               author={annotation.author}
               body={annotation.body}

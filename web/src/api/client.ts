@@ -12,6 +12,7 @@ import type {
   TagAssignment,
   TagRead,
   TagStats,
+  TagTargetsResponse,
   TagTargetBundle,
   TagTree,
   KernelVersionsResponse,
@@ -21,7 +22,7 @@ import type {
   CodeAnnotationCreate,
   CodeAnnotationListResponse,
 } from './types';
-export type { TagAssignment, TagRead, TagStats, TagTargetBundle, TagTree } from './types';
+export type { TagAssignment, TagRead, TagStats, TagTargetBundle, TagTargetItem, TagTargetsResponse, TagTree } from './types';
 
 // 使用相对路径，同源请求不会有 CORS 问题
 // 开发环境：Vite 代理 /api -> localhost:8000
@@ -144,33 +145,16 @@ export async function updateTag(
   return res.json();
 }
 
-export interface TagEmailItem {
-  message_id: string;
-  subject: string;
-  sender: string;
-  date: string | null;
-  list_name: string;
-  thread_id: string;
-  has_patch: boolean;
-  snippet: string;
-}
-
-export interface TagEmailsResponse {
-  tag: string;
-  emails: TagEmailItem[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
-export async function getEmailsByTag(
+export async function getTagTargets(
   tagName: string,
   page: number = 1,
   pageSize: number = 20,
-): Promise<TagEmailsResponse> {
+  targetType?: string,
+): Promise<TagTargetsResponse> {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-  return fetchJSON<TagEmailsResponse>(
-    `${API_BASE}/tags/${encodeURIComponent(tagName)}/emails?${params}`
+  if (targetType) params.set('target_type', targetType);
+  return fetchJSON<TagTargetsResponse>(
+    `${API_BASE}/tag-targets?tag=${encodeURIComponent(tagName)}&${params}`
   );
 }
 

@@ -366,12 +366,14 @@ function AnnotationInput({
 function AnnotationCard({
   annotation,
   depth,
+  highlighted = false,
   onEdit,
   onDelete,
   onReply,
 }: {
   annotation: Annotation;
   depth: number;
+  highlighted?: boolean;
   onEdit: (annotationId: string, body: string) => void;
   onDelete: (annotationId: string) => void;
   onReply: (annotationId: string) => void;
@@ -380,7 +382,10 @@ function AnnotationCard({
 
   return (
     <div
-      className="annotation-node border-l-4 border-blue-400 bg-blue-50 rounded-lg p-4 my-2"
+      data-annotation-id={annotation.annotation_id}
+      className={`annotation-node border-l-4 rounded-lg p-4 my-2 transition-all ${
+        highlighted ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-200' : 'border-blue-400 bg-blue-50'
+      }`}
       style={{ marginLeft: depth > 0 ? `${Math.min(depth, 6) * 16}px` : 0 }}
     >
       <div className="flex items-center gap-2 mb-2">
@@ -496,6 +501,7 @@ function PatchDiffBlock({ content }: { content: string }) {
 function LayeredEmailCard({
   node,
   isExpanded,
+  highlightedTarget,
   onToggleExpand,
   translations,
   onTranslationUpdate,
@@ -508,6 +514,7 @@ function LayeredEmailCard({
 }: {
   node: ThreadNode;
   isExpanded: boolean;
+  highlightedTarget: string | null;
   onToggleExpand: (id: number) => void;
   translations: TranslationMap;
   onTranslationUpdate: (para: string, translation: string) => void;
@@ -710,6 +717,7 @@ function LayeredEmailCard({
       <AnnotationCard
         annotation={node.annotation}
         depth={depth}
+        highlighted={highlightedTarget === `annotation:${node.annotation.annotation_id}`}
         onEdit={onEditAnnotation}
         onDelete={onDeleteAnnotation}
         onReply={(id) => onSetReplyingTo(id)}
@@ -718,7 +726,13 @@ function LayeredEmailCard({
   }
 
   return (
-    <div className="email-node" style={{ marginLeft: depth > 0 ? `${Math.min(depth, 6) * 16}px` : 0 }}>
+    <div
+      data-message-id={email.message_id}
+      className={`email-node rounded-lg transition-all ${
+        highlightedTarget === `message:${email.message_id}` ? 'ring-2 ring-amber-200 bg-amber-50/60' : ''
+      }`}
+      style={{ marginLeft: depth > 0 ? `${Math.min(depth, 6) * 16}px` : 0 }}
+    >
       <div 
         onClick={() => onToggleExpand(email.id)}
         className="cursor-pointer hover:bg-gray-50 rounded-lg border border-gray-200 transition-colors"
@@ -765,6 +779,7 @@ function LayeredEmailCard({
 function TreeEmailCard({ 
   node, 
   expandedIds,
+  highlightedTarget,
   toggleExpand,
   translations,
   onTranslationUpdate,
@@ -777,6 +792,7 @@ function TreeEmailCard({
 }: { 
   node: ThreadNode;
   expandedIds: Set<number>;
+  highlightedTarget: string | null;
   toggleExpand: (id: number) => void;
   translations: TranslationMap;
   onTranslationUpdate: (para: string, translation: string) => void;
@@ -925,6 +941,7 @@ function TreeEmailCard({
         <AnnotationCard
           annotation={node.annotation}
           depth={0}
+          highlighted={highlightedTarget === `annotation:${node.annotation.annotation_id}`}
           onEdit={onEditAnnotation}
           onDelete={onDeleteAnnotation}
           onReply={(id) => onSetReplyingTo(id)}
@@ -936,6 +953,7 @@ function TreeEmailCard({
                 key={child.email.id} 
                 node={child} 
                 expandedIds={expandedIds}
+                highlightedTarget={highlightedTarget}
                 toggleExpand={toggleExpand}
                 translations={translations}
                 onTranslationUpdate={onTranslationUpdate}
@@ -962,7 +980,13 @@ function TreeEmailCard({
   }
 
   return (
-    <div className="email-node" style={{ marginLeft: depth > 0 ? '16px' : 0 }}>
+    <div
+      data-message-id={email.message_id}
+      className={`email-node rounded-lg transition-all ${
+        highlightedTarget === `message:${email.message_id}` ? 'ring-2 ring-amber-200 bg-amber-50/60' : ''
+      }`}
+      style={{ marginLeft: depth > 0 ? '16px' : 0 }}
+    >
       <details className="email-thread" open={isExpanded}>
         <summary 
           onClick={(e) => { e.preventDefault(); toggleExpand(email.id); }}
@@ -1005,6 +1029,7 @@ function TreeEmailCard({
               key={child.email.id} 
               node={child} 
               expandedIds={expandedIds}
+              highlightedTarget={highlightedTarget}
               toggleExpand={toggleExpand}
               translations={translations}
               onTranslationUpdate={onTranslationUpdate}
@@ -1042,10 +1067,12 @@ function extractTranslatableParagraphs(thread: ThreadResponse | null): string[] 
 // =============================================================
 interface Props {
   threadId: string;
+  focusMessageId?: string;
+  focusAnnotationId?: string;
   onClose: () => void;
 }
 
-export default function ThreadDrawer({ threadId, onClose }: Props) {
+export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotationId, onClose }: Props) {
   const [thread, setThread] = useState<ThreadResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -1057,6 +1084,7 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
   const [, setFoldLevel] = useState<FoldLevel>('expanded');
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [layeredExpandedIds, setLayeredExpandedIds] = useState<Set<number>>(new Set());
+  const [highlightedTarget, setHighlightedTarget] = useState<string | null>(null);
 
   const nodeMap = useMemo(() => buildNodeMap(threadTree), [threadTree]);
 
@@ -1215,6 +1243,36 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, [threadId, rebuildTree]);
+
+  useEffect(() => {
+    if (!thread) return;
+    const focusAnnotation = focusAnnotationId?.trim();
+    const focusMessage = focusMessageId?.trim();
+    const targetKey = focusAnnotation
+      ? `annotation:${focusAnnotation}`
+      : focusMessage
+        ? `message:${focusMessage}`
+        : '';
+    const selector = focusAnnotation
+      ? `[data-annotation-id="${CSS.escape(focusAnnotation)}"]`
+      : focusMessage
+        ? `[data-message-id="${CSS.escape(focusMessage)}"]`
+        : '';
+    if (!selector || !targetKey) return;
+
+    setViewMode('tree');
+    const timer = window.setTimeout(() => {
+      const target = document.querySelector<HTMLElement>(selector);
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightedTarget(targetKey);
+      window.setTimeout(() => {
+        setHighlightedTarget((current) => (current === targetKey ? null : current));
+      }, 2200);
+    }, 120);
+
+    return () => window.clearTimeout(timer);
+  }, [thread, focusAnnotationId, focusMessageId]);
 
   const toggleExpand = useCallback((id: number) => {
     setExpandedIds(prev => {
@@ -1475,6 +1533,7 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
                       key={`${rootNode.email.id}-${idx}`}
                       node={rootNode}
                       expandedIds={expandedIds}
+                      highlightedTarget={highlightedTarget}
                       toggleExpand={toggleExpand}
                       translations={translations}
                       onTranslationUpdate={handleTranslationUpdate}
@@ -1492,6 +1551,7 @@ export default function ThreadDrawer({ threadId, onClose }: Props) {
                       key={node.email.id}
                       node={node}
                       isExpanded={layeredExpandedIds.has(node.email.id)}
+                      highlightedTarget={highlightedTarget}
                       onToggleExpand={toggleLayeredExpand}
                       translations={translations}
                       onTranslationUpdate={handleTranslationUpdate}

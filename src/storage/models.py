@@ -112,6 +112,7 @@ class TagAssignmentORM(Base):
             name="uq_tag_assignments_target",
         ),
         Index("ix_tag_assignments_lookup", "target_type", "target_ref"),
+        Index("ix_tag_assignments_tag_target", "tag_id", "target_type", "target_ref"),
     )
 
 

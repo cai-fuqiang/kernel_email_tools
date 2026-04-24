@@ -1,13 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  getTagTree,
-  getTagStats,
   createTag,
   deleteTag,
-  getEmailsByTag,
-  type TagTree,
+  getTagStats,
+  getTagTargets,
+  getTagTree,
   type TagStats,
-  type TagEmailItem,
+  type TagTargetItem,
+  type TagTree,
 } from '../api/client';
 import ThreadDrawer from './ThreadDrawer';
 
@@ -16,6 +17,7 @@ interface TagManagerProps {
 }
 
 export default function TagManager({ onTagsChanged }: TagManagerProps) {
+  const navigate = useNavigate();
   const [tags, setTags] = useState<TagTree[]>([]);
   const [tagStats, setTagStats] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -24,12 +26,12 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
   const [newTagParentId, setNewTagParentId] = useState<number | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
-
-  // 展开的标签（查看邮件列表）
   const [expandedTag, setExpandedTag] = useState<string | null>(null);
-
-  // ThreadDrawer 状态
-  const [selectedThread, setSelectedThread] = useState<string | null>(null);
+  const [selectedThread, setSelectedThread] = useState<{
+    threadId: string;
+    focusMessageId?: string;
+    focusAnnotationId?: string;
+  } | null>(null);
 
   const loadTags = async () => {
     try {
@@ -45,7 +47,9 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
     }
   };
 
-  useEffect(() => { loadTags(); }, []);
+  useEffect(() => {
+    loadTags();
+  }, []);
 
   const handleCreate = async () => {
     if (!newTagName.trim()) return;
@@ -78,10 +82,54 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
   };
 
   const handleToggleExpand = (tagName: string) => {
-    setExpandedTag(prev => prev === tagName ? null : tagName);
+    setExpandedTag((prev) => (prev === tagName ? null : tagName));
   };
 
-  // 扁平化标签树用于 parent 选择
+  const handleJumpToTarget = (target: TagTargetItem) => {
+    const meta = target.target_meta || {};
+    if (target.target_type === 'email_thread') {
+      const threadId = String(meta.thread_id || target.target_ref || '');
+      if (threadId) setSelectedThread({ threadId });
+      return;
+    }
+    if (target.target_type === 'email_message' || target.target_type === 'email_paragraph') {
+      const threadId = String(meta.thread_id || '');
+      if (threadId) {
+        setSelectedThread({
+          threadId,
+          focusMessageId: String(meta.message_id || target.target_ref),
+        });
+      }
+      return;
+    }
+    if (target.target_type === 'annotation') {
+      const annotationType = String(meta.annotation_type || '');
+      if (annotationType === 'code' && meta.version && meta.file_path) {
+        const line = Number(meta.start_line || 1);
+        navigate(`/kernel-code?v=${encodeURIComponent(String(meta.version))}&path=${encodeURIComponent(String(meta.file_path))}&line=${line}`);
+        return;
+      }
+      const threadId = String(meta.thread_id || '');
+      if (threadId) {
+        setSelectedThread({
+          threadId,
+          focusAnnotationId: String(meta.annotation_id || target.target_ref),
+        });
+        return;
+      }
+      navigate(`/annotations?q=${encodeURIComponent(String(meta.annotation_id || target.target_ref))}`);
+      return;
+    }
+    if (target.target_type === 'kernel_line_range') {
+      const version = String(meta.version || '');
+      const filePath = String(meta.file_path || '');
+      const line = Number(meta.start_line || target.anchor?.start_line || 1);
+      if (version && filePath) {
+        navigate(`/kernel-code?v=${encodeURIComponent(version)}&path=${encodeURIComponent(filePath)}&line=${line}`);
+      }
+    }
+  };
+
   const flatTags: { id: number; name: string; depth: number }[] = [];
   const flatten = (nodes: TagTree[], depth = 0) => {
     for (const n of nodes) {
@@ -95,7 +143,6 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
 
   return (
     <div className="space-y-4">
-      {/* 创建标签 */}
       <div className="bg-white border border-gray-200 rounded-xl p-4">
         <h4 className="text-sm font-semibold text-gray-900 mb-3">Create Tag</h4>
         <div className="flex gap-2 items-end">
@@ -103,20 +150,22 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
             <input
               type="text"
               value={newTagName}
-              onChange={e => setNewTagName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleCreate()}
+              onChange={(e) => setNewTagName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
               placeholder="Tag name"
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             />
           </div>
           <select
             value={newTagParentId ?? ''}
-            onChange={e => setNewTagParentId(e.target.value ? Number(e.target.value) : undefined)}
+            onChange={(e) => setNewTagParentId(e.target.value ? Number(e.target.value) : undefined)}
             className="px-3 py-2 text-sm border border-gray-300 rounded-lg"
           >
             <option value="">No parent</option>
-            {flatTags.map(t => (
-              <option key={t.id} value={t.id}>{'  '.repeat(t.depth) + t.name}</option>
+            {flatTags.map((t) => (
+              <option key={t.id} value={t.id}>
+                {'  '.repeat(t.depth) + t.name}
+              </option>
             ))}
           </select>
           <button
@@ -127,9 +176,8 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
             {creating ? '...' : 'Add'}
           </button>
         </div>
-        {/* 颜色选择 */}
         <div className="flex gap-1.5 mt-2">
-          {COLORS.map(c => (
+          {COLORS.map((c) => (
             <button
               key={c}
               onClick={() => setNewTagColor(c)}
@@ -140,11 +188,8 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
         </div>
       </div>
 
-      {error && (
-        <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs">{error}</div>
-      )}
+      {error && <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs">{error}</div>}
 
-      {/* 标签树 */}
       <div className="bg-white border border-gray-200 rounded-xl p-4">
         <h4 className="text-sm font-semibold text-gray-900 mb-3">All Tags</h4>
         {loading ? (
@@ -159,15 +204,16 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
             tagStats={tagStats}
             expandedTag={expandedTag}
             onToggleExpand={handleToggleExpand}
-            onOpenThread={setSelectedThread}
+            onJumpToTarget={handleJumpToTarget}
           />
         )}
       </div>
 
-      {/* ThreadDrawer */}
       {selectedThread && (
         <ThreadDrawer
-          threadId={selectedThread}
+          threadId={selectedThread.threadId}
+          focusMessageId={selectedThread.focusMessageId}
+          focusAnnotationId={selectedThread.focusAnnotationId}
           onClose={() => setSelectedThread(null)}
         />
       )}
@@ -175,22 +221,26 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
   );
 }
 
-// ============================================================
-// 标签节点列表（递归）
-// ============================================================
-
-function TagNodeList({ nodes, onDelete, depth, tagStats, expandedTag, onToggleExpand, onOpenThread }: {
+function TagNodeList({
+  nodes,
+  onDelete,
+  depth,
+  tagStats,
+  expandedTag,
+  onToggleExpand,
+  onJumpToTarget,
+}: {
   nodes: TagTree[];
   onDelete: (id: number, name: string) => void;
   depth: number;
   tagStats: Map<string, number>;
   expandedTag: string | null;
   onToggleExpand: (tagName: string) => void;
-  onOpenThread: (threadId: string) => void;
+  onJumpToTarget: (target: TagTargetItem) => void;
 }) {
   return (
     <ul className={depth > 0 ? 'ml-4 border-l border-gray-100 pl-3' : ''}>
-      {nodes.map(tag => {
+      {nodes.map((tag) => {
         const count = tagStats.get(tag.name) ?? 0;
         const isExpanded = expandedTag === tag.name;
 
@@ -203,28 +253,18 @@ function TagNodeList({ nodes, onDelete, depth, tagStats, expandedTag, onToggleEx
                 className={`text-sm flex-1 text-left flex items-center gap-1.5 ${count > 0 ? 'text-gray-800 hover:text-indigo-600 cursor-pointer' : 'text-gray-400 cursor-default'}`}
               >
                 <span className={isExpanded ? 'font-semibold text-indigo-700' : ''}>{tag.name}</span>
-                {count > 0 && (
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                    {count}
-                  </span>
-                )}
+                {count > 0 && <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">{count}</span>}
                 {count > 0 && (
                   <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 )}
               </button>
-              <button
-                onClick={() => onDelete(tag.id, tag.name)}
-                className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
-              >
+              <button onClick={() => onDelete(tag.id, tag.name)} className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">
                 Delete
               </button>
             </div>
-            {/* 展开的邮件列表 */}
-            {isExpanded && (
-              <TagEmailList tagName={tag.name} onOpenThread={onOpenThread} />
-            )}
+            {isExpanded && <TagTargetList tagName={tag.name} onJumpToTarget={onJumpToTarget} />}
             {tag.children.length > 0 && (
               <TagNodeList
                 nodes={tag.children}
@@ -233,7 +273,7 @@ function TagNodeList({ nodes, onDelete, depth, tagStats, expandedTag, onToggleEx
                 tagStats={tagStats}
                 expandedTag={expandedTag}
                 onToggleExpand={onToggleExpand}
-                onOpenThread={onOpenThread}
+                onJumpToTarget={onJumpToTarget}
               />
             )}
           </li>
@@ -243,15 +283,14 @@ function TagNodeList({ nodes, onDelete, depth, tagStats, expandedTag, onToggleEx
   );
 }
 
-// ============================================================
-// 标签邮件列表子组件
-// ============================================================
-
-function TagEmailList({ tagName, onOpenThread }: {
+function TagTargetList({
+  tagName,
+  onJumpToTarget,
+}: {
   tagName: string;
-  onOpenThread: (threadId: string) => void;
+  onJumpToTarget: (target: TagTargetItem) => void;
 }) {
-  const [emails, setEmails] = useState<TagEmailItem[]>([]);
+  const [targets, setTargets] = useState<TagTargetItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -262,23 +301,25 @@ function TagEmailList({ tagName, onOpenThread }: {
     setLoading(true);
     setError('');
     try {
-      const res = await getEmailsByTag(tagName, p, pageSize);
-      setEmails(res.emails);
+      const res = await getTagTargets(tagName, p, pageSize);
+      setTargets(res.targets);
       setTotal(res.total);
       setPage(p);
     } catch {
-      setError('Failed to load emails');
+      setError('Failed to load tagged targets');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { load(1); }, [tagName]);
+  useEffect(() => {
+    load(1);
+  }, [tagName]);
 
   const totalPages = Math.ceil(total / pageSize);
 
-  if (loading && emails.length === 0) {
-    return <div className="ml-5 mt-2 text-xs text-gray-400">Loading emails...</div>;
+  if (loading && targets.length === 0) {
+    return <div className="ml-5 mt-2 text-xs text-gray-400">Loading tagged targets...</div>;
   }
 
   if (error) {
@@ -286,7 +327,7 @@ function TagEmailList({ tagName, onOpenThread }: {
   }
 
   if (total === 0) {
-    return <div className="ml-5 mt-2 text-xs text-gray-400">No emails with this tag.</div>;
+    return <div className="ml-5 mt-2 text-xs text-gray-400">No targets with this tag.</div>;
   }
 
   return (
@@ -294,39 +335,41 @@ function TagEmailList({ tagName, onOpenThread }: {
       <table className="w-full text-xs">
         <thead>
           <tr className="bg-gray-100 text-gray-500">
-            <th className="text-left px-3 py-1.5 font-medium">Subject</th>
-            <th className="text-left px-3 py-1.5 font-medium w-36">Sender</th>
-            <th className="text-left px-3 py-1.5 font-medium w-28">Date</th>
-            <th className="text-left px-3 py-1.5 font-medium w-20">Channel</th>
+            <th className="text-left px-3 py-1.5 font-medium">Target</th>
+            <th className="text-left px-3 py-1.5 font-medium w-40">Type</th>
+            <th className="text-left px-3 py-1.5 font-medium w-48">Meta</th>
+            <th className="text-left px-3 py-1.5 font-medium w-20">Action</th>
           </tr>
         </thead>
         <tbody>
-          {emails.map(email => (
+          {targets.map((target) => (
             <tr
-              key={email.message_id}
-              onClick={() => onOpenThread(email.thread_id)}
+              key={target.assignment_id}
+              onClick={() => onJumpToTarget(target)}
               className="border-t border-gray-100 hover:bg-indigo-50 cursor-pointer transition-colors"
             >
-              <td className="px-3 py-2 truncate max-w-xs">
-                <span className="text-gray-800">{email.subject}</span>
-                {email.has_patch && (
-                  <span className="ml-1.5 inline-flex items-center px-1 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">
-                    PATCH
-                  </span>
-                )}
+              <td className="px-3 py-2 truncate max-w-xs text-gray-800">{getTargetTitle(target)}</td>
+              <td className="px-3 py-2 text-gray-500">{target.target_type}</td>
+              <td className="px-3 py-2 text-gray-400 truncate">{getTargetMeta(target)}</td>
+              <td className="px-3 py-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onJumpToTarget(target);
+                  }}
+                  className="text-indigo-600 hover:text-indigo-800"
+                >
+                  Open
+                </button>
               </td>
-              <td className="px-3 py-2 text-gray-500 truncate">{extractName(email.sender)}</td>
-              <td className="px-3 py-2 text-gray-400">{formatDate(email.date)}</td>
-              <td className="px-3 py-2 text-gray-400">{email.list_name}</td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      {/* 分页 */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between px-3 py-2 bg-gray-100 text-xs text-gray-500">
-          <span>{total} emails total</span>
+          <span>{total} targets total</span>
           <div className="flex gap-1">
             <button
               disabled={page <= 1 || loading}
@@ -350,8 +393,6 @@ function TagEmailList({ tagName, onOpenThread }: {
   );
 }
 
-// 辅助函数
-
 function extractName(sender: string): string {
   const match = sender.match(/^([^<]+)/);
   return match ? match[1].trim() : sender;
@@ -365,4 +406,43 @@ function formatDate(dateStr: string | null): string {
   } catch {
     return dateStr;
   }
+}
+
+function getTargetTitle(target: TagTargetItem): string {
+  const meta = target.target_meta || {};
+  if (target.target_type === 'annotation') {
+    return String(meta.target_label || meta.body || meta.annotation_id || target.target_ref);
+  }
+  if (target.target_type === 'email_paragraph') {
+    const paragraphIndex = Number(target.anchor?.paragraph_index || 0);
+    const subject = String(meta.subject || meta.message_id || target.target_ref);
+    return paragraphIndex > 0 ? `${subject} · Paragraph ${paragraphIndex + 1}` : subject;
+  }
+  if (target.target_type === 'kernel_line_range') {
+    return `${String(meta.file_path || target.target_ref)}:${meta.start_line || target.anchor?.start_line || 0}`;
+  }
+  return String(meta.subject || meta.message_id || meta.thread_id || target.target_ref);
+}
+
+function getTargetMeta(target: TagTargetItem): string {
+  const meta = target.target_meta || {};
+  if (target.target_type === 'annotation') {
+    if (meta.version && meta.file_path) {
+      return `${meta.version} ${meta.file_path}:${meta.start_line || 0}`;
+    }
+    return [String(meta.thread_id || ''), String(meta.in_reply_to || ''), String(meta.target_subtitle || '')]
+      .filter(Boolean)
+      .join(' · ');
+  }
+  if (target.target_type === 'kernel_line_range') {
+    return `${meta.version || ''} L${meta.start_line || 0}-${meta.end_line || 0}`.trim();
+  }
+  if (target.target_type === 'email_thread') {
+    return [extractName(String(meta.sender || '')), formatDate((meta.date as string | null) ?? null), String(meta.list_name || ''), String(meta.thread_id || '')]
+      .filter(Boolean)
+      .join(' · ');
+  }
+  return [extractName(String(meta.sender || '')), formatDate((meta.date as string | null) ?? null), String(meta.list_name || '')]
+    .filter(Boolean)
+    .join(' · ');
 }

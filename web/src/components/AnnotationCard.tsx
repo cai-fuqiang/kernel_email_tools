@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import AnnotationMarkdown from './AnnotationMarkdown';
 import AnnotationActions from './AnnotationActions';
+import EmailTagEditor from './EmailTagEditor';
 
 interface AnnotationCardProps {
+  annotationId: string;
   annotationType: string;
   author: string;
   body: string;
@@ -31,6 +33,7 @@ const TYPE_THEME: Record<string, { chip: string; panel: string; text: string }> 
 };
 
 export default function AnnotationCard({
+  annotationId,
   annotationType,
   author,
   body,
@@ -108,6 +111,13 @@ export default function AnnotationCard({
       ) : (
         <>
           <AnnotationMarkdown body={body} className={`mt-4 text-sm leading-7 ${theme.text}`} />
+          <div className="mt-3">
+            <EmailTagEditor
+              targetType="annotation"
+              targetRef={annotationId}
+              compact
+            />
+          </div>
           <AnnotationActions
             onEdit={() => setEditing(true)}
             onDelete={onDelete}

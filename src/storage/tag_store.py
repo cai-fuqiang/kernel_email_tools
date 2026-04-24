@@ -8,8 +8,9 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy import Select, and_, func, inspect, or_, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.orm.attributes import NO_VALUE
 from sqlalchemy.orm import selectinload
 
 from src.storage.models import (
@@ -103,7 +104,7 @@ class TagStore:
                 session.add(TagAliasORM(tag_id=tag.id, alias=alias_value))
 
             await session.commit()
-            await session.refresh(tag)
+            tag = await self._load_tag_with_aliases(session, tag.id)
             logger.info("Created tag %s (%s)", tag.name, tag.slug)
             return tag
 
@@ -156,12 +157,11 @@ class TagStore:
                         await session.delete(alias_obj)
 
             await session.commit()
-            await session.refresh(tag)
-            return tag
+            return await self._load_tag_with_aliases(session, tag.id)
 
     async def get_tag(self, tag_id: int) -> Optional[TagORM]:
         async with self.session_factory() as session:
-            return await session.get(TagORM, tag_id, options=[selectinload(TagORM.aliases)])
+            return await self._load_tag_with_aliases(session, tag_id)
 
     async def get_tag_by_name(self, name: str) -> Optional[TagORM]:
         async with self.session_factory() as session:
@@ -414,43 +414,53 @@ class TagStore:
         page_size: int = 20,
     ) -> tuple[list[dict], int]:
         async with self.session_factory() as session:
-            direct_message_ids = (
-                select(TagAssignmentORM.target_ref)
-                .join(TagORM, TagORM.id == TagAssignmentORM.tag_id)
-                .outerjoin(TagAliasORM, TagAliasORM.tag_id == TagORM.id)
-                .where(TagAssignmentORM.target_type == TARGET_TYPE_EMAIL_MESSAGE)
-                .where(or_(TagORM.name == tag_name, TagORM.slug == tag_name, TagAliasORM.alias == tag_name))
-            )
-            thread_ids = (
-                select(TagAssignmentORM.target_ref)
-                .join(TagORM, TagORM.id == TagAssignmentORM.tag_id)
-                .outerjoin(TagAliasORM, TagAliasORM.tag_id == TagORM.id)
-                .where(TagAssignmentORM.target_type == TARGET_TYPE_EMAIL_THREAD)
-                .where(or_(TagORM.name == tag_name, TagORM.slug == tag_name, TagAliasORM.alias == tag_name))
-            )
-            paragraph_message_ids = (
-                select(TagAssignmentORM.target_ref)
-                .join(TagORM, TagORM.id == TagAssignmentORM.tag_id)
-                .outerjoin(TagAliasORM, TagAliasORM.tag_id == TagORM.id)
-                .where(TagAssignmentORM.target_type == TARGET_TYPE_EMAIL_PARAGRAPH)
-                .where(or_(TagORM.name == tag_name, TagORM.slug == tag_name, TagAliasORM.alias == tag_name))
-            )
-            annotation_message_ids = (
-                select(AnnotationORM.in_reply_to)
-                .join(TagAssignmentORM, TagAssignmentORM.target_ref == AnnotationORM.annotation_id)
-                .join(TagORM, TagORM.id == TagAssignmentORM.tag_id)
-                .outerjoin(TagAliasORM, TagAliasORM.tag_id == TagORM.id)
-                .where(TagAssignmentORM.target_type == TARGET_TYPE_ANNOTATION)
-                .where(or_(TagORM.name == tag_name, TagORM.slug == tag_name, TagAliasORM.alias == tag_name))
-                .where(AnnotationORM.in_reply_to != "")
-            )
+            tag_ids = await self._resolve_tag_ids(session, tag_name)
+            if not tag_ids:
+                return [], 0
 
-            condition = or_(
-                EmailORM.message_id.in_(direct_message_ids),
-                EmailORM.thread_id.in_(thread_ids),
-                EmailORM.message_id.in_(paragraph_message_ids),
-                EmailORM.message_id.in_(annotation_message_ids),
-            )
+            assignment_rows = (
+                await session.execute(
+                    select(TagAssignmentORM.target_type, TagAssignmentORM.target_ref)
+                    .where(TagAssignmentORM.tag_id.in_(tag_ids))
+                )
+            ).all()
+
+            message_ids: set[str] = set()
+            thread_ids: set[str] = set()
+            annotation_ids: set[str] = set()
+
+            for target_type, target_ref in assignment_rows:
+                if target_type == TARGET_TYPE_EMAIL_MESSAGE:
+                    message_ids.add(target_ref)
+                elif target_type == TARGET_TYPE_EMAIL_PARAGRAPH:
+                    message_ids.add(target_ref)
+                elif target_type == TARGET_TYPE_EMAIL_THREAD:
+                    thread_ids.add(target_ref)
+                elif target_type == TARGET_TYPE_ANNOTATION:
+                    annotation_ids.add(target_ref)
+
+            if annotation_ids:
+                annotation_rows = (
+                    await session.execute(
+                        select(AnnotationORM.in_reply_to, AnnotationORM.thread_id)
+                        .where(AnnotationORM.annotation_id.in_(annotation_ids))
+                    )
+                ).all()
+                for in_reply_to, thread_id in annotation_rows:
+                    if in_reply_to:
+                        message_ids.add(in_reply_to)
+                    elif thread_id:
+                        thread_ids.add(thread_id)
+
+            if not message_ids and not thread_ids:
+                return [], 0
+
+            conditions = []
+            if message_ids:
+                conditions.append(EmailORM.message_id.in_(message_ids))
+            if thread_ids:
+                conditions.append(EmailORM.thread_id.in_(thread_ids))
+            condition = or_(*conditions)
 
             count_stmt = select(func.count()).select_from(EmailORM).where(condition)
             total = (await session.execute(count_stmt)).scalar() or 0
@@ -480,6 +490,15 @@ class TagStore:
                     }
                 )
             return items, total
+
+    async def _resolve_tag_ids(self, session, tag_value: str) -> list[int]:
+        stmt = (
+            select(TagORM.id)
+            .outerjoin(TagAliasORM, TagAliasORM.tag_id == TagORM.id)
+            .where(or_(TagORM.name == tag_value, TagORM.slug == tag_value, TagAliasORM.alias == tag_value))
+        )
+        result = await session.execute(stmt)
+        return sorted({row[0] for row in result.all()})
 
     async def get_tag_stats(self) -> list[dict]:
         async with self.session_factory() as session:
@@ -529,12 +548,113 @@ class TagStore:
             result = await session.execute(paged)
             items = []
             for assignment, tag_obj in result.all():
+                target_meta: dict = {}
+                if assignment.target_type == TARGET_TYPE_EMAIL_THREAD:
+                    email_result = await session.execute(
+                        select(EmailORM.subject, EmailORM.sender, EmailORM.date, EmailORM.list_name)
+                        .where(EmailORM.thread_id == assignment.target_ref)
+                        .order_by(EmailORM.date.asc())
+                        .limit(1)
+                    )
+                    row = email_result.first()
+                    if row:
+                        target_meta = {
+                            "subject": row.subject or "",
+                            "sender": row.sender or "",
+                            "date": row.date.isoformat() if row.date else None,
+                            "list_name": row.list_name or "",
+                            "thread_id": assignment.target_ref,
+                        }
+                elif assignment.target_type == TARGET_TYPE_EMAIL_MESSAGE:
+                    email_result = await session.execute(
+                        select(
+                            EmailORM.subject,
+                            EmailORM.sender,
+                            EmailORM.date,
+                            EmailORM.list_name,
+                            EmailORM.thread_id,
+                        ).where(EmailORM.message_id == assignment.target_ref)
+                    )
+                    row = email_result.first()
+                    if row:
+                        target_meta = {
+                            "subject": row.subject or "",
+                            "sender": row.sender or "",
+                            "date": row.date.isoformat() if row.date else None,
+                            "list_name": row.list_name or "",
+                            "thread_id": row.thread_id or "",
+                            "message_id": assignment.target_ref,
+                        }
+                elif assignment.target_type == TARGET_TYPE_EMAIL_PARAGRAPH:
+                    email_result = await session.execute(
+                        select(
+                            EmailORM.subject,
+                            EmailORM.sender,
+                            EmailORM.date,
+                            EmailORM.list_name,
+                            EmailORM.thread_id,
+                        ).where(EmailORM.message_id == assignment.target_ref)
+                    )
+                    row = email_result.first()
+                    if row:
+                        target_meta = {
+                            "subject": row.subject or "",
+                            "sender": row.sender or "",
+                            "date": row.date.isoformat() if row.date else None,
+                            "list_name": row.list_name or "",
+                            "thread_id": row.thread_id or "",
+                            "message_id": assignment.target_ref,
+                            "paragraph_index": assignment.anchor.get("paragraph_index", 0),
+                        }
+                elif assignment.target_type == TARGET_TYPE_ANNOTATION:
+                    ann_result = await session.execute(
+                        select(
+                            AnnotationORM.annotation_type,
+                            AnnotationORM.body,
+                            AnnotationORM.thread_id,
+                            AnnotationORM.in_reply_to,
+                            AnnotationORM.target_label,
+                            AnnotationORM.target_subtitle,
+                            AnnotationORM.version,
+                            AnnotationORM.file_path,
+                            AnnotationORM.start_line,
+                            AnnotationORM.end_line,
+                        ).where(AnnotationORM.annotation_id == assignment.target_ref)
+                    )
+                    row = ann_result.first()
+                    if row:
+                        target_meta = {
+                            "annotation_id": assignment.target_ref,
+                            "annotation_type": row.annotation_type,
+                            "body": row.body or "",
+                            "thread_id": row.thread_id or "",
+                            "in_reply_to": row.in_reply_to or "",
+                            "target_label": row.target_label or "",
+                            "target_subtitle": row.target_subtitle or "",
+                            "version": row.version or "",
+                            "file_path": row.file_path or "",
+                            "start_line": row.start_line or 0,
+                            "end_line": row.end_line or 0,
+                        }
+                elif assignment.target_type == TARGET_TYPE_KERNEL_LINE_RANGE:
+                    version = ""
+                    file_path = ""
+                    if ":" in assignment.target_ref:
+                        version, file_path = assignment.target_ref.split(":", 1)
+                    target_meta = {
+                        "version": version,
+                        "file_path": file_path,
+                        "start_line": assignment.anchor.get("start_line", 0),
+                        "end_line": assignment.anchor.get("end_line", 0),
+                    }
+
                 items.append(
                     {
                         "assignment_id": assignment.assignment_id,
                         "target_type": assignment.target_type,
                         "target_ref": assignment.target_ref,
                         "anchor": assignment.anchor or {},
+                        "target_meta": target_meta,
                         "tag": self._to_tag_read(tag_obj).model_dump(mode="json"),
                     }
                 )
@@ -659,10 +779,20 @@ class TagStore:
         if (await session.execute(select(TagAliasORM).where(TagAliasORM.alias == alias))).scalar_one_or_none():
             raise ValueError(f"Tag alias '{alias}' already exists")
 
+    async def _load_tag_with_aliases(self, session, tag_id: int) -> Optional[TagORM]:
+        result = await session.execute(
+            select(TagORM)
+            .where(TagORM.id == tag_id)
+            .options(selectinload(TagORM.aliases))
+        )
+        return result.scalar_one_or_none()
+
     def _to_tag_read(self, tag: TagORM) -> TagRead:
         aliases = []
-        if getattr(tag, "aliases", None):
-            aliases = sorted(alias.alias for alias in tag.aliases)
+        state = inspect(tag)
+        aliases_attr = state.attrs.aliases
+        if aliases_attr.loaded_value is not NO_VALUE:
+            aliases = sorted(alias.alias for alias in (tag.aliases or []))
         return TagRead(
             id=tag.id,
             slug=tag.slug,

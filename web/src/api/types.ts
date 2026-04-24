@@ -111,6 +111,24 @@ export interface TagTargetBundle {
   aggregated_tags: TagRead[];
 }
 
+export interface TagTargetItem {
+  assignment_id: string;
+  target_type: string;
+  target_ref: string;
+  anchor: Record<string, unknown>;
+  target_meta: Record<string, unknown>;
+  tag: TagRead;
+}
+
+export interface TagTargetsResponse {
+  tag: string;
+  target_type?: string | null;
+  targets: TagTargetItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export interface AnnotationTarget {
   type: string;
   ref: string;
