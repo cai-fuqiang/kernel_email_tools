@@ -1171,81 +1171,85 @@ async def list_annotations(
     - 无 q 参数：返回全部批注分页列表
     - 有 q 参数：按关键词搜索批注正文
     - type 参数：支持按类型过滤：'all'(全部), 'email'(仅邮件), 'code'(仅代码)
-
-    注意：代码标注存储在 code_annotations 表，需要同时查询两个表并合并。
     """
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
 
     try:
-        all_annotations: list[dict] = []
-        total_count = 0
-
-        # 1. 查询邮件批注（从 annotations 表）
-        if type in ("all", "email"):
+        # 代码版本过滤仅作用于 code 类型
+        if type == "code" and version:
+            # 代码版本过滤需要单独处理（也使用 LEFT JOIN 获取 email 信息）
+            async with _annotation_store.session_factory() as session:
+                from src.storage.models import AnnotationORM, EmailORM
+                from sqlalchemy import func, select
+                
+                # 使用 LEFT JOIN 获取 email 信息
+                query = (
+                    select(AnnotationORM, EmailORM.subject, EmailORM.sender)
+                    .outerjoin(EmailORM, AnnotationORM.in_reply_to == EmailORM.message_id)
+                    .where(
+                        AnnotationORM.annotation_type == "code",
+                        AnnotationORM.version == version
+                    )
+                )
+                
+                if q and q.strip():
+                    query = query.where(AnnotationORM.body.ilike(f"%{q.strip()}%"))
+                
+                count_query = select(func.count()).select_from(AnnotationORM).where(
+                    AnnotationORM.annotation_type == "code",
+                    AnnotationORM.version == version,
+                )
+                if q and q.strip():
+                    count_query = count_query.where(AnnotationORM.body.ilike(f"%{q.strip()}%"))
+                count_result = await session.execute(count_query)
+                total = count_result.scalar() or 0
+                
+                offset = (page - 1) * page_size
+                result = await session.execute(
+                    query.order_by(AnnotationORM.created_at.desc())
+                    .offset(offset)
+                    .limit(page_size)
+                )
+                rows = result.all()
+                
+                annotations = []
+                for ann, email_subject, email_sender in rows:
+                    annotations.append({
+                        "annotation_id": ann.annotation_id,
+                        "annotation_type": ann.annotation_type,
+                        "thread_id": ann.thread_id or "",
+                        "in_reply_to": ann.in_reply_to or "",
+                        "author": ann.author,
+                        "body": ann.body,
+                        "created_at": ann.created_at.isoformat(),
+                        "updated_at": ann.updated_at.isoformat(),
+                        "email_subject": email_subject or "",
+                        "email_sender": email_sender or "",
+                        "version": ann.version or "",
+                        "file_path": ann.file_path or "",
+                        "start_line": ann.start_line or 0,
+                        "end_line": ann.end_line or 0,
+                    })
+        else:
+            # 普通搜索和列表
             if q and q.strip():
-                email_annotations, email_total = await _annotation_store.search(
-                    keyword=q.strip(),
-                    annotation_type="email",
-                    page=1,  # 先获取全部，后面合并
-                    page_size=1000,  # 获取足够多的数据
+                annotations, total = await _annotation_store.search(
+                    keyword=q.strip(), 
+                    annotation_type=type,
+                    page=page, 
+                    page_size=page_size
                 )
             else:
-                email_annotations, email_total = await _annotation_store.list_all(
-                    annotation_type="email",
-                    page=1,
-                    page_size=1000,
+                annotations, total = await _annotation_store.list_all(
+                    annotation_type=type,
+                    page=page, 
+                    page_size=page_size
                 )
-            all_annotations.extend(email_annotations)
-            total_count += email_total
-
-        # 2. 查询代码标注（从 code_annotations 表）
-        if type in ("all", "code") and _code_annotation_store:
-            if q and q.strip():
-                code_items, code_total = await _code_annotation_store.search(
-                    keyword=q.strip(),
-                    version=version,
-                    page=1,
-                    page_size=1000,
-                )
-            else:
-                code_items, code_total = await _code_annotation_store.list_all(
-                    page=1,
-                    page_size=1000,
-                )
-            # 转换为统一格式
-            for ann in code_items:
-                all_annotations.append({
-                    "annotation_id": ann.annotation_id,
-                    "annotation_type": "code",
-                    "thread_id": "",
-                    "in_reply_to": ann.in_reply_to or "",
-                    "author": ann.author,
-                    "body": ann.body,
-                    "created_at": ann.created_at.isoformat(),
-                    "updated_at": ann.updated_at.isoformat(),
-                    "email_subject": "",
-                    "email_sender": "",
-                    "version": ann.version,
-                    "file_path": ann.file_path,
-                    "start_line": ann.start_line,
-                    "end_line": ann.end_line,
-                })
-            total_count += code_total
-
-        # 3. 按时间倒序排序
-        all_annotations.sort(
-            key=lambda x: x.get("created_at", "") or "",
-            reverse=True
-        )
-
-        # 4. 应用分页
-        offset = (page - 1) * page_size
-        paginated_annotations = all_annotations[offset:offset + page_size]
 
         return {
-            "annotations": paginated_annotations,
-            "total": total_count,
+            "annotations": annotations,
+            "total": total,
             "page": page,
             "page_size": page_size,
         }

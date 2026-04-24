@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Mail, Code2, ChevronDown, ChevronRight } from 'lucide-react';
 import AnnotationCard from './AnnotationCard';
 import type { AnnotationListItem } from '../api/types';
-import { updateAnnotation, deleteAnnotation } from '../api/client';
+import { updateAnnotation, deleteAnnotation, createAnnotation } from '../api/client';
 import ThreadDrawer from './ThreadDrawer';
 
 interface AnnotationTreeProps {
@@ -73,6 +73,11 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [drawerThreadId, setDrawerThreadId] = useState<string | null>(null);
   
+  // 回复状态
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyBody, setReplyBody] = useState('');
+  const [replyLoading, setReplyLoading] = useState(false);
+  
   // 构建树形结构
   const tree = buildTree(annotations);
   
@@ -113,6 +118,41 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
       onAnnotationsChange?.();
     } catch (e) {
       alert('删除失败: ' + (e instanceof Error ? e.message : 'Unknown error'));
+    }
+  };
+  
+  // 回复批注
+  const handleReply = (annotationId: string) => {
+    setReplyingTo(annotationId);
+    setReplyBody('');
+  };
+  
+  const handleCancelReply = () => {
+    setReplyingTo(null);
+    setReplyBody('');
+  };
+  
+  const handleSubmitReply = async (annotationId: string) => {
+    if (!replyBody.trim()) return;
+    
+    // 找到被回复的批注，获取其 thread_id 和 in_reply_to
+    const parentAnnotation = annotations.find(a => a.annotation_id === annotationId);
+    if (!parentAnnotation) return;
+    
+    setReplyLoading(true);
+    try {
+      await createAnnotation({
+        thread_id: parentAnnotation.thread_id || '',
+        body: replyBody.trim(),
+        in_reply_to: annotationId, // 回复指向批注，而非邮件
+      });
+      setReplyingTo(null);
+      setReplyBody('');
+      onAnnotationsChange?.();
+    } catch (e) {
+      alert('回复失败: ' + (e instanceof Error ? e.message : 'Unknown error'));
+    } finally {
+      setReplyLoading(false);
     }
   };
   
@@ -227,7 +267,40 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
               }}
               onEdit={(body) => handleEdit(annotation.annotation_id, body)}
               onDelete={() => handleDelete(annotation.annotation_id)}
+              onReply={() => handleReply(annotation.annotation_id)}
             />
+            
+            {/* 回复表单 */}
+            {replyingTo === annotation.annotation_id && (
+              <div className="mt-4 p-4 bg-white rounded-lg border border-slate-200 shadow-sm">
+                <div className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                  <span className="text-green-500">↩</span>
+                  回复此批注
+                </div>
+                <textarea
+                  value={replyBody}
+                  onChange={(e) => setReplyBody(e.target.value)}
+                  className="w-full min-h-[80px] p-3 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-green-400 outline-none resize-none"
+                  placeholder="输入回复内容（支持 Markdown）..."
+                  autoFocus
+                />
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() => handleSubmitReply(annotation.annotation_id)}
+                    disabled={!replyBody.trim() || replyLoading}
+                    className="px-4 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {replyLoading ? '提交中...' : '提交回复'}
+                  </button>
+                  <button
+                    onClick={handleCancelReply}
+                    className="px-4 py-2 bg-gray-100 text-slate-600 text-sm rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
         
