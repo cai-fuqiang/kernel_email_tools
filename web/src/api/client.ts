@@ -257,7 +257,7 @@ export async function getThread(threadId: string): Promise<ThreadResponse> {
   const data = await fetchJSON<ThreadResponse>(`${API_BASE}/thread/${threadId}`);
   return {
     ...data,
-    annotations: normalizeAnnotations(data.annotations as unknown as Record<string, unknown>[]) as ThreadResponse['annotations'],
+    annotations: normalizeAnnotations(data.annotations),
   };
 }
 

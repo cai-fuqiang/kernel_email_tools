@@ -67,6 +67,11 @@ export interface Annotation {
   parent_annotation_id: string;
   created_at: string;
   updated_at: string;
+  target_type: string;
+  target_ref: string;
+  target_label: string;
+  target_subtitle: string;
+  anchor: Record<string, unknown>;
   thread_id: string;
   in_reply_to: string;
   version?: string;
