@@ -270,6 +270,8 @@ class TagStore:
                 status=tag.status,
                 tag_kind=tag.tag_kind,
                 visibility=tag.visibility,
+                owner_user_id=tag.owner_user_id,
+                created_by_user_id=tag.created_by_user_id,
                 assignment_count=count_map.get(tag.slug, 0),
                 children=[],
             )
@@ -303,6 +305,8 @@ class TagStore:
                     status=tag.status,
                     tag_kind=tag.tag_kind,
                     visibility=tag.visibility,
+                    owner_user_id=tag.owner_user_id,
+                    created_by_user_id=tag.created_by_user_id,
                     assignment_count=count_map.get(tag.slug, 0),
                     children=[],
                 )

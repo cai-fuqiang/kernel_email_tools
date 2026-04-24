@@ -3,6 +3,16 @@ import { useEffect, useState } from 'react';
 import { getStats } from '../api/client';
 import { useAuth } from '../auth';
 
+function getRoleSummary(role: string) {
+  if (role === 'admin') {
+    return 'Can edit any tag or annotation, and manage users.';
+  }
+  if (role === 'editor') {
+    return 'Can create private content and only edit their own private tags and annotations.';
+  }
+  return 'Read-only access to public content and your private items.';
+}
+
 export default function MainLayout() {
   const [totalEmails, setTotalEmails] = useState<number | null>(null);
   const navigate = useNavigate();
@@ -36,6 +46,9 @@ export default function MainLayout() {
               <>
                 <div className="font-medium text-slate-800">{currentUser.display_name}</div>
                 <div>{currentUser.role} via {currentUser.auth_source}</div>
+                <div className="mt-1 text-[11px] leading-4 text-slate-500">
+                  {getRoleSummary(currentUser.role)}
+                </div>
                 <div className="mt-2">
                   <button
                     onClick={async () => {
@@ -88,7 +101,7 @@ export default function MainLayout() {
           </NavLink>
           {!canWrite && (
             <div className="mx-4 mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              Current role is read-only.
+              Current role is read-only. Public content and your private items remain visible.
             </div>
           )}
 

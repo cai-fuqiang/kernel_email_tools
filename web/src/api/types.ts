@@ -80,6 +80,8 @@ export interface TagTree {
   status: string;
   tag_kind: string;
   visibility: 'public' | 'private';
+  owner_user_id?: string | null;
+  created_by_user_id?: string | null;
   assignment_count: number;
   children: TagTree[];
 }

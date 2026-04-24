@@ -33,7 +33,7 @@ export default function EmailTagEditor({
   const resolvedTargetType = targetType ?? 'email_message';
   const resolvedTargetRef = targetRef ?? messageId ?? '';
   const resolvedAnchor = anchor ?? {};
-  const { canWrite } = useAuth();
+  const { canWrite, currentUser, isAdmin } = useAuth();
 
   const [directAssignments, setDirectAssignments] = useState<TagAssignment[]>([]);
   const [directTags, setDirectTags] = useState<TagRead[]>(
@@ -59,7 +59,7 @@ export default function EmailTagEditor({
       })),
   );
   const [aggregatedTags, setAggregatedTags] = useState<TagRead[]>([]);
-  const [allTags, setAllTags] = useState<string[]>([]);
+  const [allTags, setAllTags] = useState<TagTree[]>([]);
   const [showPopover, setShowPopover] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
@@ -88,15 +88,15 @@ export default function EmailTagEditor({
     if (!showPopover) return;
     getTagTree(true)
       .then((tree) => {
-        const names: string[] = [];
+        const tags: TagTree[] = [];
         const collect = (nodes: TagTree[]) => {
           for (const node of nodes) {
-            names.push(node.name);
+            tags.push(node);
             collect(node.children);
           }
         };
         collect(tree);
-        setAllTags(names);
+        setAllTags(tags);
       })
       .catch(() => {});
   }, [showPopover]);
@@ -120,14 +120,25 @@ export default function EmailTagEditor({
   const suggestions = useMemo(
     () =>
       allTags
-        .filter((tag) => !directTagNames.includes(tag))
-        .filter((tag) => !inputValue || tag.toLowerCase().includes(inputValue.toLowerCase())),
-    [allTags, directTagNames, inputValue],
+        .filter((tag) => !directTagNames.includes(tag.name))
+        .filter((tag) => isAdmin || (tag.visibility === 'private' && tag.owner_user_id === currentUser?.user_id))
+        .filter((tag) => !inputValue || tag.name.toLowerCase().includes(inputValue.toLowerCase())),
+    [allTags, currentUser?.user_id, directTagNames, inputValue, isAdmin],
   );
+
+  const canManageTag = (tag: TagRead, assignment?: TagAssignment) => {
+    if (isAdmin) return true;
+    if (!currentUser?.user_id) return false;
+    if (tag.visibility !== 'private') return false;
+    if (tag.owner_user_id !== currentUser.user_id && tag.created_by_user_id !== currentUser.user_id) return false;
+    if (assignment && assignment.created_by_user_id !== currentUser.user_id) return false;
+    return true;
+  };
 
   const handleAdd = async (tagName: string) => {
     const value = tagName.trim();
     if (!value || !resolvedTargetRef || directTagNames.includes(value)) return;
+    if (!isAdmin && !suggestions.some((tag) => tag.name === value)) return;
     setLoading(true);
     try {
       await createTagAssignment({
@@ -165,23 +176,32 @@ export default function EmailTagEditor({
   return (
     <div className="relative inline-flex items-center gap-1 flex-wrap">
       {directTags.map((tag) => (
-        <span
-          key={`direct-${tag.slug}`}
-          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs group"
-          style={{ backgroundColor: `${tag.color}22`, color: tag.color }}
-        >
-          {tag.name}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleRemove(tag.name);
-            }}
-            className="opacity-0 group-hover:opacity-100 ml-0.5"
-            disabled={loading || !canWrite}
-          >
-            &times;
-          </button>
-        </span>
+        (() => {
+          const removable = directAssignments.some(
+            (assignment) => assignment.tag_id === tag.id && canManageTag(tag, assignment),
+          );
+          return (
+            <span
+              key={`direct-${tag.slug}`}
+              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs group"
+              style={{ backgroundColor: `${tag.color}22`, color: tag.color }}
+            >
+              {tag.name}
+              {removable && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemove(tag.name);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 ml-0.5"
+                  disabled={loading}
+                >
+                  &times;
+                </button>
+              )}
+            </span>
+          );
+        })()
       ))}
 
       {aggregatedOnly.map((tag) => (
@@ -240,7 +260,7 @@ export default function EmailTagEditor({
           )}
 
           <div className="max-h-32 overflow-y-auto space-y-0.5">
-            {suggestions.length === 0 && inputValue.trim() && (
+            {isAdmin && suggestions.length === 0 && inputValue.trim() && (
               <button
                 onClick={() => handleAdd(inputValue)}
                 className="w-full text-left px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded"
@@ -250,11 +270,11 @@ export default function EmailTagEditor({
             )}
             {suggestions.map((tag) => (
               <button
-                key={tag}
-                onClick={() => handleAdd(tag)}
+                key={tag.id}
+                onClick={() => handleAdd(tag.name)}
                 className="w-full text-left px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 rounded"
               >
-                {tag}
+                {tag.name}
               </button>
             ))}
           </div>

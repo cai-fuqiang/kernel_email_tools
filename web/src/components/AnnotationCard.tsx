@@ -8,6 +8,7 @@ interface AnnotationCardProps {
   annotationId: string;
   annotationType: string;
   author: string;
+  authorUserId?: string | null;
   visibility?: 'public' | 'private';
   body: string;
   createdAt: string;
@@ -19,6 +20,8 @@ interface AnnotationCardProps {
   onDelete: () => void;
   onReply: () => void;
   onJump?: () => void;
+  canManage?: boolean;
+  canReply?: boolean;
 }
 
 const TYPE_THEME: Record<string, { chip: string; panel: string; text: string }> = {
@@ -38,6 +41,7 @@ export default function AnnotationCard({
   annotationId,
   annotationType,
   author,
+  authorUserId,
   visibility = 'public',
   body,
   createdAt,
@@ -49,9 +53,20 @@ export default function AnnotationCard({
   onDelete,
   onReply,
   onJump,
+  canManage,
+  canReply,
 }: AnnotationCardProps) {
-  const { canWrite } = useAuth();
+  const { canWrite, currentUser, isAdmin } = useAuth();
   const [editing, setEditing] = useState(false);
+  const resolvedCanManage =
+    canManage ??
+    (!!currentUser &&
+      (isAdmin ||
+        (canWrite &&
+          visibility === 'private' &&
+          !!authorUserId &&
+          authorUserId === currentUser.user_id)));
+  const resolvedCanReply = canReply ?? canWrite;
   const [editBody, setEditBody] = useState(body);
   const theme = TYPE_THEME[annotationType] || {
     chip: 'bg-amber-100 text-amber-700 border border-amber-200',
@@ -125,15 +140,15 @@ export default function AnnotationCard({
               compact
             />
           </div>
-          {canWrite ? (
+          {resolvedCanManage || resolvedCanReply ? (
             <AnnotationActions
               onEdit={() => {
-                setEditing(true);
+                if (resolvedCanManage) setEditing(true);
               }}
-              onDelete={onDelete}
-              onReply={onReply}
+              onDelete={resolvedCanManage ? onDelete : () => {}}
+              onReply={resolvedCanReply ? onReply : () => {}}
               onPreview={onJump ? (() => onJump()) : undefined}
-              showReply
+              showReply={resolvedCanReply}
               showPreview={!!onJump}
               variant={annotationType === 'code' ? 'code' : 'email'}
             />

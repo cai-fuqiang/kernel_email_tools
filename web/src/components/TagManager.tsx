@@ -19,7 +19,7 @@ interface TagManagerProps {
 
 export default function TagManager({ onTagsChanged }: TagManagerProps) {
   const navigate = useNavigate();
-  const { canWrite } = useAuth();
+  const { canWrite, currentUser, isAdmin } = useAuth();
   const [tags, setTags] = useState<TagTree[]>([]);
   const [tagStats, setTagStats] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -53,6 +53,12 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
   useEffect(() => {
     loadTags();
   }, []);
+
+  useEffect(() => {
+    if (!isAdmin && newTagVisibility !== 'private') {
+      setNewTagVisibility('private');
+    }
+  }, [isAdmin, newTagVisibility]);
 
   const handleCreate = async () => {
     if (!newTagName.trim()) return;
@@ -144,6 +150,7 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
   flatten(tags);
 
   const COLORS = ['#6366f1', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#64748b'];
+  const canCreatePublic = isAdmin;
 
   return (
     <div className="space-y-4">
@@ -179,7 +186,7 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
             className="px-3 py-2 text-sm border border-gray-300 rounded-lg"
             disabled={!canWrite}
           >
-            <option value="public">Public</option>
+            {canCreatePublic && <option value="public">Public</option>}
             <option value="private">Private</option>
           </select>
           <button
@@ -202,6 +209,9 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
           ))}
         </div>
         {!canWrite && <p className="mt-2 text-xs text-amber-700">Current role is read-only. Tag creation is disabled.</p>}
+        {canWrite && !isAdmin && (
+          <p className="mt-2 text-xs text-amber-700">Editors can only create private tags and can only delete their own private tags.</p>
+        )}
       </div>
 
       {error && <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs">{error}</div>}
@@ -222,6 +232,8 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
             onToggleExpand={handleToggleExpand}
             onJumpToTarget={handleJumpToTarget}
             canWrite={canWrite}
+            currentUserId={currentUser?.user_id ?? ''}
+            isAdmin={isAdmin}
           />
         )}
       </div>
@@ -247,6 +259,8 @@ function TagNodeList({
   onToggleExpand,
   onJumpToTarget,
   canWrite,
+  currentUserId,
+  isAdmin,
 }: {
   nodes: TagTree[];
   onDelete: (id: number, name: string) => void;
@@ -256,12 +270,20 @@ function TagNodeList({
   onToggleExpand: (tagName: string) => void;
   onJumpToTarget: (target: TagTargetItem) => void;
   canWrite: boolean;
+  currentUserId: string;
+  isAdmin: boolean;
 }) {
   return (
     <ul className={depth > 0 ? 'ml-4 border-l border-gray-100 pl-3' : ''}>
       {nodes.map((tag) => {
         const count = tagStats.get(tag.name) ?? 0;
         const isExpanded = expandedTag === tag.name;
+        const canDeleteTag =
+          isAdmin ||
+          (canWrite &&
+            tag.visibility === 'private' &&
+            !!currentUserId &&
+            (tag.owner_user_id === currentUserId || tag.created_by_user_id === currentUserId));
 
         return (
           <li key={tag.id} className="py-1.5">
@@ -282,7 +304,7 @@ function TagNodeList({
                   </svg>
                 )}
               </button>
-              {canWrite && (
+              {canDeleteTag && (
                 <button onClick={() => onDelete(tag.id, tag.name)} className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">
                   Delete
                 </button>
@@ -299,6 +321,8 @@ function TagNodeList({
                 onToggleExpand={onToggleExpand}
                 onJumpToTarget={onJumpToTarget}
                 canWrite={canWrite}
+                currentUserId={currentUserId}
+                isAdmin={isAdmin}
               />
             )}
           </li>

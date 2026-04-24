@@ -66,7 +66,7 @@ function getAnchorLabel(annotation: AnnotationListItem): string {
 
 export default function AnnotationTree({ annotations, onAnnotationsChange }: AnnotationTreeProps) {
   const navigate = useNavigate();
-  const { canWrite } = useAuth();
+  const { canWrite, currentUser, isAdmin } = useAuth();
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [drawerThreadId, setDrawerThreadId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -206,6 +206,7 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
               annotationId={annotation.annotation_id}
               annotationType={annotation.annotation_type}
               author={annotation.author}
+              authorUserId={annotation.author_user_id}
               visibility={annotation.visibility}
               body={annotation.body}
               createdAt={annotation.created_at}
@@ -213,13 +214,23 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
               targetLabel={annotation.target_label || annotation.email_subject || annotation.file_path || annotation.target_ref}
               targetSubtitle={annotation.target_subtitle || annotation.email_sender || annotation.target_type}
               anchorLabel={anchorLabel}
+              canManage={
+                !!currentUser &&
+                (isAdmin ||
+                  (canWrite &&
+                    annotation.visibility === 'private' &&
+                    annotation.author_user_id === currentUser.user_id))
+              }
+              canReply={canWrite}
               onEdit={async (body) => {
-                if (!canWrite) return;
+                if (!currentUser) return;
+                if (!(isAdmin || (annotation.visibility === 'private' && annotation.author_user_id === currentUser.user_id))) return;
                 await updateAnnotation(annotation.annotation_id, body);
                 onAnnotationsChange?.();
               }}
               onDelete={async () => {
-                if (!canWrite) return;
+                if (!currentUser) return;
+                if (!(isAdmin || (annotation.visibility === 'private' && annotation.author_user_id === currentUser.user_id))) return;
                 if (!confirm('确定要删除这个标注吗？')) return;
                 await deleteAnnotation(annotation.annotation_id);
                 onAnnotationsChange?.();

@@ -334,6 +334,8 @@ class TagTree(BaseModel):
     status: str = "active"
     tag_kind: str = "topic"
     visibility: str = "public"
+    owner_user_id: Optional[str] = None
+    created_by_user_id: Optional[str] = None
     assignment_count: int = 0
     children: list["TagTree"] = Field(default_factory=list)
 

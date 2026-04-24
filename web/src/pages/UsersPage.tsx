@@ -9,6 +9,28 @@ import {
 import { useAuth } from '../auth';
 import type { UserRead } from '../api/types';
 
+const ROLE_GUIDE: Array<{
+  role: 'admin' | 'editor' | 'viewer';
+  title: string;
+  description: string;
+}> = [
+  {
+    role: 'admin',
+    title: 'Admin',
+    description: 'Can manage users and can browse, modify, or delete any user\'s tags and annotations.',
+  },
+  {
+    role: 'editor',
+    title: 'Editor',
+    description: 'Can create content, but can only modify their own private tags and annotations. Public content can only be modified by admin.',
+  },
+  {
+    role: 'viewer',
+    title: 'Viewer',
+    description: 'Read-only access. Can view public content and the user\'s own private items.',
+  },
+];
+
 function UserSection({
   title,
   users,
@@ -223,6 +245,26 @@ export default function UsersPage() {
         <h2 className="text-2xl font-bold text-gray-900 mb-2">User Management</h2>
         <p className="text-sm text-gray-500">Approve new accounts, update roles, disable access, and reset passwords.</p>
       </div>
+
+      <section className="grid gap-3 md:grid-cols-3">
+        {ROLE_GUIDE.map((item) => (
+          <div key={item.role} className="rounded-xl border border-gray-200 bg-white px-4 py-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900">{item.title}</h3>
+              <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-medium ${
+                item.role === 'admin'
+                  ? 'bg-indigo-50 text-indigo-700'
+                  : item.role === 'editor'
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'bg-slate-100 text-slate-600'
+              }`}>
+                {item.role}
+              </span>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-gray-600">{item.description}</p>
+          </div>
+        ))}
+      </section>
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 

@@ -334,9 +334,16 @@ function AnnotationInput({
   submitLabel?: string;
   showVisibility?: boolean;
 }) {
-  const { canWrite } = useAuth();
+  const { canWrite, isAdmin } = useAuth();
   const [body, setBody] = useState(initialBody || '');
-  const [visibility, setVisibility] = useState<'public' | 'private'>('public');
+  const [visibility, setVisibility] = useState<'public' | 'private'>(isAdmin ? 'public' : 'private');
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setVisibility('private');
+    }
+  }, [isAdmin]);
+
   return (
     <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
       <textarea
@@ -356,7 +363,7 @@ function AnnotationInput({
             className="rounded border border-blue-300 bg-white px-2 py-1"
             disabled={!canWrite}
           >
-            <option value="public">Public</option>
+            {isAdmin && <option value="public">Public</option>}
             <option value="private">Private</option>
           </select>
         </div>
@@ -398,8 +405,14 @@ function AnnotationCard({
   onDelete: (annotationId: string) => void;
   onReply: (annotationId: string) => void;
 }) {
-  const { canWrite } = useAuth();
+  const { canWrite, currentUser, isAdmin } = useAuth();
   const [editing, setEditing] = useState(false);
+  const canManage =
+    !!currentUser &&
+    (isAdmin ||
+      (canWrite &&
+        annotation.visibility === 'private' &&
+        annotation.author_user_id === currentUser.user_id));
 
   return (
     <div
@@ -454,18 +467,22 @@ function AnnotationCard({
                 >
                   回复
                 </button>
-                <button
-                  onClick={() => setEditing(true)}
-                  className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-100 rounded transition-colors"
-                >
-                  编辑
-                </button>
-                <button
-                  onClick={() => onDelete(annotation.annotation_id)}
-                  className="text-xs px-2 py-1 text-red-500 hover:bg-red-50 rounded transition-colors"
-                >
-                  删除
-                </button>
+                {canManage && (
+                  <>
+                    <button
+                      onClick={() => setEditing(true)}
+                      className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+                    >
+                      编辑
+                    </button>
+                    <button
+                      onClick={() => onDelete(annotation.annotation_id)}
+                      className="text-xs px-2 py-1 text-red-500 hover:bg-red-50 rounded transition-colors"
+                    >
+                      删除
+                    </button>
+                  </>
+                )}
               </>
             )}
           </div>

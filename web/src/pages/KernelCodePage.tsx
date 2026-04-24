@@ -392,16 +392,17 @@ function AnnotationModal({
   saving: boolean;
   initialVisibility?: 'public' | 'private';
 }) {
+  const { isAdmin } = useAuth();
   const [body, setBody] = useState(initialBody);
-  const [visibility, setVisibility] = useState<'public' | 'private'>(initialVisibility);
+  const [visibility, setVisibility] = useState<'public' | 'private'>(isAdmin ? initialVisibility : 'private');
 
   useEffect(() => {
     setBody(initialBody);
   }, [initialBody]);
 
   useEffect(() => {
-    setVisibility(initialVisibility);
-  }, [initialVisibility]);
+    setVisibility(isAdmin ? initialVisibility : 'private');
+  }, [initialVisibility, isAdmin]);
 
   if (!isOpen) return null;
 
@@ -432,7 +433,7 @@ function AnnotationModal({
                 onChange={(e) => setVisibility(e.target.value as 'public' | 'private')}
                 className="rounded-lg border border-gray-300 px-2 py-1 text-sm"
               >
-                <option value="public">Public</option>
+                {isAdmin && <option value="public">Public</option>}
                 <option value="private">Private</option>
               </select>
             </div>
@@ -480,7 +481,7 @@ function AnnotationPanel({
   onAnnotationDeleted: () => void;
   onGoToLine?: (line: number) => void;
 }) {
-  const { canWrite } = useAuth();
+  const { canWrite, currentUser, isAdmin } = useAuth();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAnnotation, setEditingAnnotation] = useState<CodeAnnotation | null>(null);
   const [saving, setSaving] = useState(false);
@@ -498,6 +499,12 @@ function AnnotationPanel({
 
   // 获取顶级标注（没有 in_reply_to）
   const rootAnnotations = annotations.filter(a => !a.in_reply_to);
+  const canManageAnnotation = (annotation: CodeAnnotation) =>
+    !!currentUser &&
+    (isAdmin ||
+      (canWrite &&
+        annotation.visibility === 'private' &&
+        annotation.author_user_id === currentUser.user_id));
 
   // 切换展开/折叠
   const toggleExpand = (id: string) => {
@@ -688,18 +695,22 @@ function AnnotationPanel({
                               >
                                 Reply
                               </button>
-                              <button
-                                onClick={() => setEditingAnnotation(rootAnn)}
-                                className="text-[10px] text-gray-400 hover:text-blue-500"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => handleDelete(rootAnn.annotation_id)}
-                                className="text-[10px] text-gray-400 hover:text-red-500"
-                              >
-                                Delete
-                              </button>
+                              {canManageAnnotation(rootAnn) && (
+                                <>
+                                  <button
+                                    onClick={() => setEditingAnnotation(rootAnn)}
+                                    className="text-[10px] text-gray-400 hover:text-blue-500"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(rootAnn.annotation_id)}
+                                    className="text-[10px] text-gray-400 hover:text-red-500"
+                                  >
+                                    Delete
+                                  </button>
+                                </>
+                              )}
                             </>
                           )}
                         </div>
@@ -737,7 +748,7 @@ function AnnotationPanel({
                             >
                               Goto
                             </button>
-                            {canWrite && (
+                            {canManageAnnotation(reply) && (
                               <button
                                 onClick={() => handleDelete(reply.annotation_id)}
                                 className="text-[10px] text-gray-400 hover:text-red-500"

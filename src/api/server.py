@@ -31,9 +31,12 @@ from src.storage.models import (
     CurrentUserRead,
     EmailRead,
     TagAssignmentCreate,
+    TagAssignmentORM,
     TagAssignmentRead,
     TagBundle,
+    TagAliasORM,
     TagCreate,
+    TagORM,
     TagRead,
     TagTree,
     UserORM,
@@ -466,6 +469,114 @@ def require_roles(*roles: str):
         return current_user
 
     return dependency
+
+
+def _is_admin(current_user: CurrentUser) -> bool:
+    return current_user.role == "admin"
+
+
+def _ensure_public_write_allowed(visibility: str, current_user: CurrentUser) -> None:
+    if _normalize_visibility(visibility) == "public" and not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Only admin can modify public content")
+
+
+async def _ensure_tag_manage_access(tag_id: int, current_user: CurrentUser) -> TagORM:
+    if not _tag_store:
+        raise HTTPException(status_code=503, detail="Tag store not initialized")
+
+    tag = await _tag_store.get_tag(tag_id)
+    if not tag:
+        raise HTTPException(status_code=404, detail=f"Tag {tag_id} not found")
+    if _is_admin(current_user):
+        return tag
+    if tag.visibility == "public":
+        raise HTTPException(status_code=403, detail="Only admin can modify public tags")
+    if tag.owner_user_id == current_user.user_id or tag.created_by_user_id == current_user.user_id:
+        return tag
+    raise HTTPException(status_code=403, detail="Editors can only modify their own private tags")
+
+
+async def _resolve_tag_for_write(
+    *,
+    tag_id: Optional[int] = None,
+    tag_slug: str = "",
+    tag_name: str = "",
+) -> Optional[TagORM]:
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+
+    async with _storage.session_factory() as session:
+        stmt = select(TagORM).outerjoin(TagAliasORM, TagAliasORM.tag_id == TagORM.id)
+        if tag_id is not None:
+            stmt = stmt.where(TagORM.id == tag_id)
+        elif tag_slug:
+            stmt = stmt.where(TagORM.slug == tag_slug)
+        elif tag_name:
+            stmt = stmt.where(or_(TagORM.name == tag_name, TagAliasORM.alias == tag_name))
+        else:
+            return None
+        result = await session.execute(stmt)
+        return result.scalars().first()
+
+
+async def _ensure_tag_assignment_write_allowed(
+    *,
+    current_user: CurrentUser,
+    tag_id: Optional[int] = None,
+    tag_slug: str = "",
+    tag_name: str = "",
+) -> TagORM:
+    tag = await _resolve_tag_for_write(tag_id=tag_id, tag_slug=tag_slug, tag_name=tag_name)
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    if _is_admin(current_user):
+        return tag
+    if tag.visibility == "public":
+        raise HTTPException(status_code=403, detail="Only admin can modify public tags")
+    if tag.owner_user_id == current_user.user_id or tag.created_by_user_id == current_user.user_id:
+        return tag
+    raise HTTPException(status_code=403, detail="Editors can only use their own private tags")
+
+
+async def _ensure_tag_assignment_delete_access(assignment_id: str, current_user: CurrentUser) -> TagAssignmentORM:
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+
+    async with _storage.session_factory() as session:
+        result = await session.execute(
+            select(TagAssignmentORM, TagORM)
+            .join(TagORM, TagORM.id == TagAssignmentORM.tag_id)
+            .where(TagAssignmentORM.assignment_id == assignment_id)
+        )
+        row = result.first()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Tag assignment {assignment_id} not found")
+        assignment, tag = row
+        if _is_admin(current_user):
+            return assignment
+        if tag.visibility == "public":
+            raise HTTPException(status_code=403, detail="Only admin can modify public tags")
+        if assignment.created_by_user_id == current_user.user_id and (
+            tag.owner_user_id == current_user.user_id or tag.created_by_user_id == current_user.user_id
+        ):
+            return assignment
+        raise HTTPException(status_code=403, detail="Editors can only modify their own private tag assignments")
+
+
+async def _ensure_annotation_manage_access(annotation_id: str, current_user: CurrentUser) -> AnnotationRead:
+    if not _annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+
+    annotation = await _annotation_store.get(annotation_id)
+    if not annotation:
+        raise HTTPException(status_code=404, detail=f"Annotation {annotation_id} not found")
+    if _is_admin(current_user):
+        return annotation
+    if annotation.visibility == "public":
+        raise HTTPException(status_code=403, detail="Only admin can modify public annotations")
+    if annotation.author_user_id == current_user.user_id:
+        return annotation
+    raise HTTPException(status_code=403, detail="Editors can only modify their own private annotations")
 
 
 @asynccontextmanager
@@ -1156,6 +1267,8 @@ async def create_tag(
     """
     if not _tag_store:
         raise HTTPException(status_code=503, detail="Tag store not initialized")
+    visibility = _normalize_visibility(request.visibility)
+    _ensure_public_write_allowed(visibility, current_user)
 
     try:
         tag = await _tag_store.create_tag(
@@ -1167,7 +1280,7 @@ async def create_tag(
                 color=request.color,
                 status=request.status,
                 tag_kind=request.tag_kind,
-                visibility=_normalize_visibility(request.visibility),
+                visibility=visibility,
                 aliases=request.aliases,
                 created_by=current_user.display_name,
                 owner_user_id=current_user.user_id,
@@ -1207,6 +1320,11 @@ async def update_tag(
 ):
     if not _tag_store:
         raise HTTPException(status_code=503, detail="Tag store not initialized")
+    tag_obj = await _ensure_tag_manage_access(tag_id, current_user)
+    if request.visibility is not None:
+        _ensure_public_write_allowed(request.visibility, current_user)
+    elif tag_obj.visibility == "public" and not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Only admin can modify public tags")
 
     try:
         tag = await _tag_store.update_tag(
@@ -1303,6 +1421,7 @@ async def delete_tag(
     """
     if not _tag_store:
         raise HTTPException(status_code=503, detail="Tag store not initialized")
+    await _ensure_tag_manage_access(tag_id, current_user)
 
     deleted = await _tag_store.delete_tag(tag_id)
     if not deleted:
@@ -1317,6 +1436,12 @@ async def create_tag_assignment(
 ):
     if not _tag_store:
         raise HTTPException(status_code=503, detail="Tag store not initialized")
+    await _ensure_tag_assignment_write_allowed(
+        current_user=current_user,
+        tag_id=request.tag_id,
+        tag_slug=request.tag_slug,
+        tag_name=request.tag_name,
+    )
 
     try:
         return await _tag_store.assign_tag(
@@ -1372,6 +1497,7 @@ async def delete_tag_assignment(
 ):
     if not _tag_store:
         raise HTTPException(status_code=503, detail="Tag store not initialized")
+    await _ensure_tag_assignment_delete_access(assignment_id, current_user)
 
     deleted = await _tag_store.remove_assignment(assignment_id)
     if not deleted:
@@ -1471,12 +1597,20 @@ async def add_email_tag(
     if not _storage or not _tag_store:
         raise HTTPException(status_code=503, detail="Storage not initialized")
 
-    # 确保标签存在（不存在则自动创建）
-    await _tag_store.get_or_create_tag(
-        request.tag_name,
-        actor_user_id=current_user.user_id,
-        actor_display_name=current_user.display_name,
-    )
+    existing_tag = await _resolve_tag_for_write(tag_name=request.tag_name)
+    if existing_tag is None:
+        if not _is_admin(current_user):
+            raise HTTPException(status_code=403, detail="Editors can only use existing private tags")
+        await _tag_store.get_or_create_tag(
+            request.tag_name,
+            actor_user_id=current_user.user_id,
+            actor_display_name=current_user.display_name,
+        )
+    else:
+        await _ensure_tag_assignment_write_allowed(
+            current_user=current_user,
+            tag_name=request.tag_name,
+        )
 
     added = await _storage.add_email_tag(
         message_id,
@@ -1504,12 +1638,33 @@ async def remove_email_tag(
     current_user: CurrentUser = Depends(require_roles("admin", "editor")),
 ):
     """从邮件移除标签。"""
-    if not _storage:
+    if not _storage or not _tag_store:
         raise HTTPException(status_code=503, detail="Storage not initialized")
 
-    removed = await _storage.remove_email_tag(message_id, tag_name)
-    if not removed:
-        raise HTTPException(status_code=404, detail=f"Email {message_id} not found")
+    async with _storage.session_factory() as session:
+        result = await session.execute(
+            select(TagAssignmentORM.assignment_id)
+            .join(TagORM, TagORM.id == TagAssignmentORM.tag_id)
+            .outerjoin(TagAliasORM, TagAliasORM.tag_id == TagORM.id)
+            .where(TagAssignmentORM.target_type == TARGET_TYPE_EMAIL_MESSAGE)
+            .where(TagAssignmentORM.target_ref == message_id)
+            .where(or_(TagORM.name == tag_name, TagORM.slug == tag_name, TagAliasORM.alias == tag_name))
+        )
+        assignment_ids = [row[0] for row in result.all()]
+
+    if not assignment_ids:
+        raise HTTPException(status_code=404, detail=f"No tag assignments found for {tag_name}")
+
+    removed_any = False
+    for assignment_id in assignment_ids:
+        try:
+            await _ensure_tag_assignment_delete_access(assignment_id, current_user)
+        except HTTPException:
+            continue
+        removed = await _tag_store.remove_assignment(assignment_id)
+        removed_any = removed or removed_any
+    if not removed_any:
+        raise HTTPException(status_code=403, detail="No removable tag assignments found")
 
     return {
         "status": "ok",
@@ -2223,6 +2378,8 @@ async def create_annotation(
     """创建统一标注。"""
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
+    visibility = _normalize_visibility(request.visibility)
+    _ensure_public_write_allowed(visibility, current_user)
 
     parent_annotation_id = request.parent_annotation_id
     if not parent_annotation_id and request.in_reply_to.startswith(("annotation-", "code-annot-")):
@@ -2244,7 +2401,7 @@ async def create_annotation(
                 body=request.body,
                 author=current_user.display_name,
                 author_user_id=current_user.user_id,
-                visibility=_normalize_visibility(request.visibility),
+                visibility=visibility,
                 parent_annotation_id=parent_annotation_id,
                 target_type=request.target_type,
                 target_ref=request.target_ref,
@@ -2292,6 +2449,7 @@ async def update_annotation(
     """编辑批注。"""
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
+    await _ensure_annotation_manage_access(annotation_id, current_user)
 
     updated = await _annotation_store.update(
         annotation_id,
@@ -2311,6 +2469,7 @@ async def delete_annotation(
     """删除批注。"""
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
+    await _ensure_annotation_manage_access(annotation_id, current_user)
 
     deleted = await _annotation_store.delete(annotation_id)
     if not deleted:
@@ -2688,6 +2847,8 @@ async def create_code_annotation(
     """创建代码注释。"""
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
+    visibility = _normalize_visibility(request.visibility)
+    _ensure_public_write_allowed(visibility, current_user)
 
     try:
         annotation = await _annotation_store.create(
@@ -2696,7 +2857,7 @@ async def create_code_annotation(
                 body=request.body,
                 author=current_user.display_name,
                 author_user_id=current_user.user_id,
-                visibility=_normalize_visibility(request.visibility),
+                visibility=visibility,
                 parent_annotation_id=request.in_reply_to or "",
                 target_type="kernel_file",
                 target_ref=f"{request.version}:{request.file_path}",
@@ -2728,6 +2889,7 @@ async def update_code_annotation(
     """更新代码注释正文。"""
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
+    await _ensure_annotation_manage_access(annotation_id, current_user)
 
     updated = await _annotation_store.update(
         annotation_id,
@@ -2747,6 +2909,7 @@ async def delete_code_annotation(
     """删除代码注释。"""
     if not _annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
+    await _ensure_annotation_manage_access(annotation_id, current_user)
 
     deleted = await _annotation_store.delete(annotation_id)
     if not deleted:
