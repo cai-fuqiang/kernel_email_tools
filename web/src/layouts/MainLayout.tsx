@@ -1,11 +1,12 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { getStats } from '../api/client';
 import { useAuth } from '../auth';
 
 export default function MainLayout() {
   const [totalEmails, setTotalEmails] = useState<number | null>(null);
-  const { currentUser, loading: authLoading, isAdmin, canWrite, error: authError } = useAuth();
+  const navigate = useNavigate();
+  const { currentUser, loading: authLoading, isAdmin, canWrite, error: authError, logout } = useAuth();
 
   useEffect(() => {
     getStats().then(s => setTotalEmails(s.total_emails)).catch(() => {});
@@ -35,6 +36,17 @@ export default function MainLayout() {
               <>
                 <div className="font-medium text-slate-800">{currentUser.display_name}</div>
                 <div>{currentUser.role} via {currentUser.auth_source}</div>
+                <div className="mt-2">
+                  <button
+                    onClick={async () => {
+                      await logout();
+                      navigate('/login');
+                    }}
+                    className="text-xs text-red-600 hover:text-red-700"
+                  >
+                    Sign out
+                  </button>
+                </div>
               </>
             ) : (
               <span>{authError || 'Unauthenticated'}</span>

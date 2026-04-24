@@ -3,7 +3,9 @@ import type {
   AskResponse, 
   ThreadResponse, 
   StatsResponse,
+  AuthSession,
   CurrentUser,
+  LoginResult,
   ManualSearchResponse,
   ManualAskResponse,
   ManualStatsResponse,
@@ -16,6 +18,7 @@ import type {
   TagTargetsResponse,
   TagTargetBundle,
   TagTree,
+  RegisterResult,
   UserRead,
   KernelVersionsResponse,
   KernelTreeResponse,
@@ -32,8 +35,33 @@ export type { TagAssignment, TagRead, TagStats, TagTargetBundle, TagTargetItem, 
 const API_BASE = '/api';
 
 async function fetchJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+  const res = await fetch(url, { credentials: 'include' });
   if (!res.ok) {
+    if (res.status === 401 && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('auth:unauthorized'));
+    }
+    let detail = '';
+    try {
+      const data = await res.json();
+      detail = typeof data?.detail === 'string' ? data.detail : JSON.stringify(data);
+    } catch {
+      detail = await res.text();
+    }
+    const prefix = res.status === 401 ? 'Authentication required' : res.status === 403 ? 'Permission denied' : `API error ${res.status}`;
+    throw new Error(detail ? `${prefix}: ${detail}` : prefix);
+  }
+  return res.json();
+}
+
+async function fetchWithBody<T>(url: string, init: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    credentials: 'include',
+    ...init,
+  });
+  if (!res.ok) {
+    if (res.status === 401 && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('auth:unauthorized'));
+    }
     let detail = '';
     try {
       const data = await res.json();
@@ -109,6 +137,51 @@ export async function getCurrentUser(): Promise<CurrentUser> {
   return fetchJSON<CurrentUser>(`${API_BASE}/me`);
 }
 
+export async function getAuthSession(): Promise<AuthSession> {
+  return fetchJSON<AuthSession>(`${API_BASE}/auth/session`);
+}
+
+export async function registerAccount(data: {
+  username: string;
+  password: string;
+  display_name: string;
+  email?: string;
+}): Promise<RegisterResult> {
+  return fetchWithBody<RegisterResult>(`${API_BASE}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function loginAccount(data: {
+  username: string;
+  password: string;
+}): Promise<LoginResult> {
+  return fetchWithBody<LoginResult>(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function logoutAccount(): Promise<void> {
+  await fetchWithBody<{ status: string }>(`${API_BASE}/auth/logout`, {
+    method: 'POST',
+  });
+}
+
+export async function changePassword(data: {
+  current_password: string;
+  new_password: string;
+}): Promise<{ status: string }> {
+  return fetchWithBody<{ status: string }>(`${API_BASE}/auth/change-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
 export async function listUsers(): Promise<UserRead[]> {
   return fetchJSON<UserRead[]>(`${API_BASE}/admin/users`);
 }
@@ -120,24 +193,37 @@ export async function updateUser(
     email?: string;
     role?: 'admin' | 'editor' | 'viewer';
     status?: string;
+    approval_status?: 'pending' | 'approved' | 'rejected';
+    disabled_reason?: string;
   },
 ): Promise<UserRead> {
-  const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(userId)}`, {
+  return fetchWithBody<UserRead>(`${API_BASE}/admin/users/${encodeURIComponent(userId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
   });
-  if (!res.ok) {
-    let detail = '';
-    try {
-      const data = await res.json();
-      detail = typeof data?.detail === 'string' ? data.detail : JSON.stringify(data);
-    } catch {
-      detail = await res.text();
-    }
-    throw new Error(detail || `API error ${res.status}`);
-  }
-  return res.json();
+}
+
+export async function approveUser(userId: string): Promise<UserRead> {
+  return fetchWithBody<UserRead>(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/approve`, {
+    method: 'POST',
+  });
+}
+
+export async function rejectUser(userId: string, reason: string = ''): Promise<UserRead> {
+  return fetchWithBody<UserRead>(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function resetUserPassword(userId: string, newPassword: string): Promise<UserRead> {
+  return fetchWithBody<UserRead>(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_password: newPassword }),
+  });
 }
 
 export async function createTag(
@@ -149,6 +235,7 @@ export async function createTag(
   visibility: 'public' | 'private' = 'public',
 ): Promise<TagRead> {
   const res = await fetch(`${API_BASE}/tags`, {
+    credentials: 'include',
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -181,6 +268,7 @@ export async function updateTag(
   },
 ): Promise<TagRead> {
   const res = await fetch(`${API_BASE}/tags/${tagId}`, {
+    credentials: 'include',
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
@@ -206,7 +294,7 @@ export async function getTagTargets(
 }
 
 export async function deleteTag(tagId: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/tags/${tagId}`, { method: 'DELETE' });
+  const res = await fetch(`${API_BASE}/tags/${tagId}`, { method: 'DELETE', credentials: 'include' });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`API error ${res.status}: ${text}`);
@@ -243,6 +331,7 @@ export async function createTagAssignment(data: {
   evidence?: Record<string, unknown>;
 }): Promise<TagAssignment> {
   const res = await fetch(`${API_BASE}/tag-assignments`, {
+    credentials: 'include',
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -257,6 +346,7 @@ export async function createTagAssignment(data: {
 export async function deleteTagAssignment(assignmentId: string): Promise<void> {
   const res = await fetch(`${API_BASE}/tag-assignments/${encodeURIComponent(assignmentId)}`, {
     method: 'DELETE',
+    credentials: 'include',
   });
   if (!res.ok) {
     const text = await res.text();

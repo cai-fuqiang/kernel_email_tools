@@ -1,16 +1,19 @@
 """FastAPI 服务层 — 提供搜索、问答、线程查询、翻译接口。"""
 
-import logging
+import base64
+import hashlib
 import json
+import logging
+import secrets
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
 import yaml
-from fastapi import FastAPI, HTTPException, Query, Body, Depends, Request
+from fastapi import FastAPI, HTTPException, Query, Body, Depends, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from src.qa.manual_qa import ManualQA
 from src.qa.rag_qa import RagQA
@@ -35,6 +38,7 @@ from src.storage.models import (
     TagTree,
     UserORM,
     UserRead,
+    UserSessionORM,
     UserUpdate,
 )
 from src.storage.postgres import PostgresStorage
@@ -81,6 +85,7 @@ _auth_config: dict = {}
 
 VALID_ROLES = {"admin", "editor", "viewer"}
 VALID_VISIBILITY = {"public", "private"}
+VALID_APPROVAL_STATUS = {"pending", "approved", "rejected"}
 
 
 def _load_config() -> dict:
@@ -97,6 +102,7 @@ class CurrentUser(BaseModel):
     username: str
     display_name: str
     email: str
+    approval_status: str
     role: str
     status: str
     auth_source: str
@@ -112,6 +118,11 @@ def _normalize_visibility(value: str) -> str:
     return visibility if visibility in VALID_VISIBILITY else "public"
 
 
+def _normalize_approval_status(value: str) -> str:
+    status = (value or "pending").strip().lower()
+    return status if status in VALID_APPROVAL_STATUS else "pending"
+
+
 def _capabilities_for_role(role: str) -> list[str]:
     if role == "admin":
         return ["read", "write", "manage_users"]
@@ -122,6 +133,78 @@ def _capabilities_for_role(role: str) -> list[str]:
 
 def _header_name(name: str, default: str) -> str:
     return str(_auth_config.get("headers", {}).get(name, default))
+
+
+def _local_auth_config() -> dict:
+    return _auth_config.get("local", {}) or {}
+
+
+def _session_cookie_name() -> str:
+    return str(_local_auth_config().get("session_cookie_name", "kernel_email_session"))
+
+
+def _session_ttl_hours() -> int:
+    return int(_local_auth_config().get("session_ttl_hours", 168))
+
+
+def _allow_header_auth_fallback() -> bool:
+    return bool(_local_auth_config().get("allow_header_auth_fallback", True))
+
+
+def _allow_public_registration() -> bool:
+    return bool(_local_auth_config().get("allow_public_registration", True))
+
+
+def _require_admin_approval() -> bool:
+    return bool(_local_auth_config().get("require_admin_approval", True))
+
+
+def _pbkdf2_iterations() -> int:
+    return int(_local_auth_config().get("pbkdf2_iterations", 240000))
+
+
+def _hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    iterations = _pbkdf2_iterations()
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    salt_b64 = base64.b64encode(salt).decode("ascii")
+    digest_b64 = base64.b64encode(digest).decode("ascii")
+    return f"pbkdf2_sha256${iterations}${salt_b64}${digest_b64}"
+
+
+def _verify_password(password: str, stored: str) -> bool:
+    try:
+        algo, iterations_raw, salt_b64, digest_b64 = stored.split("$", 3)
+        if algo != "pbkdf2_sha256":
+            return False
+        salt = base64.b64decode(salt_b64.encode("ascii"))
+        expected = base64.b64decode(digest_b64.encode("ascii"))
+        actual = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            salt,
+            int(iterations_raw),
+        )
+        return secrets.compare_digest(actual, expected)
+    except Exception:
+        return False
+
+
+def _hash_session_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _serialize_user(user: UserORM) -> CurrentUser:
+    return CurrentUser(
+        user_id=user.user_id,
+        username=user.username,
+        display_name=user.display_name,
+        email=user.email,
+        approval_status=_normalize_approval_status(user.approval_status),
+        role=_normalize_role(user.role),
+        status=user.status,
+        auth_source=user.auth_source,
+    )
 
 
 def _fallback_user() -> Optional[CurrentUser]:
@@ -135,6 +218,7 @@ def _fallback_user() -> Optional[CurrentUser]:
         username=str(fallback.get("username", user_id)).strip(),
         display_name=str(fallback.get("display_name", user_id)).strip(),
         email=str(fallback.get("email", "")).strip(),
+        approval_status="approved",
         role=role,
         status=str(fallback.get("status", "active")).strip() or "active",
         auth_source="fallback",
@@ -161,6 +245,7 @@ async def _sync_user_record(current_user: CurrentUser) -> CurrentUser:
                 username=current_user.username,
                 display_name=current_user.display_name,
                 email=current_user.email,
+                approval_status=_normalize_approval_status(current_user.approval_status or "approved"),
                 role=_normalize_role(current_user.role or "viewer"),
                 status=current_user.status,
                 auth_source=current_user.auth_source,
@@ -173,6 +258,8 @@ async def _sync_user_record(current_user: CurrentUser) -> CurrentUser:
             user.username = current_user.username or user.username
             user.display_name = current_user.display_name or user.display_name
             user.email = current_user.email or user.email
+            if current_user.approval_status:
+                user.approval_status = _normalize_approval_status(current_user.approval_status)
             if current_user.role:
                 user.role = _normalize_role(current_user.role)
             user.status = current_user.status or user.status
@@ -186,42 +273,179 @@ async def _sync_user_record(current_user: CurrentUser) -> CurrentUser:
         if user.status != "active":
             raise HTTPException(status_code=403, detail="User is disabled")
 
-        return CurrentUser(
-            user_id=user.user_id,
-            username=user.username,
-            display_name=user.display_name,
-            email=user.email,
-            role=_normalize_role(user.role),
-            status=user.status,
-            auth_source=user.auth_source,
+        return _serialize_user(user)
+
+
+async def _maybe_bootstrap_admin() -> None:
+    if not _storage:
+        return
+    bootstrap = _local_auth_config().get("bootstrap_admin", {}) or {}
+    username = str(bootstrap.get("username", "")).strip()
+    password = str(bootstrap.get("password", "")).strip()
+    if not username or not password:
+        return
+
+    async with _storage.session_factory() as session:
+        admin_count = (
+            await session.execute(
+                select(func.count())
+                .select_from(UserORM)
+                .where(UserORM.role == "admin")
+                .where(UserORM.password_hash != "")
+            )
+        ).scalar() or 0
+        if admin_count > 0:
+            return
+
+        now = datetime.utcnow()
+        result = await session.execute(select(UserORM).where(UserORM.username == username))
+        user = result.scalar_one_or_none()
+        if user is None:
+            user = UserORM(
+                user_id=f"local:{username}",
+                username=username,
+                display_name=str(bootstrap.get("display_name", username)).strip() or username,
+                email=str(bootstrap.get("email", "")).strip(),
+                created_at=now,
+            )
+            session.add(user)
+
+        user.display_name = str(bootstrap.get("display_name", user.display_name or username)).strip() or username
+        user.email = str(bootstrap.get("email", user.email)).strip()
+        user.password_hash = _hash_password(password)
+        user.password_algo = "pbkdf2_sha256"
+        user.approval_status = "approved"
+        user.approved_by_user_id = user.user_id
+        user.approved_at = now
+        user.role = "admin"
+        user.status = "active"
+        user.auth_source = "local"
+        user.last_seen_at = now
+        user.updated_at = now
+        await session.commit()
+        logger.info("Bootstrapped local admin user: %s", username)
+
+
+async def _resolve_user_from_session(request: Request) -> Optional[CurrentUser]:
+    if not _storage or not _local_auth_config().get("enabled", True):
+        return None
+
+    token = request.cookies.get(_session_cookie_name(), "").strip()
+    if not token:
+        return None
+
+    token_hash = _hash_session_token(token)
+    async with _storage.session_factory() as session:
+        result = await session.execute(
+            select(UserSessionORM, UserORM)
+            .join(UserORM, UserORM.user_id == UserSessionORM.user_id)
+            .where(UserSessionORM.session_token_hash == token_hash)
+            .where(UserSessionORM.revoked_at.is_(None))
         )
+        row = result.first()
+        if not row:
+            return None
+
+        session_row, user = row
+        now = datetime.now(session_row.expires_at.tzinfo) if session_row.expires_at.tzinfo else datetime.utcnow()
+        if session_row.expires_at <= now:
+            session_row.revoked_at = now
+            await session.commit()
+            return None
+
+        if user.status != "active":
+            raise HTTPException(status_code=403, detail="User is disabled")
+        if _normalize_approval_status(user.approval_status) != "approved":
+            raise HTTPException(status_code=403, detail=f"Account is {user.approval_status}")
+
+        user.last_seen_at = now
+        user.last_login_at = user.last_login_at or now
+        await session.commit()
+        return _serialize_user(user)
+
+
+async def _create_user_session(user: UserORM, request: Request) -> str:
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+
+    raw_token = secrets.token_urlsafe(32)
+    now = datetime.utcnow()
+    async with _storage.session_factory() as session:
+        session_row = UserSessionORM(
+            session_id=secrets.token_hex(16),
+            user_id=user.user_id,
+            session_token_hash=_hash_session_token(raw_token),
+            created_at=now,
+            expires_at=now + timedelta(hours=_session_ttl_hours()),
+            ip=request.client.host if request.client else "",
+            user_agent=request.headers.get("user-agent", "")[:1000],
+        )
+        session.add(session_row)
+        await session.commit()
+    return raw_token
+
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    secure = bool(_local_auth_config().get("cookie_secure", False))
+    response.set_cookie(
+        key=_session_cookie_name(),
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=secure,
+        max_age=_session_ttl_hours() * 3600,
+        path="/",
+    )
+
+
+def _clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(key=_session_cookie_name(), path="/")
+
+
+async def _revoke_session_by_token(token: str) -> None:
+    if not token or not _storage:
+        return
+    async with _storage.session_factory() as session:
+        result = await session.execute(
+            select(UserSessionORM).where(UserSessionORM.session_token_hash == _hash_session_token(token))
+        )
+        session_row = result.scalar_one_or_none()
+        if session_row and session_row.revoked_at is None:
+            session_row.revoked_at = datetime.utcnow()
+            await session.commit()
 
 
 async def _resolve_current_user(request: Request, required: bool = True) -> Optional[CurrentUser]:
-    user_id = request.headers.get(_header_name("user_id", "X-User-Id"), "").strip()
-    username = request.headers.get(_header_name("username", "X-Username"), "").strip()
-    display_name = request.headers.get(_header_name("display_name", "X-Display-Name"), "").strip()
-    email = request.headers.get(_header_name("email", "X-User-Email"), "").strip()
-    role = request.headers.get(_header_name("role", "X-User-Role"), "").strip()
+    session_user = await _resolve_user_from_session(request)
+    if session_user is not None:
+        return session_user
 
-    if not user_id:
-        fallback = _fallback_user()
-        if fallback is None:
-            if required:
-                raise HTTPException(status_code=401, detail="Authentication required")
-            return None
-        return await _sync_user_record(fallback)
+    if _allow_header_auth_fallback():
+        user_id = request.headers.get(_header_name("user_id", "X-User-Id"), "").strip()
+        username = request.headers.get(_header_name("username", "X-Username"), "").strip()
+        display_name = request.headers.get(_header_name("display_name", "X-Display-Name"), "").strip()
+        email = request.headers.get(_header_name("email", "X-User-Email"), "").strip()
+        role = request.headers.get(_header_name("role", "X-User-Role"), "").strip()
 
-    current_user = CurrentUser(
-        user_id=user_id,
-        username=username or user_id,
-        display_name=display_name or username or user_id,
-        email=email,
-        role=role.strip().lower(),
-        status="active",
-        auth_source="header",
-    )
-    return await _sync_user_record(current_user)
+        if user_id:
+            current_user = CurrentUser(
+                user_id=user_id,
+                username=username or user_id,
+                display_name=display_name or username or user_id,
+                email=email,
+                approval_status="approved",
+                role=role.strip().lower(),
+                status="active",
+                auth_source="header",
+            )
+            return await _sync_user_record(current_user)
+
+    fallback = _fallback_user()
+    if fallback is None:
+        if required:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        return None
+    return await _sync_user_record(fallback)
 
 
 async def get_current_user(request: Request) -> CurrentUser:
@@ -272,6 +496,7 @@ async def lifespan(app: FastAPI):
         pool_size=email_storage_cfg.get("pool_size", 5),
     )
     await _storage.init_db()
+    await _maybe_bootstrap_admin()
 
     # 初始化标签存储
     _tag_store = TagStore(
@@ -564,18 +789,203 @@ class TranslateBatchResponse(BaseModel):
     cached_count: int = 0
 
 
-@app.get("/api/me", response_model=CurrentUserRead)
-async def get_me(current_user: CurrentUser = Depends(get_current_user)):
+class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=64)
+    password: str = Field(..., min_length=8, max_length=128)
+    display_name: str = Field(..., min_length=1, max_length=128)
+    email: str = Field("", max_length=256)
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=64)
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=8, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
+class SessionRead(BaseModel):
+    authenticated: bool
+    user: Optional[CurrentUserRead] = None
+
+
+class RegisterResult(BaseModel):
+    user_id: str
+    username: str
+    approval_status: str
+    message: str
+
+
+class LoginResult(BaseModel):
+    message: str
+    user: CurrentUserRead
+
+
+class AdminRejectUserRequest(BaseModel):
+    reason: str = Field("", max_length=500)
+
+
+class AdminResetPasswordRequest(BaseModel):
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
+class AdminCreateUserRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=64)
+    password: str = Field(..., min_length=8, max_length=128)
+    display_name: str = Field(..., min_length=1, max_length=128)
+    email: str = Field("", max_length=256)
+    role: str = Field("viewer")
+    status: str = Field("active")
+    approval_status: str = Field("approved")
+
+
+def _to_current_user_read(current_user: CurrentUser) -> CurrentUserRead:
     return CurrentUserRead(
         user_id=current_user.user_id,
         username=current_user.username,
         display_name=current_user.display_name,
         email=current_user.email,
+        approval_status=current_user.approval_status,
         role=current_user.role,
         status=current_user.status,
         auth_source=current_user.auth_source,
         capabilities=_capabilities_for_role(current_user.role),
     )
+
+
+async def _get_user_orm(user_id: str) -> UserORM:
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+    async with _storage.session_factory() as session:
+        result = await session.execute(select(UserORM).where(UserORM.user_id == user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise HTTPException(status_code=404, detail=f"User not found: {user_id}")
+        return user
+
+
+@app.post("/api/auth/register", response_model=RegisterResult)
+async def register_account(request: RegisterRequest):
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+    if not _allow_public_registration():
+        raise HTTPException(status_code=403, detail="Public registration is disabled")
+
+    username = request.username.strip()
+    now = datetime.utcnow()
+    approval_status = "pending" if _require_admin_approval() else "approved"
+    async with _storage.session_factory() as session:
+        existing = await session.execute(
+            select(UserORM).where(
+                (UserORM.username == username) | (UserORM.user_id == f"local:{username}")
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Username already exists")
+
+        if request.email.strip():
+            email_existing = await session.execute(
+                select(UserORM).where(UserORM.email == request.email.strip())
+            )
+            if email_existing.scalar_one_or_none():
+                raise HTTPException(status_code=400, detail="Email already exists")
+
+        user = UserORM(
+            user_id=f"local:{username}",
+            username=username,
+            display_name=request.display_name.strip(),
+            email=request.email.strip(),
+            password_hash=_hash_password(request.password),
+            password_algo="pbkdf2_sha256",
+            approval_status=approval_status,
+            approved_at=None if approval_status == "pending" else now,
+            role="viewer",
+            status="active",
+            auth_source="local",
+            last_seen_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(user)
+        await session.commit()
+
+    return RegisterResult(
+        user_id=f"local:{username}",
+        username=username,
+        approval_status=approval_status,
+        message="Registration submitted, waiting for admin approval" if approval_status == "pending" else "Registration successful",
+    )
+
+
+@app.post("/api/auth/login", response_model=LoginResult)
+async def login_account(request: LoginRequest, response: Response, http_request: Request):
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+
+    username = request.username.strip()
+    async with _storage.session_factory() as session:
+        result = await session.execute(select(UserORM).where(UserORM.username == username))
+        user = result.scalar_one_or_none()
+        if user is None or not user.password_hash or not _verify_password(request.password, user.password_hash):
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+        if _normalize_approval_status(user.approval_status) == "pending":
+            raise HTTPException(status_code=403, detail="Account is pending approval")
+        if _normalize_approval_status(user.approval_status) == "rejected":
+            raise HTTPException(status_code=403, detail="Account registration was rejected")
+        if user.status != "active":
+            raise HTTPException(status_code=403, detail="Account is disabled")
+
+        user.last_login_at = datetime.utcnow()
+        user.last_seen_at = datetime.utcnow()
+        user.auth_source = "local"
+        await session.commit()
+        await session.refresh(user)
+        token = await _create_user_session(user, http_request)
+        _set_session_cookie(response, token)
+        return LoginResult(message="Login successful", user=_to_current_user_read(_serialize_user(user)))
+
+
+@app.post("/api/auth/logout")
+async def logout_account(response: Response, request: Request):
+    await _revoke_session_by_token(request.cookies.get(_session_cookie_name(), "").strip())
+    _clear_session_cookie(response)
+    return {"status": "ok"}
+
+
+@app.get("/api/auth/session", response_model=SessionRead)
+async def auth_session(current_user: Optional[CurrentUser] = Depends(get_optional_current_user)):
+    if not current_user:
+        return SessionRead(authenticated=False, user=None)
+    return SessionRead(authenticated=True, user=_to_current_user_read(current_user))
+
+
+@app.post("/api/auth/change-password")
+async def change_password(
+    request: ChangePasswordRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+
+    async with _storage.session_factory() as session:
+        result = await session.execute(select(UserORM).where(UserORM.user_id == current_user.user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        if not user.password_hash or not _verify_password(request.current_password, user.password_hash):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+        user.password_hash = _hash_password(request.new_password)
+        user.password_algo = "pbkdf2_sha256"
+        user.updated_at = datetime.utcnow()
+        await session.commit()
+    return {"status": "ok"}
+
+
+@app.get("/api/me", response_model=CurrentUserRead)
+async def get_me(current_user: CurrentUser = Depends(get_current_user)):
+    return _to_current_user_read(current_user)
 
 
 @app.get("/api/admin/users", response_model=list[UserRead])
@@ -608,9 +1018,121 @@ async def update_user(
         if request.email is not None:
             user.email = request.email.strip()
         if request.role is not None:
+            if user.role == "admin" and _normalize_role(request.role) != "admin":
+                admin_count = (
+                    await session.execute(
+                        select(func.count()).select_from(UserORM).where(UserORM.role == "admin")
+                    )
+                ).scalar() or 0
+                if admin_count <= 1:
+                    raise HTTPException(status_code=400, detail="Cannot demote the last admin")
             user.role = _normalize_role(request.role)
         if request.status is not None:
             user.status = request.status.strip() or user.status
+        if request.approval_status is not None:
+            user.approval_status = _normalize_approval_status(request.approval_status)
+        if request.disabled_reason is not None:
+            user.disabled_reason = request.disabled_reason
+        user.updated_at = datetime.utcnow()
+        await session.commit()
+        await session.refresh(user)
+        return UserRead.model_validate(user)
+
+
+@app.post("/api/admin/users", response_model=UserRead)
+async def admin_create_user(
+    request: AdminCreateUserRequest,
+    current_user: CurrentUser = Depends(require_roles("admin")),
+):
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+
+    username = request.username.strip()
+    now = datetime.utcnow()
+    async with _storage.session_factory() as session:
+        existing = await session.execute(select(UserORM).where(UserORM.username == username))
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Username already exists")
+        user = UserORM(
+            user_id=f"local:{username}",
+            username=username,
+            display_name=request.display_name.strip(),
+            email=request.email.strip(),
+            password_hash=_hash_password(request.password),
+            password_algo="pbkdf2_sha256",
+            approval_status=_normalize_approval_status(request.approval_status),
+            approved_by_user_id=current_user.user_id if _normalize_approval_status(request.approval_status) == "approved" else None,
+            approved_at=now if _normalize_approval_status(request.approval_status) == "approved" else None,
+            role=_normalize_role(request.role),
+            status=request.status.strip() or "active",
+            auth_source="local",
+            last_seen_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return UserRead.model_validate(user)
+
+
+@app.post("/api/admin/users/{user_id}/approve", response_model=UserRead)
+async def approve_user(
+    user_id: str,
+    current_user: CurrentUser = Depends(require_roles("admin")),
+):
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+    async with _storage.session_factory() as session:
+        result = await session.execute(select(UserORM).where(UserORM.user_id == user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise HTTPException(status_code=404, detail=f"User not found: {user_id}")
+        user.approval_status = "approved"
+        user.approved_by_user_id = current_user.user_id
+        user.approved_at = datetime.utcnow()
+        user.updated_at = datetime.utcnow()
+        await session.commit()
+        await session.refresh(user)
+        return UserRead.model_validate(user)
+
+
+@app.post("/api/admin/users/{user_id}/reject", response_model=UserRead)
+async def reject_user(
+    user_id: str,
+    request: AdminRejectUserRequest,
+    current_user: CurrentUser = Depends(require_roles("admin")),
+):
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+    async with _storage.session_factory() as session:
+        result = await session.execute(select(UserORM).where(UserORM.user_id == user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise HTTPException(status_code=404, detail=f"User not found: {user_id}")
+        user.approval_status = "rejected"
+        user.disabled_reason = request.reason.strip()
+        user.updated_at = datetime.utcnow()
+        await session.commit()
+        await session.refresh(user)
+        return UserRead.model_validate(user)
+
+
+@app.post("/api/admin/users/{user_id}/reset-password", response_model=UserRead)
+async def reset_user_password(
+    user_id: str,
+    request: AdminResetPasswordRequest,
+    current_user: CurrentUser = Depends(require_roles("admin")),
+):
+    if not _storage:
+        raise HTTPException(status_code=503, detail="Storage not initialized")
+    async with _storage.session_factory() as session:
+        result = await session.execute(select(UserORM).where(UserORM.user_id == user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise HTTPException(status_code=404, detail=f"User not found: {user_id}")
+        user.password_hash = _hash_password(request.new_password)
+        user.password_algo = "pbkdf2_sha256"
         user.updated_at = datetime.utcnow()
         await session.commit()
         await session.refresh(user)

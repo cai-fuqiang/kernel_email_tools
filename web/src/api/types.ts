@@ -114,6 +114,7 @@ export interface CurrentUser {
   username: string;
   display_name: string;
   email: string;
+  approval_status: 'pending' | 'approved' | 'rejected';
   role: 'admin' | 'editor' | 'viewer';
   status: string;
   auth_source: string;
@@ -125,12 +126,34 @@ export interface UserRead {
   username: string;
   display_name: string;
   email: string;
+  approval_status: 'pending' | 'approved' | 'rejected';
+  approved_by_user_id?: string | null;
+  approved_at?: string | null;
+  disabled_reason: string;
+  last_login_at?: string | null;
   role: 'admin' | 'editor' | 'viewer';
   status: string;
   auth_source: string;
   last_seen_at: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface AuthSession {
+  authenticated: boolean;
+  user: CurrentUser | null;
+}
+
+export interface LoginResult {
+  message: string;
+  user: CurrentUser;
+}
+
+export interface RegisterResult {
+  user_id: string;
+  username: string;
+  approval_status: 'pending' | 'approved' | 'rejected';
+  message: string;
 }
 
 export interface TagTargetBundle {

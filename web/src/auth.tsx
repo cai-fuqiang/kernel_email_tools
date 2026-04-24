@@ -1,14 +1,35 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { getCurrentUser } from './api/client';
-import type { CurrentUser } from './api/types';
+import {
+  getAuthSession,
+  loginAccount,
+  logoutAccount,
+  registerAccount,
+} from './api/client';
+import type { CurrentUser, LoginResult, RegisterResult } from './api/types';
+
+type LoginParams = {
+  username: string;
+  password: string;
+};
+
+type RegisterParams = {
+  username: string;
+  password: string;
+  display_name: string;
+  email?: string;
+};
 
 type AuthState = {
   currentUser: CurrentUser | null;
   loading: boolean;
   error: string;
   refresh: () => Promise<void>;
+  login: (params: LoginParams) => Promise<LoginResult>;
+  logout: () => Promise<void>;
+  register: (params: RegisterParams) => Promise<RegisterResult>;
   canWrite: boolean;
   isAdmin: boolean;
+  isAuthenticated: boolean;
 };
 
 const AuthContext = createContext<AuthState>({
@@ -16,8 +37,16 @@ const AuthContext = createContext<AuthState>({
   loading: true,
   error: '',
   refresh: async () => {},
+  login: async () => {
+    throw new Error('AuthProvider not mounted');
+  },
+  logout: async () => {},
+  register: async () => {
+    throw new Error('AuthProvider not mounted');
+  },
   canWrite: false,
   isAdmin: false,
+  isAuthenticated: false,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -28,8 +57,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refresh = async () => {
     setLoading(true);
     try {
-      const user = await getCurrentUser();
-      setCurrentUser(user);
+      const session = await getAuthSession();
+      setCurrentUser(session.authenticated ? session.user : null);
       setError('');
     } catch (err) {
       setCurrentUser(null);
@@ -43,6 +72,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refresh().catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const onUnauthorized = () => {
+      setCurrentUser(null);
+    };
+    window.addEventListener('auth:unauthorized', onUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', onUnauthorized);
+  }, []);
+
+  const login = async (params: LoginParams) => {
+    const result = await loginAccount(params);
+    setCurrentUser(result.user);
+    setError('');
+    return result;
+  };
+
+  const logout = async () => {
+    await logoutAccount();
+    setCurrentUser(null);
+    setError('');
+  };
+
+  const register = async (params: RegisterParams) => {
+    return registerAccount(params);
+  };
+
   const value = useMemo<AuthState>(() => {
     const role = currentUser?.role || 'viewer';
     return {
@@ -50,8 +104,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       error,
       refresh,
+      login,
+      logout,
+      register,
       canWrite: role === 'admin' || role === 'editor',
       isAdmin: role === 'admin',
+      isAuthenticated: !!currentUser,
     };
   }, [currentUser, loading, error]);
 

@@ -26,9 +26,16 @@ class UserORM(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
-    username: Mapped[str] = mapped_column(String(128), nullable=False, default="", index=True)
+    username: Mapped[str] = mapped_column(String(128), nullable=False, default="", unique=True, index=True)
     display_name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     email: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    password_algo: Mapped[str] = mapped_column(String(32), nullable=False, default="pbkdf2_sha256")
+    approval_status: Mapped[str] = mapped_column(String(32), nullable=False, default="approved", index=True)
+    approved_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    disabled_reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     role: Mapped[str] = mapped_column(String(32), nullable=False, default="viewer", index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True)
     auth_source: Mapped[str] = mapped_column(String(32), nullable=False, default="header")
@@ -41,6 +48,24 @@ class UserORM(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+
+
+class UserSessionORM(Base):
+    """用户会话。"""
+
+    __tablename__ = "user_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    session_token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    ip: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    user_agent: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
 class TagORM(Base):
@@ -493,6 +518,7 @@ class CurrentUserRead(BaseModel):
     username: str
     display_name: str
     email: str
+    approval_status: str
     role: str
     status: str
     auth_source: str
@@ -506,6 +532,11 @@ class UserRead(BaseModel):
     username: str
     display_name: str
     email: str
+    approval_status: str
+    approved_by_user_id: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    disabled_reason: str = ""
+    last_login_at: Optional[datetime] = None
     role: str
     status: str
     auth_source: str
@@ -521,6 +552,8 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
     role: Optional[str] = None
     status: Optional[str] = None
+    approval_status: Optional[str] = None
+    disabled_reason: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

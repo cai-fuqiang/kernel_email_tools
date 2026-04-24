@@ -117,15 +117,61 @@ class PostgresStorage(BaseStorage):
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(128) NOT NULL DEFAULT ''",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(128) NOT NULL DEFAULT ''",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(256) NOT NULL DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_algo VARCHAR(32) NOT NULL DEFAULT 'pbkdf2_sha256'",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS approval_status VARCHAR(32) NOT NULL DEFAULT 'approved'",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_by_user_id VARCHAR(128)",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled_reason TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(32) NOT NULL DEFAULT 'viewer'",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'active'",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_source VARCHAR(32) NOT NULL DEFAULT 'header'",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+            "CREATE INDEX IF NOT EXISTS ix_users_approval_status ON users (approval_status)",
+            "CREATE INDEX IF NOT EXISTS ix_users_approved_by_user_id ON users (approved_by_user_id)",
+            "CREATE TABLE IF NOT EXISTS user_sessions ("
+            "id SERIAL PRIMARY KEY, "
+            "session_id VARCHAR(64) NOT NULL UNIQUE, "
+            "user_id VARCHAR(128) NOT NULL, "
+            "session_token_hash VARCHAR(64) NOT NULL UNIQUE, "
+            "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), "
+            "expires_at TIMESTAMPTZ NOT NULL, "
+            "revoked_at TIMESTAMPTZ NULL, "
+            "ip VARCHAR(128) NOT NULL DEFAULT '', "
+            "user_agent TEXT NOT NULL DEFAULT ''"
+            ")",
+            "CREATE INDEX IF NOT EXISTS ix_user_sessions_user_id ON user_sessions (user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_user_sessions_revoked_at ON user_sessions (revoked_at)",
         ]
         for statement in statements:
             await conn.execute(text(statement))
+
+        # 老数据里可能存在空 username 或重复 username，先整理后再加唯一索引。
+        existing_users = (
+            await conn.execute(
+                text("SELECT id, user_id, username FROM users ORDER BY id ASC")
+            )
+        ).mappings().all()
+        used_usernames: set[str] = set()
+        for row in existing_users:
+            raw_username = str(row.get("username") or "").strip()
+            base_username = raw_username or str(row.get("user_id") or "").strip() or f"user-{row['id']}"
+            candidate = base_username
+            suffix = 1
+            while candidate in used_usernames:
+                suffix += 1
+                candidate = f"{base_username}-{suffix}"
+            used_usernames.add(candidate)
+            if candidate != raw_username:
+                await conn.execute(
+                    text("UPDATE users SET username = :username WHERE id = :id"),
+                    {"username": candidate, "id": row["id"]},
+                )
+
+        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_username ON users (username)"))
 
     async def save_emails(self, emails: list[EmailCreate]) -> int:
         """批量写入邮件，基于 message_id 去重（ON CONFLICT DO NOTHING）。
