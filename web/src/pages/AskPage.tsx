@@ -9,16 +9,20 @@ type ThreadFocus = {
   focusMessageId?: string;
 };
 
+function normalizeMessageId(value: string): string {
+  return value.trim().replace(/^<|>$/g, '').replace(/\s+/g, '');
+}
+
 function renderAnswerWithLinks(
   text: string,
   sourceByMessageId: Map<string, { threadId: string; messageId: string }>,
   onOpenSource: (threadId: string, messageId?: string) => void,
 ) {
-  const parts = text.split(/(\[[^\]\s]+@[^\]]+\])/g);
+  const parts = text.split(/(\[[^\]]+\])/g);
   return parts.map((part, index) => {
-    const match = part.match(/^\[([^\]\s]+@[^\]]+)\]$/);
+    const match = part.match(/^\[([^\]]+)\]$/);
     if (!match) return <span key={index}>{part}</span>;
-    const messageId = match[1];
+    const messageId = normalizeMessageId(match[1]);
     const source = sourceByMessageId.get(messageId);
     if (!source) return <span key={index}>{part}</span>;
     return (
@@ -92,11 +96,14 @@ export default function AskPage() {
   };
 
   const hasFilters = sender || dateFrom || dateTo || selectedTags.length > 0 || selectedChannel;
-  const sourceByMessageId = new Map(
-    (answer?.sources || [])
-      .filter(s => s.message_id && s.thread_id)
-      .map(s => [s.message_id, { threadId: s.thread_id!, messageId: s.message_id }])
-  );
+  const sourceByMessageId = new Map<string, { threadId: string; messageId: string }>();
+  for (const source of answer?.sources || []) {
+    if (!source.message_id || !source.thread_id) continue;
+    sourceByMessageId.set(normalizeMessageId(source.message_id), {
+      threadId: source.thread_id,
+      messageId: source.message_id,
+    });
+  }
 
   const openThread = (threadId: string, focusMessageId?: string) => {
     if (!threadId) return;
