@@ -1,445 +1,97 @@
 # Kernel Email Knowledge Base
 
-一个基于 Linux 内核邮件列表和芯片手册构建的知识库系统，支持精确全文检索和 RAG 语义问答。采用双引擎架构（PostgreSQL GIN 全文索引 + pgvector 向量检索），提供 Web 界面和 REST API。
+面向 Linux 内核邮件列表的本地知识库系统。项目把 lore.kernel.org git mirror、手册文档、内核源码、标签、批注和 AI 检索问答组织到一个 Web 应用里，目标不是做一个简单搜索框，而是帮助把邮件讨论沉淀成可引用、可维护的内核知识库。
 
-## 🎯 项目目标
+当前重点能力：
 
-- **双数据源**：Linux 内核邮件列表 + 芯片手册（Intel SDM/ARM/AMD）
-- **双引擎检索**：PostgreSQL 全文索引（精确）+ pgvector 向量检索（语义）
-- **RAG 问答**：基于检索结果自动生成带来源引用的回答
-- **插件化架构**：七层解耦（采集→解析→分片→存储→索引→检索→问答），每层可替换
-- **MVP 优先**：先跑通单列表全流程，再横向扩展
+- 邮件列表导入：支持 `kvm`、`linux-mm`、`lkml` 等 lore git mirror，本地仓库优先。
+- 高速全文检索：PostgreSQL TSVECTOR + GIN，支持列表、发件人、日期、patch、tag 过滤。
+- Agentic Ask：AI 先生成检索计划，再执行多 query、chunk 全文/向量召回、thread 扩展，最后基于证据回答。
+- Ask 到知识库：Ask 结果可生成 Knowledge / Annotation / Tag assignment 草稿，用户确认后落库。
+- 知识沉淀：统一 Knowledge entity、层级标签、邮件/代码/知识实体批注。
+- 线程阅读：邮件线程抽屉支持翻译、批注、标签、patch 展示。
+- 内核源码浏览：本地 git kernel source 浏览、symbol definition/resolve、代码批注。
+- 芯片手册：Intel SDM 等 PDF 导入、手册搜索和手册问答。
+- 多用户：本地账号、角色、审批、公开/私有内容和批注发布审核。
 
-## 🏗️ 架构设计
+## 架构概览
 
-### 后端架构（Python）
-```
+```text
 src/
-├── collector/     # 数据采集层（GitCollector）
-├── parser/        # 解析层（邮件 RFC2822 + PDF 手册）
-├── chunker/       # 文档分片层（L1→L2→L3 智能分片）
-├── storage/       # 存储层（PostgreSQL + 模型定义）
-├── indexer/       # 索引层（GIN 全文 + pgvector 向量）
-├── retriever/     # 检索层（Keyword/Semantic/Hybrid + Manual）
-├── qa/           # 问答层（RAG Pipeline + ManualQA）
-└── api/          # FastAPI 服务层
-```
+├── collector/       # lore git mirror 采集
+├── parser/          # 邮件、patch、PDF/SDM 解析
+├── chunker/         # 手册分片
+├── storage/         # PostgreSQL ORM、标签、批注、知识实体、缓存
+├── indexer/         # 全文索引、邮件 RAG chunk、向量索引
+├── retriever/       # 邮件/手册检索
+├── qa/              # AskAgent、AskDraftService、ManualQA、LLM/embedding provider
+├── kernel_source/   # 本地 kernel git 浏览
+├── symbol_indexer/  # ctags 符号索引
+├── translator/      # 翻译与缓存
+└── api/             # FastAPI 服务
 
-### 前端架构（React）
-```
 web/src/
-├── pages/         # 页面组件
-│   ├── SearchPage.tsx        # 邮件搜索页（含标签筛选）
-│   ├── AskPage.tsx           # 邮件问答页（含标签筛选）
-│   ├── TagsPage.tsx          # 标签管理页
-│   ├── AnnotationsPage.tsx   # 批注管理页（全量列表+搜索+Markdown渲染）
-│   ├── TranslationsPage.tsx  # 翻译管理页（已缓存线程+标签+自动轮询）
-│   ├── ManualSearchPage.tsx  # 手册搜索页
-│   └── ManualAskPage.tsx     # 手册问答页
-├── components/    # 通用组件
-│   ├── ThreadDrawer.tsx      # 线程抽屉（含翻译、引用行渲染、PatchDiffBlock、Markdown批注）
-│   ├── TagFilter.tsx         # 标签筛选组件
-│   ├── TagManager.tsx        # 标签管理组件
-│   └── EmailTagEditor.tsx    # 邮件标签编辑器
-├── layouts/       # 布局组件（MainLayout）
-├── api/          # API 客户端 + TypeScript 类型
-└── assets/       # 静态资源
+├── pages/           # Search / Ask / Knowledge / Tags / Annotations / Kernel Code / Manuals
+├── components/      # ThreadDrawer、AskDraftPanel、Tag/Annotation 组件等
+├── layouts/         # MainLayout
+├── api/             # API client 和 TypeScript 类型
+└── auth.tsx         # 前端认证状态
 ```
 
-## 🚀 快速开始
+## 快速开始
 
-### 环境要求
+### 1. 环境要求
+
 - Python 3.11+
 - Node.js 18+
-- PostgreSQL 16 + pgvector 扩展
+- PostgreSQL 16+
+- pgvector 扩展
 
-### 1. 安装后端依赖
+### 2. 安装依赖
+
 ```bash
 pip install -e ".[dev]"
+
+cd web
+npm ci
+cd ..
 ```
 
-### 2. 启动 PostgreSQL（带 pgvector）
+### 3. 准备 PostgreSQL
+
+示例使用 Podman，也可以换成 Docker 或本机 PostgreSQL。
+
 ```bash
-# 使用 Docker/Podman（推荐）
 podman run -d --name kernel-pg -p 5432:5432 \
-  -e POSTGRES_USER=kernel -e POSTGRES_PASSWORD=kernel \
+  -e POSTGRES_USER=kernel \
+  -e POSTGRES_PASSWORD=kernel \
   -e POSTGRES_DB=kernel_email \
-  docker.io/postgres:16-alpine
+  docker.io/postgres:16
 
-# 进入容器安装 pgvector
-podman exec -it kernel-pg psql -U kernel -d kernel_email -c "CREATE EXTENSION IF NOT EXISTS vector;"
+podman exec -it kernel-pg psql -U kernel -d kernel_email \
+  -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
 
-### 3. 配置数据库连接
-编辑 `config/settings.yaml`：
-```yaml
-storage:
-  database_url: "postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email"
-```
-
-### 4. 采集数据
-
-#### 方式一：从本地目录采集（已下载的数据）
-本地已有 `~/workspace/kernel_email/` 下的 channel 数据时：
-```bash
-# 采集所有 channel
-python scripts/collect.py --all-channels --local
-
-# 只采集指定 channel（如 kvm）
-python scripts/collect.py --list kvm --local --all-epochs
-
-# 只采集 linux-mm 的 epoch 0
-python scripts/collect.py --list linux-mm --local --epoch 0
-```
-
-支持的 channel：kvm、linux-mm、lkml
-
-#### 方式二：从远端采集
-```bash
-python scripts/collect.py --list linux-mm --epoch 0 --limit 100
-```
-
-### 5. 构建索引
-```bash
-python scripts/index.py --list linux-mm --epoch 0
-```
-
-### 6. 启动服务
-```bash
-python scripts/serve.py
-# 服务运行在 http://localhost:8000
-```
-
-### 7. 导入芯片手册（可选）
-```bash
-# 下载 Intel SDM PDF 到 manuals/intel_sdm/
-python scripts/ingest_manual.py --pdf ./manuals/intel_sdm/sdm.pdf --store
-```
-
-### 7. 启动前端开发服务器（可选）
-```bash
-cd web && npm install
-npm run dev
-# 前端开发服务器：http://localhost:5173/app/
-```
-
-## 🗄️ 数据库运维命令
-
-### 初始化数据库
+如果手册库使用单独数据库，需要额外创建：
 
 ```bash
-# 初始化邮件数据库（创建表、索引、触发器）
-python -c "
-import asyncio
-from src.storage.postgres import PostgresStorage
-from src.storage.models import EmailORM
-
-async def init():
-    storage = PostgresStorage(database_url='postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email')
-    await storage.init_db()
-    print('Database initialized')
-    await storage.close()
-
-asyncio.run(init())
-"
-
-# 初始化手册数据库
-python -c "
-import asyncio
-from src.storage.document_store import DocumentStorage
-
-async def init():
-    storage = DocumentStorage(database_url='postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email')
-    await storage.init_db()
-    print('Manual database initialized')
-    await storage.close()
-
-asyncio.run(init())
-"
+podman exec -it kernel-pg createdb -U kernel chip_manual_kb
+podman exec -it kernel-pg psql -U kernel -d chip_manual_kb \
+  -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
 
-### 数据导入与索引
+### 4. 配置
 
-```bash
-# 采集邮件数据并入库
-python scripts/collect.py --list linux-mm --epoch 0 --limit 100
-python scripts/index.py --list linux-mm --epoch 0 --limit 100
+主要配置在 [config/settings.yaml](config/settings.yaml)。
 
-# 采集所有 epoch 并入库
-python scripts/index.py --list linux-mm --all-epochs
-
-# 从本地目录采集多个 channel
-python scripts/collect.py --all-channels --local
-
-# 导入芯片手册
-python scripts/ingest_manual.py --pdf ./manuals/intel_sdm/sdm.pdf --store
-
-# 重建全文索引
-python scripts/index.py --rebuild-fulltext
-```
-
-### 数据库统计
-
-```bash
-# 查看邮件数据库统计
-python scripts/index.py --stats
-
-# 通过 API 查看
-curl http://localhost:8000/api/stats
-
-# 查看手册统计
-curl http://localhost:8000/api/manual/stats
-```
-
-### 数据库维护
-
-```bash
-# 连接数据库（需在容器内或本地有 psql）
-psql -U kernel -d kernel_email
-
-# 查看表结构
-\dt
-
-# 查看邮件数量
-SELECT list_name, COUNT(*) FROM emails GROUP BY list_name;
-
-# 查看索引状态
-\d emails
-
-# 查看全文索引统计
-SELECT COUNT(*) FROM emails WHERE search_vector IS NOT NULL;
-
-# 手动触发索引更新（单条测试）
-UPDATE emails SET search_vector = to_tsvector('english', subject || ' ' || body)
-WHERE message_id = '<test@example.com>';
-
-# 清理孤立数据
-DELETE FROM emails WHERE thread_id NOT IN (SELECT DISTINCT thread_id FROM emails WHERE thread_id IS NOT NULL);
-
-# 查看数据库大小
-SELECT pg_size_pretty(pg_database_size('kernel_email'));
-
-# 查看表大小
-SELECT pg_size_pretty(pg_total_relation_size('emails'));
-```
-
-### Docker 运维命令
-
-```bash
-# 启动 PostgreSQL 容器
-podman run -d --name kernel-pg -p 5432:5432 \
-  -e POSTGRES_USER=kernel -e POSTGRES_PASSWORD=kernel \
-  -e POSTGRES_DB=kernel_email \
-  docker.io/postgres:16-alpine
-
-# 启用 pgvector 扩展
-podman exec -it kernel-pg psql -U kernel -d kernel_email -c "CREATE EXTENSION IF NOT EXISTS vector;"
-
-# 查看容器日志
-podman logs -f kernel-pg
-
-# 重启数据库
-podman restart kernel-pg
-
-# 进入容器操作
-podman exec -it kernel-pg psql -U kernel -d kernel_email
-
-# 备份数据库
-podman exec -it kernel-pg pg_dump -U kernel kernel_email > backup.sql
-
-# 恢复数据库
-podman exec -it kernel-pg psql -U kernel -d kernel_email < backup.sql
-
-# 停止并删除容器
-podman stop kernel-pg && podman rm kernel-pg
-```
-
-### 数据库重建
-
-```bash
-# 方法一：使用运维脚本重建（推荐）
-# 1. 清理所有表和索引
-python scripts/rebuild_db.py
-
-# 2. 重新初始化数据库（创建表、索引、触发器）
-python scripts/init_db_fresh.py
-
-# 方法二：使用 psql 重建（删除所有表并重建）
-podman exec -it kernel-pg psql -U kernel -d kernel_email -c "
-DROP TABLE IF EXISTS email_tags CASCADE;
-DROP TABLE IF EXISTS tags CASCADE;
-DROP TABLE IF EXISTS emails CASCADE;
-"
-
-# 然后重新初始化数据库
-python scripts/init_db_fresh.py
-
-# 方法三：使用 Python 脚本重建
-python -c "
-import asyncio
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
-
-async def rebuild():
-    engine = create_async_engine('postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email')
-    async with engine.begin() as conn:
-        await conn.execute(text('DROP TABLE IF EXISTS email_tags CASCADE'))
-        await conn.execute(text('DROP TABLE IF EXISTS tags CASCADE'))
-        await conn.execute(text('DROP TABLE IF EXISTS emails CASCADE'))
-    await engine.dispose()
-    print('Tables dropped')
-
-asyncio.run(rebuild())
-"
-
-# 方法四：删除手册数据库表
-python -c "
-import asyncio
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
-
-async def rebuild_manual():
-    engine = create_async_engine('postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email')
-    async with engine.begin() as conn:
-        await conn.execute(text('DROP TABLE IF EXISTS document_chunks CASCADE'))
-        await conn.execute(text('DROP TABLE IF EXISTS manuals CASCADE'))
-    await engine.dispose()
-    print('Manual tables dropped')
-
-asyncio.run(rebuild_manual())
-"
-
-# 方法五：重建全文索引（不删除数据）
-python scripts/index.py --rebuild-fulltext
-
-# 方法六：删除并重建索引（需要先删除数据）
-podman exec -it kernel-pg psql -U kernel -d kernel_email -c "
-DROP INDEX IF EXISTS idx_emails_search_vector;
-CREATE INDEX idx_emails_search_vector ON emails USING GIN (search_vector);
-"
-```
-
-### 环境变量配置
-
-在 `config/settings.yaml` 中配置数据库连接：
-
-```yaml
-storage:
-  # 邮件数据库
-  database_url: "postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email"
-  pool_size: 5
-
-# 手册数据库（可复用同一实例或单独配置）
-manual:
-  database_url: "postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email"
-  pool_size: 3
-```
-
-## 🌐 使用方式
-
-### Web 界面
-打开浏览器访问：http://localhost:8000/app/
-
-#### 搜索功能
-- 输入关键词搜索邮件（如 "shmem mount"）
-- 支持三种检索模式：Hybrid（混合）、Keyword（关键词）、Semantic（语义）
-- **Channel/channel 过滤**：在下拉框选择要检索的 channel（留空则搜索所有 channel）
-- 支持标签过滤、发件人筛选、日期范围过滤
-- 结果包含邮件主题、发件人、时间、相关性分数和高亮片段
-- 点击 "Thread" 查看完整邮件线程对话
-
-#### 问答功能  
-- 用自然语言提问（如 "Why was the shmem mount behavior changed?"）
-- 系统会检索相关邮件并生成带来源引用的回答
-- MVP 阶段使用检索摘要作为 fallback，可配置 OpenAI API 启用 LLM 回答
-
-#### 标签管理
-- 支持父子层级标签（树形结构）
-- 为邮件添加/移除标签，单封邮件最多 16 个
-- 点击标签查看关联的邮件列表
-
-#### 翻译功能
-- Google Translate 自动翻译 + 缓存
-- 双语对照展示（原文/译文左右分栏）
-- 引用行不翻译，PATCH diff 独立折叠展示
-- 支持人工校正翻译
-
-#### 批注管理
-- 在邮件线程中添加本地批注（支持 Markdown）
-- 独立批注管理页面（`/annotations`）：全量浏览 + 关键词搜索
-- 批注在线程树中排在子节点最前面，蓝色卡片区分
-- 支持嵌套回复、编辑、删除
-- JSON 导出/导入，满足 git 固化版本管理需求
-
-### API 接口
-### API 接口（邮件）
-- `GET /api/` - 健康检查
-- `GET /api/search?q=关键词` - 邮件搜索（支持标签/发件人/日期过滤）
-- `GET /api/ask?q=问题` - AI 邮件检索问答（检索计划、多 query、chunk/vector 召回、来源引用）
-- `GET /api/thread/{id}` - 获取邮件线程（含批注）
-- `GET /api/stats` - 数据库统计
-
-### API 接口（标签）
-- `POST /api/tags` - 创建标签
-- `GET /api/tags` - 获取标签树（树形结构）
-- `GET /api/tags/stats` - 获取标签统计
-- `GET /api/tags/{tag_name}/emails` - 获取标签下的邮件列表（分页）
-- `DELETE /api/tags/{tag_id}` - 删除标签（级联删除子标签）
-- `GET /api/email/{message_id}/tags` - 获取邮件标签
-- `POST /api/email/{message_id}/tags` - 添加标签（最多 16 个）
-- `DELETE /api/email/{message_id}/tags/{tag_name}` - 删除邮件标签
-
-### API 接口（翻译）
-- `POST /api/translate` - 单条翻译
-- `POST /api/translate/batch` - 批量翻译（最多 50 条）
-- `GET /api/translate/threads` - 获取已翻译线程列表
-- `GET /api/translate/health` - 翻译服务健康检查
-- `DELETE /api/translate/cache` - 清除翻译缓存
-- `PUT /api/translate/manual` - 保存人工翻译
-
-### API 接口（批注）
-- `GET /api/annotations?q=&page=&page_size=` - 批注列表 + 搜索
-- `POST /api/annotations` - 创建批注
-- `GET /api/annotations/{thread_id}` - 获取线程所有批注
-- `PUT /api/annotations/{annotation_id}` - 编辑批注
-- `DELETE /api/annotations/{annotation_id}` - 删除批注
-- `POST /api/annotations/export` - 导出批注（JSON）
-- `POST /api/annotations/import` - 导入批注（JSON）
-
-### API 接口（芯片手册）
-- `GET /api/manual/search?q=关键词` - 手册搜索
-- `GET /api/manual/ask?q=问题` - 手册问答
-- `GET /api/manual/stats` - 手册统计
-
-完整 API 文档：http://localhost:8000/docs
-
-## 📊 数据流程
-
-### 邮件数据流程
-1. **采集**：GitCollector 从 lore.kernel.org 拉取 git mirror
-2. **解析**：EmailParser 解析 RFC2822 格式，ThreadBuilder 重建对话关系
-3. **存储**：PostgresStorage 批量写入，基于 message_id 去重
-4. **索引**：PostgreSQL 触发器自动维护全文索引，支持增量更新
-5. **RAG 索引**：EmailChunkIndexer 生成邮件分片，EmailVectorIndexer 构建 pgvector 向量索引
-6. **检索**：HybridRetriever 保持邮件级搜索，AskAgent 使用 chunk 全文 + 向量召回 + thread 扩展
-7. **问答**：AskAgent 生成检索计划、执行多 query、基于证据回答并返回来源
-
-### 芯片手册数据流程
-1. **解析**：IntelSDMParser 从 PDF 提取目录和内容
-2. **分片**：ChunkPipeline L1→L2→L3 三层智能分片
-3. **存储**：DocumentStorage 批量写入文档分片
-
-## 🔧 配置说明
-
-所有配置集中在 `config/settings.yaml`：
+常用配置形态：
 
 ```yaml
 email_collector:
-  base_url: https://lore.kernel.org     # 远端数据源
-  data_dir: ~/workspace/kernel_email    # 远端仓库存储路径
-  # 本地多 channel 配置（采集本地已有数据）
+  base_url: https://lore.kernel.org
+  data_dir: ~/workspace/kernel_email
   local_channels:
-    - name: kvm        # channel 名称，对应 list_name
+    - name: kvm
       path: ~/workspace/kernel_email/kvm
     - name: linux-mm
       path: ~/workspace/kernel_email/linux-mm
@@ -447,13 +99,12 @@ email_collector:
       path: ~/workspace/kernel_email/lkml
 
 storage:
-  database_url: postgresql+asyncpg://... # 数据库连接
-  pool_size: 5                          # 连接池大小
-
-retriever:
-  default_mode: hybrid                  # 默认检索模式
-  keyword_page_size: 50                 # 关键词检索分页
-  semantic_top_k: 20                    # 语义检索 top-K
+  email:
+    database_url: postgresql+asyncpg://kernel:kernel@localhost:5432/kernel_email
+    pool_size: 5
+  manual:
+    database_url: postgresql+asyncpg://kernel:kernel@localhost:5432/chip_manual_kb
+    pool_size: 5
 
 indexer:
   vector:
@@ -462,74 +113,351 @@ indexer:
     model: text-embedding-v3
     dimension: 1536
     batch_size: 16
+    api_key: ""
 
 qa:
   email:
-    llm_provider: dashscope             # LLM 提供商
-    model: qwen-plus                    # 模型名称
+    llm_provider: dashscope
+    model: qwen-plus-2025-07-28
+    api_key: ""
 ```
 
-## 🧪 开发指南
+API key 优先读环境变量，再读配置文件：
 
-### 后端开发
-- 每层必须定义 `base.py` 抽象接口，实现类继承 Base 前缀
-- 所有数据库操作为异步（async/await）
-- 批量写入，避免逐条操作
-- 基于 message_id 保证幂等性
-
-### 前端开发
-- React + TypeScript + Tailwind CSS
-- 组件默认导出，Props 接口明确定义
-- API 调用封装在 `src/api/client.ts`
-- 开发服务器支持热重载
-
-### 测试
 ```bash
-# 后端测试
-pytest tests/ -v
-
-# 端到端验证
-python scripts/collect.py --list linux-mm --epoch 0 --limit 10
-python scripts/index.py --list linux-mm --epoch 0
+export DASHSCOPE_API_KEY=你的_key
 ```
 
-## 📈 性能特性
+### 5. 启动服务
 
-- **流式采集**：支持大仓库增量更新，避免内存溢出
-- **批量写入**：数据库操作 500 条/批次，提升吞吐量
-- **双引擎检索**：精确搜索全量返回，语义搜索 top-K 召回
-- **异步架构**：全流程异步处理，高并发支持
-- **索引优化**：PostgreSQL GIN 索引 + 复合索引，毫秒级响应
+```bash
+python scripts/serve.py
+```
 
-## 🔮 扩展计划
+访问：
 
-- **多数据源**：NNTP、RSS、mbox 文件导入支持
-- **向量检索**：接入 OpenAI/BGE embedding，启用语义模式
-- **LLM 集成**：配置 API key 启用真实 RAG 回答
-- **主题聚类**：BERTopic 主题发现和聚类
-- **可视化**：时间线视图、线程图谱、统计仪表板
-- **移动端**：响应式优化，PWA 支持
+- Web 应用：http://localhost:8000/app/
+- API 文档：http://localhost:8000/docs
 
-## 🤝 贡献指南
+开发前端：
 
-1. 遵循 PEP 8 和 TypeScript 严格模式
-2. 先更新 `base.py` 接口，再实现具体功能
-3. 添加完整类型注解和文档字符串
-4. 编写对应的单元测试
-5. 确保所有检查通过：
-   ```bash
-   ruff check src/
-   tsc --noEmit -p web/tsconfig.json
-   pytest tests/
-   ```
+```bash
+cd web
+npm run dev -- --host 127.0.0.1
+# http://127.0.0.1:5173/app/
+```
 
-## 📄 许可证
+## 邮件导入与索引
 
-MIT License - 详见 LICENSE 文件
+### 普通导入
 
-## 🙏 致谢
+```bash
+python scripts/index.py --list kvm --epoch 0
+python scripts/index.py --list linux-mm --all-epochs
+```
+
+`scripts/index.py` 会完成：
+
+1. 打开本地 lore git mirror；不存在时尝试远端 clone。
+2. 流式采集 commit 中的邮件。
+3. 批量解析 RFC2822 邮件。
+4. 批量写入 PostgreSQL，按 `message_id` 去重。
+5. 回填 `search_vector`。
+6. 重建全文 GIN 索引。
+
+### 大列表导入
+
+LKML 单个 epoch 可能有几十万封邮件。默认导入已经针对这种场景优化：
+
+- 流式采集/解析/入库，不一次性把整个 epoch 放进内存。
+- 默认 `--ingest-batch-size 5000`。
+- 默认 `--db-batch-size 2000`。
+- 导入期间临时关闭 `emails_search_vector_trigger`。
+- 导入期间临时 drop 全文 GIN 索引，最后统一回填并重建。
+- 普通导入不再默认构建 RAG chunk/vector。
+
+示例：
+
+```bash
+python scripts/index.py --list lkml --epoch 0
+```
+
+如果服务正在使用全文索引，不希望导入时临时 drop GIN 索引：
+
+```bash
+python scripts/index.py --list lkml --epoch 0 --keep-fulltext-index
+```
+
+如果想调大批次：
+
+```bash
+python scripts/index.py --list lkml --epoch 0 \
+  --ingest-batch-size 10000 \
+  --db-batch-size 5000
+```
+
+导入日志出现：
+
+```text
+Epoch 0 done: collected=... parsed=... saved_new=...
+```
+
+只表示采集/解析/入库完成。脚本随后还会回填 `search_vector` 并重建 GIN 索引，大库可能需要继续等待一段时间。
+
+### RAG 索引
+
+Ask Agent 可以使用邮件 chunk 和向量索引，但这些步骤较重，默认不随普通导入执行。
+
+```bash
+# 只构建邮件 chunk
+python scripts/index.py --build-chunks --list lkml
+
+# 构建 chunk embedding
+python scripts/index.py --build-vector --list lkml
+
+# chunk + vector 一起重建
+python scripts/index.py --rebuild-rag-index --list lkml
+```
+
+### 其他索引命令
+
+```bash
+# 重建全文索引
+python scripts/index.py --rebuild-fulltext
+
+# 查看统计
+python scripts/index.py --stats
+
+# 小样本测试
+python scripts/index.py --list kvm --epoch 0 --limit 100
+```
+
+## Ask Agent 与知识草稿
+
+### Ask 如何工作
+
+`GET /api/ask?q=...` 已不是旧的“关键词搜几封邮件再总结”。当前流程是：
+
+1. LLM 生成结构化检索计划。
+2. 执行多条 keyword query。
+3. 如果向量索引可用，执行 semantic query 的 pgvector 检索。
+4. 合并 chunk 命中，必要时回退邮件级搜索。
+5. 按 thread 聚合并拉取相关 thread 上下文。
+6. LLM 基于证据回答，引用 Message-ID。
+7. 返回 `search_plan`、`executed_queries`、`sources`、`threads`、`retrieval_stats`。
+
+### Ask 结果转草稿
+
+Ask 页面可以点击 `Create Drafts`，把一次回答转换成可编辑草稿：
+
+- Knowledge entity 草稿：稳定概念、机制、争议点、问题总结。
+- Annotation 草稿：把 Ask 结论和证据挂到 thread/message/knowledge entity。
+- Tag assignment 草稿：给已有标签生成候选绑定。
+
+保存前用户可以逐项编辑和取消勾选。系统不会在用户确认前写库。
+
+Tag 草稿有一个保守规则：**只默认绑定已有 tag，不自动创建缺失 tag**。原因是 tag 是全局 taxonomy，AI 生成的近义词、大小写变体或层级不明标签会污染导航和聚合。缺失 tag 会显示为 `missing`，默认不选中；后续可以单独设计 `Suggested new tags` 确认流程。
+
+## Web 功能
+
+- **Search**：邮件全文搜索，支持 channel、sender、date、patch、tag 过滤。
+- **Ask**：AI 检索代理问答，展示检索计划、执行 query、来源、相关 thread，并可生成知识草稿。
+- **Tags**：层级标签管理、tag target 浏览、邮件/知识实体绑定。
+- **Knowledge**：知识实体管理，支持实体说明、标签和批注。
+- **Annotations**：统一批注列表，支持邮件/代码/知识实体批注和发布审核。
+- **Translations**：线程翻译缓存、批量翻译任务、人工翻译修订。
+- **Kernel Code**：本地 kernel git 浏览、版本树、文件查看、符号定位、代码批注。
+- **Manual Search / Ask**：芯片手册搜索与问答。
+- **Users / Admin**：本地用户、审批、角色和批注发布审核。
+
+## 主要 API
+
+完整交互以 http://localhost:8000/docs 为准。常用接口：
+
+### 邮件与 Ask
+
+- `GET /api/search`：邮件搜索。
+- `GET /api/ask`：Agentic Ask。
+- `POST /api/ask/draft`：Ask 结果生成草稿，不落库。
+- `POST /api/ask/draft/apply`：保存用户确认后的草稿。
+- `GET /api/thread/{thread_id}`：邮件线程及批注。
+- `GET /api/stats`：邮件统计。
+
+### 标签
+
+- `GET /api/tags`：标签树。
+- `POST /api/tags`：创建标签。
+- `PATCH /api/tags/{tag_id}`：更新标签。
+- `DELETE /api/tags/{tag_id}`：删除标签。
+- `GET /api/tags/stats`：标签统计。
+- `POST /api/tag-assignments`：创建标签绑定。
+- `GET /api/tag-assignments`：查询标签绑定。
+- `GET /api/tag-targets/{target_type}/{target_ref}/tags`：目标的直接/继承标签。
+
+### Knowledge / Annotation
+
+- `GET /api/knowledge/entities`：知识实体列表。
+- `POST /api/knowledge/entities`：创建知识实体。
+- `GET /api/knowledge/entities/{entity_id}`：读取知识实体。
+- `PATCH /api/knowledge/entities/{entity_id}`：更新知识实体。
+- `GET /api/annotations`：批注列表。
+- `POST /api/annotations`：创建批注。
+- `PUT /api/annotations/{annotation_id}`：更新批注正文。
+- `DELETE /api/annotations/{annotation_id}`：删除批注。
+- `POST /api/annotations/{annotation_id}/publish-request`：申请公开。
+- `POST /api/admin/annotations/{annotation_id}/approve-publication`：管理员批准公开。
+
+### 翻译
+
+- `POST /api/translate`：单条翻译。
+- `POST /api/translate/batch`：批量翻译。
+- `POST /api/translate/thread`：创建线程翻译任务。
+- `GET /api/translate/jobs`：翻译任务列表。
+- `GET /api/translate/threads`：已翻译线程。
+- `PUT /api/translate/manual`：保存人工翻译。
+- `DELETE /api/translate/cache`：清除缓存。
+
+### 手册
+
+- `GET /api/manual/search`：手册全文搜索。
+- `GET /api/manual/ask`：手册问答。
+- `GET /api/manual/stats`：手册统计。
+
+### Kernel Code
+
+- `GET /api/kernel/versions`：可用 kernel 版本。
+- `GET /api/kernel/tree/{version}`：目录树。
+- `GET /api/kernel/file/{version}/{path}`：文件内容。
+- `GET /api/kernel/symbol/definition`：符号定义。
+- `GET /api/kernel/symbol/resolve`：符号解析。
+- `GET /api/kernel/annotations`：代码批注列表。
+- `POST /api/kernel/annotations`：创建代码批注。
+
+### Auth / Admin
+
+- `POST /api/auth/register`：注册。
+- `POST /api/auth/login`：登录。
+- `POST /api/auth/logout`：登出。
+- `GET /api/me`：当前用户。
+- `GET /api/admin/users`：用户管理。
+- `POST /api/admin/users/{user_id}/approve`：审批用户。
+
+## 手册导入
+
+```bash
+python scripts/ingest_manual.py --pdf ./manuals/intel_sdm/sdm.pdf --store
+```
+
+手册使用 `storage.manual.database_url`，和邮件库可以分开。
+
+## 内核源码与符号索引
+
+在 `config/settings.yaml` 里配置：
+
+```yaml
+kernel_source:
+  repo_path: /path/to/linux-stable/.git
+  history_repo_path: /path/to/history/.git
+  graft_enabled: true
+  version_filter: release
+```
+
+符号索引：
+
+```bash
+python scripts/index_symbols.py --help
+```
+
+## 数据库维护
+
+### 重建数据库
+
+会删除并重建邮件库和手册库相关表：
+
+```bash
+python scripts/rebuild_db.py
+```
+
+注意：这是破坏性操作，会删除数据。
+
+### 查看 PostgreSQL 状态
+
+```sql
+SELECT list_name, COUNT(*) FROM emails GROUP BY list_name;
+
+SELECT COUNT(*) FROM emails WHERE search_vector IS NOT NULL;
+
+SELECT pid, state, query
+FROM pg_stat_activity
+WHERE datname = 'kernel_email'
+ORDER BY query_start;
+
+SELECT * FROM pg_stat_progress_create_index;
+```
+
+### 备份与恢复
+
+```bash
+podman exec -it kernel-pg pg_dump -U kernel kernel_email > kernel_email.sql
+podman exec -i kernel-pg psql -U kernel -d kernel_email < kernel_email.sql
+```
+
+## 开发与验证
+
+```bash
+# Python 语法检查
+python -m py_compile src/api/server.py
+
+# 前端构建
+cd web
+npm run build
+
+# 常用 smoke test
+python scripts/index.py --help
+python scripts/index.py --list kvm --epoch 0 --limit 100
+```
+
+当前仓库没有完整测试目录时，`pytest tests/` 可能不可用；以实际代码状态为准。
+
+## 常见问题
+
+### 导入日志显示 `Epoch done` 后为什么没有退出？
+
+`Epoch done` 表示采集、解析、入库完成。脚本还要回填 `search_vector` 并重建 GIN 索引。大列表如 LKML 可能还需要等待 PostgreSQL 完成索引创建。
+
+### Ask 没有向量召回怎么办？
+
+先确认 RAG 索引已构建：
+
+```bash
+python scripts/index.py --build-chunks --list kvm
+python scripts/index.py --build-vector --list kvm
+```
+
+没有向量时 Ask 仍会使用 chunk 全文检索和邮件级 fallback。
+
+### 为什么 Ask 的缺失 tag 草稿默认不保存？
+
+tag 是全局分类体系。AI 可以建议新标签，但自动创建容易造成重复、层级不清或命名不一致。第一版只自动绑定已有 tag；缺失 tag 需要人工整理后再绑定。
+
+### API key 应该放哪里？
+
+推荐放环境变量：
+
+```bash
+export DASHSCOPE_API_KEY=...
+```
+
+`settings.yaml` 的 `api_key` 可作为本地开发兜底。当前用户级自定义 API key 还没有实现。
+
+## 相关计划文档
+
+- [plan-ask-agent.md](plan-ask-agent.md)：Ask Agent、RAG 索引、Ask 转知识草稿设计。
+- `plan-30000.md` / `plan-31000.md`：历史设计计划。
+
+## 致谢
 
 - Linux 内核邮件列表维护者
-- lore.kernel.org 项目
-- PostgreSQL 和 pgvector 社区
-- React 和 Tailwind CSS 生态系统
+- lore.kernel.org
+- PostgreSQL / pgvector
+- FastAPI、React、Tailwind CSS
