@@ -267,6 +267,7 @@ export default function KernelCodePage() {
     return s;
   });
   const [error, setError] = useState<string | null>(null);
+  const [scriptCopied, setScriptCopied] = useState(false);
 
   // Load versions
   useEffect(() => {
@@ -335,6 +336,20 @@ export default function KernelCodePage() {
       return new Set([line]);
     });
     setSearchParams({ v: selectedVersion, path: currentPath, line: String(line) }, { replace: true });
+  };
+
+  const handleCopyScript = async () => {
+    try {
+      const resp = await fetch('/app/userscripts/elixir-annotate.user.js');
+      let script = await resp.text();
+      script = script.replace(/__API_BASE__/g, window.location.origin);
+      script = script.replace(/__SESSION_COOKIE__/g, document.cookie);
+      await navigator.clipboard.writeText(script);
+      setScriptCopied(true);
+      setTimeout(() => setScriptCopied(false), 2000);
+    } catch (e) {
+      alert('复制失败，请手动从 /app/userscripts/elixir-annotate.user.js 下载');
+    }
   };
 
   const handleAnnotationCreated = async () => {
@@ -407,6 +422,16 @@ export default function KernelCodePage() {
               在 elixir 打开 ↗
             </a>
           )}
+          <button
+            onClick={handleCopyScript}
+            className={`ml-auto px-3 py-1 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap ${
+              scriptCopied
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700'
+            }`}
+          >
+            {scriptCopied ? '已复制 ✓' : '复制用户脚本 📋'}
+          </button>
         </div>
 
         {/* Content */}

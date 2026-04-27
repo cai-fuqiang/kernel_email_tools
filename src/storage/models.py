@@ -391,6 +391,15 @@ class KnowledgeEntityORM(Base):
 # Pydantic 数据校验模型
 # ============================================================
 
+class TagBundle(BaseModel):
+    """标签包 — direct + aggregated。"""
+
+    direct_tags: list["TagRead"] = Field(default_factory=list)
+    aggregated_tags: list["TagRead"] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
 class TagCreate(BaseModel):
     """创建标签时的输入模型。"""
 
