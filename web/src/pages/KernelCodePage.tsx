@@ -341,10 +341,24 @@ export default function KernelCodePage() {
   const handleCopyScript = async () => {
     try {
       const resp = await fetch('/app/userscripts/elixir-annotate.user.js');
+      if (!resp.ok) throw new Error('fetch failed');
       let script = await resp.text();
       script = script.replace(/__API_BASE__/g, window.location.origin);
       script = script.replace(/__SESSION_COOKIE__/g, document.cookie);
-      await navigator.clipboard.writeText(script);
+
+      // Try Clipboard API first; fallback to execCommand for non-HTTPS
+      let copied = false;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try { await navigator.clipboard.writeText(script); copied = true; } catch { /* fallback */ }
+      }
+      if (!copied) {
+        const ta = document.createElement('textarea');
+        ta.value = script;
+        ta.style.position = 'fixed'; ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select(); document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
       setScriptCopied(true);
       setTimeout(() => setScriptCopied(false), 2000);
     } catch (e) {
