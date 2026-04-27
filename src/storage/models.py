@@ -351,42 +351,6 @@ class AnnotationORM(Base):
         return f"<AnnotationORM id={self.id} annotation_id={self.annotation_id!r} type={self.annotation_type}>"
 
 
-class KernelSymbolORM(Base):
-    """版本化内核符号索引。"""
-
-    __tablename__ = "kernel_symbols"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    version: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    file_path: Mapped[str] = mapped_column(String(1024), nullable=False, index=True)
-    symbol: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
-    kind: Mapped[str] = mapped_column(String(64), nullable=False, default="unknown")
-    line: Mapped[int] = mapped_column(Integer, nullable=False)
-    column: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    end_line: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    end_column: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    signature: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    scope: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
-    language: Mapped[str] = mapped_column(String(32), nullable=False, default="c")
-    meta: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
-
-    __table_args__ = (
-        UniqueConstraint(
-            "version", "file_path", "symbol", "kind", "line", "column",
-            name="uq_kernel_symbols_location",
-        ),
-        Index("ix_kernel_symbols_lookup", "version", "symbol"),
-        Index("ix_kernel_symbols_file", "version", "file_path"),
-        Index("ix_kernel_symbols_file_line", "version", "file_path", "line"),
-    )
-
-    def __repr__(self) -> str:
-        return (
-            f"<KernelSymbolORM version={self.version!r} symbol={self.symbol!r} "
-            f"file={self.file_path!r} line={self.line}>"
-        )
-
-
 class KnowledgeEntityORM(Base):
     """统一知识实体。"""
 
@@ -709,24 +673,6 @@ class CurrentUserRead(BaseModel):
     status: str
     auth_source: str
     capabilities: list[str] = Field(default_factory=list)
-
-    model_config = {"from_attributes": True}
-
-
-class KernelSymbolRead(BaseModel):
-    id: int
-    version: str
-    file_path: str
-    symbol: str
-    kind: str
-    line: int
-    column: int
-    end_line: Optional[int] = None
-    end_column: Optional[int] = None
-    signature: Optional[str] = None
-    scope: Optional[str] = None
-    language: str = "c"
-    meta: dict = Field(default_factory=dict)
 
     model_config = {"from_attributes": True}
 

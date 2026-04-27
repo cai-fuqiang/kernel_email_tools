@@ -1,1053 +1,254 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import hljs from 'highlight.js';
-import 'highlight.js/styles/github.css';
-import PreviewModal from '../components/PreviewModal';
-import EmailTagEditor from '../components/EmailTagEditor';
 import {
-  approveAnnotationPublication,
-  getKernelVersions,
-  getKernelTree,
   getKernelFile,
-  getKernelSymbolDefinition,
-  getCodeAnnotations,
+  getKernelVersions,
   createCodeAnnotation,
-  updateCodeAnnotation,
   deleteCodeAnnotation,
-  rejectAnnotationPublication,
+  getCodeAnnotations,
+} from '../api/client';
+import {
   requestAnnotationPublication,
   withdrawAnnotationPublication,
+  approveAnnotationPublication,
+  rejectAnnotationPublication,
 } from '../api/client';
-import type {
-  KernelVersionInfo,
-  KernelTreeEntry,
-  KernelFileResponse,
-  CodeAnnotation,
-  KernelSymbol,
-} from '../api/types';
+import type { KernelVersionInfo, KernelFileResponse, CodeAnnotation } from '../api/types';
+import EmailTagEditor from '../components/EmailTagEditor';
 import { useAuth } from '../auth';
 
 // ============================================================
-// 子组件：版本选择器
+// Helpers
 // ============================================================
-function VersionSelector({
-  versions,
-  selected,
-  onSelect,
-  loading,
-}: {
-  versions: KernelVersionInfo[];
-  selected: string;
-  onSelect: (tag: string) => void;
-  loading: boolean;
-}) {
-  const [search, setSearch] = useState('');
-  const [showRc, setShowRc] = useState(false);
+function isValidFilePath(path: string): boolean {
+  return path.trim().length > 0;
+}
 
-  const filtered = versions.filter((v) => {
-    if (!showRc && !v.is_release) return false;
-    if (search && !v.tag.includes(search)) return false;
-    return true;
-  });
-
-  const latest = filtered.filter((v) => v.major >= 6);
-  const lts = filtered.filter((v) => v.major >= 4 && v.major < 6);
-  const history = filtered.filter((v) => v.major < 4);
-
-  return (
-    <div className="space-y-2">
-      <input
-        type="text"
-        placeholder="Search version..."
-        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
-      <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={showRc}
-          onChange={(e) => setShowRc(e.target.checked)}
-          className="rounded text-indigo-500"
-        />
-        Show RC versions
-      </label>
-      {loading && <p className="text-xs text-gray-400">Loading versions...</p>}
-      <div className="max-h-64 overflow-y-auto space-y-2">
-        {[
-          { label: 'Latest', items: latest },
-          { label: 'LTS', items: lts },
-          { label: 'History', items: history },
-        ].map(
-          (group) =>
-            group.items.length > 0 && (
-              <div key={group.label}>
-                <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-1 mb-1">
-                  {group.label}
-                </div>
-                {group.items.map((v) => (
-                  <button
-                    key={v.tag}
-                    onClick={() => onSelect(v.tag)}
-                    className={`block w-full text-left px-2 py-1 text-xs rounded transition-colors ${
-                      v.tag === selected
-                        ? 'bg-indigo-100 text-indigo-700 font-medium'
-                        : 'text-gray-700 hover:bg-gray-100'
-                    }`}
-                  >
-                    {v.tag}
-                  </button>
-                ))}
-              </div>
-            )
-        )}
-      </div>
-    </div>
-  );
+function elixirUrl(version: string, filePath: string, line?: number): string {
+  let url = `https://elixir.bootlin.com/linux/${version}/source/${filePath}`;
+  if (line) url += `#L${line}`;
+  return url;
 }
 
 // ============================================================
-// 子组件：文件树
-// ============================================================
-interface TreeNode {
-  entry: KernelTreeEntry;
-  children?: TreeNode[];
-  expanded?: boolean;
-  loading?: boolean;
-}
-
-function FileTreeItem({
-  node,
-  depth,
-  onToggle,
-  onFileClick,
-  currentPath,
-}: {
-  node: TreeNode;
-  depth: number;
-  onToggle: (path: string) => void;
-  onFileClick: (path: string) => void;
-  currentPath: string;
-}) {
-  const isDir = node.entry.type === 'dir';
-  const isActive = node.entry.path === currentPath;
-
-  return (
-    <div>
-      <button
-        onClick={() => (isDir ? onToggle(node.entry.path) : onFileClick(node.entry.path))}
-        className={`flex items-center w-full text-left px-2 py-0.5 text-xs hover:bg-gray-100 rounded transition-colors ${
-          isActive ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-700'
-        }`}
-        style={{ paddingLeft: `${depth * 16 + 8}px` }}
-      >
-        {isDir ? (
-          <span className="mr-1 text-gray-400 w-3 text-center">
-            {node.expanded ? '▼' : '▶'}
-          </span>
-        ) : (
-          <span className="mr-1 w-3" />
-        )}
-        <span className={isDir ? 'text-blue-600' : ''}>
-          {isDir ? '📁' : '📄'} {node.entry.name}
-        </span>
-        {!isDir && node.entry.size > 0 && (
-          <span className="ml-auto text-[10px] text-gray-400">
-            {node.entry.size > 1024
-              ? `${(node.entry.size / 1024).toFixed(1)}K`
-              : `${node.entry.size}B`}
-          </span>
-        )}
-      </button>
-      {isDir && node.expanded && node.children && (
-        <div>
-          {node.loading ? (
-            <div
-              className="text-[10px] text-gray-400 py-1"
-              style={{ paddingLeft: `${(depth + 1) * 16 + 8}px` }}
-            >
-              Loading...
-            </div>
-          ) : (
-            node.children.map((child) => (
-              <FileTreeItem
-                key={child.entry.path}
-                node={child}
-                depth={depth + 1}
-                onToggle={onToggle}
-                onFileClick={onFileClick}
-                currentPath={currentPath}
-              />
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================================
-// 子组件：代码视图
-// ============================================================
-function CodeView({
-  file,
-  annotations,
-  highlightLine,
-  onLineClick,
-  onLineRangeSelect,
-  onSymbolSelect,
-  selectedLines,
-  selectedRange,
-}: {
-  file: KernelFileResponse | null;
-  annotations: CodeAnnotation[];
-  highlightLine: number | null;
-  onLineClick: (line: number, event?: MouseEvent) => void;
-  onLineRangeSelect: (start: number, end: number) => void;
-  onSymbolSelect: (symbol: string | null) => void;
-  selectedLines: Set<number>;
-  selectedRange: [number, number] | null;
-}) {
-  const codeRef = useRef<HTMLPreElement>(null);
-  const [selStart, setSelStart] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (highlightLine && codeRef.current) {
-      const lineEl = codeRef.current.querySelector(`[data-line="${highlightLine}"]`);
-      if (lineEl) {
-        lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }
-  }, [highlightLine, file]);
-
-  // 当 selectedLines 变化且只有一行时，自动滚动到该行
-  useEffect(() => {
-    if (selectedLines.size === 1) {
-      const lineNum = Array.from(selectedLines)[0];
-      const scrollToLine = () => {
-        const lineEl = document.querySelector(`[data-line="${lineNum}"]`);
-        if (lineEl) {
-          lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        } else {
-          // 重试几次直到元素出现
-          setTimeout(scrollToLine, 50);
-        }
-      };
-      scrollToLine();
-    }
-  }, [selectedLines]);
-
-  if (!file) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-gray-400">
-        <div className="text-center">
-          <div className="text-4xl mb-4">📂</div>
-          <p className="text-sm">Select a file from the tree to view its content</p>
-        </div>
-      </div>
-    );
-  }
-
-  const annotatedLines = new Set<number>();
-  annotations.forEach((a) => {
-    for (let i = a.start_line; i <= a.end_line; i++) {
-      annotatedLines.add(i);
-    }
-  });
-
-  const lines = file.content.split('\n');
-
-  const handleMouseDown = (lineNum: number, e: React.MouseEvent) => {
-    e.preventDefault();
-    setSelStart(lineNum);
-  };
-
-  const handleMouseUp = (lineNum: number, e: React.MouseEvent) => {
-    e.preventDefault();
-    if (selStart !== null) {
-      const start = Math.min(selStart, lineNum);
-      const end = Math.max(selStart, lineNum);
-      if (start === end) {
-        onLineClick(start, e.nativeEvent as MouseEvent);
-      } else {
-        onLineRangeSelect(start, end);
-      }
-      setSelStart(null);
-    }
-  };
-
-  const handleCodeMouseUp = () => {
-    const selection = window.getSelection();
-    const selectedText = selection?.toString().trim() || '';
-    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(selectedText)) {
-      onSymbolSelect(selectedText);
-      return;
-    }
-    onSymbolSelect(null);
-  };
-
-  // 计算高亮行
-  const getIsHighlighted = (lineNum: number): boolean => {
-    if (selectedRange && lineNum >= selectedRange[0] && lineNum <= selectedRange[1]) {
-      return true;
-    }
-    return selectedLines.has(lineNum);
-  };
-
-  // 根据文件扩展名获取语言
-  const getLanguage = (path: string): string => {
-    const ext = path.split('.').pop()?.toLowerCase() || '';
-    const langMap: Record<string, string> = {
-      c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp',
-      py: 'python', rs: 'rust', go: 'go', js: 'javascript',
-      ts: 'typescript', sh: 'bash', makefile: 'makefile',
-      kt: 'kotlin', swift: 'swift', rb: 'ruby', yml: 'yaml',
-      yaml: 'yaml', json: 'json', xml: 'xml', html: 'html',
-      css: 'css', md: 'markdown',
-    };
-    return langMap[ext] || 'plaintext';
-  };
-
-  // 对代码行进行语法高亮
-  const highlightCode = useCallback((code: string, lang: string) => {
-    try {
-      if (hljs.getLanguage(lang)) {
-        return hljs.highlight(code, { language: lang }).value;
-      }
-      return hljs.highlightAuto(code).value;
-    } catch {
-      return code;
-    }
-  }, []);
-
-  const language = getLanguage(file.path);
-  const highlightedLines = lines.map(line => highlightCode(line, language));
-
-  return (
-    <div className="flex-1 overflow-auto bg-white">
-      <div className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-4 py-2 flex items-center gap-2">
-        <span className="text-xs font-mono text-gray-600">{file.path}</span>
-        <span className="text-[10px] text-gray-400">
-          {file.line_count} lines | {file.size > 1024 ? `${(file.size / 1024).toFixed(1)} KB` : `${file.size} B`}
-        </span>
-        {file.truncated && (
-          <span className="text-[10px] text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded">
-            truncated
-          </span>
-        )}
-        <span className="ml-auto text-[10px] text-gray-400">
-          Click: select | Ctrl+Click: multi-select | Esc: clear
-        </span>
-      </div>
-      <pre ref={codeRef} className="text-xs font-mono leading-5 select-text">
-        <table className="w-full border-collapse">
-          <tbody>
-            {lines.map((_, idx) => {
-              const lineNum = idx + 1;
-              const isHighlighted = getIsHighlighted(lineNum);
-              const isAnnotated = annotatedLines.has(lineNum);
-              return (
-                <tr
-                  key={lineNum}
-                  data-line={lineNum}
-                  className={`${
-                    isHighlighted
-                      ? 'bg-yellow-100'
-                      : isAnnotated
-                      ? 'bg-blue-50'
-                      : 'hover:bg-gray-50'
-                  }`}
-                >
-                  <td
-                    className={`w-12 text-right pr-3 select-none cursor-pointer border-r border-gray-200 sticky left-0 bg-inherit transition-colors ${
-                      isHighlighted
-                        ? 'text-indigo-600 bg-yellow-50 font-bold'
-                        : isAnnotated
-                        ? 'text-blue-600 bg-blue-50'
-                        : 'text-gray-400 hover:text-indigo-400 hover:bg-gray-100'
-                    }`}
-                    onMouseDown={(e) => handleMouseDown(lineNum, e)}
-                    onMouseUp={(e) => handleMouseUp(lineNum, e)}
-                    title={isAnnotated ? 'Click to view/edit annotation' : 'Click to add annotation'}
-                  >
-                    {lineNum}
-                    {isAnnotated && (
-                      <span className="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full ml-1" />
-                    )}
-                  </td>
-                  <td className="pl-4 whitespace-pre" onMouseUp={handleCodeMouseUp}>
-                    <code dangerouslySetInnerHTML={{ __html: highlightedLines[idx] }} />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </pre>
-    </div>
-  );
-}
-
-// ============================================================
-// 子组件：弹窗编辑标注
-// ============================================================
-function AnnotationModal({
-  isOpen,
-  onClose,
-  mode,
-  initialBody,
-  lineInfo,
-  onSave,
-  saving,
-  initialVisibility = 'public',
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  mode: 'create' | 'edit';
-  initialBody: string;
-  lineInfo: string;
-  onSave: (body: string, visibility: 'public' | 'private') => void;
-  saving: boolean;
-  initialVisibility?: 'public' | 'private';
-}) {
-  const { isAdmin } = useAuth();
-  const [body, setBody] = useState(initialBody);
-  const [visibility, setVisibility] = useState<'public' | 'private'>(isAdmin ? initialVisibility : 'private');
-
-  useEffect(() => {
-    setBody(initialBody);
-  }, [initialBody]);
-
-  useEffect(() => {
-    setVisibility(isAdmin ? initialVisibility : 'private');
-  }, [initialVisibility, isAdmin]);
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
-        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-700">
-            {mode === 'create' ? 'Add Annotation' : 'Edit Annotation'}
-          </h3>
-          <span className="text-xs text-gray-400">{lineInfo}</span>
-        </div>
-        <div className="flex-1 overflow-hidden flex flex-col p-4 gap-3">
-          <div className="flex-1 min-h-0">
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Write annotation (Markdown supported)..."
-              className="w-full h-full min-h-[200px] px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono"
-              autoFocus
-            />
-          </div>
-          {mode === 'create' && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-gray-500">Visibility</span>
-              <select
-                value={visibility}
-                onChange={(e) => setVisibility(e.target.value as 'public' | 'private')}
-                className="rounded-lg border border-gray-300 px-2 py-1 text-sm"
-              >
-                {isAdmin && <option value="public">Public</option>}
-                <option value="private">Private</option>
-              </select>
-            </div>
-          )}
-          <div className="flex gap-2">
-            <button
-              onClick={() => onSave(body, visibility)}
-              disabled={saving || !body.trim()}
-              className="px-4 py-2 text-sm font-medium text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 disabled:opacity-50"
-            >
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
-// 子组件：注释面板
+// Annotation Panel
 // ============================================================
 function AnnotationPanel({
   annotations,
   selectedLines,
-  selectedRange,
   version,
   filePath,
   onAnnotationCreated,
-  onAnnotationDeleted,
-  onGoToLine,
 }: {
   annotations: CodeAnnotation[];
   selectedLines: Set<number>;
-  selectedRange: [number, number] | null;
   version: string;
   filePath: string;
   onAnnotationCreated: () => void;
-  onAnnotationDeleted: () => void;
-  onGoToLine?: (line: number) => void;
 }) {
   const { canWrite, currentUser, isAdmin } = useAuth();
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [editingAnnotation, setEditingAnnotation] = useState<CodeAnnotation | null>(null);
+  const [body, setBody] = useState('');
   const [saving, setSaving] = useState(false);
-  const [replyToId, setReplyToId] = useState<string | null>(null);
-  // 展开/折叠状态
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  // 计算每个标注的回复数量
-  const replyCounts = annotations.reduce((acc, a) => {
-    if (a.in_reply_to) {
-      acc[a.in_reply_to] = (acc[a.in_reply_to] || 0) + 1;
-    }
-    return acc;
-  }, {} as Record<string, number>);
-
-  // 获取顶级标注（没有 in_reply_to）
   const rootAnnotations = annotations.filter(a => !a.in_reply_to);
-  const canManageAnnotation = (annotation: CodeAnnotation) =>
-    !!currentUser &&
-    (isAdmin ||
-      (canWrite &&
-        annotation.visibility === 'private' &&
-        annotation.publish_status !== 'pending' &&
-        annotation.author_user_id === currentUser.user_id));
-
-  // 切换展开/折叠
-  const toggleExpand = (id: string) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
+  const replyCounts = useMemo(() => {
+    const acc: Record<string, number> = {};
+    annotations.forEach(a => {
+      if (a.in_reply_to) acc[a.in_reply_to] = (acc[a.in_reply_to] || 0) + 1;
     });
-  };
-
-  // 默认展开所有顶级标注
-  useEffect(() => {
-    const newExpanded = new Set<string>();
-    rootAnnotations.forEach(a => newExpanded.add(a.annotation_id));
-    setExpandedIds(newExpanded);
+    return acc;
   }, [annotations]);
 
-  const handleCreate = async (body: string, visibility: 'public' | 'private') => {
+  const canManage = (a: CodeAnnotation) =>
+    !!currentUser && (isAdmin || (a.visibility === 'private' && a.publish_status !== 'pending' && a.author_user_id === currentUser.user_id));
+
+  const toggleExpand = (id: string) =>
+    setExpandedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+
+  useEffect(() => {
+    setExpandedIds(new Set(rootAnnotations.map(a => a.annotation_id)));
+  }, [annotations]);
+
+  const handleCreate = async () => {
+    if (!body.trim() || selectedLines.size === 0) return;
     setSaving(true);
     try {
-      let start: number, end: number;
-      if (selectedRange) {
-        start = selectedRange[0];
-        end = selectedRange[1];
-      } else if (selectedLines.size > 0) {
-        // 使用第一个选中的行作为范围起点
-        const sorted = Array.from(selectedLines).sort((a, b) => a - b);
-        start = sorted[0];
-        end = sorted[sorted.length - 1];
-      } else {
-        start = 1;
-        end = 1;
-      }
+      const sorted = Array.from(selectedLines).sort((a, b) => a - b);
       await createCodeAnnotation({
-        version,
-        file_path: filePath,
-        start_line: start,
-        end_line: end,
-        body: body.trim(),
-        visibility,
-        in_reply_to: replyToId || undefined,
+        version, file_path: filePath,
+        start_line: sorted[0], end_line: sorted[sorted.length - 1],
+        body: body.trim(), visibility: isAdmin ? 'public' : 'private',
       });
-      setShowCreateModal(false);
-      setReplyToId(null);
+      setBody('');
       onAnnotationCreated();
     } catch (e: unknown) {
-      alert(`Failed to create annotation: ${e instanceof Error ? e.message : e}`);
-    } finally {
-      setSaving(false);
-    }
+      alert(`创建失败: ${e instanceof Error ? e.message : e}`);
+    } finally { setSaving(false); }
   };
 
-  const handleUpdate = async (body: string) => {
-    if (!editingAnnotation) return;
-    setSaving(true);
-    try {
-      await updateCodeAnnotation(editingAnnotation.annotation_id, body.trim());
-      setEditingAnnotation(null);
-      onAnnotationCreated();
-    } catch (e: unknown) {
-      alert(`Failed to update: ${e instanceof Error ? e.message : e}`);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const lineInfo = selectedLines.size > 0
+    ? `L${Array.from(selectedLines).sort((a, b) => a - b).join(', ')}` : '';
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this annotation?')) return;
-    try {
-      await deleteCodeAnnotation(id);
-      onAnnotationDeleted();
-    } catch (e: unknown) {
-      alert(`Failed to delete: ${e instanceof Error ? e.message : e}`);
-    }
-  };
-
-  const lineInfo = selectedRange
-    ? `Lines ${selectedRange[0]}-${selectedRange[1]}`
-    : selectedLines.size > 0
-    ? `Lines ${Array.from(selectedLines).sort((a, b) => a - b).join(', ')}`
-    : '';
-
-  const relevantAnnotations = annotations.filter((a) => {
-    // 回复标注始终显示
+  const relevant = annotations.filter(a => {
     if (a.in_reply_to) return true;
-    
-    if (selectedRange) {
-      return a.start_line <= selectedRange[1] && a.end_line >= selectedRange[0];
-    }
-    if (selectedLines.size > 0) {
-      // 检查标注是否与任何选中的行重叠
-      return Array.from(selectedLines).some(
-        (line) => a.start_line <= line && a.end_line >= line
-      );
-    }
-    return true;
+    if (selectedLines.size === 0) return true;
+    return Array.from(selectedLines).some(l => a.start_line <= l && a.end_line >= l);
   });
 
-  return (
-    <>
-      <div className="w-80 border-l border-gray-200 bg-gray-50 flex flex-col overflow-hidden">
-        <div className="p-3 border-b border-gray-200 bg-white flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-700">Annotations</h3>
-            {lineInfo && <p className="text-[10px] text-gray-400 mt-0.5">{lineInfo}</p>}
-          </div>
-          {canWrite && (selectedLines.size > 0 || selectedRange) && (
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="px-3 py-1.5 text-xs font-medium text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 flex items-center gap-1"
-            >
-              <span>+</span> Add
-            </button>
-          )}
-        </div>
+  const PublishButton = ({ a }: { a: CodeAnnotation }) => {
+    if (isAdmin && a.publish_status === 'pending') return (
+      <span className="flex gap-1">
+        <button onClick={async () => {
+          const c = window.prompt('审核备注（可选）', '') || '';
+          await approveAnnotationPublication(a.annotation_id, c);
+          onAnnotationCreated();
+        }} className="text-[10px] text-emerald-600">通过</button>
+        <button onClick={async () => {
+          const c = window.prompt('驳回原因（可选）', '') || '';
+          await rejectAnnotationPublication(a.annotation_id, c);
+          onAnnotationCreated();
+        }} className="text-[10px] text-rose-600">驳回</button>
+      </span>
+    );
+    if (!isAdmin && a.visibility === 'private' && a.author_user_id === currentUser?.user_id && a.publish_status !== 'pending')
+      return <button onClick={async () => { await requestAnnotationPublication(a.annotation_id); onAnnotationCreated(); }} className="text-[10px] text-amber-600">申请公开</button>;
+    if (a.publish_status === 'pending' && (isAdmin || a.author_user_id === currentUser?.user_id))
+      return <button onClick={async () => { await withdrawAnnotationPublication(a.annotation_id); onAnnotationCreated(); }} className="text-[10px] text-slate-500">撤回</button>;
+    return null;
+  };
 
-        {(selectedLines.size > 0 || selectedRange) && (
-          <div className="px-3 py-2 bg-white border-b border-gray-100">
-            <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">Range Tags</div>
+  return (
+    <div className="w-80 border-l border-gray-200 bg-gray-50 flex flex-col overflow-hidden">
+      <div className="p-3 border-b border-gray-200 bg-white flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-700">注解</h3>
+        {canWrite && selectedLines.size > 0 && (
+          <span className="text-[10px] text-gray-400">{lineInfo}</span>
+        )}
+      </div>
+
+      {canWrite && selectedLines.size > 0 && (
+        <div className="px-3 py-2 bg-white border-b border-gray-100">
+          <textarea
+            value={body}
+            onChange={e => setBody(e.target.value)}
+            placeholder="注解内容（Markdown）..."
+            className="w-full min-h-[60px] text-xs border border-gray-200 rounded-lg p-2 outline-none focus:border-indigo-400 resize-y"
+          />
+          <div className="flex gap-2 mt-2">
+            <button onClick={handleCreate} disabled={!body.trim() || saving}
+              className="px-3 py-1 text-xs font-medium text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 disabled:opacity-50">
+              {saving ? '保存中...' : '新增注解'}
+            </button>
+          </div>
+          <div className="mt-2">
             <EmailTagEditor
               targetType="kernel_line_range"
               targetRef={`${version}:${filePath}`}
-              anchor={{
-                start_line: selectedRange ? selectedRange[0] : Math.min(...Array.from(selectedLines)),
-                end_line: selectedRange ? selectedRange[1] : Math.max(...Array.from(selectedLines)),
-              }}
+              anchor={{ start_line: Math.min(...selectedLines), end_line: Math.max(...selectedLines) }}
             />
           </div>
-        )}
+        </div>
+      )}
 
-        <div className="flex-1 overflow-y-auto p-2">
-          {relevantAnnotations.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-8">
-              {selectedLines.size > 0 || selectedRange
-                ? 'No annotations for this selection'
-                : 'Click a line number to add annotation'}
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {rootAnnotations.map((rootAnn) => {
-                const isExpanded = expandedIds.has(rootAnn.annotation_id);
-                const replyCount = replyCounts[rootAnn.annotation_id] || 0;
-                const replies = annotations.filter(a => a.in_reply_to === rootAnn.annotation_id);
-                
-                return (
-                  <div key={rootAnn.annotation_id} className="space-y-1">
-                    {/* 顶级标注 */}
-                    <div
-                      className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm flex flex-col"
-                    >
-                      <div className="px-3 py-2 bg-gray-50 flex items-center justify-between border-b border-gray-200 shrink-0">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => toggleExpand(rootAnn.annotation_id)}
-                            className="text-[10px] text-gray-400 hover:text-gray-600 w-4"
-                          >
+      <div className="flex-1 overflow-y-auto p-2">
+        {relevant.length === 0 ? (
+          <p className="text-xs text-gray-400 text-center py-8">
+            {selectedLines.size > 0 ? '所选行没有注解' : '点击行号添加注解'}
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {rootAnnotations.filter(a => relevant.includes(a)).map(root => {
+              const isExpanded = expandedIds.has(root.annotation_id);
+              const replies = annotations.filter(a => a.in_reply_to === root.annotation_id);
+              const replyCount = replyCounts[root.annotation_id] || 0;
+              const statusColors: Record<string, string> = {
+                pending: 'bg-amber-100 text-amber-800',
+                approved: 'bg-emerald-100 text-emerald-800',
+                rejected: 'bg-rose-100 text-rose-800',
+              };
+              const sc = statusColors[root.publish_status] || 'bg-slate-100 text-slate-700';
+
+              return (
+                <div key={root.annotation_id} className="space-y-1">
+                  <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                    <div className="px-3 py-2 bg-gray-50 flex items-center justify-between border-b border-gray-200">
+                      <div className="flex items-center gap-2">
+                        {replyCount > 0 && (
+                          <button onClick={() => toggleExpand(root.annotation_id)} className="text-[10px] text-gray-400 w-4">
                             {isExpanded ? '▼' : '▶'}
                           </button>
-                          <span className="text-xs text-gray-400">
-                            L{rootAnn.start_line}
-                            {rootAnn.end_line !== rootAnn.start_line && `-${rootAnn.end_line}`}
-                          </span>
-                          {replyCount > 0 && (
-                            <span className="text-[10px] text-gray-400">
-                              ({replyCount} {replyCount === 1 ? 'reply' : 'replies'})
-                            </span>
-                          )}
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                            rootAnn.publish_status === 'pending'
-                              ? 'bg-amber-100 text-amber-800'
-                              : rootAnn.publish_status === 'approved'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : rootAnn.publish_status === 'rejected'
-                                  ? 'bg-rose-100 text-rose-800'
-                                  : 'bg-slate-100 text-slate-700'
-                          }`}>
-                            {rootAnn.publish_status}
-                          </span>
+                        )}
+                        <span className="text-xs text-gray-400">L{root.start_line}{root.end_line !== root.start_line ? `-${root.end_line}` : ''}</span>
+                        {replyCount > 0 && <span className="text-[10px] text-gray-400">({replyCount})</span>}
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${sc}`}>{root.publish_status}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <PublishButton a={root} />
+                        {canManage(root) && (
+                          <button onClick={async () => { if (!confirm('删除此注解?')) return; await deleteCodeAnnotation(root.annotation_id); onAnnotationCreated(); }}
+                            className="text-[10px] text-gray-400 hover:text-red-500">删除</button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="px-3 py-2">
+                      <div className="markdown-content text-xs">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{root.body}</ReactMarkdown>
+                      </div>
+                      {root.publish_review_comment && (
+                        <div className="mt-2 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[10px] text-gray-600">
+                          审核备注：{root.publish_review_comment}
+                        </div>
+                      )}
+                      <div className="mt-2">
+                        <EmailTagEditor targetType="annotation" targetRef={root.annotation_id} compact />
+                      </div>
+                    </div>
+                  </div>
+
+                  {isExpanded && replies.map(reply => (
+                    <div key={reply.annotation_id} className="ml-4 bg-white border border-gray-200 border-l-4 border-l-green-500 rounded-lg overflow-hidden shadow-sm">
+                      <div className="px-3 py-2 bg-gray-50 flex items-center justify-between border-b border-gray-200">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-green-500 bg-green-50 px-1.5 py-0.5 rounded">回复</span>
+                          <span className="text-xs text-gray-400">L{reply.start_line}</span>
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${statusColors[reply.publish_status] || 'bg-slate-100 text-slate-700'}`}>{reply.publish_status}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => onGoToLine?.(rootAnn.start_line)}
-                            className="text-[10px] text-blue-500 hover:text-blue-700 font-medium"
-                          >
-                            Goto
-                          </button>
-                          {canWrite && (
-                            <>
-                              <button
-                                onClick={() => {
-                                  setReplyToId(rootAnn.annotation_id);
-                                  setShowCreateModal(true);
-                                }}
-                                className="text-[10px] text-gray-400 hover:text-green-500"
-                              >
-                                Reply
-                              </button>
-                              {!isAdmin &&
-                                rootAnn.visibility === 'private' &&
-                                rootAnn.author_user_id === currentUser?.user_id &&
-                                rootAnn.publish_status !== 'pending' && (
-                                  <button
-                                    onClick={async () => {
-                                      try {
-                                        await requestAnnotationPublication(rootAnn.annotation_id);
-                                        onAnnotationCreated();
-                                      } catch (e: unknown) {
-                                        alert(`Failed to request publication: ${e instanceof Error ? e.message : e}`);
-                                      }
-                                    }}
-                                    className="text-[10px] text-amber-600 hover:text-amber-800"
-                                  >
-                                    Publish
-                                  </button>
-                                )}
-                              {rootAnn.publish_status === 'pending' &&
-                                (isAdmin || rootAnn.author_user_id === currentUser?.user_id) && (
-                                  <button
-                                    onClick={async () => {
-                                      try {
-                                        await withdrawAnnotationPublication(rootAnn.annotation_id);
-                                        onAnnotationCreated();
-                                      } catch (e: unknown) {
-                                        alert(`Failed to withdraw request: ${e instanceof Error ? e.message : e}`);
-                                      }
-                                    }}
-                                    className="text-[10px] text-slate-500 hover:text-slate-700"
-                                  >
-                                    Withdraw
-                                  </button>
-                                )}
-                              {isAdmin && rootAnn.publish_status === 'pending' && (
-                                <>
-                                  <button
-                                    onClick={async () => {
-                                      try {
-                                        const reviewComment = window.prompt('审核备注（可选）', '') || '';
-                                        await approveAnnotationPublication(rootAnn.annotation_id, reviewComment);
-                                        onAnnotationCreated();
-                                      } catch (e: unknown) {
-                                        alert(`Failed to approve: ${e instanceof Error ? e.message : e}`);
-                                      }
-                                    }}
-                                    className="text-[10px] text-emerald-600 hover:text-emerald-800"
-                                  >
-                                    Approve
-                                  </button>
-                                  <button
-                                    onClick={async () => {
-                                      try {
-                                        const reviewComment = window.prompt('驳回原因（可选）', '') || '';
-                                        await rejectAnnotationPublication(rootAnn.annotation_id, reviewComment);
-                                        onAnnotationCreated();
-                                      } catch (e: unknown) {
-                                        alert(`Failed to reject: ${e instanceof Error ? e.message : e}`);
-                                      }
-                                    }}
-                                    className="text-[10px] text-rose-600 hover:text-rose-800"
-                                  >
-                                    Reject
-                                  </button>
-                                </>
-                              )}
-                              {canManageAnnotation(rootAnn) && (
-                                <>
-                                  <button
-                                    onClick={() => setEditingAnnotation(rootAnn)}
-                                    className="text-[10px] text-gray-400 hover:text-blue-500"
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    onClick={() => handleDelete(rootAnn.annotation_id)}
-                                    className="text-[10px] text-gray-400 hover:text-red-500"
-                                  >
-                                    Delete
-                                  </button>
-                                </>
-                              )}
-                            </>
+                          <PublishButton a={reply} />
+                          {canManage(reply) && (
+                            <button onClick={async () => { if (!confirm('删除此回复?')) return; await deleteCodeAnnotation(reply.annotation_id); onAnnotationCreated(); }}
+                              className="text-[10px] text-gray-400 hover:text-red-500">删除</button>
                           )}
                         </div>
                       </div>
-                      <div className="px-3 py-2 overflow-hidden">
-                        <div className="markdown-content line-clamp-3 overflow-hidden">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{rootAnn.body}</ReactMarkdown>
+                      <div className="px-3 py-2">
+                        <div className="markdown-content text-xs">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{reply.body}</ReactMarkdown>
                         </div>
-                        {rootAnn.publish_review_comment && (
-                          <div className="mt-2 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[10px] text-gray-600">
-                            审核备注：{rootAnn.publish_review_comment}
-                          </div>
-                        )}
                         <div className="mt-2">
-                          <EmailTagEditor targetType="annotation" targetRef={rootAnn.annotation_id} compact />
+                          <EmailTagEditor targetType="annotation" targetRef={reply.annotation_id} compact />
                         </div>
                       </div>
                     </div>
-                    
-                    {/* 展开的回复 */}
-                    {isExpanded && replies.map((reply) => (
-                      <div
-                        key={reply.annotation_id}
-                        className="ml-4 bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm flex flex-col border-l-4 border-l-green-500"
-                      >
-                        <div className="px-3 py-2 bg-gray-50 flex items-center justify-between border-b border-gray-200 shrink-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-green-500 bg-green-50 px-1.5 py-0.5 rounded">
-                              Reply
-                            </span>
-                            <span className="text-xs text-gray-400">
-                              L{reply.start_line}
-                              {reply.end_line !== reply.start_line && `-${reply.end_line}`}
-                            </span>
-                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                              reply.publish_status === 'pending'
-                                ? 'bg-amber-100 text-amber-800'
-                                : reply.publish_status === 'approved'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : reply.publish_status === 'rejected'
-                                    ? 'bg-rose-100 text-rose-800'
-                                    : 'bg-slate-100 text-slate-700'
-                            }`}>
-                              {reply.publish_status}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => onGoToLine?.(reply.start_line)}
-                              className="text-[10px] text-blue-500 hover:text-blue-700 font-medium"
-                            >
-                              Goto
-                            </button>
-                            {!isAdmin &&
-                              reply.visibility === 'private' &&
-                              reply.author_user_id === currentUser?.user_id &&
-                              reply.publish_status !== 'pending' && (
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      await requestAnnotationPublication(reply.annotation_id);
-                                      onAnnotationCreated();
-                                    } catch (e: unknown) {
-                                      alert(`Failed to request publication: ${e instanceof Error ? e.message : e}`);
-                                    }
-                                  }}
-                                  className="text-[10px] text-amber-600 hover:text-amber-800"
-                                >
-                                  Publish
-                                </button>
-                              )}
-                            {reply.publish_status === 'pending' &&
-                              (isAdmin || reply.author_user_id === currentUser?.user_id) && (
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      await withdrawAnnotationPublication(reply.annotation_id);
-                                      onAnnotationCreated();
-                                    } catch (e: unknown) {
-                                      alert(`Failed to withdraw request: ${e instanceof Error ? e.message : e}`);
-                                    }
-                                  }}
-                                  className="text-[10px] text-slate-500 hover:text-slate-700"
-                                >
-                                  Withdraw
-                                </button>
-                              )}
-                            {isAdmin && reply.publish_status === 'pending' && (
-                              <>
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      const reviewComment = window.prompt('审核备注（可选）', '') || '';
-                                      await approveAnnotationPublication(reply.annotation_id, reviewComment);
-                                      onAnnotationCreated();
-                                    } catch (e: unknown) {
-                                      alert(`Failed to approve: ${e instanceof Error ? e.message : e}`);
-                                    }
-                                  }}
-                                  className="text-[10px] text-emerald-600 hover:text-emerald-800"
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      const reviewComment = window.prompt('驳回原因（可选）', '') || '';
-                                      await rejectAnnotationPublication(reply.annotation_id, reviewComment);
-                                      onAnnotationCreated();
-                                    } catch (e: unknown) {
-                                      alert(`Failed to reject: ${e instanceof Error ? e.message : e}`);
-                                    }
-                                  }}
-                                  className="text-[10px] text-rose-600 hover:text-rose-800"
-                                >
-                                  Reject
-                                </button>
-                              </>
-                            )}
-                            {canManageAnnotation(reply) && (
-                              <button
-                                onClick={() => handleDelete(reply.annotation_id)}
-                                className="text-[10px] text-gray-400 hover:text-red-500"
-                              >
-                                Delete
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        <div className="px-3 py-2 overflow-hidden">
-                          <div className="markdown-content line-clamp-3 overflow-hidden">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{reply.body}</ReactMarkdown>
-                          </div>
-                          {reply.publish_review_comment && (
-                            <div className="mt-2 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[10px] text-gray-600">
-                              审核备注：{reply.publish_review_comment}
-                            </div>
-                          )}
-                          <div className="mt-2">
-                            <EmailTagEditor targetType="annotation" targetRef={reply.annotation_id} compact />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <AnnotationModal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        mode="create"
-        initialBody=""
-        lineInfo={lineInfo}
-        onSave={handleCreate}
-        saving={saving}
-      />
-
-      <AnnotationModal
-        isOpen={!!editingAnnotation}
-        onClose={() => setEditingAnnotation(null)}
-        mode="edit"
-        initialBody={editingAnnotation?.body || ''}
-        lineInfo={editingAnnotation ? `L${editingAnnotation.start_line}${editingAnnotation.end_line !== editingAnnotation.start_line ? `-${editingAnnotation.end_line}` : ''}` : ''}
-        onSave={(body, _visibility) => handleUpdate(body)}
-        saving={saving}
-      />
-    </>
-  );
-}
-
-function SymbolCandidatesModal({
-  symbol,
-  candidates,
-  onClose,
-  onSelect,
-}: {
-  symbol: string;
-  candidates: KernelSymbol[];
-  onClose: () => void;
-  onSelect: (candidate: KernelSymbol) => void;
-}) {
-  if (!symbol || candidates.length === 0) return null;
-
-  return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30">
-      <div className="w-full max-w-2xl rounded-xl bg-white shadow-xl border border-gray-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-700">Definition Candidates</h3>
-            <p className="text-xs text-gray-400 mt-0.5">{symbol}</p>
+                  ))}
+                </div>
+              );
+            })}
           </div>
-          <button onClick={onClose} className="text-sm text-gray-400 hover:text-gray-600">
-            Close
-          </button>
-        </div>
-        <div className="max-h-[60vh] overflow-y-auto p-2">
-          {candidates.map((candidate) => (
-            <button
-              key={`${candidate.file_path}:${candidate.line}:${candidate.column}:${candidate.kind}`}
-              onClick={() => onSelect(candidate)}
-              className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 hover:bg-gray-50 transition-colors"
-            >
-              <div className="flex items-center gap-2 text-xs">
-                <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-indigo-600 font-medium">
-                  {candidate.kind}
-                </span>
-                <span className="font-mono text-gray-700">{candidate.file_path}</span>
-                <span className="text-gray-400">:{candidate.line}</span>
-              </div>
-              {candidate.signature && (
-                <div className="mt-1 text-[11px] text-gray-500 font-mono">
-                  {candidate.symbol}
-                  {candidate.signature}
-                </div>
-              )}
-              {candidate.scope && (
-                <div className="mt-1 text-[11px] text-gray-400">
-                  scope: {candidate.scope}
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
+        )}
       </div>
     </div>
   );
 }
 
 // ============================================================
-// 主页面
+// Main Page
 // ============================================================
 export default function KernelCodePage() {
   const [searchParams, setSearchParams] = useSearchParams();
-
   const urlVersion = searchParams.get('v') || '';
   const urlPath = searchParams.get('path') || '';
   const urlLine = parseInt(searchParams.get('line') || '0', 10) || null;
@@ -1055,389 +256,213 @@ export default function KernelCodePage() {
   const [versions, setVersions] = useState<KernelVersionInfo[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(true);
   const [selectedVersion, setSelectedVersion] = useState(urlVersion);
-  const [rootTree, setRootTree] = useState<TreeNode[]>([]);
   const [currentFile, setCurrentFile] = useState<KernelFileResponse | null>(null);
   const [fileLoading, setFileLoading] = useState(false);
   const [currentPath, setCurrentPath] = useState(urlPath);
+  const [pathInput, setPathInput] = useState(urlPath);
   const [annotations, setAnnotations] = useState<CodeAnnotation[]>([]);
   const [selectedLines, setSelectedLines] = useState<Set<number>>(() => {
-    const initial = new Set<number>();
-    if (urlLine) initial.add(urlLine);
-    return initial;
+    const s = new Set<number>();
+    if (urlLine) s.add(urlLine);
+    return s;
   });
-  const [selectedRange, setSelectedRange] = useState<[number, number] | null>(null);
-  const [showAnnotations, setShowAnnotations] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [previewAnnotation, setPreviewAnnotation] = useState<CodeAnnotation | null>(null);
-  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
-  const [symbolLoading, setSymbolLoading] = useState(false);
-  const [symbolCandidates, setSymbolCandidates] = useState<KernelSymbol[]>([]);
 
-  // Keyboard handler for Escape to clear selection
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setSelectedLines(new Set());
-        setSelectedRange(null);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
+  // Load versions
   useEffect(() => {
     setVersionsLoading(true);
     getKernelVersions('all')
-      .then((res) => {
+      .then(res => {
         setVersions(res.versions);
         if (!selectedVersion && res.versions.length > 0) {
           setSelectedVersion(res.versions[0].tag);
         }
       })
-      .catch((e) => setError(e.message))
+      .catch(e => setError(e.message))
       .finally(() => setVersionsLoading(false));
   }, []);
 
-  useEffect(() => {
-    if (!selectedVersion) return;
-    setError(null);
-    getKernelTree(selectedVersion, '')
-      .then((res) => {
-        const nodes: TreeNode[] = res.entries.map((e) => ({
-          entry: e,
-          children: undefined,
-          expanded: false,
-          loading: false,
-        }));
-        setRootTree(nodes);
-      })
-      .catch((e) => setError(e.message));
-  }, [selectedVersion]);
-
+  // Auto-load file from URL params
   useEffect(() => {
     if (urlPath && selectedVersion) {
-      loadFile(urlPath);
+      loadFile(urlPath, urlLine);
     }
   }, [selectedVersion]);
 
-  const updateUrl = useCallback(
-    (v: string, path: string, line?: number) => {
-      const params: Record<string, string> = {};
-      if (v) params.v = v;
-      if (path) params.path = path;
-      if (line) params.line = String(line);
-      setSearchParams(params, { replace: true });
-    },
-    [setSearchParams]
-  );
-
-  const toggleDir = useCallback(
-    async (dirPath: string) => {
-      const updateNodes = (nodes: TreeNode[]): TreeNode[] =>
-        nodes.map((n) => {
-          if (n.entry.path === dirPath) {
-            if (n.expanded) {
-              return { ...n, expanded: false };
-            }
-            if (!n.children) {
-              const loading = { ...n, expanded: true, loading: true, children: [] };
-              getKernelTree(selectedVersion, dirPath)
-                .then((res) => {
-                  const children: TreeNode[] = res.entries.map((e) => ({
-                    entry: e,
-                    children: undefined,
-                    expanded: false,
-                    loading: false,
-                  }));
-                  setRootTree((prev) => updateChildrenInTree(prev, dirPath, children));
-                })
-                .catch(console.error);
-              return loading;
-            }
-            return { ...n, expanded: true };
-          }
-          if (n.children) {
-            return { ...n, children: updateNodes(n.children) };
-          }
-          return n;
-        });
-
-      setRootTree((prev) => updateNodes(prev));
-    },
-    [selectedVersion]
-  );
-
-  const updateChildrenInTree = (
-    nodes: TreeNode[],
-    targetPath: string,
-    children: TreeNode[]
-  ): TreeNode[] =>
-    nodes.map((n) => {
-      if (n.entry.path === targetPath) {
-        return { ...n, children, loading: false };
-      }
-      if (n.children) {
-        return { ...n, children: updateChildrenInTree(n.children, targetPath, children) };
-      }
-      return n;
-    });
-
-  const loadFile = useCallback(
-    async (path: string, options?: { targetLine?: number | null }) => {
-      if (!selectedVersion) return;
-      setFileLoading(true);
-      setCurrentPath(path);
-      setSelectedRange(null);
-      setError(null);
-      try {
-        const [fileRes, annotRes] = await Promise.all([
-          getKernelFile(selectedVersion, path),
-          getCodeAnnotations(selectedVersion, path).catch(() => [] as CodeAnnotation[]),
-        ]);
-        setCurrentFile(fileRes);
-        setAnnotations(annotRes);
-        setShowAnnotations(annotRes.length > 0);
-        const nextLine = options?.targetLine ?? urlLine;
-        updateUrl(selectedVersion, path, nextLine || undefined);
-
-        if (nextLine) {
-          setSelectedLines(new Set([nextLine]));
-        } else {
-          setSelectedLines(new Set());
-        }
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : String(e));
-        setCurrentFile(null);
-      } finally {
-        setFileLoading(false);
-      }
-    },
-    [selectedVersion, updateUrl, urlLine]
-  );
+  const loadFile = useCallback(async (path: string, targetLine?: number | null) => {
+    if (!selectedVersion || !path) return;
+    setFileLoading(true);
+    setCurrentPath(path);
+    setError(null);
+    try {
+      const [fileRes, annotRes] = await Promise.all([
+        getKernelFile(selectedVersion, path),
+        getCodeAnnotations(selectedVersion, path).catch(() => [] as CodeAnnotation[]),
+      ]);
+      setCurrentFile(fileRes);
+      setAnnotations(annotRes);
+      const line = targetLine ?? urlLine;
+      setSelectedLines(line ? new Set([line]) : new Set());
+      setSearchParams({ v: selectedVersion, path, ...(line ? { line: String(line) } : {}) }, { replace: true });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+      setCurrentFile(null);
+    } finally { setFileLoading(false); }
+  }, [selectedVersion, urlLine, setSearchParams]);
 
   const handleVersionSelect = (tag: string) => {
     setSelectedVersion(tag);
     setCurrentFile(null);
     setCurrentPath('');
+    setPathInput('');
     setAnnotations([]);
-    updateUrl(tag, '');
-  };
-
-  const handleLineClick = (line: number, event?: MouseEvent) => {
-    // Ctrl/Cmd + 点击: 多选
-    if (event?.ctrlKey || event?.metaKey) {
-      setSelectedLines(prev => {
-        const next = new Set(prev);
-        if (next.has(line)) {
-          next.delete(line);
-        } else {
-          next.add(line);
-        }
-        return next;
-      });
-      setSelectedRange(null);
-    } else if (event?.shiftKey && selectedLines.size === 1) {
-      // Shift + 点击: 范围选择
-      const firstLine = Array.from(selectedLines)[0];
-      const start = Math.min(firstLine, line);
-      const end = Math.max(firstLine, line);
-      setSelectedRange([start, end]);
-      setSelectedLines(new Set());
-    } else {
-      // 普通点击: 取消选中已选行 或 选中单行
-      if (selectedLines.has(line)) {
-        setSelectedLines(new Set());
-        setSelectedRange(null);
-      } else {
-        setSelectedLines(new Set([line]));
-        setSelectedRange(null);
-      }
-    }
-    setShowAnnotations(true);
-    updateUrl(selectedVersion, currentPath, line);
-  };
-
-  const handleLineRangeSelect = (start: number, end: number) => {
-    setSelectedRange([start, end]);
     setSelectedLines(new Set());
-    setShowAnnotations(true);
+    setSearchParams({ v: tag }, { replace: true });
   };
 
-  const handleGoToLine = (line: number) => {
-    setSelectedLines(new Set([line]));
-    setSelectedRange(null);
-    setShowAnnotations(true);
+  const handleLoadFile = () => {
+    if (!isValidFilePath(pathInput)) return;
+    loadFile(pathInput.trim());
   };
 
-  const jumpToSymbol = useCallback(
-    async (symbol: string) => {
-      if (!selectedVersion || !currentPath) return;
-      setSymbolLoading(true);
-      setError(null);
-      try {
-        const res = await getKernelSymbolDefinition(selectedVersion, symbol, currentPath);
-        setSelectedSymbol(res.symbol);
-        if (res.total === 0) {
-          setError(`No definition found for symbol "${symbol}" in ${selectedVersion}`);
-          setSymbolCandidates([]);
-          return;
-        }
-        if (res.total === 1) {
-          setSymbolCandidates([]);
-          const candidate = res.candidates[0];
-          await loadFile(candidate.file_path, { targetLine: candidate.line });
-          return;
-        }
-        setSymbolCandidates(res.candidates);
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setSymbolLoading(false);
+  const handleLineClick = (line: number) => {
+    setSelectedLines(prev => {
+      if (prev.has(line)) {
+        const next = new Set(prev);
+        next.delete(line);
+        return next.size === 0 ? prev : next;
       }
-    },
-    [currentPath, loadFile, selectedVersion]
-  );
+      return new Set([line]);
+    });
+    setSearchParams({ v: selectedVersion, path: currentPath, line: String(line) }, { replace: true });
+  };
 
-  const refreshAnnotations = useCallback(async () => {
+  const handleAnnotationCreated = async () => {
     if (!selectedVersion || !currentPath) return;
     try {
-      const res = await getCodeAnnotations(selectedVersion, currentPath);
-      setAnnotations(res);
-    } catch {
-      // ignore
-    }
-  }, [selectedVersion, currentPath]);
+      const annotRes = await getCodeAnnotations(selectedVersion, currentPath);
+      setAnnotations(annotRes);
+    } catch { /* ignore */ }
+  };
+
+  // Version filter (release only vs all)
+  const [showAllVersions, setShowAllVersions] = useState(false);
+  const filteredVersions = useMemo(() => {
+    if (showAllVersions) return versions;
+    return versions.filter(v => v.kind === 'release' || !v.tag.includes('-rc'));
+  }, [versions, showAllVersions]);
+
+  // Code lines
+  const codeLines = useMemo(() => {
+    if (!currentFile) return [];
+    return currentFile.content.split('\n');
+  }, [currentFile]);
 
   return (
-    <div className="h-screen flex flex-col">
-      <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-2 text-xs shrink-0">
-        <span className="font-semibold text-gray-700">Kernel Code</span>
-        {selectedVersion && (
-          <>
-            <span className="text-gray-400">/</span>
-            <span className="text-indigo-600 font-medium">{selectedVersion}</span>
-          </>
-        )}
-        {currentPath && (
-          <>
-            <span className="text-gray-400">/</span>
-            <span className="text-gray-600 font-mono">{currentPath}</span>
-          </>
-        )}
-        <div className="ml-auto flex items-center gap-2">
-          {selectedSymbol && (
-            <div className="flex items-center gap-2 rounded-full bg-amber-50 px-2 py-1">
-              <span className="text-[10px] text-amber-700 font-mono">{selectedSymbol}</span>
-              <button
-                onClick={() => jumpToSymbol(selectedSymbol)}
-                disabled={symbolLoading || !currentPath}
-                className="text-[10px] font-medium text-amber-800 hover:text-amber-900 disabled:opacity-50"
+    <div className="flex h-[calc(100vh-4rem)]">
+      {/* Main content area */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Toolbar */}
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-200 bg-white">
+          {versionsLoading ? (
+            <span className="text-sm text-gray-400">加载版本...</span>
+          ) : (
+            <>
+              <select
+                value={selectedVersion}
+                onChange={e => handleVersionSelect(e.target.value)}
+                className="text-sm border border-gray-200 rounded-lg px-2 py-1 outline-none"
               >
-                {symbolLoading ? 'Resolving...' : 'Go to Definition'}
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedSymbol(null);
-                  setSymbolCandidates([]);
-                }}
-                className="text-[10px] text-amber-600 hover:text-amber-800"
-              >
-                Clear
-              </button>
-            </div>
+                {filteredVersions.map(v => (
+                  <option key={v.tag} value={v.tag}>{v.tag}</option>
+                ))}
+              </select>
+              <label className="flex items-center gap-1 text-xs text-gray-400">
+                <input type="checkbox" checked={showAllVersions} onChange={e => setShowAllVersions(e.target.checked)} />
+                全部版本
+              </label>
+            </>
           )}
-          {annotations.length > 0 && (
-            <button
-              onClick={() => setShowAnnotations(!showAnnotations)}
-              className={`px-2 py-1 rounded text-[10px] font-medium ${
-                showAnnotations
-                  ? 'bg-indigo-100 text-indigo-700'
-                  : 'bg-gray-100 text-gray-600'
-              }`}
+          <input
+            type="text"
+            value={pathInput}
+            onChange={e => setPathInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleLoadFile(); }}
+            placeholder="文件路径，如 mm/mmap.c"
+            className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1 outline-none focus:border-indigo-400"
+          />
+          <button
+            onClick={handleLoadFile}
+            disabled={!isValidFilePath(pathInput) || fileLoading}
+            className="px-3 py-1 text-sm font-medium text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 disabled:opacity-50"
+          >
+            {fileLoading ? '加载中...' : '打开文件'}
+          </button>
+          {currentFile && (
+            <a
+              href={elixirUrl(selectedVersion, currentPath, selectedLines.size === 1 ? Array.from(selectedLines)[0] : undefined)}
+              target="_blank" rel="noopener noreferrer"
+              className="text-xs text-indigo-500 hover:text-indigo-700 whitespace-nowrap"
             >
-              {annotations.length} annotations
-            </button>
+              在 elixir 打开 ↗
+            </a>
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Code view */}
+          <div className="flex-1 overflow-auto">
+            {error && (
+              <div className="p-4 text-red-600 text-sm">{error}</div>
+            )}
+            {fileLoading ? (
+              <div className="p-4 text-gray-400 text-sm">加载文件...</div>
+            ) : currentFile ? (
+              <div className="font-mono text-sm">
+                {codeLines.map((line, i) => {
+                  const lineNum = i + 1;
+                  const isSelected = selectedLines.has(lineNum);
+                  return (
+                    <div
+                      key={lineNum}
+                      onClick={() => handleLineClick(lineNum)}
+                      className={`flex hover:bg-gray-50 cursor-pointer ${isSelected ? 'bg-yellow-100' : ''}`}
+                    >
+                      <span className="w-14 text-right pr-3 text-gray-400 select-none border-r border-gray-200 shrink-0 py-px">
+                        {lineNum}
+                      </span>
+                      <span className="pl-3 py-px whitespace-pre">{line}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-8 text-center text-gray-400">
+                <p className="text-sm">选择一个版本并输入文件路径来查看代码</p>
+                <p className="text-xs mt-2">
+                  也可以直接在{' '}
+                  <a href="https://elixir.bootlin.com" target="_blank" rel="noopener noreferrer" className="text-indigo-500">
+                    elixir.bootlin.com
+                  </a>{' '}
+                  浏览代码，使用 Tampermonkey 脚本添加注解
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Annotation side panel */}
+          {currentFile && (
+            <AnnotationPanel
+              annotations={annotations}
+              selectedLines={selectedLines}
+              version={selectedVersion}
+              filePath={currentPath}
+              onAnnotationCreated={handleAnnotationCreated}
+            />
           )}
         </div>
       </div>
-
-      {error && (
-        <div className="bg-red-50 border-b border-red-200 px-4 py-2 text-xs text-red-600">
-          {error}
-        </div>
-      )}
-
-      <div className="flex-1 flex overflow-hidden">
-        <div className="w-64 border-r border-gray-200 bg-white flex flex-col overflow-hidden shrink-0">
-          <div className="p-3 border-b border-gray-200">
-            <VersionSelector
-              versions={versions}
-              selected={selectedVersion}
-              onSelect={handleVersionSelect}
-              loading={versionsLoading}
-            />
-          </div>
-          <div className="flex-1 overflow-y-auto p-1">
-            {rootTree.map((node) => (
-              <FileTreeItem
-                key={node.entry.path}
-                node={node}
-                depth={0}
-                onToggle={toggleDir}
-                onFileClick={loadFile}
-                currentPath={currentPath}
-              />
-            ))}
-          </div>
-        </div>
-
-        {fileLoading ? (
-          <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
-            Loading file...
-          </div>
-        ) : (
-          <CodeView
-            file={currentFile}
-            annotations={annotations}
-            highlightLine={selectedLines.size === 1 ? Array.from(selectedLines)[0] : null}
-            onLineClick={handleLineClick}
-            onLineRangeSelect={handleLineRangeSelect}
-            onSymbolSelect={setSelectedSymbol}
-            selectedLines={selectedLines}
-            selectedRange={selectedRange}
-          />
-        )}
-
-        {showAnnotations && currentFile && (
-          <AnnotationPanel
-            annotations={annotations}
-            selectedLines={selectedLines}
-            selectedRange={selectedRange}
-            version={selectedVersion}
-            filePath={currentPath}
-            onAnnotationCreated={refreshAnnotations}
-            onAnnotationDeleted={refreshAnnotations}
-            onGoToLine={handleGoToLine}
-          />
-        )}
-      </div>
-
-      {/* 预览弹窗 */}
-      <PreviewModal
-        isOpen={!!previewAnnotation}
-        onClose={() => setPreviewAnnotation(null)}
-        annotation={previewAnnotation}
-      />
-
-      <SymbolCandidatesModal
-        symbol={selectedSymbol || ''}
-        candidates={symbolCandidates}
-        onClose={() => setSymbolCandidates([])}
-        onSelect={async (candidate) => {
-          setSymbolCandidates([]);
-          await loadFile(candidate.file_path, { targetLine: candidate.line });
-        }}
-      />
     </div>
   );
 }

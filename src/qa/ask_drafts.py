@@ -153,7 +153,7 @@ class AskDraftService:
                 "body": annotation_body,
                 "target_type": "email_thread" if thread_id else "email_message",
                 "target_ref": thread_id or primary_source.get("message_id", ""),
-                "target_label": primary_thread.get("subject") or primary_source.get("subject") or canonical_name,
+                "target_label": primary_source.get("subject") or canonical_name,
                 "target_subtitle": f"Ask draft: {question}",
                 "thread_id": thread_id,
                 "in_reply_to": primary_source.get("message_id", ""),

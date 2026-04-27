@@ -5,6 +5,22 @@ import ThreadDrawer from '../components/ThreadDrawer';
 import TagFilter from '../components/TagFilter';
 import EmailTagEditor from '../components/EmailTagEditor';
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function highlightSnippet(snippet: string): string {
+  return escapeHtml(snippet).replace(
+    /&lt;&lt;(.*?)&gt;&gt;/g,
+    '<mark class="bg-yellow-100 px-0.5 rounded">$1</mark>'
+  );
+}
+
 export default function SearchPage() {
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState('hybrid');
@@ -642,10 +658,7 @@ function ResultCard({
         <p
           className="mt-3 text-xs text-gray-600 leading-relaxed line-clamp-2"
           dangerouslySetInnerHTML={{
-            __html: hit.snippet.replace(
-              /<<(.*?)>>/g,
-              '<mark class="bg-yellow-100 px-0.5 rounded">$1</mark>'
-            ),
+            __html: highlightSnippet(hit.snippet),
           }}
         />
       )}

@@ -431,6 +431,7 @@ export interface KnowledgeEntityListResponse {
 // ============================================================
 
 export interface KernelVersionInfo {
+  kind: "release" | "rc";
   tag: string;
   major: number;
   minor: number;
@@ -444,19 +445,6 @@ export interface KernelVersionsResponse {
   total: number;
 }
 
-export interface KernelTreeEntry {
-  name: string;
-  path: string;
-  type: 'dir' | 'file' | 'symlink';
-  size: number;
-}
-
-export interface KernelTreeResponse {
-  version: string;
-  path: string;
-  entries: KernelTreeEntry[];
-  total: number;
-}
 
 export interface KernelFileResponse {
   version: string;
@@ -514,35 +502,3 @@ export interface CodeAnnotationListResponse {
   page_size: number;
 }
 
-export interface KernelSymbol {
-  id: number;
-  version: string;
-  file_path: string;
-  symbol: string;
-  kind: string;
-  line: number;
-  column: number;
-  end_line?: number | null;
-  end_column?: number | null;
-  signature?: string | null;
-  scope?: string | null;
-  language: string;
-  meta: Record<string, unknown>;
-}
-
-export interface KernelSymbolDefinitionResponse {
-  version: string;
-  symbol: string;
-  candidates: KernelSymbol[];
-  total: number;
-}
-
-export interface KernelSymbolResolveResponse {
-  version: string;
-  path: string;
-  line: number;
-  column: number;
-  symbol: string;
-  candidates: KernelSymbol[];
-  total: number;
-}

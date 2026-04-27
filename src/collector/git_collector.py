@@ -113,7 +113,7 @@ class GitCollector(BaseCollector):
                 message_id = match.group(1).strip()
 
             if not message_id:
-                logger.warning("No Message-ID in commit %s, skipping", commit_hash[:8])
+                logger.warning("No Message-ID in commit %s, skipping", commit.hexsha[:8])
                 return None
 
             return RawEmail(

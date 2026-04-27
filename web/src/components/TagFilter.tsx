@@ -80,7 +80,7 @@ export default function TagFilter({
       {selectedTags.length > 0 && (
         <div className="mt-2 pt-2 border-t border-gray-200">
           <button
-            onClick={() => selectedTags.forEach(t => !selectedTags.includes(t) && onTagToggle(t))}
+            onClick={() => selectedTags.forEach(t => onTagToggle(t))}
             className="text-xs text-gray-500 hover:text-gray-700"
           >
             Clear all tags

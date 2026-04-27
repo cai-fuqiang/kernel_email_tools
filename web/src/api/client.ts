@@ -27,13 +27,11 @@ import type {
   RegisterResult,
   UserRead,
   KernelVersionsResponse,
-  KernelTreeResponse,
   KernelFileResponse,
   CodeAnnotation,
   CodeAnnotationCreate,
   CodeAnnotationListResponse,
-  KernelSymbolDefinitionResponse,
-  KernelSymbolResolveResponse,
+
 } from './types';
 export type { TagAssignment, TagRead, TagStats, TagTargetBundle, TagTargetItem, TagTargetsResponse, TagTree } from './types';
 
@@ -918,16 +916,6 @@ export async function getKernelVersions(
   );
 }
 
-export async function getKernelTree(
-  version: string,
-  path: string = '',
-): Promise<KernelTreeResponse> {
-  const url = path
-    ? `${API_BASE}/kernel/tree/${encodeURIComponent(version)}/${path}`
-    : `${API_BASE}/kernel/tree/${encodeURIComponent(version)}`;
-  return fetchJSON<KernelTreeResponse>(url);
-}
-
 export async function getKernelFile(
   version: string,
   path: string,
@@ -945,38 +933,6 @@ export async function getCodeAnnotations(
     `${API_BASE}/kernel/annotations/${encodeURIComponent(version)}/${path}`
   );
   return normalizeAnnotations(data) as CodeAnnotation[];
-}
-
-export async function getKernelSymbolDefinition(
-  version: string,
-  symbol: string,
-  currentPath?: string,
-): Promise<KernelSymbolDefinitionResponse> {
-  const params = new URLSearchParams({
-    version,
-    symbol,
-  });
-  if (currentPath) params.set('current_path', currentPath);
-  return fetchJSON<KernelSymbolDefinitionResponse>(
-    `${API_BASE}/kernel/symbol/definition?${params.toString()}`
-  );
-}
-
-export async function resolveKernelSymbol(
-  version: string,
-  path: string,
-  line: number,
-  column: number,
-): Promise<KernelSymbolResolveResponse> {
-  const params = new URLSearchParams({
-    version,
-    path,
-    line: String(line),
-    column: String(column),
-  });
-  return fetchJSON<KernelSymbolResolveResponse>(
-    `${API_BASE}/kernel/symbol/resolve?${params.toString()}`
-  );
 }
 
 export async function listCodeAnnotations(opts?: {
