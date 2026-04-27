@@ -14,6 +14,7 @@ import RegisterPage from './pages/RegisterPage';
 import KnowledgePage from './pages/KnowledgePage';
 import AnnotationReviewPage from './pages/AnnotationReviewPage';
 import { AuthProvider, useAuth } from './auth';
+import { ToastProvider } from './components/Toast';
 
 function ProtectedRoute() {
   const { isAuthenticated, loading } = useAuth();
@@ -40,6 +41,7 @@ function PublicOnlyRoute() {
 export default function App() {
   return (
     <AuthProvider>
+      <ToastProvider>
       <BrowserRouter basename="/app">
         <Routes>
           <Route element={<PublicOnlyRoute />}>
@@ -63,6 +65,7 @@ export default function App() {
           </Route>
         </Routes>
       </BrowserRouter>
+      </ToastProvider>
     </AuthProvider>
   );
 }

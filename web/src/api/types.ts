@@ -221,7 +221,6 @@ export interface TagTargetBundle {
   target_type: string;
   target_ref: string;
   direct_tags: TagRead[];
-  inherited_tags: TagRead[];
   aggregated_tags: TagRead[];
 }
 

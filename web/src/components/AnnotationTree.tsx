@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight, FileText, Mail, ScrollText } from 'lucide-react';
 import AnnotationCard from './AnnotationCard';
+import ConfirmModal from './ConfirmModal';
 import PreviewModal from './PreviewModal';
 import ThreadDrawer from './ThreadDrawer';
+import { showToast } from './Toast';
 import {
   approveAnnotationPublication,
   createAnnotation,
@@ -84,20 +86,37 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
   const [replyBody, setReplyBody] = useState('');
   const [replyLoading, setReplyLoading] = useState(false);
 
+  // Confirm modal state
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmConfig, setConfirmConfig] = useState<{
+    title: string; message: string; variant: 'danger' | 'primary' | 'warning';
+    confirmLabel: string; showInput: boolean; inputLabel?: string; inputPlaceholder?: string;
+  }>({ title: '', message: '', variant: 'danger', confirmLabel: '确定', showInput: false });
+  const confirmCallback = useRef<((val: string) => void) | null>(null);
+
+  const openConfirm = (
+    opts: { title: string; message: string; variant?: 'danger' | 'primary' | 'warning'; confirmLabel?: string; showInput?: boolean; inputLabel?: string; inputPlaceholder?: string },
+    callback: (val: string) => void,
+  ) => {
+    setConfirmConfig({ title: opts.title, message: opts.message, variant: opts.variant || 'danger', confirmLabel: opts.confirmLabel || '确定', showInput: opts.showInput || false, inputLabel: opts.inputLabel, inputPlaceholder: opts.inputPlaceholder });
+    confirmCallback.current = callback;
+    setConfirmOpen(true);
+  };
+
   const tree = useMemo(() => buildTree(annotations), [annotations]);
 
+  // Expand only root-level nodes on first load; respect user toggles thereafter
+  const firstLoadRef = useRef(true);
   useEffect(() => {
-    const expandable = new Set<string>();
-    const walk = (nodes: TreeNode[]) => {
-      for (const node of nodes) {
-        if (node.children.length > 0) {
-          expandable.add(node.annotation.annotation_id);
-          walk(node.children);
-        }
+    if (!firstLoadRef.current) return;
+    const initialExpanded = new Set<string>();
+    for (const root of tree) {
+      if (root.children.length > 0) {
+        initialExpanded.add(root.annotation.annotation_id);
       }
-    };
-    walk(tree);
-    setExpandedIds(expandable);
+    }
+    setExpandedIds(initialExpanded);
+    firstLoadRef.current = false;
   }, [tree]);
 
   const handleJump = (annotation: AnnotationListItem) => {
@@ -150,7 +169,7 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
       setReplyBody('');
       onAnnotationsChange?.();
     } catch (error) {
-      alert(error instanceof Error ? error.message : '回复失败');
+      showToast(error instanceof Error ? error.message : '回复失败', 'error');
     } finally {
       setReplyLoading(false);
     }
@@ -278,16 +297,17 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
               onDelete={async () => {
                 if (!currentUser) return;
                 if (!(isAdmin || (annotation.visibility === 'private' && annotation.publish_status !== 'pending' && annotation.author_user_id === currentUser.user_id))) return;
-                if (!confirm('确定要删除这个标注吗？')) return;
-                await deleteAnnotation(annotation.annotation_id);
-                onAnnotationsChange?.();
+                openConfirm({ title: '删除标注', message: '确定要删除这个标注吗？此操作不可撤销。', variant: 'danger', confirmLabel: '删除' }, async () => {
+                  await deleteAnnotation(annotation.annotation_id);
+                  onAnnotationsChange?.();
+                });
               }}
               onRequestPublish={async () => {
                 try {
                   await requestAnnotationPublication(annotation.annotation_id);
                   onAnnotationsChange?.();
                 } catch (error) {
-                  alert(error instanceof Error ? error.message : '申请公开失败');
+                  showToast(error instanceof Error ? error.message : '申请公开失败', 'error');
                 }
               }}
               onWithdrawPublish={async () => {
@@ -295,26 +315,28 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
                   await withdrawAnnotationPublication(annotation.annotation_id);
                   onAnnotationsChange?.();
                 } catch (error) {
-                  alert(error instanceof Error ? error.message : '撤回申请失败');
+                  showToast(error instanceof Error ? error.message : '撤回申请失败', 'error');
                 }
               }}
               onApprovePublish={async () => {
-                try {
-                  const reviewComment = window.prompt('审核备注（可选）', '') || '';
-                  await approveAnnotationPublication(annotation.annotation_id, reviewComment);
-                  onAnnotationsChange?.();
-                } catch (error) {
-                  alert(error instanceof Error ? error.message : '审核通过失败');
-                }
+                openConfirm({ title: '通过公开申请', message: '确认通过此标注的公开申请？', variant: 'primary', confirmLabel: '通过', showInput: true, inputLabel: '审核备注（可选）', inputPlaceholder: '审核备注' }, async (comment) => {
+                  try {
+                    await approveAnnotationPublication(annotation.annotation_id, comment);
+                    onAnnotationsChange?.();
+                  } catch (error) {
+                    showToast(error instanceof Error ? error.message : '审核通过失败', 'error');
+                  }
+                });
               }}
               onRejectPublish={async () => {
-                try {
-                  const reviewComment = window.prompt('驳回原因（可选）', '') || '';
-                  await rejectAnnotationPublication(annotation.annotation_id, reviewComment);
-                  onAnnotationsChange?.();
-                } catch (error) {
-                  alert(error instanceof Error ? error.message : '驳回失败');
-                }
+                openConfirm({ title: '驳回公开申请', message: '确认驳回此标注的公开申请？', variant: 'warning', confirmLabel: '驳回', showInput: true, inputLabel: '驳回原因（可选）', inputPlaceholder: '驳回原因' }, async (comment) => {
+                  try {
+                    await rejectAnnotationPublication(annotation.annotation_id, comment);
+                    onAnnotationsChange?.();
+                  } catch (error) {
+                    showToast(error instanceof Error ? error.message : '驳回失败', 'error');
+                  }
+                });
               }}
               onReply={() => {
                 if (!canWrite) return;
@@ -376,6 +398,18 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
       <div className="space-y-4">{tree.map((node) => renderNode(node))}</div>
       <PreviewModal isOpen={!!previewAnnotation} onClose={() => setPreviewAnnotation(null)} annotation={previewAnnotation} />
       {drawerThreadId && <ThreadDrawer threadId={drawerThreadId} onClose={() => setDrawerThreadId(null)} />}
+      <ConfirmModal
+        isOpen={confirmOpen}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        variant={confirmConfig.variant}
+        confirmLabel={confirmConfig.confirmLabel}
+        showInput={confirmConfig.showInput}
+        inputLabel={confirmConfig.inputLabel}
+        inputPlaceholder={confirmConfig.inputPlaceholder}
+        onConfirm={(val) => { confirmCallback.current?.(val); setConfirmOpen(false); }}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </>
   );
 }

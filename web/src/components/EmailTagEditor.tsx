@@ -84,8 +84,16 @@ export default function EmailTagEditor({
     loadTargetTags().catch(() => {});
   }, [resolvedTargetType, resolvedTargetRef, JSON.stringify(resolvedAnchor)]);
 
+  // Cache tag tree for 60s to avoid re-fetching on every popover open
+  const tagTreeCache = useRef<{ tree: TagTree[]; ts: number } | null>(null);
+
   useEffect(() => {
     if (!showPopover) return;
+    const now = Date.now();
+    if (tagTreeCache.current && (now - tagTreeCache.current.ts) < 60_000) {
+      setAllTags(tagTreeCache.current.tree);
+      return;
+    }
     getTagTree(true)
       .then((tree) => {
         const tags: TagTree[] = [];
@@ -96,6 +104,7 @@ export default function EmailTagEditor({
           }
         };
         collect(tree);
+        tagTreeCache.current = { tree: tags, ts: Date.now() };
         setAllTags(tags);
       })
       .catch(() => {});

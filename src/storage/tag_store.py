@@ -421,9 +421,8 @@ class TagStore:
         viewer_user_id: Optional[str] = None,
     ) -> TagBundle:
         direct = await self._get_tags_for_target(target_type, target_ref, anchor=anchor, viewer_user_id=viewer_user_id)
-        inherited: list[TagRead] = []
         aggregated = await self._get_aggregated_tags(target_type, target_ref, viewer_user_id=viewer_user_id)
-        return TagBundle(direct_tags=direct, inherited_tags=inherited, aggregated_tags=aggregated)
+        return TagBundle(direct_tags=direct, aggregated_tags=aggregated)
 
     async def get_target_tag_names(
         self,
@@ -637,133 +636,127 @@ class TagStore:
             paged = stmt.order_by(TagAssignmentORM.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
             result = await session.execute(paged)
             items = []
-            for assignment, tag_obj in result.all():
+            assignment_rows = [(a, t) for a, t in result.all()]
+            # Batch-collect meta: group target_refs by type, then query each type once
+            thread_ids = {a.target_ref for a, _ in assignment_rows if a.target_type == TARGET_TYPE_EMAIL_THREAD}
+            message_ids = {a.target_ref for a, _ in assignment_rows if a.target_type in (TARGET_TYPE_EMAIL_MESSAGE, TARGET_TYPE_EMAIL_PARAGRAPH)}
+            annotation_ids = {a.target_ref for a, _ in assignment_rows if a.target_type == TARGET_TYPE_ANNOTATION}
+            entity_ids = {a.target_ref for a, _ in assignment_rows if a.target_type == TARGET_TYPE_KNOWLEDGE_ENTITY}
+
+            # --- batch query emails by thread_id ---
+            thread_map: dict[str, dict] = {}
+            if thread_ids:
+                from sqlalchemy import distinct, func
+                from sqlalchemy import tuple_ as sa_tuple
+                sub = (
+                    select(
+                        EmailORM.thread_id,
+                        func.min(EmailORM.date).label("min_date"),
+                    )
+                    .where(EmailORM.thread_id.in_(thread_ids))
+                    .group_by(EmailORM.thread_id)
+                    .subquery()
+                )
+                rows = (await session.execute(
+                    select(EmailORM).join(
+                        sub,
+                        and_(EmailORM.thread_id == sub.c.thread_id, EmailORM.date == sub.c.min_date),
+                    )
+                )).scalars().all()
+                for row in rows:
+                    thread_map[row.thread_id] = {
+                        "subject": row.subject or "",
+                        "sender": row.sender or "",
+                        "date": row.date.isoformat() if row.date else None,
+                        "list_name": row.list_name or "",
+                        "thread_id": row.thread_id,
+                    }
+
+            # --- batch query emails by message_id ---
+            msg_map: dict[str, dict] = {}
+            if message_ids:
+                rows = (await session.execute(
+                    select(EmailORM).where(EmailORM.message_id.in_(message_ids))
+                )).scalars().all()
+                for row in rows:
+                    msg_map[row.message_id] = {
+                        "subject": row.subject or "",
+                        "sender": row.sender or "",
+                        "date": row.date.isoformat() if row.date else None,
+                        "list_name": row.list_name or "",
+                        "thread_id": row.thread_id or "",
+                        "message_id": row.message_id,
+                    }
+
+            # --- batch query annotations ---
+            ann_map: dict[str, dict] = {}
+            if annotation_ids:
+                rows = (await session.execute(
+                    select(AnnotationORM).where(AnnotationORM.annotation_id.in_(annotation_ids))
+                )).scalars().all()
+                for row in rows:
+                    ann_map[row.annotation_id] = {
+                        "annotation_id": row.annotation_id,
+                        "annotation_type": row.annotation_type,
+                        "body": row.body or "",
+                        "thread_id": row.thread_id or "",
+                        "in_reply_to": row.in_reply_to or "",
+                        "target_label": row.target_label or "",
+                        "target_subtitle": row.target_subtitle or "",
+                        "version": row.version or "",
+                        "file_path": row.file_path or "",
+                        "start_line": row.start_line or 0,
+                        "end_line": row.end_line or 0,
+                    }
+
+            # --- batch query knowledge entities ---
+            entity_map: dict[str, dict] = {}
+            if entity_ids:
+                rows = (await session.execute(
+                    select(KnowledgeEntityORM).where(KnowledgeEntityORM.entity_id.in_(entity_ids))
+                )).scalars().all()
+                for row in rows:
+                    entity_map[row.entity_id] = {
+                        "entity_id": row.entity_id,
+                        "entity_type": row.entity_type,
+                        "canonical_name": row.canonical_name,
+                        "summary": row.summary or "",
+                        "status": row.status or "",
+                        "aliases": row.aliases or [],
+                    }
+
+            # --- assemble items ---
+            for assignment, tag_obj in assignment_rows:
                 target_meta: dict = {}
-                if assignment.target_type == TARGET_TYPE_EMAIL_THREAD:
-                    email_result = await session.execute(
-                        select(EmailORM.subject, EmailORM.sender, EmailORM.date, EmailORM.list_name)
-                        .where(EmailORM.thread_id == assignment.target_ref)
-                        .order_by(EmailORM.date.asc())
-                        .limit(1)
-                    )
-                    row = email_result.first()
-                    if row:
-                        target_meta = {
-                            "subject": row.subject or "",
-                            "sender": row.sender or "",
-                            "date": row.date.isoformat() if row.date else None,
-                            "list_name": row.list_name or "",
-                            "thread_id": assignment.target_ref,
-                        }
-                elif assignment.target_type == TARGET_TYPE_EMAIL_MESSAGE:
-                    email_result = await session.execute(
-                        select(
-                            EmailORM.subject,
-                            EmailORM.sender,
-                            EmailORM.date,
-                            EmailORM.list_name,
-                            EmailORM.thread_id,
-                        ).where(EmailORM.message_id == assignment.target_ref)
-                    )
-                    row = email_result.first()
-                    if row:
-                        target_meta = {
-                            "subject": row.subject or "",
-                            "sender": row.sender or "",
-                            "date": row.date.isoformat() if row.date else None,
-                            "list_name": row.list_name or "",
-                            "thread_id": row.thread_id or "",
-                            "message_id": assignment.target_ref,
-                        }
-                elif assignment.target_type == TARGET_TYPE_EMAIL_PARAGRAPH:
-                    email_result = await session.execute(
-                        select(
-                            EmailORM.subject,
-                            EmailORM.sender,
-                            EmailORM.date,
-                            EmailORM.list_name,
-                            EmailORM.thread_id,
-                        ).where(EmailORM.message_id == assignment.target_ref)
-                    )
-                    row = email_result.first()
-                    if row:
-                        target_meta = {
-                            "subject": row.subject or "",
-                            "sender": row.sender or "",
-                            "date": row.date.isoformat() if row.date else None,
-                            "list_name": row.list_name or "",
-                            "thread_id": row.thread_id or "",
-                            "message_id": assignment.target_ref,
-                            "paragraph_index": assignment.anchor.get("paragraph_index", 0),
-                        }
-                elif assignment.target_type == TARGET_TYPE_ANNOTATION:
-                    ann_result = await session.execute(
-                        select(
-                            AnnotationORM.annotation_type,
-                            AnnotationORM.body,
-                            AnnotationORM.thread_id,
-                            AnnotationORM.in_reply_to,
-                            AnnotationORM.target_label,
-                            AnnotationORM.target_subtitle,
-                            AnnotationORM.version,
-                            AnnotationORM.file_path,
-                            AnnotationORM.start_line,
-                            AnnotationORM.end_line,
-                        ).where(AnnotationORM.annotation_id == assignment.target_ref)
-                    )
-                    row = ann_result.first()
-                    if row:
-                        target_meta = {
-                            "annotation_id": assignment.target_ref,
-                            "annotation_type": row.annotation_type,
-                            "body": row.body or "",
-                            "thread_id": row.thread_id or "",
-                            "in_reply_to": row.in_reply_to or "",
-                            "target_label": row.target_label or "",
-                            "target_subtitle": row.target_subtitle or "",
-                            "version": row.version or "",
-                            "file_path": row.file_path or "",
-                            "start_line": row.start_line or 0,
-                            "end_line": row.end_line or 0,
-                        }
-                elif assignment.target_type == TARGET_TYPE_KERNEL_LINE_RANGE:
+                tt = assignment.target_type
+                tref = assignment.target_ref
+                if tt == TARGET_TYPE_EMAIL_THREAD:
+                    target_meta = thread_map.get(tref, {})
+                elif tt in (TARGET_TYPE_EMAIL_MESSAGE, TARGET_TYPE_EMAIL_PARAGRAPH):
+                    target_meta = msg_map.get(tref, {})
+                    if tt == TARGET_TYPE_EMAIL_PARAGRAPH:
+                        target_meta = dict(target_meta, paragraph_index=assignment.anchor.get("paragraph_index", 0))
+                elif tt == TARGET_TYPE_ANNOTATION:
+                    target_meta = ann_map.get(tref, {})
+                elif tt == TARGET_TYPE_KERNEL_LINE_RANGE:
                     version = ""
                     file_path = ""
-                    if ":" in assignment.target_ref:
-                        version, file_path = assignment.target_ref.split(":", 1)
+                    if ":" in tref:
+                        version, file_path = tref.split(":", 1)
                     target_meta = {
                         "version": version,
                         "file_path": file_path,
                         "start_line": assignment.anchor.get("start_line", 0),
                         "end_line": assignment.anchor.get("end_line", 0),
                     }
-                elif assignment.target_type == TARGET_TYPE_KNOWLEDGE_ENTITY:
-                    entity_result = await session.execute(
-                        select(
-                            KnowledgeEntityORM.entity_id,
-                            KnowledgeEntityORM.entity_type,
-                            KnowledgeEntityORM.canonical_name,
-                            KnowledgeEntityORM.summary,
-                            KnowledgeEntityORM.status,
-                            KnowledgeEntityORM.aliases,
-                        ).where(KnowledgeEntityORM.entity_id == assignment.target_ref)
-                    )
-                    row = entity_result.first()
-                    if row:
-                        target_meta = {
-                            "entity_id": row.entity_id,
-                            "entity_type": row.entity_type,
-                            "canonical_name": row.canonical_name,
-                            "summary": row.summary or "",
-                            "status": row.status or "",
-                            "aliases": row.aliases or [],
-                        }
+                elif tt == TARGET_TYPE_KNOWLEDGE_ENTITY:
+                    target_meta = entity_map.get(tref, {})
 
                 items.append(
                     {
                         "assignment_id": assignment.assignment_id,
-                        "target_type": assignment.target_type,
-                        "target_ref": assignment.target_ref,
+                        "target_type": tt,
+                        "target_ref": tref,
                         "anchor": assignment.anchor or {},
                         "target_meta": target_meta,
                         "tag": self._to_tag_read(tag_obj).model_dump(mode="json"),
@@ -880,25 +873,6 @@ class TagStore:
             tag = result.scalars().first()
             if tag:
                 return tag
-            tag = TagORM(
-                slug=slugify_tag(tag_name),
-                name=tag_name.strip(),
-                description="",
-                color=DEFAULT_TAG_COLOR,
-                status="active",
-                tag_kind="topic",
-                visibility="public",
-                owner_user_id=actor_user_id or None,
-                created_by=actor_display_name or self.default_actor,
-                updated_by=actor_display_name or self.default_actor,
-                created_by_user_id=actor_user_id or None,
-                updated_by_user_id=actor_user_id or None,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
-            )
-            session.add(tag)
-            await session.flush()
-            return tag
         return None
 
     async def _ensure_tag_name_available(self, session, name: str, exclude_id: Optional[int] = None) -> None:

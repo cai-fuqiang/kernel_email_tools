@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import AnnotationTree from '../components/AnnotationTree';
-import { listAnnotations } from '../api/client';
+import { getAnnotationStats, listAnnotations } from '../api/client';
 import type { AnnotationListItem } from '../api/types';
 import { useAuth } from '../auth';
 
@@ -28,10 +28,13 @@ export default function AnnotationsPage() {
   // 分页
   const totalPages = Math.ceil(total / pageSize);
 
-  // 统计
-  const emailCount = annotations.filter(a => a.annotation_type === 'email').length;
-  const codeCount = annotations.filter(a => a.annotation_type === 'code').length;
-  const specCount = annotations.filter(a => a.annotation_type === 'sdm_spec').length;
+  // 统计（服务端全库统计）
+  const [stats, setStats] = useState({ email_count: 0, code_count: 0, sdm_spec_count: 0, total: 0 });
+
+  // 加载统计
+  useEffect(() => {
+    getAnnotationStats().then(setStats).catch(() => {});
+  }, []);
 
   // 加载数据
   const loadAnnotations = useCallback(async () => {
@@ -100,15 +103,15 @@ export default function AnnotationsPage() {
           <div className="flex flex-wrap gap-4 mt-4">
             <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg border border-blue-100">
               <i data-lucide="mail" className="w-4 h-4 text-blue-500"></i>
-              <span className="text-sm text-blue-700 font-medium">{emailCount} 邮件批注</span>
+              <span className="text-sm text-blue-700 font-medium">{stats.email_count} 邮件批注</span>
             </div>
             <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 rounded-lg border border-indigo-100">
               <i data-lucide="code-2" className="w-4 h-4 text-indigo-500"></i>
-              <span className="text-sm text-indigo-700 font-medium">{codeCount} 代码标注</span>
+              <span className="text-sm text-indigo-700 font-medium">{stats.code_count} 代码标注</span>
             </div>
             <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 rounded-lg border border-amber-100">
               <i data-lucide="scroll-text" className="w-4 h-4 text-amber-500"></i>
-              <span className="text-sm text-amber-700 font-medium">{specCount} Spec 标注</span>
+              <span className="text-sm text-amber-700 font-medium">{stats.sdm_spec_count} Spec 标注</span>
             </div>
           </div>
         </div>

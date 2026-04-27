@@ -11,7 +11,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import yaml
 from fastapi import FastAPI, HTTPException, Query, Body, Depends, Request, Response
@@ -885,7 +885,7 @@ class TagTargetBundleResponse(BaseModel):
     target_type: str
     target_ref: str
     direct_tags: list[TagRead] = Field(default_factory=list)
-    inherited_tags: list[TagRead] = Field(default_factory=list)
+
     aggregated_tags: list[TagRead] = Field(default_factory=list)
 
 
@@ -1766,10 +1766,10 @@ async def get_tag_stats(current_user: Optional[CurrentUser] = Depends(get_option
 
     返回所有标签及其被使用的邮件数量。
     """
-    if not _storage:
-        raise HTTPException(status_code=503, detail="Storage not initialized")
+    if not _tag_store:
+        raise HTTPException(status_code=503, detail="Tag store not initialized")
 
-    return await _storage.get_all_tags_with_count(
+    return await _tag_store.get_tag_stats(
         viewer_user_id=current_user.user_id if current_user else None
     )
 
@@ -1945,17 +1945,6 @@ async def get_tag_targets(
     }
 
 
-@app.get("/api/tag-summary")
-async def get_tag_summary(current_user: Optional[CurrentUser] = Depends(get_optional_current_user)):
-    if not _tag_store:
-        raise HTTPException(status_code=503, detail="Tag store not initialized")
-    return {
-        "tags": await _tag_store.get_tag_stats(
-            viewer_user_id=current_user.user_id if current_user else None
-        )
-    }
-
-
 @app.get("/api/tag-targets/{target_type}/{target_ref:path}/tags", response_model=TagTargetBundleResponse)
 async def get_target_tags(
     target_type: str,
@@ -1975,7 +1964,6 @@ async def get_target_tags(
         target_type=target_type,
         target_ref=target_ref,
         direct_tags=bundle.direct_tags,
-        inherited_tags=bundle.inherited_tags,
         aggregated_tags=bundle.aggregated_tags,
     )
 
@@ -2864,7 +2852,7 @@ async def manual_translate(request: ManualTranslateRequest = Body(...)):
 
 class AnnotationCreateRequest(BaseModel):
     """创建标注请求。"""
-    annotation_type: str = Field("email", description="标注类型：email / code / sdm_spec ...")
+    annotation_type: Literal["email", "code", "sdm_spec"] = Field("email", description="标注类型")
     body: str = Field(..., min_length=1, description="批注正文（支持 Markdown）")
     author: str = Field("", description="批注作者（留空使用默认作者）")
     visibility: str = Field("public", description="public | private")
@@ -2959,6 +2947,34 @@ def _annotation_to_response(annotation: AnnotationRead) -> AnnotationResponse:
         start_line=annotation.start_line or 0,
         end_line=annotation.end_line or 0,
     )
+
+
+@app.get("/api/annotations/stats")
+async def get_annotation_stats(current_user: Optional[CurrentUser] = Depends(get_optional_current_user)):
+    """获取批注各类型总数统计。"""
+    if not _annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+
+    from sqlalchemy import func, select
+    from src.storage.models import AnnotationORM
+
+    async with _annotation_store.session_factory() as session:
+        stmt = (
+            select(AnnotationORM.annotation_type, func.count(AnnotationORM.id).label("count"))
+            .where(*_annotation_store._visibility_filters(
+                current_user.user_id if current_user else None
+            ))
+            .group_by(AnnotationORM.annotation_type)
+        )
+        result = await session.execute(stmt)
+        rows = result.all()
+        counts = {row[0]: row[1] for row in rows}
+        return {
+            "email_count": counts.get("email", 0),
+            "code_count": counts.get("code", 0),
+            "sdm_spec_count": counts.get("sdm_spec", 0),
+            "total": sum(counts.values()),
+        }
 
 
 @app.get("/api/annotations")
@@ -3241,13 +3257,11 @@ async def export_annotations(
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
 
     if thread_id:
-        annotations = await _annotation_store.list_by_thread(thread_id, viewer_user_id=current_user.user_id)
-        if _is_admin(current_user):
-            annotations = await _annotation_store.list_by_thread(
-                thread_id,
-                viewer_user_id=current_user.user_id,
-                include_all_private=True,
-            )
+        annotations = await _annotation_store.list_by_thread(
+            thread_id,
+            viewer_user_id=current_user.user_id,
+            include_all_private=_is_admin(current_user),
+        )
         return {
             "thread_id": thread_id,
             "exported_at": datetime.utcnow().isoformat(),

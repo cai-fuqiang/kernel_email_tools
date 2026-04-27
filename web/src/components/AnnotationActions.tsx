@@ -1,15 +1,3 @@
-interface AnnotationActionsProps {
-  onEdit: () => void;
-  onDelete: () => void;
-  onReply?: () => void;
-  onPreview?: (e: React.MouseEvent) => void;
-  showEdit?: boolean;
-  showDelete?: boolean;
-  showReply?: boolean;
-  showPreview?: boolean;
-  variant: 'email' | 'code';
-}
-
 /**
  * 共享操作按钮组件
  * 用于邮件批注和代码标注的编辑、删除、回复按钮

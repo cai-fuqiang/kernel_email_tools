@@ -171,11 +171,6 @@ export default function SearchPage() {
     });
   }
 
-  const openThreadAt = (threadId: string, messageId?: string) => {
-    if (!threadId) return;
-    setSelectedThread(threadId);
-  };
-
   return (
     <div className="p-8 max-w-5xl mx-auto">
       <div className="mb-8">

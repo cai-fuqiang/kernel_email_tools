@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -19,6 +19,8 @@ import {
 } from '../api/client';
 import type { ThreadResponse, ThreadEmail, Annotation } from '../api/types';
 import EmailTagEditor from './EmailTagEditor';
+import ConfirmModal from './ConfirmModal';
+import { showToast } from './Toast';
 import { useAuth } from '../auth';
 
 // 线程节点类型（支持邮件和批注两种）
@@ -510,7 +512,7 @@ function AnnotationCard({
                       await requestAnnotationPublication(annotation.annotation_id);
                       window.location.reload();
                     } catch (e) {
-                      alert(e instanceof Error ? e.message : '申请公开失败');
+                      showToast(e instanceof Error ? e.message : '申请公开失败', 'error');
                     }
                   }}
                   className="text-xs px-2 py-1 text-amber-700 bg-amber-100 hover:bg-amber-200 rounded transition-colors"
@@ -525,7 +527,7 @@ function AnnotationCard({
                       await withdrawAnnotationPublication(annotation.annotation_id);
                       window.location.reload();
                     } catch (e) {
-                      alert(e instanceof Error ? e.message : '撤回申请失败');
+                      showToast(e instanceof Error ? e.message : '撤回申请失败', 'error');
                     }
                   }}
                   className="text-xs px-2 py-1 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded transition-colors"
@@ -542,7 +544,7 @@ function AnnotationCard({
                         await approveAnnotationPublication(annotation.annotation_id, reviewComment);
                         window.location.reload();
                       } catch (e) {
-                        alert(e instanceof Error ? e.message : '审核通过失败');
+                        showToast(e instanceof Error ? e.message : '审核通过失败', 'error');
                       }
                     }}
                     className="text-xs px-2 py-1 text-emerald-700 bg-emerald-100 hover:bg-emerald-200 rounded transition-colors"
@@ -556,7 +558,7 @@ function AnnotationCard({
                         await rejectAnnotationPublication(annotation.annotation_id, reviewComment);
                         window.location.reload();
                       } catch (e) {
-                        alert(e instanceof Error ? e.message : '驳回失败');
+                        showToast(e instanceof Error ? e.message : '驳回失败', 'error');
                       }
                     }}
                     className="text-xs px-2 py-1 text-rose-700 bg-rose-100 hover:bg-rose-200 rounded transition-colors"
@@ -1244,6 +1246,22 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
   const [layeredExpandedIds, setLayeredExpandedIds] = useState<Set<number>>(new Set());
   const [highlightedTarget, setHighlightedTarget] = useState<string | null>(null);
 
+  // Confirm modal state
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmConfig, setConfirmConfig] = useState<{
+    title: string; message: string; variant: 'danger' | 'primary' | 'warning';
+    confirmLabel: string; showInput: boolean; inputLabel?: string; inputPlaceholder?: string;
+  }>({ title: '', message: '', variant: 'danger', confirmLabel: '确定', showInput: false });
+  const confirmCallback = useRef<((val: string) => void) | null>(null);
+  const openConfirm = useCallback((
+    opts: { title: string; message: string; variant?: 'danger' | 'primary' | 'warning'; confirmLabel?: string; showInput?: boolean; inputLabel?: string; inputPlaceholder?: string },
+    callback: (val: string) => void,
+  ) => {
+    setConfirmConfig({ title: opts.title, message: opts.message, variant: opts.variant || 'danger', confirmLabel: opts.confirmLabel || '确定', showInput: opts.showInput || false, inputLabel: opts.inputLabel, inputPlaceholder: opts.inputPlaceholder });
+    confirmCallback.current = callback;
+    setConfirmOpen(true);
+  }, []);
+
   const nodeMap = useMemo(() => buildNodeMap(threadTree), [threadTree]);
 
   const visibleNodes = useMemo(() => {
@@ -1337,16 +1355,17 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
   }, [threadId, rebuildTree]);
 
   const handleDeleteAnnotation = useCallback(async (annotationId: string) => {
-    if (!confirm('确定删除这条批注？')) return;
-    try {
-      await deleteAnnotation(annotationId);
-      const t = await getThread(threadId);
-      setThread(t);
-      rebuildTree(t);
-    } catch (e) {
-      console.error('Failed to delete annotation:', e);
-    }
-  }, [threadId, rebuildTree]);
+    openConfirm({ title: '删除批注', message: '确定删除这条批注？', variant: 'danger', confirmLabel: '删除' }, async () => {
+      try {
+        await deleteAnnotation(annotationId);
+        const t = await getThread(threadId);
+        setThread(t);
+        rebuildTree(t);
+      } catch (e) {
+        console.error('Failed to delete annotation:', e);
+      }
+    });
+  }, [threadId, rebuildTree, openConfirm]);
 
   const handleExportAnnotations = useCallback(async () => {
     try {
@@ -1845,6 +1864,18 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
           }
         }
       `}</style>
+      <ConfirmModal
+        isOpen={confirmOpen}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        variant={confirmConfig.variant}
+        confirmLabel={confirmConfig.confirmLabel}
+        showInput={confirmConfig.showInput}
+        inputLabel={confirmConfig.inputLabel}
+        inputPlaceholder={confirmConfig.inputPlaceholder}
+        onConfirm={(val) => { confirmCallback.current?.(val); setConfirmOpen(false); }}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   );
 }

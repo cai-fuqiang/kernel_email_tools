@@ -533,9 +533,7 @@ class TagAssignmentRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class TagBundle(BaseModel):
     direct_tags: list[TagRead] = Field(default_factory=list)
-    inherited_tags: list[TagRead] = Field(default_factory=list)
     aggregated_tags: list[TagRead] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

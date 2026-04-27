@@ -1,4 +1,5 @@
 import type {
+  SearchHit,
   SearchResponse,
   SummarizeResponse,
   AskDraftApplyResponse,
@@ -845,6 +846,10 @@ export async function listAnnotations(opts?: {
     ...data,
     annotations: normalizeAnnotations(data.annotations) as AnnotationListResponse['annotations'],
   };
+}
+
+export async function getAnnotationStats(): Promise<{ email_count: number; code_count: number; sdm_spec_count: number; total: number }> {
+  return fetchJSON(`${API_BASE}/annotations/stats`);
 }
 
 export async function listKnowledgeEntities(opts?: {
