@@ -80,45 +80,49 @@ class AskDraftService:
 
     async def generate(
         self,
-        payload: dict,
+        query: str,
+        summary: str,
+        sources: list[dict],
         tag_exists,
     ) -> AskDraftBundle:
-        """Generate normalized drafts.
+        """Generate normalized drafts from AI summary results.
 
         Args:
-            payload: Ask response-like dict.
+            query: Original search query.
+            summary: AI-generated summary text.
+            sources: List of source dicts with message_id, subject, sender, date, snippet, thread_id.
             tag_exists: async callable accepting tag name and returning bool.
         """
-        parsed = await self._generate_with_llm(payload)
-        bundle = self._normalize_bundle(parsed or self._fallback_bundle(payload), payload)
+        payload = {"question": query, "answer": summary, "sources": sources}
+        parsed = await self._generate_with_llm(query, summary, sources)
+        bundle = self._normalize_bundle(parsed or self._fallback_bundle(query, summary, sources), payload)
         await self._mark_tag_existence(bundle, tag_exists)
         return bundle
 
-    async def _generate_with_llm(self, payload: dict) -> Optional[dict]:
+    async def _generate_with_llm(
+        self, query: str, summary: str, sources: list[dict]
+    ) -> Optional[dict]:
         if not self.llm or not self.llm.available:
             return None
         raw = await self.llm.complete(
             DRAFT_SYSTEM_PROMPT,
             DRAFT_USER_TEMPLATE.format(
-                question=payload.get("question", ""),
-                answer=payload.get("answer", ""),
-                sources=payload.get("sources", []),
-                search_plan=payload.get("search_plan", {}),
-                threads=payload.get("threads", []),
+                question=query,
+                answer=summary,
+                sources=sources,
+                search_plan={},
+                threads=[],
             ),
             temperature=0.1,
             max_tokens=1800,
         )
         return parse_json_object(raw) if raw else None
 
-    def _fallback_bundle(self, payload: dict) -> dict:
-        question = str(payload.get("question") or "").strip()
-        answer = str(payload.get("answer") or "").strip()
-        sources = payload.get("sources") or []
-        threads = payload.get("threads") or []
+    def _fallback_bundle(self, query: str, summary: str, sources: list[dict]) -> dict:
+        question = query.strip()
+        answer = summary.strip()
         primary_source = sources[0] if sources else {}
-        primary_thread = threads[0] if threads else {}
-        thread_id = primary_source.get("thread_id") or primary_thread.get("thread_id") or ""
+        thread_id = primary_source.get("thread_id") or ""
         canonical_name = self._make_name(question, primary_source)
         citations = ", ".join(
             f"[{source.get('message_id')}]" for source in sources[:6] if source.get("message_id")
@@ -129,12 +133,12 @@ class AskDraftService:
             f"## Evidence\n\n{citations or 'No source Message-ID captured.'}\n"
         )
         annotation_body = (
-            f"**AI draft from Ask**\n\n"
-            f"Question: {question}\n\n"
+            f"**AI draft from Search Summarize**\n\n"
+            f"Query: {question}\n\n"
             f"{answer}\n\n"
             f"Sources: {citations or 'none'}"
         )
-        tags = self._candidate_tags(payload)
+        tags = self._candidate_tags(sources)
         return {
             "knowledge_drafts": [{
                 "entity_type": "topic",
@@ -301,14 +305,13 @@ class AskDraftService:
                 + ", ".join(sorted(set(missing)))
             )
 
-    def _candidate_tags(self, payload: dict) -> list[str]:
+    def _candidate_tags(self, sources: list[dict]) -> list[str]:
         tags = []
-        for source in payload.get("sources") or []:
+        for source in sources:
             if source.get("list_name"):
                 tags.append(str(source["list_name"]))
-        plan = payload.get("search_plan") or {}
-        for query in (plan.get("keyword_queries") or [])[:3]:
-            parts = re.findall(r"[A-Za-z][A-Za-z0-9_-]{2,}", str(query))
+            snippet = str(source.get("snippet") or source.get("subject") or "")
+            parts = re.findall(r"[A-Za-z][A-Za-z0-9_-]{2,}", snippet)
             tags.extend(parts[:2])
         return list(dict.fromkeys(tags))[:5]
 

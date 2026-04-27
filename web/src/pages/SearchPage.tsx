@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { searchEmails, getTagStats, type TagStats } from '../api/client';
-import type { SearchResponse, SearchHit } from '../api/types';
+import { searchEmails, getTagStats, summarizeSearchResults, createSummaryDraft, applySummaryDraft, type TagStats } from '../api/client';
+import type { SearchResponse, SearchHit, SummarizeResponse, AskDraftResponse, SourceRef } from '../api/types';
 import ThreadDrawer from '../components/ThreadDrawer';
 import TagFilter from '../components/TagFilter';
 import EmailTagEditor from '../components/EmailTagEditor';
@@ -23,6 +23,14 @@ export default function SearchPage() {
   const [hasPatch, setHasPatch] = useState<boolean | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [tagMode, setTagMode] = useState<'any' | 'all'>('any');
+
+  // AI 概括状态
+  const [summarizing, setSummarizing] = useState(false);
+  const [summary, setSummary] = useState<SummarizeResponse | null>(null);
+  const [draftBundle, setDraftBundle] = useState<AskDraftResponse | null>(null);
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [draftSaved, setDraftSaved] = useState<{ entities: number; annotations: number; tags: number; errors: number } | null>(null);
+  const [showDraftPanel, setShowDraftPanel] = useState(false);
 
   // Channel/channel 选择状态
   const [selectedChannel, setSelectedChannel] = useState<string>('');
@@ -88,6 +96,84 @@ export default function SearchPage() {
         ? prev.filter(t => t !== tag)
         : [...prev, tag]
     );
+  };
+
+  const handleSummarize = async () => {
+    if (!result || summarizing) return;
+    setSummarizing(true);
+    setSummary(null);
+    setDraftBundle(null);
+    try {
+      const hits = result.hits.slice(0, 10);
+      const resp = await summarizeSearchResults({
+        query: query || 'kernel discussion',
+        hits,
+      });
+      setSummary(resp);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSummarizing(false);
+    }
+  };
+
+  const handleCreateDraft = async () => {
+    if (!summary || draftLoading) return;
+    setDraftLoading(true);
+    setDraftBundle(null);
+    try {
+      const sources: SourceRef[] = summary.sources.map(s => ({
+        message_id: s.message_id,
+        subject: s.subject,
+        sender: s.sender,
+        date: s.date,
+        snippet: s.snippet,
+        thread_id: s.thread_id,
+        list_name: s.list_name,
+      }));
+      const bundle = await createSummaryDraft(query || 'kernel discussion', summary.answer, sources);
+      setDraftBundle(bundle);
+      setShowDraftPanel(true);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setDraftLoading(false);
+    }
+  };
+
+  const handleApplyDraft = async () => {
+    if (!draftBundle) return;
+    setDraftLoading(true);
+    try {
+      const resp = await applySummaryDraft(draftBundle);
+      setDraftSaved({
+        entities: resp.created_entities.length,
+        annotations: resp.created_annotations.length,
+        tags: resp.created_tag_assignments.length,
+        errors: resp.errors.length,
+      });
+      if (resp.errors.length > 0) {
+        setError(`Draft saved with ${resp.errors.length} error(s): ${resp.errors.map(e => e.message).join(', ')}`);
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setDraftLoading(false);
+    }
+  };
+
+  const sourceByMessageId = new Map<string, { threadId: string; messageId: string }>();
+  for (const source of summary?.sources || []) {
+    if (!source.message_id || !source.thread_id) continue;
+    sourceByMessageId.set(source.message_id.replace(/^<|>$/g, '').trim(), {
+      threadId: source.thread_id,
+      messageId: source.message_id,
+    });
+  }
+
+  const openThreadAt = (threadId: string, messageId?: string) => {
+    if (!threadId) return;
+    setSelectedThread(threadId);
   };
 
   return (
@@ -316,6 +402,161 @@ export default function SearchPage() {
             )}
             <span className="ml-2 px-2 py-0.5 bg-gray-100 rounded-full text-xs">{result.mode}</span>
           </p>
+
+          {/* AI 概括按钮 */}
+          <div className="mb-4">
+            <button
+              onClick={handleSummarize}
+              disabled={summarizing || result.hits.length === 0}
+              className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg text-sm font-medium hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 shadow-sm flex items-center gap-2"
+            >
+              {summarizing ? (
+                <>
+                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  概括中...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  AI 概括前 {Math.min(result.hits.length, 10)} 条结果
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* AI 概括结果面板 */}
+          {summary && (
+            <div className="mb-4 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  AI 概括
+                  <span className="text-xs font-normal text-gray-400">by {summary.model}</span>
+                </h3>
+                <div className="flex items-center gap-2">
+                  {!showDraftPanel && (
+                    <button
+                      onClick={handleCreateDraft}
+                      disabled={draftLoading}
+                      className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {draftLoading ? '生成草稿中...' : '创建草稿'}
+                    </button>
+                  )}
+                  {draftSaved && (
+                    <span className="text-xs text-green-600">
+                      已保存: {draftSaved.entities} 实体, {draftSaved.annotations} 批注, {draftSaved.tags} 标签
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                {summary.answer.split(/(\[[^\]]+\])/g).map((part, i) => {
+                  const m = part.match(/^\[([^\]]+)\]$/);
+                  if (!m) return <span key={i}>{part}</span>;
+                  const msgId = m[1].replace(/^<|>$/g, '').trim();
+                  const src = summary.sources.find(s =>
+                    (s.message_id || '').replace(/^<|>$/g, '').trim() === msgId
+                  );
+                  if (!src || !src.thread_id) return <span key={i}>{part}</span>;
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setSelectedThread(src.thread_id!)}
+                      className="mx-0.5 rounded bg-indigo-50 px-1.5 py-0.5 font-mono text-xs text-indigo-700 hover:bg-indigo-100"
+                      title="Open thread"
+                    >
+                      {part}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 草稿面板 */}
+              {showDraftPanel && draftBundle && (
+                <div className="mt-4 pt-4 border-t border-indigo-200">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3">Knowledge Drafts</h4>
+                  {draftBundle.warnings.length > 0 && (
+                    <div className="mb-3 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                      {draftBundle.warnings.join(', ')}
+                    </div>
+                  )}
+                  <div className="space-y-3">
+                    {draftBundle.knowledge_drafts.length > 0 && (
+                      <details className="text-xs" open>
+                        <summary className="font-medium text-gray-700 cursor-pointer">
+                          Knowledge Entities ({draftBundle.knowledge_drafts.length})
+                        </summary>
+                        <div className="mt-2 space-y-2">
+                          {draftBundle.knowledge_drafts.map((d, i) => (
+                            <div key={i} className="bg-white rounded-lg p-3 border border-gray-200">
+                              <div className="flex items-center gap-2">
+                                <span className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 text-xs font-medium">{d.entity_type}</span>
+                                <span className="font-medium text-gray-800">{d.canonical_name}</span>
+                              </div>
+                              {d.summary && <p className="text-gray-600 mt-1">{d.summary}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                    {draftBundle.annotation_drafts.length > 0 && (
+                      <details className="text-xs">
+                        <summary className="font-medium text-gray-700 cursor-pointer">
+                          Annotations ({draftBundle.annotation_drafts.length})
+                        </summary>
+                        <div className="mt-2 space-y-1">
+                          {draftBundle.annotation_drafts.map((d, i) => (
+                            <div key={i} className="bg-white rounded p-2 border border-gray-100">
+                              <span className="text-gray-500">{d.target_type}: {d.target_label || d.target_ref}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                    {draftBundle.tag_assignment_drafts.length > 0 && (
+                      <details className="text-xs">
+                        <summary className="font-medium text-gray-700 cursor-pointer">
+                          Tag Assignments ({draftBundle.tag_assignment_drafts.length})
+                        </summary>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {draftBundle.tag_assignment_drafts.map((d, i) => (
+                            <span key={i} className={`px-2 py-0.5 rounded-full text-xs ${d.tag_exists ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500 line-through'}`}>
+                              {d.tag_name}
+                            </span>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={handleApplyDraft}
+                      disabled={draftLoading || !!draftSaved}
+                      className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      {draftLoading ? '保存中...' : draftSaved ? '已保存' : '保存选中草稿'}
+                    </button>
+                    <button
+                      onClick={() => { setShowDraftPanel(false); setDraftBundle(null); }}
+                      className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50"
+                    >
+                      关闭
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="space-y-3">
             {result.hits.map((hit) => (
               <ResultCard

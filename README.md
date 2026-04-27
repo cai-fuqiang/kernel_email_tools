@@ -6,8 +6,8 @@
 
 - 邮件列表导入：支持 `kvm`、`linux-mm`、`lkml` 等 lore git mirror，本地仓库优先。
 - 高速全文检索：PostgreSQL TSVECTOR + GIN，支持列表、发件人、日期、patch、tag 过滤。
-- Agentic Ask：AI 先生成检索计划，再执行多 query、chunk 全文/向量召回、thread 扩展，最后基于证据回答。
-- Ask 到知识库：Ask 结果可生成 Knowledge / Annotation / Tag assignment 草稿，用户确认后落库。
+- AI 概括：搜索后一键触发 LLM 生成引用式概览，[Message-ID] 可点击验证原文。
+- 概括到知识库：AI 概括结果可生成 Knowledge / Annotation / Tag assignment 草稿，用户确认后落库。
 - 知识沉淀：统一 Knowledge entity、层级标签、邮件/代码/知识实体批注。
 - 线程阅读：邮件线程抽屉支持翻译、批注、标签、patch 展示。
 - 内核源码浏览：本地 git kernel source 浏览、symbol definition/resolve、代码批注。
@@ -24,15 +24,15 @@ src/
 ├── storage/         # PostgreSQL ORM、标签、批注、知识实体、缓存
 ├── indexer/         # 全文索引、邮件 RAG chunk、向量索引
 ├── retriever/       # 邮件/手册检索
-├── qa/              # AskAgent、AskDraftService、ManualQA、LLM/embedding provider
+├── qa/              # AI summarize、AskDraftService、ManualQA、LLM/embedding provider
 ├── kernel_source/   # 本地 kernel git 浏览
 ├── symbol_indexer/  # ctags 符号索引
 ├── translator/      # 翻译与缓存
 └── api/             # FastAPI 服务
 
 web/src/
-├── pages/           # Search / Ask / Knowledge / Tags / Annotations / Kernel Code / Manuals
-├── components/      # ThreadDrawer、AskDraftPanel、Tag/Annotation 组件等
+├── pages/           # Search (含 AI 概括) / Knowledge / Tags / Annotations / Kernel Code / Manuals
+├── components/      # ThreadDrawer、Tag/Annotation 组件等
 ├── layouts/         # MainLayout
 ├── api/             # API client 和 TypeScript 类型
 └── auth.tsx         # 前端认证状态

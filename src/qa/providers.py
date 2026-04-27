@@ -71,7 +71,7 @@ class DashScopeEmbeddingProvider:
 
 
 class ChatLLMClient:
-    """Small async chat client for AskAgent planning and answering."""
+    """Small async chat client for AI summarization and draft generation."""
 
     def __init__(
         self,

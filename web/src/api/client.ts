@@ -1,9 +1,10 @@
-import type { 
-  SearchResponse, 
-  AskResponse, 
+import type {
+  SearchResponse,
+  SummarizeResponse,
   AskDraftApplyResponse,
   AskDraftResponse,
-  ThreadResponse, 
+  SourceRef,
+  ThreadResponse,
   StatsResponse,
   AuthSession,
   CurrentUser,
@@ -443,40 +444,29 @@ export async function searchEmails(
   return fetchJSON<SearchResponse>(`${API_BASE}/search?${params}`);
 }
 
-export interface AskOptions {
-  list_name?: string;
-  sender?: string;
-  date_from?: string;
-  date_to?: string;
-  tags?: string | string[];
+export interface SummarizeRequest {
+  query: string;
+  hits: SearchHit[];
 }
 
-export async function askQuestion(
-  question: string,
-  opts: AskOptions = {},
-): Promise<AskResponse> {
-  const params = new URLSearchParams({ q: question });
-  if (opts.list_name) params.set('list_name', opts.list_name);
-  if (opts.sender) params.set('sender', opts.sender);
-  if (opts.date_from) params.set('date_from', opts.date_from);
-  if (opts.date_to) params.set('date_to', opts.date_to);
-  if (opts.tags) {
-    const tags = Array.isArray(opts.tags) ? opts.tags.join(',') : opts.tags;
-    params.set('tags', tags);
-  }
-  return fetchJSON<AskResponse>(`${API_BASE}/ask?${params}`);
-}
-
-export async function createAskDraft(answer: AskResponse): Promise<AskDraftResponse> {
-  return fetchWithBody<AskDraftResponse>(`${API_BASE}/ask/draft`, {
+export async function summarizeSearchResults(req: SummarizeRequest): Promise<SummarizeResponse> {
+  return fetchWithBody<SummarizeResponse>(`${API_BASE}/search/summarize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(answer),
+    body: JSON.stringify(req),
   });
 }
 
-export async function applyAskDraft(draft: AskDraftResponse): Promise<AskDraftApplyResponse> {
-  return fetchWithBody<AskDraftApplyResponse>(`${API_BASE}/ask/draft/apply`, {
+export async function createSummaryDraft(query: string, summary: string, sources: SourceRef[]): Promise<AskDraftResponse> {
+  return fetchWithBody<AskDraftResponse>(`${API_BASE}/search/summarize/draft`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, summary, sources }),
+  });
+}
+
+export async function applySummaryDraft(draft: AskDraftResponse): Promise<AskDraftApplyResponse> {
+  return fetchWithBody<AskDraftApplyResponse>(`${API_BASE}/search/summarize/draft/apply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
