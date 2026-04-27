@@ -2,6 +2,38 @@ import { useState, useEffect } from 'react';
 import { askQuestion, getTagStats, type TagStats } from '../api/client';
 import type { AskResponse } from '../api/types';
 import AskDraftPanel from '../components/AskDraftPanel';
+import ThreadDrawer from '../components/ThreadDrawer';
+
+type ThreadFocus = {
+  threadId: string;
+  focusMessageId?: string;
+};
+
+function renderAnswerWithLinks(
+  text: string,
+  sourceByMessageId: Map<string, { threadId: string; messageId: string }>,
+  onOpenSource: (threadId: string, messageId?: string) => void,
+) {
+  const parts = text.split(/(\[[^\]\s]+@[^\]]+\])/g);
+  return parts.map((part, index) => {
+    const match = part.match(/^\[([^\]\s]+@[^\]]+)\]$/);
+    if (!match) return <span key={index}>{part}</span>;
+    const messageId = match[1];
+    const source = sourceByMessageId.get(messageId);
+    if (!source) return <span key={index}>{part}</span>;
+    return (
+      <button
+        key={index}
+        type="button"
+        onClick={() => onOpenSource(source.threadId, source.messageId)}
+        className="mx-0.5 rounded bg-indigo-50 px-1.5 py-0.5 font-mono text-xs text-indigo-700 hover:bg-indigo-100"
+        title="Open cited email"
+      >
+        {part}
+      </button>
+    );
+  });
+}
 
 export default function AskPage() {
   const [question, setQuestion] = useState('');
@@ -14,6 +46,7 @@ export default function AskPage() {
   const [error, setError] = useState('');
   const [tagStats, setTagStats] = useState<TagStats[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedThread, setSelectedThread] = useState<ThreadFocus | null>(null);
 
   // Channel/channel 选择状态
   const [selectedChannel, setSelectedChannel] = useState<string>('');
@@ -59,6 +92,16 @@ export default function AskPage() {
   };
 
   const hasFilters = sender || dateFrom || dateTo || selectedTags.length > 0 || selectedChannel;
+  const sourceByMessageId = new Map(
+    (answer?.sources || [])
+      .filter(s => s.message_id && s.thread_id)
+      .map(s => [s.message_id, { threadId: s.thread_id!, messageId: s.message_id }])
+  );
+
+  const openThread = (threadId: string, focusMessageId?: string) => {
+    if (!threadId) return;
+    setSelectedThread({ threadId, focusMessageId });
+  };
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
@@ -197,7 +240,9 @@ export default function AskPage() {
               Answer
               <span className="text-xs font-normal text-gray-400 ml-auto">{answer.retrieval_mode} mode</span>
             </h3>
-            <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{answer.answer}</div>
+            <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+              {renderAnswerWithLinks(answer.answer, sourceByMessageId, openThread)}
+            </div>
           </div>
 
           <AskDraftPanel answer={answer} />
@@ -207,7 +252,13 @@ export default function AskPage() {
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Sources ({answer.sources.length})</h3>
               <div className="space-y-2">
                 {answer.sources.map((s, i) => (
-                  <div key={i} className="bg-gray-50 border border-gray-100 rounded-lg p-3">
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => openThread(s.thread_id || '', s.message_id)}
+                    disabled={!s.thread_id}
+                    className="block w-full text-left bg-gray-50 border border-gray-100 rounded-lg p-3 hover:border-indigo-200 hover:bg-indigo-50/30 disabled:cursor-default disabled:hover:border-gray-100 disabled:hover:bg-gray-50"
+                  >
                     <div className="flex items-start gap-3">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-900 truncate">{s.subject}</p>
@@ -226,7 +277,7 @@ export default function AskPage() {
                         </span>
                       )}
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -292,11 +343,16 @@ export default function AskPage() {
                     </div>
                     <div className="space-y-1.5">
                       {thread.messages.slice(0, 4).map(msg => (
-                        <div key={msg.message_id} className="text-xs text-gray-600">
+                        <button
+                          key={msg.message_id}
+                          type="button"
+                          onClick={() => openThread(thread.thread_id, msg.message_id)}
+                          className="block w-full rounded px-2 py-1 text-left text-xs text-gray-600 hover:bg-indigo-50"
+                        >
                           <span className="font-medium text-gray-700">{msg.sender}</span>
                           <span className="text-gray-400"> · {msg.date}</span>
                           <p className="line-clamp-2 mt-0.5">{msg.preview}</p>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -307,6 +363,13 @@ export default function AskPage() {
         </div>
       )}
       {!answer && !loading && <div className="text-center py-20 text-gray-400"><p>Ask a question about kernel mailing list discussions</p></div>}
+      {selectedThread && (
+        <ThreadDrawer
+          threadId={selectedThread.threadId}
+          focusMessageId={selectedThread.focusMessageId}
+          onClose={() => setSelectedThread(null)}
+        />
+      )}
     </div>
   );
 }
