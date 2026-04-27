@@ -1,6 +1,7 @@
 """AI 邮件检索代理：规划检索、多路召回、thread 扩展、证据回答。"""
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -16,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 PLAN_SYSTEM_PROMPT = """You are a search planner for Linux kernel mailing list research.
 Create compact, high-signal search queries to find evidence in kernel mailing list emails.
+The email corpus is mostly English. If the user's question is Chinese or another non-English
+language, translate the search intent into English kernel terminology for keyword_queries and
+semantic_queries. Preserve exact code symbols, subsystem names, error messages, and acronyms.
 Return only JSON."""
 
 PLAN_USER_TEMPLATE = """Question:
@@ -36,6 +40,38 @@ Return JSON with this shape:
   "rationale": "brief explanation"
 }}
 Use at most 6 keyword queries and 3 semantic queries."""
+
+QUERY_TRANSLATION_HINTS = {
+    "为什么": "why rationale reason",
+    "为何": "why rationale reason",
+    "引入": "introduce introduced introduction",
+    "加入": "add introduce",
+    "调度器": "scheduler",
+    "进程": "process",
+    "性能": "performance",
+    "扩展性": "scalability",
+    "可扩展": "scalability",
+    "内存": "memory",
+    "虚拟内存": "virtual memory",
+    "页": "page",
+    "文件系统": "filesystem",
+    "锁": "lock locking",
+    "补丁": "patch",
+    "回归": "regression",
+    "问题": "issue problem",
+    "原因": "reason rationale",
+    "区别": "difference compare",
+    "争议": "objection concern discussion",
+    "反对": "objection nack concern",
+}
+
+QUERY_PHRASE_HINTS = {
+    "o(1)": "O(1)",
+    "o（1）": "O(1)",
+    "调度器": "scheduler",
+    "o(1)调度器": "O(1) scheduler",
+    "o（1）调度器": "O(1) scheduler",
+}
 
 ANSWER_SYSTEM_PROMPT = """You are an expert Linux kernel mailing list research assistant.
 Answer based ONLY on the provided evidence. If evidence is insufficient, say so clearly.
@@ -188,6 +224,8 @@ class AskAgent:
                 str(q).strip() for q in parsed.get("semantic_queries", []) if str(q).strip()
             ][:3]
             if keyword_queries or semantic_queries:
+                keyword_queries = self._augment_queries(question, keyword_queries)[: self.max_queries]
+                semantic_queries = self._augment_queries(question, semantic_queries)[:3]
                 return {
                     "goal": str(parsed.get("goal") or question),
                     "keyword_queries": keyword_queries or [question],
@@ -195,13 +233,49 @@ class AskAgent:
                     "rationale": str(parsed.get("rationale") or ""),
                     "planner": "llm",
                 }
+        fallback_queries = self._fallback_queries(question)
         return {
             "goal": question,
-            "keyword_queries": [question],
-            "semantic_queries": [question],
+            "keyword_queries": fallback_queries[: self.max_queries],
+            "semantic_queries": fallback_queries[:3],
             "rationale": "Fallback plan because LLM planning was unavailable.",
             "planner": "fallback",
         }
+
+    def _augment_queries(self, question: str, queries: list[str]) -> list[str]:
+        """Add English fallback queries for non-English questions."""
+        combined = [q for q in queries if q.strip()]
+        if self._contains_cjk(question):
+            combined.extend(self._fallback_queries(question))
+        return list(dict.fromkeys(combined))
+
+    def _fallback_queries(self, question: str) -> list[str]:
+        """Build deterministic English-ish queries when LLM planning is unavailable."""
+        queries = [question.strip()] if question.strip() else []
+        hints = []
+        lowered = question.lower()
+        for phrase, replacement in QUERY_PHRASE_HINTS.items():
+            if phrase in lowered or phrase in question:
+                hints.append(replacement)
+        for phrase, replacement in QUERY_TRANSLATION_HINTS.items():
+            if phrase in question:
+                hints.extend(replacement.split())
+
+        protected = re.sub(r"(?i)o\s*[（(]\s*1\s*[）)]", " ", question)
+        ascii_terms = re.findall(r"[A-Za-z_][A-Za-z0-9_./:+-]*", protected)
+        terms = list(dict.fromkeys(ascii_terms + hints))
+        if terms:
+            queries.append(" ".join(terms))
+        if "O(1)" in terms and "scheduler" in terms:
+            queries.extend([
+                "O(1) scheduler",
+                "O(1) scheduler scalability",
+                "Ingo Molnar O(1) scheduler",
+            ])
+        return list(dict.fromkeys(q for q in queries if q.strip()))
+
+    def _contains_cjk(self, text: str) -> bool:
+        return bool(re.search(r"[\u4e00-\u9fff]", text))
 
     async def _retrieve_chunks(
         self,
@@ -252,39 +326,47 @@ class AskAgent:
                 self._merge_chunks(chunk_map, hits)
 
         if not chunk_map:
-            fallback_query = SearchQuery(
-                text=question,
-                list_name=list_name,
-                sender=sender,
-                date_from=date_from,
-                date_to=date_to,
-                tags=tags,
-                page=1,
-                page_size=self.per_query_limit,
-            )
-            result = await self.retriever.search(fallback_query)
-            executed.append(ExecutedQuery(query=question, mode="email_fallback", hits=len(result.hits)))
-            for hit in result.hits:
-                email = await self.storage.get_email(hit.message_id)
-                if not email:
-                    continue
-                content = hit.snippet or (email.body or "")[:500]
-                chunk = EmailChunkSearchResult(
-                    chunk_id=f"email:{hit.message_id}",
-                    message_id=hit.message_id,
-                    thread_id=hit.thread_id,
-                    list_name=hit.list_name,
-                    subject=hit.subject,
-                    sender=hit.sender,
-                    date=email.date,
-                    chunk_index=0,
-                    content=content,
-                    content_hash="",
-                    score=hit.score,
-                    snippet=hit.snippet or content,
-                    source="email_fallback",
+            fallback_queries = list(dict.fromkeys(
+                (plan.get("keyword_queries") or []) + (plan.get("semantic_queries") or []) + [question]
+            ))
+            for fallback_text in fallback_queries[: self.max_queries]:
+                fallback_query = SearchQuery(
+                    text=fallback_text,
+                    list_name=list_name,
+                    sender=sender,
+                    date_from=date_from,
+                    date_to=date_to,
+                    tags=tags,
+                    page=1,
+                    page_size=self.per_query_limit,
                 )
-                chunk_map[chunk.chunk_id] = chunk
+                result = await self.retriever.search(fallback_query)
+                executed.append(
+                    ExecutedQuery(query=fallback_text, mode="email_fallback", hits=len(result.hits))
+                )
+                for hit in result.hits:
+                    email = await self.storage.get_email(hit.message_id)
+                    if not email:
+                        continue
+                    content = hit.snippet or (email.body or "")[:500]
+                    chunk = EmailChunkSearchResult(
+                        chunk_id=f"email:{hit.message_id}",
+                        message_id=hit.message_id,
+                        thread_id=hit.thread_id,
+                        list_name=hit.list_name,
+                        subject=hit.subject,
+                        sender=hit.sender,
+                        date=email.date,
+                        chunk_index=0,
+                        content=content,
+                        content_hash="",
+                        score=hit.score,
+                        snippet=hit.snippet or content,
+                        source="email_fallback",
+                    )
+                    chunk_map[chunk.chunk_id] = chunk
+                if chunk_map:
+                    break
 
         return sorted(chunk_map.values(), key=lambda c: c.score, reverse=True), executed
 
