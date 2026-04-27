@@ -375,7 +375,7 @@ manual:
 ### API 接口（邮件）
 - `GET /api/` - 健康检查
 - `GET /api/search?q=关键词` - 邮件搜索（支持标签/发件人/日期过滤）
-- `GET /api/ask?q=问题` - 智能问答（支持标签/发件人/日期过滤）
+- `GET /api/ask?q=问题` - AI 邮件检索问答（检索计划、多 query、chunk/vector 召回、来源引用）
 - `GET /api/thread/{id}` - 获取邮件线程（含批注）
 - `GET /api/stats` - 数据库统计
 
@@ -420,8 +420,9 @@ manual:
 2. **解析**：EmailParser 解析 RFC2822 格式，ThreadBuilder 重建对话关系
 3. **存储**：PostgresStorage 批量写入，基于 message_id 去重
 4. **索引**：PostgreSQL 触发器自动维护全文索引，支持增量更新
-5. **检索**：HybridRetriever 智能路由，关键词/语义结果融合
-6. **问答**：RagQA 检索上下文 + LLM 生成（或 fallback 摘要）
+5. **RAG 索引**：EmailChunkIndexer 生成邮件分片，EmailVectorIndexer 构建 pgvector 向量索引
+6. **检索**：HybridRetriever 保持邮件级搜索，AskAgent 使用 chunk 全文 + 向量召回 + thread 扩展
+7. **问答**：AskAgent 生成检索计划、执行多 query、基于证据回答并返回来源
 
 ### 芯片手册数据流程
 1. **解析**：IntelSDMParser 从 PDF 提取目录和内容
@@ -454,9 +455,18 @@ retriever:
   keyword_page_size: 50                 # 关键词检索分页
   semantic_top_k: 20                    # 语义检索 top-K
 
+indexer:
+  vector:
+    enabled: true
+    provider: dashscope
+    model: text-embedding-v3
+    dimension: 1536
+    batch_size: 16
+
 qa:
-  llm_provider: openai                  # LLM 提供商
-  model: gpt-4                          # 模型名称
+  email:
+    llm_provider: dashscope             # LLM 提供商
+    model: qwen-plus                    # 模型名称
 ```
 
 ## 🧪 开发指南

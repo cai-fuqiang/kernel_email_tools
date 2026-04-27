@@ -204,8 +204,97 @@ export default function AskPage() {
               <div className="space-y-2">
                 {answer.sources.map((s, i) => (
                   <div key={i} className="bg-gray-50 border border-gray-100 rounded-lg p-3">
-                    <p className="text-sm font-medium text-gray-900 truncate">{s.subject}</p>
-                    <p className="text-xs text-gray-500 mt-1">{s.sender} &middot; {s.date}</p>
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{s.subject}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {s.sender} &middot; {s.date}
+                          {s.source && <span> &middot; {s.source}</span>}
+                          {typeof s.score === 'number' && <span> &middot; score {s.score.toFixed(3)}</span>}
+                        </p>
+                        {s.snippet && (
+                          <p className="text-xs text-gray-600 mt-2 line-clamp-3">{s.snippet}</p>
+                        )}
+                      </div>
+                      {s.list_name && (
+                        <span className="shrink-0 px-2 py-1 rounded bg-white border border-gray-200 text-xs text-gray-500">
+                          {s.list_name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(answer.search_plan || answer.executed_queries?.length > 0) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="bg-white border border-gray-200 rounded-xl p-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Search Plan</h3>
+                {answer.search_plan?.goal && (
+                  <p className="text-sm text-gray-800 mb-3">{answer.search_plan.goal}</p>
+                )}
+                <div className="space-y-3">
+                  {answer.search_plan?.keyword_queries && answer.search_plan.keyword_queries.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 mb-1">Keyword queries</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {answer.search_plan.keyword_queries.map((q, i) => (
+                          <span key={i} className="px-2 py-1 rounded bg-indigo-50 text-indigo-700 text-xs">{q}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {answer.search_plan?.semantic_queries && answer.search_plan.semantic_queries.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 mb-1">Semantic queries</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {answer.search_plan.semantic_queries.map((q, i) => (
+                          <span key={i} className="px-2 py-1 rounded bg-emerald-50 text-emerald-700 text-xs">{q}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {answer.search_plan?.rationale && (
+                    <p className="text-xs text-gray-500">{answer.search_plan.rationale}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white border border-gray-200 rounded-xl p-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Executed Queries</h3>
+                <div className="space-y-2">
+                  {answer.executed_queries.map((q, i) => (
+                    <div key={i} className="flex items-center justify-between gap-3 text-xs">
+                      <span className="text-gray-700 truncate">{q.query}</span>
+                      <span className="shrink-0 text-gray-500">{q.mode} · {q.hits}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {answer.threads && answer.threads.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">Related Threads ({answer.threads.length})</h3>
+              <div className="space-y-3">
+                {answer.threads.map(thread => (
+                  <div key={thread.thread_id} className="bg-white border border-gray-200 rounded-xl p-4">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <p className="text-sm font-medium text-gray-900 truncate">{thread.subject || thread.thread_id}</p>
+                      <span className="text-xs text-gray-500">{thread.message_count} messages</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {thread.messages.slice(0, 4).map(msg => (
+                        <div key={msg.message_id} className="text-xs text-gray-600">
+                          <span className="font-medium text-gray-700">{msg.sender}</span>
+                          <span className="text-gray-400"> · {msg.date}</span>
+                          <p className="line-clamp-2 mt-0.5">{msg.preview}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>

@@ -14,6 +14,10 @@ from src.storage.models import (
     AnnotationORM,
     Base,
     EmailCreate,
+    EmailChunkEmbeddingORM,
+    EmailChunkORM,
+    EmailChunkRead,
+    EmailChunkSearchResult,
     EmailORM,
     EmailRead,
     EmailSearchResult,
@@ -65,6 +69,7 @@ class PostgresStorage(BaseStorage):
     async def init_db(self) -> None:
         """创建表和索引，设置全文搜索触发器。"""
         async with self.engine.begin() as conn:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             await conn.run_sync(Base.metadata.create_all, checkfirst=True)
             await self._ensure_multi_user_columns(conn)
 
@@ -91,6 +96,51 @@ class PostgresStorage(BaseStorage):
                         BEFORE INSERT OR UPDATE ON emails
                         FOR EACH ROW EXECUTE FUNCTION emails_search_vector_update();
                     END IF;
+                END
+                $$;
+            """))
+
+            await conn.execute(text("""
+                CREATE OR REPLACE FUNCTION email_chunks_search_vector_update() RETURNS trigger AS $$
+                BEGIN
+                    NEW.search_vector :=
+                        setweight(to_tsvector('english', COALESCE(NEW.subject, '')), 'A') ||
+                        setweight(to_tsvector('english', COALESCE(NEW.sender, '')), 'B') ||
+                        setweight(to_tsvector('english', COALESCE(NEW.content, '')), 'C');
+                    RETURN NEW;
+                END
+                $$ LANGUAGE plpgsql;
+            """))
+
+            await conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_trigger WHERE tgname = 'email_chunks_search_vector_trigger'
+                    ) THEN
+                        CREATE TRIGGER email_chunks_search_vector_trigger
+                        BEFORE INSERT OR UPDATE ON email_chunks
+                        FOR EACH ROW EXECUTE FUNCTION email_chunks_search_vector_update();
+                    END IF;
+                END
+                $$;
+            """))
+
+            await conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM pg_extension WHERE extname = 'vector'
+                    ) AND NOT EXISTS (
+                        SELECT 1 FROM pg_indexes
+                        WHERE indexname = 'ix_email_chunk_embeddings_vector'
+                    ) THEN
+                        CREATE INDEX ix_email_chunk_embeddings_vector
+                        ON email_chunk_embeddings USING ivfflat (embedding vector_cosine_ops)
+                        WITH (lists = 100);
+                    END IF;
+                EXCEPTION WHEN others THEN
+                    RAISE NOTICE 'Skipping email chunk vector index: %', SQLERRM;
                 END
                 $$;
             """))
@@ -404,6 +454,242 @@ class PostgresStorage(BaseStorage):
             ]
 
         return results, total
+
+    async def search_email_chunks_fulltext(
+        self,
+        query: str,
+        list_name: Optional[str] = None,
+        sender: Optional[str] = None,
+        date_from=None,
+        date_to=None,
+        tags: Optional[list[str]] = None,
+        tag_mode: str = "any",
+        limit: int = 30,
+    ) -> list[EmailChunkSearchResult]:
+        """使用 email_chunks 的 GIN 全文索引检索 RAG 分片。"""
+        if not query.strip():
+            return []
+
+        async with self.session_factory() as session:
+            tsquery = func.plainto_tsquery("english", query)
+            conditions = [EmailChunkORM.search_vector.op("@@")(tsquery)]
+            if list_name:
+                conditions.append(EmailChunkORM.list_name == list_name)
+            if sender:
+                conditions.append(EmailChunkORM.sender.ilike(f"%{sender}%"))
+            if date_from:
+                if isinstance(date_from, str):
+                    date_from = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+                conditions.append(EmailChunkORM.date >= date_from)
+            if date_to:
+                if isinstance(date_to, str):
+                    date_to = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+                conditions.append(EmailChunkORM.date <= date_to)
+            if tags:
+                if tag_mode == "all":
+                    for tag in tags:
+                        conditions.append(EmailChunkORM.message_id.in_(self._message_ids_for_tag(tag)))
+                else:
+                    subqueries = [self._message_ids_for_tag(tag) for tag in tags]
+                    merged = subqueries[0] if len(subqueries) == 1 else union(*subqueries)
+                    conditions.append(EmailChunkORM.message_id.in_(merged))
+
+            rank_col = func.ts_rank(EmailChunkORM.search_vector, tsquery)
+            snippet_col = func.ts_headline(
+                "english",
+                EmailChunkORM.content,
+                tsquery,
+                text("'StartSel=<<, StopSel=>>, MaxWords=70, MinWords=25'"),
+            )
+            stmt = (
+                select(
+                    EmailChunkORM.chunk_id,
+                    EmailChunkORM.message_id,
+                    EmailChunkORM.thread_id,
+                    EmailChunkORM.list_name,
+                    EmailChunkORM.subject,
+                    EmailChunkORM.sender,
+                    EmailChunkORM.date,
+                    EmailChunkORM.chunk_index,
+                    EmailChunkORM.content,
+                    EmailChunkORM.content_hash,
+                    rank_col.label("score"),
+                    snippet_col.label("snippet"),
+                )
+                .where(*conditions)
+                .order_by(rank_col.desc(), EmailChunkORM.date.desc())
+                .limit(limit)
+            )
+            rows = (await session.execute(stmt)).all()
+
+        return [
+            EmailChunkSearchResult(
+                chunk_id=row.chunk_id,
+                message_id=row.message_id,
+                thread_id=row.thread_id,
+                list_name=row.list_name,
+                subject=row.subject,
+                sender=row.sender,
+                date=row.date,
+                chunk_index=row.chunk_index,
+                content=row.content,
+                content_hash=row.content_hash,
+                score=float(row.score or 0.0),
+                snippet=row.snippet or row.content[:300],
+                source="chunk_keyword",
+            )
+            for row in rows
+        ]
+
+    async def search_email_chunks_vector(
+        self,
+        embedding: list[float],
+        provider: str,
+        model: str,
+        list_name: Optional[str] = None,
+        sender: Optional[str] = None,
+        date_from=None,
+        date_to=None,
+        tags: Optional[list[str]] = None,
+        tag_mode: str = "any",
+        limit: int = 30,
+    ) -> list[EmailChunkSearchResult]:
+        """使用 pgvector 余弦距离检索 RAG 分片。"""
+        if not embedding:
+            return []
+
+        try:
+            distance_col = EmailChunkEmbeddingORM.embedding.cosine_distance(embedding)
+        except AttributeError:
+            logger.warning("pgvector SQLAlchemy comparator unavailable; skipping vector search")
+            return []
+
+        async with self.session_factory() as session:
+            conditions = [
+                EmailChunkEmbeddingORM.provider == provider,
+                EmailChunkEmbeddingORM.model == model,
+            ]
+            if list_name:
+                conditions.append(EmailChunkORM.list_name == list_name)
+            if sender:
+                conditions.append(EmailChunkORM.sender.ilike(f"%{sender}%"))
+            if date_from:
+                if isinstance(date_from, str):
+                    date_from = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+                conditions.append(EmailChunkORM.date >= date_from)
+            if date_to:
+                if isinstance(date_to, str):
+                    date_to = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+                conditions.append(EmailChunkORM.date <= date_to)
+            if tags:
+                if tag_mode == "all":
+                    for tag in tags:
+                        conditions.append(EmailChunkORM.message_id.in_(self._message_ids_for_tag(tag)))
+                else:
+                    subqueries = [self._message_ids_for_tag(tag) for tag in tags]
+                    merged = subqueries[0] if len(subqueries) == 1 else union(*subqueries)
+                    conditions.append(EmailChunkORM.message_id.in_(merged))
+
+            stmt = (
+                select(
+                    EmailChunkORM.chunk_id,
+                    EmailChunkORM.message_id,
+                    EmailChunkORM.thread_id,
+                    EmailChunkORM.list_name,
+                    EmailChunkORM.subject,
+                    EmailChunkORM.sender,
+                    EmailChunkORM.date,
+                    EmailChunkORM.chunk_index,
+                    EmailChunkORM.content,
+                    EmailChunkORM.content_hash,
+                    distance_col.label("distance"),
+                )
+                .join(EmailChunkEmbeddingORM, EmailChunkEmbeddingORM.chunk_id == EmailChunkORM.chunk_id)
+                .where(*conditions)
+                .order_by(distance_col.asc())
+                .limit(limit)
+            )
+            rows = (await session.execute(stmt)).all()
+
+        return [
+            EmailChunkSearchResult(
+                chunk_id=row.chunk_id,
+                message_id=row.message_id,
+                thread_id=row.thread_id,
+                list_name=row.list_name,
+                subject=row.subject,
+                sender=row.sender,
+                date=row.date,
+                chunk_index=row.chunk_index,
+                content=row.content,
+                content_hash=row.content_hash,
+                score=max(0.0, 1.0 - float(row.distance or 0.0)),
+                snippet=row.content[:300],
+                source="chunk_vector",
+            )
+            for row in rows
+        ]
+
+    async def get_chunks_needing_embeddings(
+        self,
+        provider: str,
+        model: str,
+        limit: int = 100,
+        list_name: Optional[str] = None,
+    ) -> list[EmailChunkRead]:
+        """获取尚未有最新 embedding 的 chunk。"""
+        async with self.session_factory() as session:
+            conditions = []
+            if list_name:
+                conditions.append(EmailChunkORM.list_name == list_name)
+            stmt = (
+                select(EmailChunkORM)
+                .outerjoin(
+                    EmailChunkEmbeddingORM,
+                    (EmailChunkEmbeddingORM.chunk_id == EmailChunkORM.chunk_id)
+                    & (EmailChunkEmbeddingORM.provider == provider)
+                    & (EmailChunkEmbeddingORM.model == model)
+                    & (EmailChunkEmbeddingORM.content_hash == EmailChunkORM.content_hash),
+                )
+                .where(EmailChunkEmbeddingORM.id.is_(None), *conditions)
+                .order_by(EmailChunkORM.date.desc().nullslast(), EmailChunkORM.id.asc())
+                .limit(limit)
+            )
+            rows = (await session.execute(stmt)).scalars().all()
+            return [EmailChunkRead.model_validate(row) for row in rows]
+
+    async def upsert_chunk_embeddings(
+        self,
+        embeddings: list[dict],
+    ) -> int:
+        """批量 upsert chunk embedding。"""
+        if not embeddings:
+            return 0
+        async with self.session_factory() as session:
+            stmt = pg_insert(EmailChunkEmbeddingORM).values(embeddings)
+            update_cols = {
+                "provider": stmt.excluded.provider,
+                "model": stmt.excluded.model,
+                "dimension": stmt.excluded.dimension,
+                "embedding": stmt.excluded.embedding,
+                "content_hash": stmt.excluded.content_hash,
+                "created_at": stmt.excluded.created_at,
+            }
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[EmailChunkEmbeddingORM.chunk_id],
+                set_=update_cols,
+            )
+            await session.execute(stmt)
+            await session.commit()
+        return len(embeddings)
+
+    async def get_chunk_count(self, list_name: Optional[str] = None) -> int:
+        """获取邮件 RAG chunk 数量。"""
+        async with self.session_factory() as session:
+            stmt = select(func.count()).select_from(EmailChunkORM)
+            if list_name:
+                stmt = stmt.where(EmailChunkORM.list_name == list_name)
+            return (await session.execute(stmt)).scalar() or 0
 
     async def get_email_count(self, list_name: Optional[str] = None) -> int:
         """获取邮件总数。"""

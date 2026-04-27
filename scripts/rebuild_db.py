@@ -44,6 +44,8 @@ async def rebuild_email_db() -> None:
     await drop_all_tables(
         email_url,
         [
+            "email_chunk_embeddings",
+            "email_chunks",
             "tag_assignments",
             "tag_aliases",
             "tags",

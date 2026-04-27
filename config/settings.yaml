@@ -67,9 +67,12 @@ indexer:
     enabled: true
     language: english
   vector:
-    enabled: false                       # Phase 2 开启
-    model: text-embedding-3-small
+    enabled: true
+    provider: dashscope
+    model: text-embedding-v3
     dimension: 1536
+    batch_size: 16
+    api_key: ""                         # 默认复用 qa.email.api_key，也可用 DASHSCOPE_API_KEY
 
 # 检索配置
 retriever:

@@ -6,6 +6,8 @@ from src.storage.models import (
     TagAliasORM,
     TagAssignmentORM,
     EmailORM,
+    EmailChunkORM,
+    EmailChunkEmbeddingORM,
     TagCreate,
     TagRead,
     TagTree,
@@ -15,6 +17,8 @@ from src.storage.models import (
     EmailCreate,
     EmailRead,
     EmailSearchResult,
+    EmailChunkRead,
+    EmailChunkSearchResult,
 )
 from src.storage.postgres import PostgresStorage
 from src.storage.tag_store import TagStore
@@ -36,6 +40,8 @@ __all__ = [
     "TagAliasORM",
     "TagAssignmentORM",
     "EmailORM",
+    "EmailChunkORM",
+    "EmailChunkEmbeddingORM",
     "DocumentChunkModel",
     # Pydantic 模型
     "TagCreate",
@@ -47,6 +53,8 @@ __all__ = [
     "EmailCreate",
     "EmailRead",
     "EmailSearchResult",
+    "EmailChunkRead",
+    "EmailChunkSearchResult",
     "DocumentChunkCreate",
     "DocumentChunkRead",
     "DocumentSearchResult",

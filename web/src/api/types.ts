@@ -22,11 +22,38 @@ export interface SearchResponse {
 }
 
 export interface SourceRef {
+  chunk_id?: string;
   message_id: string;
   subject: string;
   sender: string;
   date: string;
+  list_name?: string;
+  thread_id?: string;
+  chunk_index?: number;
   snippet: string;
+  score?: number;
+  source?: string;
+}
+
+export interface ExecutedAskQuery {
+  query: string;
+  mode: string;
+  hits: number;
+}
+
+export interface AskThreadMessage {
+  message_id: string;
+  subject: string;
+  sender: string;
+  date: string;
+  preview: string;
+}
+
+export interface AskThreadSummary {
+  thread_id: string;
+  subject: string;
+  message_count: number;
+  messages: AskThreadMessage[];
 }
 
 export interface AskResponse {
@@ -35,6 +62,16 @@ export interface AskResponse {
   sources: SourceRef[];
   model: string;
   retrieval_mode: string;
+  search_plan: {
+    goal?: string;
+    keyword_queries?: string[];
+    semantic_queries?: string[];
+    rationale?: string;
+    planner?: string;
+  };
+  executed_queries: ExecutedAskQuery[];
+  threads: AskThreadSummary[];
+  retrieval_stats: Record<string, unknown>;
 }
 
 export interface ThreadEmail {

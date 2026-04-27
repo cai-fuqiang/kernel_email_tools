@@ -9,6 +9,11 @@ from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+try:
+    from pgvector.sqlalchemy import Vector
+except ImportError:  # pragma: no cover - pgvector is an optional runtime dependency
+    Vector = None
+
 
 # ============================================================
 # SQLAlchemy ORM 模型
@@ -203,6 +208,78 @@ class EmailORM(Base):
 
     def __repr__(self) -> str:
         return f"<EmailORM message_id={self.message_id!r} subject={self.subject[:50]!r}>"
+
+
+class EmailChunkORM(Base):
+    """邮件 RAG 分片，对应 email_chunks 表。"""
+
+    __tablename__ = "email_chunks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chunk_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    message_id: Mapped[str] = mapped_column(
+        String(512), ForeignKey("emails.message_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    thread_id: Mapped[str] = mapped_column(String(512), nullable=False, default="", index=True)
+    list_name: Mapped[str] = mapped_column(String(128), nullable=False, default="", index=True)
+    subject: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    sender: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)
+    search_vector: Mapped[Optional[str]] = mapped_column(TSVECTOR, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("message_id", "chunk_index", name="uq_email_chunks_message_chunk"),
+        Index("ix_email_chunks_search_vector", "search_vector", postgresql_using="gin"),
+        Index("ix_email_chunks_thread_date", "thread_id", "date"),
+        Index("ix_email_chunks_list_date", "list_name", "date"),
+    )
+
+
+if Vector is not None:
+    class EmailChunkEmbeddingORM(Base):
+        """邮件分片嵌入向量，对应 email_chunk_embeddings 表。"""
+
+        __tablename__ = "email_chunk_embeddings"
+
+        id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+        chunk_id: Mapped[str] = mapped_column(
+            String(128), ForeignKey("email_chunks.chunk_id", ondelete="CASCADE"),
+            nullable=False, unique=True, index=True
+        )
+        provider: Mapped[str] = mapped_column(String(64), nullable=False, default="dashscope")
+        model: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+        dimension: Mapped[int] = mapped_column(Integer, nullable=False, default=1536)
+        embedding = mapped_column(Vector(1536), nullable=False)
+        content_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)
+        created_at: Mapped[datetime] = mapped_column(
+            DateTime(timezone=True), nullable=False, default=datetime.utcnow
+        )
+
+        __table_args__ = (
+            Index("ix_email_chunk_embeddings_provider_model", "provider", "model"),
+        )
+else:
+    class EmailChunkEmbeddingORM(Base):
+        """Fallback model used when pgvector is not installed in Python."""
+
+        __tablename__ = "email_chunk_embeddings"
+
+        id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+        chunk_id: Mapped[str] = mapped_column(
+            String(128), ForeignKey("email_chunks.chunk_id", ondelete="CASCADE"),
+            nullable=False, unique=True, index=True
+        )
+        provider: Mapped[str] = mapped_column(String(64), nullable=False, default="dashscope")
+        model: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+        dimension: Mapped[int] = mapped_column(Integer, nullable=False, default=1536)
+        embedding: Mapped[str] = mapped_column(Text, nullable=False, default="")
+        content_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)
+        created_at: Mapped[datetime] = mapped_column(
+            DateTime(timezone=True), nullable=False, default=datetime.utcnow
+        )
 
 
 # ============================================================
@@ -521,6 +598,31 @@ class EmailSearchResult(BaseModel):
     snippet: str = ""  # 匹配片段
 
     model_config = {"from_attributes": True}
+
+
+class EmailChunkRead(BaseModel):
+    """邮件 RAG 分片读取模型。"""
+
+    chunk_id: str
+    message_id: str
+    thread_id: str = ""
+    list_name: str = ""
+    subject: str = ""
+    sender: str = ""
+    date: Optional[datetime] = None
+    chunk_index: int = 0
+    content: str = ""
+    content_hash: str = ""
+
+    model_config = {"from_attributes": True}
+
+
+class EmailChunkSearchResult(EmailChunkRead):
+    """邮件分片检索结果。"""
+
+    score: float = 0.0
+    snippet: str = ""
+    source: str = "chunk_keyword"
 
 
 class AnnotationCreate(BaseModel):

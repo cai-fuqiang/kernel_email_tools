@@ -33,7 +33,10 @@ from src.parser.email_parser import EmailParser
 from src.parser.thread_builder import ThreadBuilder
 from src.storage.postgres import PostgresStorage
 from src.storage.models import parsed_email_to_create
+from src.indexer.email_chunks import EmailChunkIndexer
+from src.indexer.email_vector import EmailVectorIndexer
 from src.indexer.fulltext import FulltextIndexer
+from src.qa.providers import DashScopeEmbeddingProvider, resolve_api_key
 
 logging.basicConfig(
     level=logging.INFO,
@@ -110,7 +113,33 @@ async def run_collect_and_store(args, config: dict) -> None:
         indexed = await fulltext_indexer.build(list_name=args.list)
         logger.info("Fulltext index: %d emails indexed", indexed)
 
-        # 4. 显示统计
+        # 4. 构建邮件 RAG chunk / vector 索引
+        chunk_count = await EmailChunkIndexer(storage).rebuild(list_name=args.list)
+        logger.info("Email RAG chunks rebuilt: %d", chunk_count)
+        vector_cfg = config.get("indexer", {}).get("vector", {})
+        if vector_cfg.get("enabled", False):
+            qa_cfg = config.get("qa", {}).get("email", {})
+            api_key = resolve_api_key(
+                "dashscope",
+                vector_cfg.get("api_key", "") or qa_cfg.get("api_key", ""),
+            )
+            if api_key:
+                provider = DashScopeEmbeddingProvider(
+                    api_key=api_key,
+                    model=vector_cfg.get("model", "text-embedding-v3"),
+                    dimension=vector_cfg.get("dimension", 1536),
+                )
+                vector_count = await EmailVectorIndexer(
+                    storage=storage,
+                    provider=provider,
+                    provider_name=vector_cfg.get("provider", "dashscope"),
+                    batch_size=vector_cfg.get("batch_size", 16),
+                ).build(list_name=args.list)
+                logger.info("Email RAG vectors built: %d", vector_count)
+            else:
+                logger.warning("Vector index enabled but DashScope API key is missing")
+
+        # 5. 显示统计
         count = await storage.get_email_count(args.list)
         logger.info("=== Done === Total emails in DB for %s: %d", args.list, count)
 
@@ -128,6 +157,67 @@ async def run_rebuild_fulltext(config: dict) -> None:
     indexer = FulltextIndexer(database_url=database_url)
     count = await indexer.build(rebuild=True)
     logger.info("Fulltext index rebuilt: %d emails", count)
+
+
+async def run_build_chunks(config: dict, list_name: str | None = None) -> None:
+    """构建邮件 RAG chunks。"""
+    storage_cfg = config.get("storage", {}).get("email", {})
+    database_url = storage_cfg.get("database_url")
+    if not database_url:
+        logger.error("email storage database_url not configured")
+        return
+    storage = PostgresStorage(database_url=database_url, pool_size=storage_cfg.get("pool_size", 5))
+    try:
+        await storage.init_db()
+        count = await EmailChunkIndexer(storage).rebuild(list_name=list_name)
+        logger.info("Email chunks rebuilt: %d", count)
+    finally:
+        await storage.close()
+
+
+async def run_build_vector(config: dict, list_name: str | None = None, limit: int | None = None) -> None:
+    """构建邮件 RAG vector index。"""
+    storage_cfg = config.get("storage", {}).get("email", {})
+    vector_cfg = config.get("indexer", {}).get("vector", {})
+    qa_cfg = config.get("qa", {}).get("email", {})
+    database_url = storage_cfg.get("database_url")
+    if not database_url:
+        logger.error("email storage database_url not configured")
+        return
+    if vector_cfg.get("provider", "dashscope") != "dashscope":
+        logger.error("Only dashscope embedding provider is implemented")
+        return
+    api_key = resolve_api_key(
+        "dashscope",
+        vector_cfg.get("api_key", "") or qa_cfg.get("api_key", ""),
+    )
+    if not api_key:
+        logger.error("DashScope API key is required for vector indexing")
+        return
+
+    storage = PostgresStorage(database_url=database_url, pool_size=storage_cfg.get("pool_size", 5))
+    provider = DashScopeEmbeddingProvider(
+        api_key=api_key,
+        model=vector_cfg.get("model", "text-embedding-v3"),
+        dimension=vector_cfg.get("dimension", 1536),
+    )
+    try:
+        await storage.init_db()
+        count = await EmailVectorIndexer(
+            storage=storage,
+            provider=provider,
+            provider_name="dashscope",
+            batch_size=vector_cfg.get("batch_size", 16),
+        ).build(list_name=list_name, limit=limit)
+        logger.info("Email vector embeddings built: %d", count)
+    finally:
+        await storage.close()
+
+
+async def run_rebuild_rag_index(config: dict, list_name: str | None = None, limit: int | None = None) -> None:
+    """重建邮件 RAG chunk + vector index。"""
+    await run_build_chunks(config, list_name=list_name)
+    await run_build_vector(config, list_name=list_name, limit=limit)
 
 
 async def run_stats(config: dict) -> None:
@@ -163,6 +253,9 @@ def main() -> None:
     parser.add_argument("--all-epochs", action="store_true", help="处理所有 epoch")
     parser.add_argument("--limit", type=int, default=0, help="每个 epoch 最大采集数量")
     parser.add_argument("--rebuild-fulltext", action="store_true", help="重建全文索引")
+    parser.add_argument("--build-chunks", action="store_true", help="构建邮件 RAG chunks")
+    parser.add_argument("--build-vector", action="store_true", help="构建邮件 RAG 向量索引")
+    parser.add_argument("--rebuild-rag-index", action="store_true", help="重建邮件 RAG chunks 和向量索引")
     parser.add_argument("--stats", action="store_true", help="显示统计信息")
     args = parser.parse_args()
 
@@ -170,6 +263,12 @@ def main() -> None:
         asyncio.run(run_stats(config))
     elif args.rebuild_fulltext:
         asyncio.run(run_rebuild_fulltext(config))
+    elif args.build_chunks:
+        asyncio.run(run_build_chunks(config, list_name=args.list))
+    elif args.build_vector:
+        asyncio.run(run_build_vector(config, list_name=args.list, limit=args.limit or None))
+    elif args.rebuild_rag_index:
+        asyncio.run(run_rebuild_rag_index(config, list_name=args.list, limit=args.limit or None))
     elif args.list:
         asyncio.run(run_collect_and_store(args, config))
     else:

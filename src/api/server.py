@@ -18,8 +18,9 @@ from fastapi import FastAPI, HTTPException, Query, Body, Depends, Request, Respo
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
+from src.qa.ask_agent import AskAgent
 from src.qa.manual_qa import ManualQA
-from src.qa.rag_qa import RagQA
+from src.qa.providers import ChatLLMClient, DashScopeEmbeddingProvider, resolve_api_key
 from src.retriever.base import SearchQuery
 from src.retriever.hybrid import HybridRetriever
 from src.retriever.keyword import KeywordRetriever
@@ -74,7 +75,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 _storage: Optional[PostgresStorage] = None
 _retriever: Optional[HybridRetriever] = None
-_qa: Optional[RagQA] = None
+_qa: Optional[AskAgent] = None
 _tag_store: Optional[TagStore] = None
 
 # 芯片手册相关组件
@@ -695,14 +696,36 @@ async def lifespan(app: FastAPI):
         semantic_retriever=semantic_retriever,
     )
 
-    # 初始化邮件问答层
+    # 初始化邮件 Ask Agent
     email_qa_cfg = qa_cfg.get("email", qa_cfg)
-    _qa = RagQA(
-        retriever=_retriever,
-        storage=_storage,
-        llm_provider=email_qa_cfg.get("llm_provider", "openai"),
-        model=email_qa_cfg.get("model", "gpt-4"),
+    llm_client = ChatLLMClient(
+        provider=email_qa_cfg.get("llm_provider", "dashscope"),
+        model=email_qa_cfg.get("model", "qwen-plus"),
         api_key=email_qa_cfg.get("api_key", ""),
+    )
+    vector_cfg = indexer_cfg.get("vector", {})
+    embedding_provider = None
+    if vector_cfg.get("enabled", False):
+        embedding_provider_name = vector_cfg.get("provider", "dashscope")
+        if embedding_provider_name == "dashscope":
+            embedding_api_key = resolve_api_key(
+                "dashscope",
+                vector_cfg.get("api_key", "") or email_qa_cfg.get("api_key", ""),
+            )
+            if embedding_api_key:
+                embedding_provider = DashScopeEmbeddingProvider(
+                    api_key=embedding_api_key,
+                    model=vector_cfg.get("model", "text-embedding-v3"),
+                    dimension=vector_cfg.get("dimension", 1536),
+                )
+            else:
+                logger.warning("Vector retrieval enabled but DashScope API key is missing")
+    _qa = AskAgent(
+        storage=_storage,
+        retriever=_retriever,
+        llm=llm_client,
+        embedding_provider=embedding_provider,
+        embedding_provider_name=vector_cfg.get("provider", "dashscope"),
     )
 
     # ========== 翻译组件初始化 ==========
@@ -907,6 +930,10 @@ class AskResponse(BaseModel):
     sources: list[dict]
     model: str
     retrieval_mode: str
+    search_plan: dict = Field(default_factory=dict)
+    executed_queries: list[dict] = Field(default_factory=list)
+    threads: list[dict] = Field(default_factory=list)
+    retrieval_stats: dict = Field(default_factory=dict)
 
 
 class ThreadResponse(BaseModel):
@@ -2199,16 +2226,37 @@ async def ask(
         answer=answer.answer,
         sources=[
             {
+                "chunk_id": s.chunk_id,
                 "message_id": s.message_id,
                 "subject": s.subject,
                 "sender": s.sender,
                 "date": s.date,
+                "list_name": s.list_name,
+                "thread_id": s.thread_id,
+                "chunk_index": s.chunk_index,
                 "snippet": s.snippet,
+                "score": round(s.score, 4),
+                "source": s.source,
             }
             for s in answer.sources
         ],
         model=answer.model,
         retrieval_mode=answer.retrieval_mode,
+        search_plan=answer.search_plan,
+        executed_queries=[
+            {"query": item.query, "mode": item.mode, "hits": item.hits}
+            for item in answer.executed_queries
+        ],
+        threads=[
+            {
+                "thread_id": thread.thread_id,
+                "subject": thread.subject,
+                "message_count": thread.message_count,
+                "messages": thread.messages,
+            }
+            for thread in answer.threads
+        ],
+        retrieval_stats=answer.retrieval_stats,
     )
 
 
