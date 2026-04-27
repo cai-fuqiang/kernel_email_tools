@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { askQuestion, getTagStats, type TagStats } from '../api/client';
 import type { AskResponse } from '../api/types';
+import AskDraftPanel from '../components/AskDraftPanel';
 
 export default function AskPage() {
   const [question, setQuestion] = useState('');
@@ -198,6 +199,9 @@ export default function AskPage() {
             </h3>
             <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{answer.answer}</div>
           </div>
+
+          <AskDraftPanel answer={answer} />
+
           {answer.sources.length > 0 && (
             <div>
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Sources ({answer.sources.length})</h3>

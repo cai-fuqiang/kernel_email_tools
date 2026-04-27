@@ -74,6 +74,61 @@ export interface AskResponse {
   retrieval_stats: Record<string, unknown>;
 }
 
+export interface AskKnowledgeDraft {
+  selected: boolean;
+  entity_type: string;
+  canonical_name: string;
+  slug?: string;
+  entity_id?: string;
+  aliases: string[];
+  summary: string;
+  description: string;
+  status: string;
+  meta: Record<string, unknown>;
+  tags?: string[];
+}
+
+export interface AskAnnotationDraft {
+  selected: boolean;
+  annotation_type: string;
+  body: string;
+  visibility: 'public' | 'private';
+  target_type: string;
+  target_ref: string;
+  target_label: string;
+  target_subtitle: string;
+  anchor: Record<string, unknown>;
+  thread_id: string;
+  in_reply_to: string;
+  meta: Record<string, unknown>;
+}
+
+export interface AskTagAssignmentDraft {
+  selected: boolean;
+  tag_name: string;
+  tag_exists?: boolean;
+  target_type: string;
+  target_ref: string;
+  anchor: Record<string, unknown>;
+  assignment_scope: string;
+  source_type: string;
+  evidence: Record<string, unknown>;
+}
+
+export interface AskDraftResponse {
+  knowledge_drafts: AskKnowledgeDraft[];
+  annotation_drafts: AskAnnotationDraft[];
+  tag_assignment_drafts: AskTagAssignmentDraft[];
+  warnings: string[];
+}
+
+export interface AskDraftApplyResponse {
+  created_entities: KnowledgeEntity[];
+  created_annotations: Annotation[];
+  created_tag_assignments: TagAssignment[];
+  errors: Array<{ type: string; index: number; message: string }>;
+}
+
 export interface ThreadEmail {
   id: number;
   message_id: string;

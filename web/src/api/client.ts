@@ -1,6 +1,8 @@
 import type { 
   SearchResponse, 
   AskResponse, 
+  AskDraftApplyResponse,
+  AskDraftResponse,
   ThreadResponse, 
   StatsResponse,
   AuthSession,
@@ -463,6 +465,26 @@ export async function askQuestion(
     params.set('tags', tags);
   }
   return fetchJSON<AskResponse>(`${API_BASE}/ask?${params}`);
+}
+
+export async function createAskDraft(answer: AskResponse): Promise<AskDraftResponse> {
+  return fetchWithBody<AskDraftResponse>(`${API_BASE}/ask/draft`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(answer),
+  });
+}
+
+export async function applyAskDraft(draft: AskDraftResponse): Promise<AskDraftApplyResponse> {
+  return fetchWithBody<AskDraftApplyResponse>(`${API_BASE}/ask/draft/apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      knowledge_drafts: draft.knowledge_drafts,
+      annotation_drafts: draft.annotation_drafts,
+      tag_assignment_drafts: draft.tag_assignment_drafts,
+    }),
+  });
 }
 
 export async function getThread(threadId: string): Promise<ThreadResponse> {

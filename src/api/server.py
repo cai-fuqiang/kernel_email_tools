@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from src.qa.ask_agent import AskAgent
+from src.qa.ask_drafts import AskDraftService
 from src.qa.manual_qa import ManualQA
 from src.qa.providers import ChatLLMClient, DashScopeEmbeddingProvider, resolve_api_key
 from src.retriever.base import SearchQuery
@@ -934,6 +935,38 @@ class AskResponse(BaseModel):
     executed_queries: list[dict] = Field(default_factory=list)
     threads: list[dict] = Field(default_factory=list)
     retrieval_stats: dict = Field(default_factory=dict)
+
+
+class AskDraftRequest(BaseModel):
+    """Ask 结果转草稿请求。"""
+    question: str = Field("", description="原始问题")
+    answer: str = Field("", description="Ask 回答")
+    sources: list[dict] = Field(default_factory=list)
+    search_plan: dict = Field(default_factory=dict)
+    executed_queries: list[dict] = Field(default_factory=list)
+    threads: list[dict] = Field(default_factory=list)
+    retrieval_stats: dict = Field(default_factory=dict)
+    preferred_entity_type: str = Field("", description="可选偏好的知识实体类型")
+
+
+class AskDraftResponse(BaseModel):
+    knowledge_drafts: list[dict] = Field(default_factory=list)
+    annotation_drafts: list[dict] = Field(default_factory=list)
+    tag_assignment_drafts: list[dict] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class AskDraftApplyRequest(BaseModel):
+    knowledge_drafts: list[dict] = Field(default_factory=list)
+    annotation_drafts: list[dict] = Field(default_factory=list)
+    tag_assignment_drafts: list[dict] = Field(default_factory=list)
+
+
+class AskDraftApplyResponse(BaseModel):
+    created_entities: list[dict] = Field(default_factory=list)
+    created_annotations: list[dict] = Field(default_factory=list)
+    created_tag_assignments: list[dict] = Field(default_factory=list)
+    errors: list[dict] = Field(default_factory=list)
 
 
 class ThreadResponse(BaseModel):
@@ -2257,6 +2290,143 @@ async def ask(
             for thread in answer.threads
         ],
         retrieval_stats=answer.retrieval_stats,
+    )
+
+
+@app.post("/api/ask/draft", response_model=AskDraftResponse)
+async def create_ask_draft(
+    request: AskDraftRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    """基于 Ask 结果生成可编辑的 Knowledge / Annotation / Tag 草稿。"""
+    if not _qa:
+        raise HTTPException(status_code=503, detail="Ask service not initialized")
+    if not _tag_store:
+        raise HTTPException(status_code=503, detail="Tag store not initialized")
+
+    payload = request.model_dump(mode="json")
+    if request.preferred_entity_type:
+        payload.setdefault("search_plan", {})["preferred_entity_type"] = request.preferred_entity_type
+
+    async def tag_exists(tag_name: str) -> bool:
+        return await _tag_store.get_tag_by_name(tag_name) is not None
+
+    bundle = await AskDraftService(llm=_qa.llm).generate(payload, tag_exists=tag_exists)
+    return AskDraftResponse(
+        knowledge_drafts=bundle.knowledge_drafts,
+        annotation_drafts=bundle.annotation_drafts,
+        tag_assignment_drafts=bundle.tag_assignment_drafts,
+        warnings=bundle.warnings,
+    )
+
+
+@app.post("/api/ask/draft/apply", response_model=AskDraftApplyResponse)
+async def apply_ask_draft(
+    request: AskDraftApplyRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    """保存用户确认后的 Ask 草稿。"""
+    if not _knowledge_store or not _annotation_store or not _tag_store:
+        raise HTTPException(status_code=503, detail="Knowledge, annotation or tag store not initialized")
+
+    created_entities = []
+    created_annotations = []
+    created_tag_assignments = []
+    errors = []
+
+    for index, draft in enumerate(request.knowledge_drafts):
+        if not draft.get("selected", True):
+            continue
+        try:
+            entity = await _knowledge_store.create(
+                KnowledgeEntityCreate(
+                    entity_type=str(draft.get("entity_type") or "topic"),
+                    canonical_name=str(draft.get("canonical_name") or "").strip(),
+                    slug=str(draft.get("slug") or ""),
+                    entity_id=str(draft.get("entity_id") or ""),
+                    aliases=draft.get("aliases") if isinstance(draft.get("aliases"), list) else [],
+                    summary=str(draft.get("summary") or ""),
+                    description=str(draft.get("description") or ""),
+                    status=str(draft.get("status") or "draft"),
+                    meta=draft.get("meta") if isinstance(draft.get("meta"), dict) else {},
+                    created_by=current_user.display_name,
+                    updated_by=current_user.display_name,
+                    created_by_user_id=current_user.user_id,
+                    updated_by_user_id=current_user.user_id,
+                )
+            )
+            created_entities.append(entity.model_dump(mode="json"))
+        except Exception as exc:
+            errors.append({"type": "knowledge", "index": index, "message": str(exc)})
+
+    for index, draft in enumerate(request.annotation_drafts):
+        if not draft.get("selected", True):
+            continue
+        try:
+            visibility = _normalize_visibility(str(draft.get("visibility") or "private"))
+            _ensure_public_write_allowed(visibility, current_user)
+            annotation_type = str(draft.get("annotation_type") or "email")
+            thread_id = str(draft.get("thread_id") or "")
+            if annotation_type == "email" and not thread_id:
+                raise ValueError("thread_id is required for email annotation drafts")
+
+            annotation = await _annotation_store.create(
+                AnnotationCreate(
+                    annotation_type=annotation_type,
+                    body=str(draft.get("body") or ""),
+                    author=current_user.display_name,
+                    author_user_id=current_user.user_id,
+                    visibility=visibility,
+                    parent_annotation_id=str(draft.get("parent_annotation_id") or ""),
+                    target_type=str(draft.get("target_type") or ""),
+                    target_ref=str(draft.get("target_ref") or ""),
+                    target_label=str(draft.get("target_label") or ""),
+                    target_subtitle=str(draft.get("target_subtitle") or ""),
+                    anchor=draft.get("anchor") if isinstance(draft.get("anchor"), dict) else {},
+                    meta=draft.get("meta") if isinstance(draft.get("meta"), dict) else {},
+                    thread_id=thread_id,
+                    in_reply_to=str(draft.get("in_reply_to") or ""),
+                ),
+                actor_user_id=current_user.user_id,
+                actor_display_name=current_user.display_name,
+            )
+            created_annotations.append(_annotation_to_response(annotation).model_dump(mode="json"))
+        except Exception as exc:
+            errors.append({"type": "annotation", "index": index, "message": str(exc)})
+
+    for index, draft in enumerate(request.tag_assignment_drafts):
+        if not draft.get("selected", True):
+            continue
+        try:
+            tag_name = str(draft.get("tag_name") or "").strip()
+            if not tag_name:
+                raise ValueError("tag_name is required")
+            if await _tag_store.get_tag_by_name(tag_name) is None:
+                raise ValueError(f"Tag '{tag_name}' does not exist")
+            assignment = await _tag_store.assign_tag(
+                TagAssignmentCreate(
+                    tag_name=tag_name,
+                    target_type=str(draft.get("target_type") or ""),
+                    target_ref=str(draft.get("target_ref") or ""),
+                    anchor=draft.get("anchor") if isinstance(draft.get("anchor"), dict) else {},
+                    assignment_scope=str(draft.get("assignment_scope") or "direct"),
+                    source_type=str(draft.get("source_type") or "ask_agent"),
+                    evidence=draft.get("evidence") if isinstance(draft.get("evidence"), dict) else {},
+                    created_by=current_user.display_name,
+                    created_by_user_id=current_user.user_id,
+                ),
+                actor_user_id=current_user.user_id,
+                actor_display_name=current_user.display_name,
+            )
+            created_tag_assignments.append(assignment.model_dump(mode="json"))
+        except Exception as exc:
+            errors.append({"type": "tag_assignment", "index": index, "message": str(exc)})
+
+    return AskDraftApplyResponse(
+        created_entities=created_entities,
+        created_annotations=created_annotations,
+        created_tag_assignments=created_tag_assignments,
+        errors=errors,
     )
 
 
