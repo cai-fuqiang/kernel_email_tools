@@ -22,6 +22,7 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
+from itertools import islice
 
 import yaml
 
@@ -81,6 +82,10 @@ async def run_collect_and_store(args, config: dict) -> None:
         # 1. 初始化数据库
         await storage.init_db()
         logger.info("Database initialized")
+        fulltext_index_dropped = False
+        if not args.keep_fulltext_index:
+            await fulltext_indexer.drop_index()
+            fulltext_index_dropped = True
 
         # 2. 确定 epoch 范围
         epochs = (
@@ -89,61 +94,80 @@ async def run_collect_and_store(args, config: dict) -> None:
             else [args.epoch]
         )
 
+        total_collected = 0
+        total_parsed = 0
         total_saved = 0
+        trigger_disabled = await storage.set_email_search_trigger_enabled(False)
         for epoch in epochs:
             logger.info("=== Processing %s epoch %d ===", args.list, epoch)
 
-            # 采集
-            raw_emails = collector.collect(args.list, epoch, limit=args.limit)
-            logger.info("Collected %d raw emails", len(raw_emails))
+            raw_iter = collector.collect_iter(args.list, epoch, limit=args.limit)
+            epoch_collected = 0
+            epoch_parsed = 0
+            epoch_saved = 0
+            while True:
+                raw_batch = list(islice(raw_iter, args.ingest_batch_size))
+                if not raw_batch:
+                    break
 
-            # 解析
-            parsed_emails = email_parser.parse_batch(raw_emails)
-            logger.info("Parsed %d emails", len(parsed_emails))
+                epoch_collected += len(raw_batch)
+                total_collected += len(raw_batch)
 
-            # 转换为入库模型
-            email_creates = [parsed_email_to_create(e) for e in parsed_emails]
+                parsed_emails = email_parser.parse_batch(raw_batch)
+                epoch_parsed += len(parsed_emails)
+                total_parsed += len(parsed_emails)
 
-            # 入库（自动去重）
-            saved = await storage.save_emails(email_creates)
-            total_saved += saved
-            logger.info("Saved %d new emails to database", saved)
+                email_creates = [parsed_email_to_create(e) for e in parsed_emails]
+                saved = await storage.save_emails(email_creates, batch_size=args.db_batch_size)
+                epoch_saved += saved
+                total_saved += saved
+
+                logger.info(
+                    "Ingest progress %s epoch %d: collected=%d parsed=%d saved_new=%d",
+                    args.list, epoch, epoch_collected, epoch_parsed, epoch_saved,
+                )
+
+            logger.info(
+                "Epoch %d done: collected=%d parsed=%d saved_new=%d",
+                epoch, epoch_collected, epoch_parsed, epoch_saved,
+            )
 
         # 3. 构建/回填全文索引
         indexed = await fulltext_indexer.build(list_name=args.list)
         logger.info("Fulltext index: %d emails indexed", indexed)
+        if trigger_disabled:
+            await storage.set_email_search_trigger_enabled(True)
+            trigger_disabled = False
+        if fulltext_index_dropped:
+            await fulltext_indexer.create_index()
+            fulltext_index_dropped = False
 
-        # 4. 构建邮件 RAG chunk / vector 索引
-        chunk_count = await EmailChunkIndexer(storage).rebuild(list_name=args.list)
-        logger.info("Email RAG chunks rebuilt: %d", chunk_count)
-        vector_cfg = config.get("indexer", {}).get("vector", {})
-        if vector_cfg.get("enabled", False):
-            qa_cfg = config.get("qa", {}).get("email", {})
-            api_key = resolve_api_key(
-                "dashscope",
-                vector_cfg.get("api_key", "") or qa_cfg.get("api_key", ""),
-            )
-            if api_key:
-                provider = DashScopeEmbeddingProvider(
-                    api_key=api_key,
-                    model=vector_cfg.get("model", "text-embedding-v3"),
-                    dimension=vector_cfg.get("dimension", 1536),
-                )
-                vector_count = await EmailVectorIndexer(
-                    storage=storage,
-                    provider=provider,
-                    provider_name=vector_cfg.get("provider", "dashscope"),
-                    batch_size=vector_cfg.get("batch_size", 16),
-                ).build(list_name=args.list)
-                logger.info("Email RAG vectors built: %d", vector_count)
-            else:
-                logger.warning("Vector index enabled but DashScope API key is missing")
+        # 4. RAG 索引很重，默认不在采集命令里构建，避免 LKML 大 epoch 导入被向量化拖慢。
+        if args.rebuild_rag_index:
+            await run_rebuild_rag_index(config, list_name=args.list, limit=args.limit or None)
+        elif args.build_chunks:
+            await run_build_chunks(config, list_name=args.list)
+        elif args.build_vector:
+            await run_build_vector(config, list_name=args.list, limit=args.limit or None)
 
         # 5. 显示统计
         count = await storage.get_email_count(args.list)
-        logger.info("=== Done === Total emails in DB for %s: %d", args.list, count)
+        logger.info(
+            "=== Done === collected=%d parsed=%d saved_new=%d total emails in DB for %s: %d",
+            total_collected, total_parsed, total_saved, args.list, count,
+        )
 
     finally:
+        try:
+            if "trigger_disabled" in locals() and trigger_disabled:
+                await storage.set_email_search_trigger_enabled(True)
+        except Exception:
+            pass
+        try:
+            if "fulltext_index_dropped" in locals() and fulltext_index_dropped:
+                await fulltext_indexer.create_index()
+        except Exception:
+            logger.exception("Failed to recreate fulltext index after interrupted ingest")
         await storage.close()
 
 
@@ -252,6 +276,9 @@ def main() -> None:
     parser.add_argument("--epoch", type=int, default=0, help="epoch 编号")
     parser.add_argument("--all-epochs", action="store_true", help="处理所有 epoch")
     parser.add_argument("--limit", type=int, default=0, help="每个 epoch 最大采集数量")
+    parser.add_argument("--ingest-batch-size", type=int, default=5000, help="采集/解析/入库流水线批大小")
+    parser.add_argument("--db-batch-size", type=int, default=2000, help="数据库批量 INSERT 大小")
+    parser.add_argument("--keep-fulltext-index", action="store_true", help="导入时保留全文 GIN 索引（更安全但更慢）")
     parser.add_argument("--rebuild-fulltext", action="store_true", help="重建全文索引")
     parser.add_argument("--build-chunks", action="store_true", help="构建邮件 RAG chunks")
     parser.add_argument("--build-vector", action="store_true", help="构建邮件 RAG 向量索引")

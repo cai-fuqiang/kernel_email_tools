@@ -87,6 +87,21 @@ class FulltextIndexer(BaseIndexer):
         )
         return count
 
+    async def drop_index(self) -> None:
+        """临时删除全文 GIN 索引，用于大批量导入加速。"""
+        async with self.engine.begin() as conn:
+            await conn.execute(text("DROP INDEX IF EXISTS ix_emails_search_vector"))
+        logger.info("Dropped fulltext GIN index ix_emails_search_vector")
+
+    async def create_index(self) -> None:
+        """创建全文 GIN 索引。"""
+        async with self.engine.begin() as conn:
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_emails_search_vector "
+                "ON emails USING GIN (search_vector)"
+            ))
+        logger.info("Created fulltext GIN index ix_emails_search_vector")
+
     async def update(self, emails: list[EmailCreate]) -> int:
         """增量更新全文索引（触发器已自动处理，此处为空操作）。
 

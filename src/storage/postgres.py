@@ -232,11 +232,24 @@ class PostgresStorage(BaseStorage):
 
         await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_username ON users (username)"))
 
-    async def save_emails(self, emails: list[EmailCreate]) -> int:
+    async def set_email_search_trigger_enabled(self, enabled: bool) -> bool:
+        """启用/禁用 emails search_vector 触发器，用于大批量导入加速。"""
+        action = "ENABLE" if enabled else "DISABLE"
+        try:
+            async with self.engine.begin() as conn:
+                await conn.execute(text(f"ALTER TABLE emails {action} TRIGGER emails_search_vector_trigger"))
+            logger.info("%s emails search_vector trigger", "Enabled" if enabled else "Disabled")
+            return True
+        except Exception as exc:
+            logger.warning("Failed to %s emails search_vector trigger: %s", action.lower(), exc)
+            return False
+
+    async def save_emails(self, emails: list[EmailCreate], batch_size: int = 2000) -> int:
         """批量写入邮件，基于 message_id 去重（ON CONFLICT DO NOTHING）。
 
         Args:
             emails: 待保存的邮件列表。
+            batch_size: 每批 INSERT 的邮件数量。
 
         Returns:
             实际新增的邮件数量。
@@ -244,7 +257,6 @@ class PostgresStorage(BaseStorage):
         if not emails:
             return 0
 
-        batch_size = 500
         total_inserted = 0
 
         for i in range(0, len(emails), batch_size):

@@ -50,10 +50,23 @@ class EmailParser(BaseParser):
         result = []
         for part, charset in decoded_parts:
             if isinstance(part, bytes):
-                result.append(part.decode(charset or "utf-8", errors="replace"))
+                try:
+                    result.append(part.decode(EmailParser._normalize_charset(charset), errors="replace"))
+                except LookupError:
+                    result.append(part.decode("utf-8", errors="replace"))
             else:
                 result.append(part)
         return " ".join(result)
+
+    @staticmethod
+    def _normalize_charset(charset: Optional[str]) -> str:
+        """把历史邮件中常见的非法 charset 归一到可用编码。"""
+        if not charset:
+            return "utf-8"
+        normalized = charset.strip().lower()
+        if normalized in {"unknown", "x-unknown", "unknown-8bit", "8bit", "238"}:
+            return "utf-8"
+        return normalized
 
     @staticmethod
     def _parse_date(date_str: Optional[str]) -> Optional[datetime]:

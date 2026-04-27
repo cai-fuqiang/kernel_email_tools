@@ -28,7 +28,7 @@ class BaseEmailStorage(BaseStorage):
     """邮件存储抽象基类。"""
 
     @abstractmethod
-    async def save_emails(self, emails: list[EmailCreate]) -> int:
+    async def save_emails(self, emails: list[EmailCreate], batch_size: int = 2000) -> int:
         """批量保存邮件，基于 message_id 去重。
 
         Args:

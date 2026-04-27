@@ -3,6 +3,7 @@
 import email
 import logging
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -77,7 +78,7 @@ class GitCollector(BaseCollector):
         return repo
 
     def _extract_email_from_commit(
-        self, repo: Repo, commit_hash: str, list_name: str, epoch: int
+        self, commit, list_name: str, epoch: int
     ) -> Optional[RawEmail]:
         """从 git commit 中提取邮件数据。
 
@@ -94,7 +95,6 @@ class GitCollector(BaseCollector):
             解析成功返回 RawEmail，失败返回 None。
         """
         try:
-            commit = repo.commit(commit_hash)
             # lore git 仓库中邮件存储在 tree 的 'm' blob 中
             blob = commit.tree / "m"
             raw_content = blob.data_stream.read().decode("utf-8", errors="replace")
@@ -104,9 +104,13 @@ class GitCollector(BaseCollector):
             raw_headers = parts[0] if parts else ""
             raw_body = parts[1] if len(parts) > 1 else ""
 
-            # 提取 Message-ID
-            msg = email.message_from_string(raw_content)
-            message_id = msg.get("Message-ID", "").strip("<>")
+            # 提取 Message-ID。先用 header regex，避免为每封邮件构造完整 message 对象。
+            match = re.search(r"(?im)^Message-ID:\s*<?([^>\s]+)>?", raw_headers)
+            if not match:
+                msg = email.message_from_string(raw_content)
+                message_id = msg.get("Message-ID", "").strip("<>")
+            else:
+                message_id = match.group(1).strip()
 
             if not message_id:
                 logger.warning("No Message-ID in commit %s, skipping", commit_hash[:8])
@@ -118,11 +122,55 @@ class GitCollector(BaseCollector):
                 raw_body=raw_body,
                 list_name=list_name,
                 epoch=epoch,
-                commit_hash=str(commit_hash),
+                commit_hash=str(commit.hexsha),
             )
         except Exception as e:
-            logger.error("Failed to extract email from commit %s: %s", commit_hash[:8], e)
+            logger.error("Failed to extract email from commit %s: %s", commit.hexsha[:8], e)
             return None
+
+    def collect_iter(
+        self,
+        list_name: str,
+        epoch: int = 0,
+        since: Optional[datetime] = None,
+        limit: int = 0,
+    ):
+        """流式采集邮件，适合 LKML 这类超大 epoch。"""
+        repo = self._clone_or_fetch(list_name, epoch)
+        processed = 0
+        collected = 0
+        skipped = 0
+        try:
+            commit_iter = repo.iter_commits("HEAD")
+        except Exception:
+            logger.info("HEAD not available, using --all for bare repo")
+            commit_iter = repo.iter_commits(all=True)
+
+        for commit in commit_iter:
+            processed += 1
+            if processed % 1000 == 0:
+                logger.info(
+                    "Progress: processed %d commits, collected %d emails from %s epoch %d",
+                    processed, collected, list_name, epoch,
+                )
+
+            if since and commit.committed_datetime.replace(tzinfo=None) < since:
+                skipped += 1
+                continue
+
+            raw_email = self._extract_email_from_commit(commit, list_name, epoch)
+            if raw_email:
+                collected += 1
+                yield raw_email
+
+            if limit and collected >= limit:
+                logger.info("Reached limit of %d emails, stopping", limit)
+                break
+
+        logger.info(
+            "Collected %d emails from %s epoch %d (processed %d commits, skipped %d)",
+            collected, list_name, epoch, processed, skipped,
+        )
 
     def collect(
         self,
@@ -142,50 +190,7 @@ class GitCollector(BaseCollector):
         Returns:
             采集到的 RawEmail 列表。
         """
-        repo = self._clone_or_fetch(list_name, epoch)
-        emails: list[RawEmail] = []
-
-        # 流式遍历 commit，不一次性加载到内存
-        # bare/mirror 仓库可能没有 HEAD，使用 --all 遍历所有分支
-        processed = 0
-        skipped = 0
-        try:
-            commit_iter = repo.iter_commits("HEAD")
-        except Exception:
-            logger.info("HEAD not available, using --all for bare repo")
-            commit_iter = repo.iter_commits(all=True)
-
-        for commit in commit_iter:
-            processed += 1
-
-            # 进度日志：每 1000 条输出一次
-            if processed % 1000 == 0:
-                logger.info(
-                    "Progress: processed %d commits, collected %d emails from %s epoch %d",
-                    processed, len(emails), list_name, epoch,
-                )
-
-            # 增量过滤：跳过早于 since 的 commit
-            if since and commit.committed_datetime.replace(tzinfo=None) < since:
-                skipped += 1
-                continue
-
-            raw_email = self._extract_email_from_commit(
-                repo, commit.hexsha, list_name, epoch
-            )
-            if raw_email:
-                emails.append(raw_email)
-
-            # 达到限制数量时提前退出
-            if limit and len(emails) >= limit:
-                logger.info("Reached limit of %d emails, stopping", limit)
-                break
-
-        logger.info(
-            "Collected %d emails from %s epoch %d (processed %d commits, skipped %d)",
-            len(emails), list_name, epoch, processed, skipped,
-        )
-        return emails
+        return list(self.collect_iter(list_name=list_name, epoch=epoch, since=since, limit=limit))
 
     def get_epoch_count(self, list_name: str) -> int:
         """获取邮件列表的 epoch 总数。
