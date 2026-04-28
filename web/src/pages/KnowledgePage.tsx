@@ -11,13 +11,14 @@ import {
   deleteKnowledgeRelation,
   getKnowledgeEntity,
   getKnowledgeGraph,
+  getKnowledgeStats,
   listAnnotations,
   listKnowledgeEntities,
   listKnowledgeRelations,
   updateKnowledgeRelation,
   updateKnowledgeEntity,
 } from '../api/client';
-import type { AnnotationListItem, KnowledgeEntity, KnowledgeRelation, KnowledgeGraphResponse } from '../api/types';
+import type { AnnotationListItem, KnowledgeEntity, KnowledgeRelation, KnowledgeGraphResponse, KnowledgeStats } from '../api/types';
 import { useAuth } from '../auth';
 
 const DEFAULT_ENTITY_TYPE = 'concept';
@@ -153,6 +154,8 @@ export default function KnowledgePage() {
   const [graphDepth, setGraphDepth] = useState(1);
   const [graphData, setGraphData] = useState<KnowledgeGraphResponse | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
+  const [stats, setStats] = useState<KnowledgeStats | null>(null);
+  const [searchMode, setSearchMode] = useState<'simple' | 'fulltext'>('simple');
   const [relationDrafts, setRelationDrafts] = useState<Record<string, string>>({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedThread, setSelectedThread] = useState<ThreadFocus | null>(null);
@@ -161,7 +164,7 @@ export default function KnowledgePage() {
     setLoading(true);
     setError('');
     try {
-      const res = await listKnowledgeEntities({ q: query || undefined, page_size: 100 });
+      const res = await listKnowledgeEntities({ q: query || undefined, page_size: 100, search_mode: searchMode });
       setEntities(res.entities);
       if (!selectedEntityId && res.entities.length > 0) {
         setSearchParams({ entity_id: res.entities[0].entity_id }, { replace: true });
@@ -250,6 +253,12 @@ export default function KnowledgePage() {
     loadRelations();
   }, [loadRelations]);
 
+  useEffect(() => {
+    getKnowledgeStats()
+      .then(setStats)
+      .catch(() => setStats(null));
+  }, [entities.length]);
+
   const loadGraph = useCallback(async (depth: number) => {
     if (!selectedEntityId) return;
     setGraphLoading(true);
@@ -286,7 +295,7 @@ export default function KnowledgePage() {
     setSaving(true);
     setError('');
     try {
-      const entity = await createKnowledgeEntity({
+      const result = await createKnowledgeEntity({
         entity_type: newEntity.entity_type.trim() || DEFAULT_ENTITY_TYPE,
         canonical_name: newEntity.canonical_name.trim(),
         aliases: newEntity.aliases.split(',').map((item) => item.trim()).filter(Boolean),
@@ -302,7 +311,15 @@ export default function KnowledgePage() {
       });
       setShowCreate(false);
       await loadEntities();
-      setSearchParams({ entity_id: entity.entity_id });
+      setSearchParams({ entity_id: result.entity.entity_id });
+      if (result.suggestions?.duplicates?.length) {
+        const names = result.suggestions.duplicates
+          .map((d) => d.canonical_name)
+          .join(', ');
+        setError(
+          `Created. Possible duplicates found: ${names}. Consider reviewing to avoid fragmentation.`
+        );
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to create knowledge item');
     } finally {
@@ -466,6 +483,58 @@ export default function KnowledgePage() {
               Search
             </button>
           </div>
+
+          <div className="mt-2 flex items-center gap-2">
+            <div className="flex rounded-md border border-gray-200 bg-gray-50 p-0.5">
+              <button
+                type="button"
+                onClick={() => setSearchMode('simple')}
+                className={`rounded px-2 py-1 text-[10px] font-medium ${
+                  searchMode === 'simple'
+                    ? 'bg-white text-gray-800 shadow-sm'
+                    : 'text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                Simple
+              </button>
+              <button
+                type="button"
+                onClick={() => setSearchMode('fulltext')}
+                className={`rounded px-2 py-1 text-[10px] font-medium ${
+                  searchMode === 'fulltext'
+                    ? 'bg-white text-gray-800 shadow-sm'
+                    : 'text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                Full-text
+              </button>
+            </div>
+          </div>
+
+          {stats && (
+            <div className="mt-3 grid grid-cols-4 gap-1.5">
+              <div className="rounded-md bg-gray-50 px-2 py-1.5 text-center">
+                <div className="text-xs font-semibold text-gray-800">{stats.total_entities}</div>
+                <div className="text-[9px] text-gray-400">entities</div>
+              </div>
+              <div className="rounded-md bg-gray-50 px-2 py-1.5 text-center">
+                <div className="text-xs font-semibold text-gray-800">{stats.total_relations}</div>
+                <div className="text-[9px] text-gray-400">relations</div>
+              </div>
+              <div className="rounded-md bg-gray-50 px-2 py-1.5 text-center">
+                <div className="text-xs font-semibold text-gray-800">
+                  {Object.keys(stats.by_type).length}
+                </div>
+                <div className="text-[9px] text-gray-400">types</div>
+              </div>
+              <div className="rounded-md bg-gray-50 px-2 py-1.5 text-center">
+                <div className="text-xs font-semibold text-gray-800">
+                  {stats.by_status.active || 0}
+                </div>
+                <div className="text-[9px] text-gray-400">active</div>
+              </div>
+            </div>
+          )}
 
           {canWrite && (
             <div className="mt-3">

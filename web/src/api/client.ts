@@ -911,12 +911,14 @@ export async function listKnowledgeEntities(opts?: {
   entity_type?: string;
   page?: number;
   page_size?: number;
+  search_mode?: string;
 }): Promise<KnowledgeEntityListResponse> {
   const params = new URLSearchParams();
   if (opts?.q) params.set('q', opts.q);
   if (opts?.entity_type) params.set('entity_type', opts.entity_type);
   if (opts?.page) params.set('page', String(opts.page));
   if (opts?.page_size) params.set('page_size', String(opts.page_size));
+  if (opts?.search_mode) params.set('search_mode', opts.search_mode);
   return fetchJSON<KnowledgeEntityListResponse>(`${API_BASE}/knowledge/entities?${params}`);
 }
 
@@ -934,12 +936,16 @@ export async function createKnowledgeEntity(data: {
   description?: string;
   status?: string;
   meta?: Record<string, unknown>;
-}): Promise<KnowledgeEntity> {
-  return fetchWithBody<KnowledgeEntity>(`${API_BASE}/knowledge/entities`, {
+}): Promise<import('./types').KnowledgeEntityCreateResponse> {
+  return fetchWithBody<import('./types').KnowledgeEntityCreateResponse>(`${API_BASE}/knowledge/entities`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
+}
+
+export async function getKnowledgeStats(): Promise<import('./types').KnowledgeStats> {
+  return fetchJSON<import('./types').KnowledgeStats>(`${API_BASE}/knowledge/stats`);
 }
 
 export async function updateKnowledgeEntity(

@@ -500,6 +500,21 @@ export interface KnowledgeGraphResponse {
   depth: number;
 }
 
+export interface KnowledgeStats {
+  total_entities: number;
+  by_type: Record<string, number>;
+  by_status: Record<string, number>;
+  total_relations: number;
+  recent: KnowledgeEntity[];
+}
+
+export interface KnowledgeEntityCreateResponse {
+  entity: KnowledgeEntity;
+  suggestions: {
+    duplicates: KnowledgeEntity[];
+  };
+}
+
 // ============================================================
 // 内核源码浏览相关类型 (PLAN-10000)
 // ============================================================

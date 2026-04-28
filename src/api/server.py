@@ -3688,10 +3688,11 @@ async def kernel_file(version: str, path: str):
 
 @app.get("/api/knowledge/entities")
 async def list_knowledge_entities(
-    q: str = Query("", description="模糊搜索 canonical_name / alias / summary"),
+    q: str = Query("", description="搜索关键词"),
     entity_type: str = Query("", description="实体类型过滤"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    search_mode: str = Query("simple", description="搜索模式: simple (ILIKE) 或 fulltext (tsvector)"),
 ):
     if not _knowledge_store:
         raise HTTPException(status_code=503, detail="Knowledge store not initialized")
@@ -3701,6 +3702,7 @@ async def list_knowledge_entities(
         entity_type=entity_type,
         page=page,
         page_size=page_size,
+        search_mode=search_mode,
     )
     return {
         "entities": [item.model_dump(mode="json") for item in items],
@@ -3710,7 +3712,15 @@ async def list_knowledge_entities(
     }
 
 
-@app.post("/api/knowledge/entities", response_model=KnowledgeEntityRead)
+@app.get("/api/knowledge/stats")
+async def get_knowledge_stats():
+    """获取知识库概览统计数据。"""
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    return await _knowledge_store.get_stats()
+
+
+@app.post("/api/knowledge/entities")
 async def create_knowledge_entity(
     request: "KnowledgeEntityCreateRequest",
     current_user: CurrentUser = Depends(require_roles("admin", "editor")),
@@ -3719,7 +3729,7 @@ async def create_knowledge_entity(
         raise HTTPException(status_code=503, detail="Knowledge store not initialized")
 
     try:
-        return await _knowledge_store.create(
+        entity = await _knowledge_store.create(
             KnowledgeEntityCreate(
                 entity_type=request.entity_type,
                 canonical_name=request.canonical_name,
@@ -3738,6 +3748,18 @@ async def create_knowledge_entity(
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    similar = await _knowledge_store.find_similar(
+        entity.canonical_name,
+        entity.entity_type,
+    )
+    similar = [s for s in similar if s.entity_id != entity.entity_id]
+    return {
+        "entity": entity.model_dump(mode="json"),
+        "suggestions": {
+            "duplicates": [s.model_dump(mode="json") for s in similar],
+        },
+    }
 
 
 @app.get("/api/knowledge/entities/{entity_id:path}/relations", response_model=KnowledgeRelationListResponse)

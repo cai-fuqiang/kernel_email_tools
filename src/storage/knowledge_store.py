@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Text, cast, delete, func, or_, select
+from sqlalchemy import Text, cast, delete, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -189,29 +189,50 @@ class KnowledgeStore:
         entity_type: str = "",
         page: int = 1,
         page_size: int = 20,
+        search_mode: str = "simple",
     ) -> tuple[list[KnowledgeEntityRead], int]:
         async with self._session_factory() as session:
             stmt = select(KnowledgeEntityORM)
             if entity_type.strip():
                 stmt = stmt.where(KnowledgeEntityORM.entity_type == entity_type.strip())
             if q.strip():
-                like = f"%{q.strip()}%"
-                stmt = stmt.where(
-                    or_(
-                        KnowledgeEntityORM.entity_id.ilike(like),
-                        KnowledgeEntityORM.canonical_name.ilike(like),
-                        KnowledgeEntityORM.slug.ilike(like),
-                        KnowledgeEntityORM.summary.ilike(like),
-                        cast(KnowledgeEntityORM.aliases, Text).ilike(like),
+                query_text = q.strip()
+                if search_mode == "fulltext":
+                    # 使用 raw SQL 引用 search_vector 列（通过外部迁移脚本添加），
+                    # 避免 ORM 感知该列导致未迁移库的 INSERT 报错
+                    stmt = stmt.where(
+                        text(
+                            "knowledge_entities.search_vector @@ plainto_tsquery('english', :q)"
+                        ).bindparams(q=query_text)
                     )
-                )
+                else:
+                    like = f"%{query_text}%"
+                    stmt = stmt.where(
+                        or_(
+                            KnowledgeEntityORM.entity_id.ilike(like),
+                            KnowledgeEntityORM.canonical_name.ilike(like),
+                            KnowledgeEntityORM.slug.ilike(like),
+                            KnowledgeEntityORM.summary.ilike(like),
+                            cast(KnowledgeEntityORM.aliases, Text).ilike(like),
+                        )
+                    )
 
             count_stmt = select(func.count()).select_from(stmt.subquery())
             total = (await session.execute(count_stmt)).scalar() or 0
+
+            if q.strip() and search_mode == "fulltext":
+                stmt = stmt.order_by(
+                    text(
+                        "ts_rank(knowledge_entities.search_vector, plainto_tsquery('english', :q)) DESC"
+                    ).bindparams(q=query_text)
+                )
+            else:
+                stmt = stmt.order_by(
+                    KnowledgeEntityORM.updated_at.desc(), KnowledgeEntityORM.entity_id.asc()
+                )
+
             result = await session.execute(
-                stmt.order_by(KnowledgeEntityORM.updated_at.desc(), KnowledgeEntityORM.entity_id.asc())
-                .offset((page - 1) * page_size)
-                .limit(page_size)
+                stmt.offset((page - 1) * page_size).limit(page_size)
             )
             return [KnowledgeEntityRead.model_validate(row) for row in result.scalars().all()], total
 
@@ -226,6 +247,76 @@ class KnowledgeStore:
                 entity.entity_id: KnowledgeEntityRead.model_validate(entity)
                 for entity in result.scalars().all()
             }
+
+    async def get_stats(self) -> dict:
+        """获取知识库概览统计数据。"""
+        async with self._session_factory() as session:
+            # 按类型统计
+            type_result = await session.execute(
+                select(
+                    KnowledgeEntityORM.entity_type,
+                    func.count(KnowledgeEntityORM.id).label("cnt"),
+                ).group_by(KnowledgeEntityORM.entity_type)
+            )
+            by_type = {row.entity_type: row.cnt for row in type_result.all()}
+
+            # 按状态统计
+            status_result = await session.execute(
+                select(
+                    KnowledgeEntityORM.status,
+                    func.count(KnowledgeEntityORM.id).label("cnt"),
+                ).group_by(KnowledgeEntityORM.status)
+            )
+            by_status = {row.status: row.cnt for row in status_result.all()}
+
+            # 关系总数
+            rel_total = (await session.execute(
+                select(func.count(KnowledgeRelationORM.id))
+            )).scalar() or 0
+
+            # 最近更新的实体
+            recent_result = await session.execute(
+                select(KnowledgeEntityORM)
+                .order_by(KnowledgeEntityORM.updated_at.desc())
+                .limit(5)
+            )
+            recent = [
+                KnowledgeEntityRead.model_validate(row)
+                for row in recent_result.scalars().all()
+            ]
+
+            total = sum(by_type.values())
+
+            return {
+                "total_entities": total,
+                "by_type": by_type,
+                "by_status": by_status,
+                "total_relations": rel_total,
+                "recent": recent,
+            }
+
+    async def find_similar(
+        self,
+        canonical_name: str,
+        entity_type: str = "",
+    ) -> list[KnowledgeEntityRead]:
+        """查找名称相似的可能重复实体。"""
+        name = canonical_name.strip()
+        if not name:
+            return []
+        async with self._session_factory() as session:
+            like = f"%{name}%"
+            stmt = select(KnowledgeEntityORM).where(
+                or_(
+                    KnowledgeEntityORM.canonical_name.ilike(like),
+                    cast(KnowledgeEntityORM.aliases, Text).ilike(like),
+                )
+            )
+            if entity_type:
+                stmt = stmt.where(KnowledgeEntityORM.entity_type == entity_type)
+            stmt = stmt.order_by(KnowledgeEntityORM.updated_at.desc()).limit(5)
+            result = await session.execute(stmt)
+            return [KnowledgeEntityRead.model_validate(row) for row in result.scalars().all()]
 
     async def create_relation(self, data: KnowledgeRelationCreate) -> KnowledgeRelationRead:
         source_entity_id = data.source_entity_id.strip()

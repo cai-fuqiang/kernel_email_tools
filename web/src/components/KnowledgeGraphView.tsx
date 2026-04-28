@@ -11,17 +11,7 @@ const TYPE_COLORS: Record<string, string> = {
   patch_discussion: '#d97706',
 };
 
-const TYPE_LIGHT: Record<string, string> = {
-  concept: '#e0e7ff',
-  subsystem: '#cffafe',
-  mechanism: '#d1fae5',
-  issue: '#fee2e2',
-  symbol: '#ede9fe',
-  patch_discussion: '#fef3c7',
-};
-
 const DEFAULT_COLOR = '#6b7280';
-const DEFAULT_LIGHT = '#f3f4f6';
 
 interface KnowledgeGraphViewProps {
   nodes: KnowledgeEntity[];
@@ -100,7 +90,7 @@ export default function KnowledgeGraphView({
           style: {
             'label': 'data(label)',
             'font-size': '12px',
-            'font-weight': '600',
+            'font-weight': 600,
             'text-valign': 'bottom',
             'text-halign': 'center',
             'text-margin-y': 6,
@@ -122,7 +112,7 @@ export default function KnowledgeGraphView({
             'border-width': 3,
             'border-color': '#1e1b4b',
             'font-size': '14px',
-            'font-weight': '700',
+            'font-weight': 700,
           },
         },
         {
