@@ -17,7 +17,12 @@ type ConversationTurn = {
 };
 
 function normalizeMessageId(value: string): string {
-  return value.trim().replace(/^<|>$/g, '').replace(/\s+/g, '');
+  return value
+    .trim()
+    .replace(/^<|>$/g, '')
+    .replace(/\u2026/g, '...')
+    .replace(/\s+/g, '')
+    .toLowerCase();
 }
 
 function buildSourceMap(answer?: AskResponse | null) {
@@ -32,6 +37,25 @@ function buildSourceMap(answer?: AskResponse | null) {
   return sourceByMessageId;
 }
 
+function resolveCitationSource(
+  citation: string,
+  sourceByMessageId: Map<string, { threadId: string; messageId: string }>,
+) {
+  const normalized = normalizeMessageId(citation);
+  const exact = sourceByMessageId.get(normalized);
+  if (exact) return exact;
+
+  const ids = [...sourceByMessageId.keys()];
+  const candidates = normalized.includes('...')
+    ? ids.filter((id) => {
+      const [prefix, suffix] = normalized.split('...', 2);
+      return (!prefix || id.startsWith(prefix)) && (!suffix || id.endsWith(suffix));
+    })
+    : ids.filter((id) => normalized.length >= 8 && (id.includes(normalized) || normalized.includes(id)));
+
+  return candidates.length === 1 ? sourceByMessageId.get(candidates[0]) : undefined;
+}
+
 function renderAnswerWithLinks(
   text: string,
   sourceByMessageId: Map<string, { threadId: string; messageId: string }>,
@@ -40,7 +64,7 @@ function renderAnswerWithLinks(
   return text.split(/(\[[^\]]+\])/g).map((part, index) => {
     const match = part.match(/^\[([^\]]+)\]$/);
     if (!match) return <span key={index}>{part}</span>;
-    const source = sourceByMessageId.get(normalizeMessageId(match[1]));
+    const source = resolveCitationSource(match[1], sourceByMessageId);
     if (!source) return <span key={index}>{part}</span>;
     return (
       <button

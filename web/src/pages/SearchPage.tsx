@@ -21,6 +21,36 @@ function highlightSnippet(snippet: string): string {
   );
 }
 
+function normalizeMessageId(value: string): string {
+  return value
+    .trim()
+    .replace(/^<|>$/g, '')
+    .replace(/\u2026/g, '...')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
+function resolveCitationSource(
+  citation: string,
+  sources: SourceRef[],
+) {
+  const normalized = normalizeMessageId(citation);
+  const exact = sources.find((source) => normalizeMessageId(source.message_id || '') === normalized);
+  if (exact) return exact;
+
+  const candidates = sources.filter((source) => {
+    const id = normalizeMessageId(source.message_id || '');
+    if (!id) return false;
+    if (normalized.includes('...')) {
+      const [prefix, suffix] = normalized.split('...', 2);
+      return (!prefix || id.startsWith(prefix)) && (!suffix || id.endsWith(suffix));
+    }
+    return normalized.length >= 8 && (id.includes(normalized) || normalized.includes(id));
+  });
+
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
 export default function SearchPage() {
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState('hybrid');
@@ -177,15 +207,6 @@ export default function SearchPage() {
       setDraftLoading(false);
     }
   };
-
-  const sourceByMessageId = new Map<string, { threadId: string; messageId: string }>();
-  for (const source of summary?.sources || []) {
-    if (!source.message_id || !source.thread_id) continue;
-    sourceByMessageId.set(source.message_id.replace(/^<|>$/g, '').trim(), {
-      threadId: source.thread_id,
-      messageId: source.message_id,
-    });
-  }
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
@@ -472,10 +493,7 @@ export default function SearchPage() {
                 {summary.answer.split(/(\[[^\]]+\])/g).map((part, i) => {
                   const m = part.match(/^\[([^\]]+)\]$/);
                   if (!m) return <span key={i}>{part}</span>;
-                  const msgId = m[1].replace(/^<|>$/g, '').trim();
-                  const src = summary.sources.find(s =>
-                    (s.message_id || '').replace(/^<|>$/g, '').trim() === msgId
-                  );
+                  const src = resolveCitationSource(m[1], summary.sources);
                   if (!src || !src.thread_id) return <span key={i}>{part}</span>;
                   return (
                     <button
