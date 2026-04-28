@@ -5,16 +5,21 @@ import ThreadDrawer from '../components/ThreadDrawer';
 import {
   createAnnotation,
   createKnowledgeEntity,
+  createKnowledgeRelation,
+  deleteKnowledgeRelation,
   getKnowledgeEntity,
   listAnnotations,
   listKnowledgeEntities,
+  listKnowledgeRelations,
+  updateKnowledgeRelation,
   updateKnowledgeEntity,
 } from '../api/client';
-import type { AnnotationListItem, KnowledgeEntity } from '../api/types';
+import type { AnnotationListItem, KnowledgeEntity, KnowledgeRelation } from '../api/types';
 import { useAuth } from '../auth';
 
 const DEFAULT_ENTITY_TYPE = 'concept';
 const ENTITY_TYPES = ['concept', 'subsystem', 'mechanism', 'issue', 'symbol', 'patch_discussion'];
+const RELATION_TYPES = ['related_to', 'part_of', 'explains', 'caused_by', 'fixed_by', 'supersedes'];
 
 type ThreadFocus = {
   threadId: string;
@@ -83,6 +88,10 @@ function readableType(value: string) {
   return value.replace(/_/g, ' ');
 }
 
+function relationLabel(value: string) {
+  return readableType(value);
+}
+
 function evidenceCount(entity: KnowledgeEntity) {
   const evidence = extractKnowledgeEvidence(entity);
   return evidence.sources.length || evidence.threadIds.length;
@@ -101,6 +110,10 @@ function sourceTitle(source: KnowledgeEvidenceSource) {
   return [sender, date, subject].filter(Boolean).join(' · ');
 }
 
+function relationEntityName(entity: KnowledgeEntity | null | undefined, fallback: string) {
+  return entity?.canonical_name || fallback;
+}
+
 export default function KnowledgePage() {
   const { canWrite, isAdmin } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -109,8 +122,13 @@ export default function KnowledgePage() {
   const [entities, setEntities] = useState<KnowledgeEntity[]>([]);
   const [selectedEntity, setSelectedEntity] = useState<KnowledgeEntity | null>(null);
   const [annotations, setAnnotations] = useState<AnnotationListItem[]>([]);
+  const [relations, setRelations] = useState<{ outgoing: KnowledgeRelation[]; incoming: KnowledgeRelation[] }>({
+    outgoing: [],
+    incoming: [],
+  });
   const [loading, setLoading] = useState(false);
   const [annotationLoading, setAnnotationLoading] = useState(false);
+  const [relationLoading, setRelationLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -123,6 +141,12 @@ export default function KnowledgePage() {
     description: '',
   });
   const [annotationBody, setAnnotationBody] = useState('');
+  const [relationForm, setRelationForm] = useState({
+    relation_type: 'related_to',
+    target_entity_id: '',
+    description: '',
+  });
+  const [relationDrafts, setRelationDrafts] = useState<Record<string, string>>({});
   const [selectedThread, setSelectedThread] = useState<ThreadFocus | null>(null);
 
   const loadEntities = useCallback(async () => {
@@ -185,6 +209,23 @@ export default function KnowledgePage() {
     }
   }, [selectedEntityId]);
 
+  const loadRelations = useCallback(async () => {
+    if (!selectedEntityId) {
+      setRelations({ outgoing: [], incoming: [] });
+      return;
+    }
+    setRelationLoading(true);
+    try {
+      const res = await listKnowledgeRelations(selectedEntityId);
+      setRelations(res);
+      setRelationDrafts({});
+    } catch {
+      setRelations({ outgoing: [], incoming: [] });
+    } finally {
+      setRelationLoading(false);
+    }
+  }, [selectedEntityId]);
+
   useEffect(() => {
     loadEntities();
   }, [loadEntities]);
@@ -197,12 +238,21 @@ export default function KnowledgePage() {
     loadAnnotations();
   }, [loadAnnotations]);
 
+  useEffect(() => {
+    loadRelations();
+  }, [loadRelations]);
+
   const selectedAliases = useMemo(
     () => (selectedEntity?.aliases || []).join(', '),
     [selectedEntity]
   );
   const evidence = useMemo(() => extractKnowledgeEvidence(selectedEntity), [selectedEntity]);
   const selectedEvidenceCount = selectedEntity ? evidence.sources.length || evidence.threadIds.length : 0;
+  const relationCount = relations.outgoing.length + relations.incoming.length;
+  const relationTargets = useMemo(
+    () => entities.filter((entity) => entity.entity_id !== selectedEntityId),
+    [entities, selectedEntityId]
+  );
 
   const handleCreateEntity = async () => {
     if (!newEntity.canonical_name.trim()) return;
@@ -272,6 +322,56 @@ export default function KnowledgePage() {
       await loadAnnotations();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to create note');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateRelation = async () => {
+    if (!selectedEntity || !relationForm.target_entity_id || !canWrite) return;
+    setSaving(true);
+    setError('');
+    try {
+      await createKnowledgeRelation({
+        source_entity_id: selectedEntity.entity_id,
+        target_entity_id: relationForm.target_entity_id,
+        relation_type: relationForm.relation_type,
+        description: relationForm.description.trim(),
+      });
+      setRelationForm({ relation_type: 'related_to', target_entity_id: '', description: '' });
+      await loadRelations();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to create relation');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveRelationDescription = async (relation: KnowledgeRelation) => {
+    if (!canWrite) return;
+    setSaving(true);
+    setError('');
+    try {
+      await updateKnowledgeRelation(relation.relation_id, {
+        description: relationDrafts[relation.relation_id] ?? relation.description,
+      });
+      await loadRelations();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to update relation');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteRelation = async (relationId: string) => {
+    if (!canWrite) return;
+    setSaving(true);
+    setError('');
+    try {
+      await deleteKnowledgeRelation(relationId);
+      await loadRelations();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to delete relation');
     } finally {
       setSaving(false);
     }
@@ -472,7 +572,7 @@ export default function KnowledgePage() {
               </div>
             </section>
 
-            <section className="grid gap-3 md:grid-cols-4">
+            <section className="grid gap-3 md:grid-cols-5">
               <div className="rounded-xl border border-gray-200 bg-white p-4">
                 <div className="text-xs font-medium uppercase tracking-wide text-gray-400">Sources</div>
                 <div className="mt-2 text-2xl font-semibold text-gray-950">{selectedEvidenceCount}</div>
@@ -482,6 +582,11 @@ export default function KnowledgePage() {
                 <div className="text-xs font-medium uppercase tracking-wide text-gray-400">Notes</div>
                 <div className="mt-2 text-2xl font-semibold text-gray-950">{annotations.length}</div>
                 <div className="mt-1 text-xs text-gray-500">human review comments</div>
+              </div>
+              <div className="rounded-xl border border-gray-200 bg-white p-4">
+                <div className="text-xs font-medium uppercase tracking-wide text-gray-400">Relations</div>
+                <div className="mt-2 text-2xl font-semibold text-gray-950">{relationCount}</div>
+                <div className="mt-1 text-xs text-gray-500">linked knowledge items</div>
               </div>
               <div className="rounded-xl border border-gray-200 bg-white p-4">
                 <div className="text-xs font-medium uppercase tracking-wide text-gray-400">Type</div>
@@ -536,6 +641,173 @@ export default function KnowledgePage() {
                   className="mt-2 min-h-[210px] w-full rounded-lg border border-gray-300 px-3 py-2 text-sm leading-6"
                   disabled={!canWrite}
                 />
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-gray-200 bg-white p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-950">Related knowledge</h2>
+                  <p className="text-sm text-gray-500">
+                    Start the knowledge graph with explicit, reviewable relationships between concepts.
+                  </p>
+                </div>
+                <div className="text-sm text-gray-400">
+                  {relationLoading ? 'Loading...' : `${relationCount} relations`}
+                </div>
+              </div>
+
+              {canWrite && (
+                <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="grid gap-3 md:grid-cols-[160px_1fr]">
+                    <select
+                      value={relationForm.relation_type}
+                      onChange={(e) => setRelationForm((prev) => ({ ...prev, relation_type: e.target.value }))}
+                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    >
+                      {RELATION_TYPES.map((type) => (
+                        <option key={type} value={type}>{relationLabel(type)}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={relationForm.target_entity_id}
+                      onChange={(e) => setRelationForm((prev) => ({ ...prev, target_entity_id: e.target.value }))}
+                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    >
+                      <option value="">Choose related knowledge...</option>
+                      {relationTargets.map((entity) => (
+                        <option key={entity.entity_id} value={entity.entity_id}>
+                          {entity.canonical_name} ({readableType(entity.entity_type)})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <textarea
+                    value={relationForm.description}
+                    onChange={(e) => setRelationForm((prev) => ({ ...prev, description: e.target.value }))}
+                    placeholder="Explain the relationship, for example: CFS superseded the O(1) scheduler in the 2.6 era."
+                    className="mt-3 min-h-[72px] w-full rounded-lg border border-gray-300 px-3 py-2 text-sm leading-6"
+                  />
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      onClick={handleCreateRelation}
+                      disabled={saving || !relationForm.target_entity_id}
+                      className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                    >
+                      Add relation
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">This item points to</div>
+                  <div className="mt-2 space-y-2">
+                    {relations.outgoing.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-5 text-sm text-gray-500">
+                        No outgoing relations yet.
+                      </div>
+                    ) : relations.outgoing.map((relation) => (
+                      <div key={relation.relation_id} className="rounded-xl border border-gray-200 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setSearchParams({ entity_id: relation.target_entity_id })}
+                            className="min-w-0 text-left"
+                          >
+                            <div className="text-xs font-semibold uppercase text-indigo-600">{relationLabel(relation.relation_type)}</div>
+                            <div className="mt-1 truncate text-sm font-semibold text-gray-950">
+                              {relationEntityName(relation.target_entity, relation.target_entity_id)}
+                            </div>
+                          </button>
+                          {canWrite && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteRelation(relation.relation_id)}
+                              className="shrink-0 rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-500 hover:bg-gray-50"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                        <textarea
+                          value={relationDrafts[relation.relation_id] ?? relation.description}
+                          onChange={(e) => setRelationDrafts((prev) => ({ ...prev, [relation.relation_id]: e.target.value }))}
+                          disabled={!canWrite}
+                          placeholder="No relationship note yet."
+                          className="mt-2 min-h-[64px] w-full rounded-lg border border-gray-300 px-3 py-2 text-sm leading-6"
+                        />
+                        {canWrite && (
+                          <div className="mt-2 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => handleSaveRelationDescription(relation)}
+                              disabled={saving}
+                              className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                            >
+                              Save note
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">Other items pointing here</div>
+                  <div className="mt-2 space-y-2">
+                    {relations.incoming.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-5 text-sm text-gray-500">
+                        No incoming relations yet.
+                      </div>
+                    ) : relations.incoming.map((relation) => (
+                      <div key={relation.relation_id} className="rounded-xl border border-gray-200 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setSearchParams({ entity_id: relation.source_entity_id })}
+                            className="min-w-0 text-left"
+                          >
+                            <div className="text-xs font-semibold uppercase text-indigo-600">{relationLabel(relation.relation_type)}</div>
+                            <div className="mt-1 truncate text-sm font-semibold text-gray-950">
+                              {relationEntityName(relation.source_entity, relation.source_entity_id)}
+                            </div>
+                          </button>
+                          {canWrite && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteRelation(relation.relation_id)}
+                              className="shrink-0 rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-500 hover:bg-gray-50"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                        <textarea
+                          value={relationDrafts[relation.relation_id] ?? relation.description}
+                          onChange={(e) => setRelationDrafts((prev) => ({ ...prev, [relation.relation_id]: e.target.value }))}
+                          disabled={!canWrite}
+                          placeholder="No relationship note yet."
+                          className="mt-2 min-h-[64px] w-full rounded-lg border border-gray-300 px-3 py-2 text-sm leading-6"
+                        />
+                        {canWrite && (
+                          <div className="mt-2 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => handleSaveRelationDescription(relation)}
+                              disabled={saving}
+                              className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                            >
+                              Save note
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </section>
 

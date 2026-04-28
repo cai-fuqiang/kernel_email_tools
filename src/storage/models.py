@@ -387,6 +387,45 @@ class KnowledgeEntityORM(Base):
         return f"<KnowledgeEntityORM entity_id={self.entity_id!r} canonical_name={self.canonical_name!r}>"
 
 
+class KnowledgeRelationORM(Base):
+    """知识实体之间的有向关系。"""
+
+    __tablename__ = "knowledge_relations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    relation_id: Mapped[str] = mapped_column(String(160), nullable=False, unique=True, index=True)
+    source_entity_id: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    target_entity_id: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    relation_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    evidence_id: Mapped[str] = mapped_column(String(160), nullable=False, default="", index=True)
+    meta: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
+    updated_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
+    created_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    updated_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_entity_id",
+            "target_entity_id",
+            "relation_type",
+            name="uq_knowledge_relations_edge",
+        ),
+        Index("ix_knowledge_relations_source_type", "source_entity_id", "relation_type"),
+        Index("ix_knowledge_relations_target_type", "target_entity_id", "relation_type"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<KnowledgeRelationORM relation_id={self.relation_id!r} type={self.relation_type}>"
+
+
 # ============================================================
 # Pydantic 数据校验模型
 # ============================================================
@@ -731,6 +770,50 @@ class KnowledgeEntityRead(BaseModel):
     updated_by_user_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeRelationCreate(BaseModel):
+    source_entity_id: str = Field(..., min_length=1, max_length=160)
+    target_entity_id: str = Field(..., min_length=1, max_length=160)
+    relation_type: str = Field(..., min_length=1, max_length=64)
+    description: str = Field("", max_length=4000)
+    evidence_id: str = Field("", max_length=160)
+    meta: dict = Field(default_factory=dict)
+    created_by: str = Field("me", max_length=128)
+    updated_by: str = Field("me", max_length=128)
+    created_by_user_id: Optional[str] = None
+    updated_by_user_id: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeRelationUpdate(BaseModel):
+    relation_type: Optional[str] = Field(None, min_length=1, max_length=64)
+    description: Optional[str] = Field(None, max_length=4000)
+    evidence_id: Optional[str] = Field(None, max_length=160)
+    meta: Optional[dict] = None
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeRelationRead(BaseModel):
+    relation_id: str
+    source_entity_id: str
+    target_entity_id: str
+    relation_type: str
+    description: str = ""
+    evidence_id: str = ""
+    meta: dict = Field(default_factory=dict)
+    created_by: str = "me"
+    updated_by: str = "me"
+    created_by_user_id: Optional[str] = None
+    updated_by_user_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    source_entity: Optional[KnowledgeEntityRead] = None
+    target_entity: Optional[KnowledgeEntityRead] = None
 
     model_config = {"from_attributes": True}
 

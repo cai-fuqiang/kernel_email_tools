@@ -14,7 +14,9 @@
   - 支持编辑知识草稿、人工笔记草稿和 tag assignment 草稿。
   - 缺失 tag 默认不可保存，避免 AI 自动创建未审核标签。
   - 保存后提供跳转到新 Knowledge item 的入口。
-- 这些改动仍是前端临时审核流，草稿还没有持久化到数据库。
+- 已有基础数据对象：`knowledge_entities`、annotations、tags。
+- 已新增基础 `knowledge_relations`：支持人工建立、查看正向/反向关系、编辑关系说明、删除关系。
+- 仍缺少：一等 evidence 表、relation 草稿推荐、持久化 Draft Inbox、图谱可视化。
 
 ## Current Problems
 - 页面术语过多：entity、annotation、meta、id 等内部概念直接暴露，用户难以判断下一步该做什么。
@@ -132,12 +134,69 @@
   - 来源是否相关。
   - 是否应该沉淀为知识。
 
+## Knowledge Graph Roadmap
+
+### Phase G1: First-class Evidence
+- 新增 `knowledge_evidence`，把 `meta.ask.sources` 中的邮件来源迁移/回填为结构化证据。
+- 每条 evidence 记录它支持的 `claim`、原始邮件/thread、可选 quote、confidence 和创建者。
+- Knowledge 页面展示“每条证据支持什么 claim”，而不是只展示邮件链接。
+- 验收标准：Ask 保存的知识项能从 Knowledge 页面打开来源邮件，并能看到证据对应的 claim。
+
+### Phase G2: Knowledge Relations
+- 新增 `knowledge_relations`，先支持人工维护关系数据，不做复杂图谱可视化。
+- 支持关系类型：`related_to`、`part_of`、`explains`、`caused_by`、`fixed_by`、`supersedes`。
+- Knowledge 页面展示 “Related knowledge” 列表，包含 outgoing 和 incoming 两种方向。
+- 验收标准：能手动建立、展示、删除关系；反向引用正确。
+
+### Phase G3: Manual Relation Editing
+- 在 Knowledge 详情页支持搜索已有实体、建立关系、修改关系说明、删除关系。
+- 每条关系可绑定可选 `evidence_id`，后续用于解释关系来源。
+- 关系方向语义必须在 UI 中明确展示，避免用户把 `A supersedes B` 和 `B supersedes A` 弄反。
+- 验收标准：用户不需要理解内部 id，也能建立一条方向正确的知识关系。
+
+### Phase G4: Ask Relation Suggestions
+- Ask 生成草稿时推荐可能关系，但默认不自动保存。
+- 典型映射规则：
+  - `replaced by` / `replaced` -> `supersedes`
+  - `part of` / `belongs to` -> `part_of`
+  - `fixed` / `resolved by` -> `fixed_by`
+  - `explains` / `because` -> `explains`
+- 推荐关系进入草稿审核面板，由用户确认后保存。
+- 验收标准：Ask 推荐关系只进入草稿，不会静默修改知识图谱。
+
+### Phase G5: Ask Uses Knowledge Graph
+- Ask 检索时先查已有 Knowledge，再沿一跳关系扩展上下文。
+- 回答中区分“知识库结论”和“邮件原始证据”。
+- 如果新邮件证据与已有 Knowledge 冲突，生成 review warning。
+- 验收标准：Ask 回答能引用已有 Knowledge 和原始邮件证据，且能解释为什么扩展到了相关实体。
+
+### Phase G6: Graph Visualization
+- 先做单实体局部邻接图：当前实体在中心，一跳关系按类型分组。
+- 再做全局图谱浏览、过滤、聚类。
+- 图谱只作为导航和发现工具，不替代列表、证据审核和人工编辑。
+- 验收标准：局部图谱节点可点击跳转；空关系时不显示无意义图。
+
 ## API Plan
 - 保持 `/api/knowledge/entities` 基础 CRUD。
 - 新增 `/api/knowledge/drafts` 管理 Ask/Search 生成的草稿。
 - 新增 `/api/knowledge/evidence` 管理证据。
 - 新增 `/api/knowledge/relations` 管理实体关系。
 - `/api/ask` 响应中继续返回 draft bundle，同时附带候选重复实体和建议动作。
+- 图谱相关 API 方向：
+  - `GET /api/knowledge/entities/{entity_id}/evidence`
+  - `POST /api/knowledge/entities/{entity_id}/evidence`
+  - `GET /api/knowledge/entities/{entity_id}/relations`
+  - `POST /api/knowledge/relations`
+  - `PATCH /api/knowledge/relations/{relation_id}`
+  - `DELETE /api/knowledge/relations/{relation_id}`
+
+## Relation Direction Semantics
+- `A part_of B`: A 是 B 的一部分。
+- `A supersedes B`: A 替代 B。
+- `A fixed_by B`: A 这个问题被 B 修复。
+- `A explains B`: A 解释 B。
+- `A caused_by B`: A 由 B 导致。
+- `A related_to B`: 只用于无法明确方向的弱关系。
 
 ## Data Migration Policy
 - 当前项目允许重建数据库，因此可以优先采用清晰模型，不做复杂兼容迁移。

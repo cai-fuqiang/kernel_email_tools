@@ -470,6 +470,29 @@ export interface KnowledgeEntityListResponse {
   page_size: number;
 }
 
+export interface KnowledgeRelation {
+  relation_id: string;
+  source_entity_id: string;
+  target_entity_id: string;
+  relation_type: string;
+  description: string;
+  evidence_id: string;
+  meta: Record<string, unknown>;
+  created_by: string;
+  updated_by: string;
+  created_by_user_id?: string | null;
+  updated_by_user_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  source_entity?: KnowledgeEntity | null;
+  target_entity?: KnowledgeEntity | null;
+}
+
+export interface KnowledgeRelationListResponse {
+  outgoing: KnowledgeRelation[];
+  incoming: KnowledgeRelation[];
+}
+
 // ============================================================
 // 内核源码浏览相关类型 (PLAN-10000)
 // ============================================================

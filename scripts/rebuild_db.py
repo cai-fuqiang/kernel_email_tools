@@ -50,6 +50,8 @@ async def rebuild_email_db() -> None:
             "tag_aliases",
             "tags",
             "annotations",
+            "knowledge_relations",
+            "knowledge_entities",
             "emails",
         ],
     )

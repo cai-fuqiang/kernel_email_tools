@@ -20,6 +20,8 @@ import type {
   AnnotationListResponse,
   KnowledgeEntity,
   KnowledgeEntityListResponse,
+  KnowledgeRelation,
+  KnowledgeRelationListResponse,
   TagAssignment,
   TagRead,
   TagStats,
@@ -955,6 +957,49 @@ export async function updateKnowledgeEntity(
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
+  });
+}
+
+export async function listKnowledgeRelations(entityId: string): Promise<KnowledgeRelationListResponse> {
+  return fetchJSON<KnowledgeRelationListResponse>(
+    `${API_BASE}/knowledge/entities/${encodeURIComponent(entityId)}/relations`
+  );
+}
+
+export async function createKnowledgeRelation(data: {
+  source_entity_id: string;
+  target_entity_id: string;
+  relation_type: string;
+  description?: string;
+  evidence_id?: string;
+  meta?: Record<string, unknown>;
+}): Promise<KnowledgeRelation> {
+  return fetchWithBody<KnowledgeRelation>(`${API_BASE}/knowledge/relations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateKnowledgeRelation(
+  relationId: string,
+  patch: {
+    relation_type?: string;
+    description?: string;
+    evidence_id?: string;
+    meta?: Record<string, unknown>;
+  },
+): Promise<KnowledgeRelation> {
+  return fetchWithBody<KnowledgeRelation>(`${API_BASE}/knowledge/relations/${encodeURIComponent(relationId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function deleteKnowledgeRelation(relationId: string): Promise<{ deleted: boolean }> {
+  return fetchWithBody<{ deleted: boolean }>(`${API_BASE}/knowledge/relations/${encodeURIComponent(relationId)}`, {
+    method: 'DELETE',
   });
 }
 

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import re
+import uuid
 from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Text, cast, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.storage.models import (
@@ -14,6 +16,10 @@ from src.storage.models import (
     KnowledgeEntityORM,
     KnowledgeEntityRead,
     KnowledgeEntityUpdate,
+    KnowledgeRelationCreate,
+    KnowledgeRelationORM,
+    KnowledgeRelationRead,
+    KnowledgeRelationUpdate,
 )
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -147,3 +153,151 @@ class KnowledgeStore:
                 entity.entity_id: KnowledgeEntityRead.model_validate(entity)
                 for entity in result.scalars().all()
             }
+
+    async def create_relation(self, data: KnowledgeRelationCreate) -> KnowledgeRelationRead:
+        source_entity_id = data.source_entity_id.strip()
+        target_entity_id = data.target_entity_id.strip()
+        relation_type = data.relation_type.strip()
+        if source_entity_id == target_entity_id:
+            raise ValueError("source_entity_id and target_entity_id must be different")
+
+        async with self._session_factory() as session:
+            existing_entities = await session.execute(
+                select(KnowledgeEntityORM.entity_id).where(
+                    KnowledgeEntityORM.entity_id.in_([source_entity_id, target_entity_id])
+                )
+            )
+            existing_ids = set(existing_entities.scalars().all())
+            missing = [entity_id for entity_id in [source_entity_id, target_entity_id] if entity_id not in existing_ids]
+            if missing:
+                raise ValueError(f"Knowledge entity not found: {', '.join(missing)}")
+
+            now = datetime.utcnow()
+            relation = KnowledgeRelationORM(
+                relation_id=f"rel:{uuid.uuid4().hex}",
+                source_entity_id=source_entity_id,
+                target_entity_id=target_entity_id,
+                relation_type=relation_type,
+                description=data.description.strip(),
+                evidence_id=data.evidence_id.strip(),
+                meta=data.meta or {},
+                created_by=data.created_by,
+                updated_by=data.updated_by,
+                created_by_user_id=data.created_by_user_id,
+                updated_by_user_id=data.updated_by_user_id,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(relation)
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                raise ValueError("Knowledge relation already exists") from exc
+            await session.refresh(relation)
+            return await self._relation_read(session, relation)
+
+    async def list_relations(self, entity_id: str) -> tuple[list[KnowledgeRelationRead], list[KnowledgeRelationRead]]:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(KnowledgeRelationORM)
+                .where(
+                    or_(
+                        KnowledgeRelationORM.source_entity_id == entity_id,
+                        KnowledgeRelationORM.target_entity_id == entity_id,
+                    )
+                )
+                .order_by(KnowledgeRelationORM.relation_type.asc(), KnowledgeRelationORM.updated_at.desc())
+            )
+            relations = result.scalars().all()
+            reads = [await self._relation_read(session, relation) for relation in relations]
+            outgoing = [relation for relation in reads if relation.source_entity_id == entity_id]
+            incoming = [relation for relation in reads if relation.target_entity_id == entity_id]
+            return outgoing, incoming
+
+    async def update_relation(
+        self,
+        relation_id: str,
+        data: KnowledgeRelationUpdate,
+        updated_by: str,
+        updated_by_user_id: Optional[str] = None,
+    ) -> Optional[KnowledgeRelationRead]:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(KnowledgeRelationORM).where(KnowledgeRelationORM.relation_id == relation_id)
+            )
+            relation = result.scalar_one_or_none()
+            if relation is None:
+                return None
+            if data.relation_type is not None:
+                relation.relation_type = data.relation_type.strip()
+            if data.description is not None:
+                relation.description = data.description.strip()
+            if data.evidence_id is not None:
+                relation.evidence_id = data.evidence_id.strip()
+            if data.meta is not None:
+                relation.meta = data.meta
+            relation.updated_by = updated_by
+            relation.updated_by_user_id = updated_by_user_id
+            relation.updated_at = datetime.utcnow()
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                raise ValueError("Knowledge relation already exists") from exc
+            await session.refresh(relation)
+            return await self._relation_read(session, relation)
+
+    async def delete_relation(self, relation_id: str) -> bool:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(KnowledgeRelationORM).where(KnowledgeRelationORM.relation_id == relation_id)
+            )
+            relation = result.scalar_one_or_none()
+            if relation is None:
+                return False
+            await session.delete(relation)
+            await session.commit()
+            return True
+
+    async def _relation_read(
+        self,
+        session: AsyncSession,
+        relation: KnowledgeRelationORM,
+    ) -> KnowledgeRelationRead:
+        entity_map = await self._get_entity_map(
+            session,
+            [relation.source_entity_id, relation.target_entity_id],
+        )
+        return KnowledgeRelationRead(
+            relation_id=relation.relation_id,
+            source_entity_id=relation.source_entity_id,
+            target_entity_id=relation.target_entity_id,
+            relation_type=relation.relation_type,
+            description=relation.description,
+            evidence_id=relation.evidence_id,
+            meta=relation.meta,
+            created_by=relation.created_by,
+            updated_by=relation.updated_by,
+            created_by_user_id=relation.created_by_user_id,
+            updated_by_user_id=relation.updated_by_user_id,
+            created_at=relation.created_at,
+            updated_at=relation.updated_at,
+            source_entity=entity_map.get(relation.source_entity_id),
+            target_entity=entity_map.get(relation.target_entity_id),
+        )
+
+    async def _get_entity_map(
+        self,
+        session: AsyncSession,
+        entity_ids: list[str],
+    ) -> dict[str, KnowledgeEntityRead]:
+        if not entity_ids:
+            return {}
+        result = await session.execute(
+            select(KnowledgeEntityORM).where(KnowledgeEntityORM.entity_id.in_(list(dict.fromkeys(entity_ids))))
+        )
+        return {
+            entity.entity_id: KnowledgeEntityRead.model_validate(entity)
+            for entity in result.scalars().all()
+        }

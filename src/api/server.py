@@ -38,6 +38,9 @@ from src.storage.models import (
     KnowledgeEntityCreate,
     KnowledgeEntityRead,
     KnowledgeEntityUpdate,
+    KnowledgeRelationCreate,
+    KnowledgeRelationRead,
+    KnowledgeRelationUpdate,
     TagAssignmentCreate,
     TagAssignmentORM,
     TagAssignmentRead,
@@ -957,6 +960,27 @@ class DraftApplyResponse(BaseModel):
     created_annotations: list[dict] = Field(default_factory=list)
     created_tag_assignments: list[dict] = Field(default_factory=list)
     errors: list[dict] = Field(default_factory=list)
+
+
+class KnowledgeRelationCreateRequest(BaseModel):
+    source_entity_id: str = Field(..., min_length=1, max_length=160)
+    target_entity_id: str = Field(..., min_length=1, max_length=160)
+    relation_type: str = Field(..., min_length=1, max_length=64)
+    description: str = Field("", max_length=4000)
+    evidence_id: str = Field("", max_length=160)
+    meta: dict = Field(default_factory=dict)
+
+
+class KnowledgeRelationUpdateRequest(BaseModel):
+    relation_type: Optional[str] = Field(None, min_length=1, max_length=64)
+    description: Optional[str] = Field(None, max_length=4000)
+    evidence_id: Optional[str] = Field(None, max_length=160)
+    meta: Optional[dict] = None
+
+
+class KnowledgeRelationListResponse(BaseModel):
+    outgoing: list[KnowledgeRelationRead] = Field(default_factory=list)
+    incoming: list[KnowledgeRelationRead] = Field(default_factory=list)
 
 
 class ThreadResponse(BaseModel):
@@ -3707,6 +3731,18 @@ async def create_knowledge_entity(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/api/knowledge/entities/{entity_id:path}/relations", response_model=KnowledgeRelationListResponse)
+async def list_knowledge_relations(entity_id: str):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+
+    entity = await _knowledge_store.get(entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Knowledge entity not found")
+    outgoing, incoming = await _knowledge_store.list_relations(entity_id)
+    return KnowledgeRelationListResponse(outgoing=outgoing, incoming=incoming)
+
+
 @app.get("/api/knowledge/entities/{entity_id:path}", response_model=KnowledgeEntityRead)
 async def get_knowledge_entity(entity_id: str):
     if not _knowledge_store:
@@ -3716,6 +3752,72 @@ async def get_knowledge_entity(entity_id: str):
     if entity is None:
         raise HTTPException(status_code=404, detail="Knowledge entity not found")
     return entity
+
+
+@app.post("/api/knowledge/relations", response_model=KnowledgeRelationRead)
+async def create_knowledge_relation(
+    request: KnowledgeRelationCreateRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    try:
+        return await _knowledge_store.create_relation(
+            KnowledgeRelationCreate(
+                source_entity_id=request.source_entity_id,
+                target_entity_id=request.target_entity_id,
+                relation_type=request.relation_type,
+                description=request.description,
+                evidence_id=request.evidence_id,
+                meta=request.meta,
+                created_by=current_user.display_name,
+                updated_by=current_user.display_name,
+                created_by_user_id=current_user.user_id,
+                updated_by_user_id=current_user.user_id,
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.patch("/api/knowledge/relations/{relation_id:path}", response_model=KnowledgeRelationRead)
+async def update_knowledge_relation(
+    relation_id: str,
+    request: KnowledgeRelationUpdateRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    try:
+        relation = await _knowledge_store.update_relation(
+            relation_id=relation_id,
+            data=KnowledgeRelationUpdate(
+                relation_type=request.relation_type,
+                description=request.description,
+                evidence_id=request.evidence_id,
+                meta=request.meta,
+            ),
+            updated_by=current_user.display_name,
+            updated_by_user_id=current_user.user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if relation is None:
+        raise HTTPException(status_code=404, detail="Knowledge relation not found")
+    return relation
+
+
+@app.delete("/api/knowledge/relations/{relation_id:path}")
+async def delete_knowledge_relation(
+    relation_id: str,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    deleted = await _knowledge_store.delete_relation(relation_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Knowledge relation not found")
+    return {"deleted": True}
 
 
 @app.patch("/api/knowledge/entities/{entity_id:path}", response_model=KnowledgeEntityRead)
