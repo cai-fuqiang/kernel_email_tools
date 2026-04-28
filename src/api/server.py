@@ -2453,7 +2453,11 @@ async def apply_summary_draft(
             if not tag_name:
                 raise ValueError("tag_name is required")
             if await _tag_store.get_tag_by_name(tag_name) is None:
-                raise ValueError(f"Tag '{tag_name}' does not exist")
+                await _tag_store.get_or_create_tag(
+                    tag_name,
+                    actor_user_id=current_user.user_id,
+                    actor_display_name=current_user.display_name,
+                )
             assignment = await _tag_store.assign_tag(
                 TagAssignmentCreate(
                     tag_name=tag_name,

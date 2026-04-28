@@ -335,11 +335,10 @@ class AskDraftService:
             exists = await tag_exists(draft["tag_name"])
             draft["tag_exists"] = exists
             if not exists:
-                draft["selected"] = False
                 missing.append(draft["tag_name"])
         if missing:
             bundle.warnings.append(
-                "Some tag drafts reference missing tags and are unselected: "
+                "Some tags will be auto-created on apply: "
                 + ", ".join(sorted(set(missing)))
             )
 
