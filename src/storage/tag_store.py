@@ -646,7 +646,6 @@ class TagStore:
             # --- batch query emails by thread_id ---
             thread_map: dict[str, dict] = {}
             if thread_ids:
-                from sqlalchemy import distinct, func
                 from sqlalchemy import tuple_ as sa_tuple
                 sub = (
                     select(
