@@ -516,6 +516,52 @@ export interface KnowledgeEntityCreateResponse {
 }
 
 // ============================================================
+// Ask 对话历史相关类型
+// ============================================================
+
+export interface AskTurn {
+  turn_id: string;
+  turn_index: number;
+  question: string;
+  answer: string;
+  sources: Record<string, unknown>[];
+  search_plan: Record<string, unknown>;
+  threads: Record<string, unknown>[];
+  retrieval_stats: Record<string, unknown>;
+  model: string;
+  error?: string | null;
+  created_at: string;
+}
+
+export interface AskConversation {
+  conversation_id: string;
+  user_id: string;
+  display_name: string;
+  title: string;
+  model: string;
+  turn_count: number;
+  created_at: string;
+  updated_at: string;
+  turns: AskTurn[];
+}
+
+export interface AskConversationListItem {
+  conversation_id: string;
+  title: string;
+  model: string;
+  turn_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AskConversationListResponse {
+  conversations: AskConversationListItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+// ============================================================
 // 内核源码浏览相关类型 (PLAN-10000)
 // ============================================================
 

@@ -55,6 +55,7 @@ from src.storage.models import (
     UserSessionORM,
     UserUpdate,
 )
+from src.storage.ask_store import AskStore
 from src.storage.knowledge_store import KnowledgeStore
 from src.storage.postgres import PostgresStorage
 
@@ -103,6 +104,9 @@ _annotation_store: Optional[AnnotationStore] = None
 _kernel_source: Optional[BaseKernelSource] = None
 
 _knowledge_store: Optional[KnowledgeStore] = None
+
+# Ask 对话历史组件
+_ask_store: Optional["AskStore"] = None
 
 # 认证配置
 _auth_config: dict = {}
@@ -736,6 +740,7 @@ async def lifespan(app: FastAPI):
     logger.info("Kernel symbol store initialized")
 
     _knowledge_store = KnowledgeStore(_storage.session_factory)
+    _ask_store = AskStore(_storage.session_factory)
     logger.info("Knowledge store initialized")
 
     # ========== 芯片手册存储初始化 ==========
@@ -2228,6 +2233,85 @@ async def search(
             for h in result.hits
         ],
     )
+
+
+# ============================================================
+# Ask 对话历史 API 路由
+# ============================================================
+
+@app.get("/api/ask/conversations")
+async def list_ask_conversations(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """获取当前用户的 Ask 对话历史列表。"""
+    if not _ask_store:
+        raise HTTPException(status_code=503, detail="Ask store not initialized")
+    items, total = await _ask_store.list_conversations(
+        user_id=current_user.user_id,
+        page=page,
+        page_size=page_size,
+    )
+    return {
+        "conversations": [item.model_dump(mode="json") for item in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@app.get("/api/ask/conversations/{conversation_id}")
+async def get_ask_conversation(
+    conversation_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """获取完整对话（含所有轮次）。"""
+    if not _ask_store:
+        raise HTTPException(status_code=503, detail="Ask store not initialized")
+    conv = await _ask_store.get_conversation(conversation_id)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if conv.user_id != current_user.user_id and not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Permission denied")
+    return conv.model_dump(mode="json")
+
+
+@app.post("/api/ask/conversations")
+async def save_ask_conversation(
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """保存或更新 Ask 对话（upsert by conversation_id）。"""
+    if not _ask_store:
+        raise HTTPException(status_code=503, detail="Ask store not initialized")
+    body = await request.json()
+    conv = await _ask_store.save_conversation(
+        conversation_id=body.get("conversation_id"),
+        user_id=current_user.user_id,
+        display_name=current_user.display_name,
+        title=str(body.get("title") or ""),
+        model=str(body.get("model") or ""),
+        turns=body.get("turns") if isinstance(body.get("turns"), list) else [],
+    )
+    return conv.model_dump(mode="json")
+
+
+@app.delete("/api/ask/conversations/{conversation_id}")
+async def delete_ask_conversation(
+    conversation_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """删除对话及其所有轮次。"""
+    if not _ask_store:
+        raise HTTPException(status_code=503, detail="Ask store not initialized")
+    conv = await _ask_store.get_conversation(conversation_id)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if conv.user_id != current_user.user_id and not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Permission denied")
+    await _ask_store.delete_conversation(conversation_id)
+    return {"deleted": True}
 
 
 @app.post("/api/ask", response_model=AskResponse)

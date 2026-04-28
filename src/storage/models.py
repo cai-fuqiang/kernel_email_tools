@@ -427,6 +427,62 @@ class KnowledgeRelationORM(Base):
 
 
 # ============================================================
+# Ask 对话历史 ORM 模型
+# ============================================================
+
+class AskConversationORM(Base):
+    """Ask 对话会话。"""
+
+    __tablename__ = "ask_conversations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    title: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    model: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    turn_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    def __repr__(self) -> str:
+        return f"<AskConversationORM conversation_id={self.conversation_id!r} title={self.title!r}>"
+
+
+class AskTurnORM(Base):
+    """Ask 对话中的单轮问答。"""
+
+    __tablename__ = "ask_turns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    turn_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    conversation_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    turn_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    question: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    answer: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    sources: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    search_plan: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    threads: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    retrieval_stats: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    model: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+
+    __table_args__ = (
+        Index("ix_ask_turns_conversation", "conversation_id", "turn_index"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AskTurnORM turn_id={self.turn_id!r} turn_index={self.turn_index}>"
+
+
+# ============================================================
 # Pydantic 数据校验模型
 # ============================================================
 
@@ -816,6 +872,48 @@ class KnowledgeRelationRead(BaseModel):
     target_entity: Optional[KnowledgeEntityRead] = None
 
     model_config = {"from_attributes": True}
+
+
+class AskTurnRead(BaseModel):
+    """Ask 对话的单轮问答。"""
+    turn_id: str
+    turn_index: int
+    question: str
+    answer: str
+    sources: list = Field(default_factory=list)
+    search_plan: dict = Field(default_factory=dict)
+    threads: list = Field(default_factory=list)
+    retrieval_stats: dict = Field(default_factory=dict)
+    model: str = ""
+    error: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AskConversationRead(BaseModel):
+    """Ask 对话会话（含轮次列表）。"""
+    conversation_id: str
+    user_id: str
+    display_name: str = ""
+    title: str = ""
+    model: str = ""
+    turn_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+    turns: list[AskTurnRead] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class AskConversationListItem(BaseModel):
+    """对话列表项（不含轮次详情）。"""
+    conversation_id: str
+    title: str = ""
+    model: str = ""
+    turn_count: int = 0
+    created_at: datetime
+    updated_at: datetime
 
 
 class UserRead(BaseModel):

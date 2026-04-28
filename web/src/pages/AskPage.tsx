@@ -1,6 +1,14 @@
-import { useEffect, useState } from 'react';
-import { askQuestion, getTagStats, type TagStats } from '../api/client';
-import type { AskMessage, AskResponse, SourceRef } from '../api/types';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  askQuestion,
+  deleteAskConversation,
+  getAskConversation,
+  getTagStats,
+  listAskConversations,
+  saveAskConversation,
+  type TagStats,
+} from '../api/client';
+import type { AskConversationListItem, AskMessage, AskResponse, AskTurn, SourceRef } from '../api/types';
 import AskDraftPanel from '../components/AskDraftPanel';
 import ThreadDrawer from '../components/ThreadDrawer';
 
@@ -20,7 +28,7 @@ function normalizeMessageId(value: string): string {
   return value
     .trim()
     .replace(/^<|>$/g, '')
-    .replace(/\u2026/g, '...')
+    .replace(/…/g, '...')
     .replace(/\s+/g, '')
     .toLowerCase();
 }
@@ -112,6 +120,40 @@ function turnHistory(turns: ConversationTurn[]): AskMessage[] {
   }).slice(-10);
 }
 
+function turnsToSaveData(turns: ConversationTurn[]) {
+  return turns
+    .filter((t) => t.response || t.error)
+    .map((t) => ({
+      question: t.question,
+      answer: t.response?.answer || '',
+      sources: t.response?.sources || [],
+      search_plan: t.response?.search_plan || {},
+      threads: t.response?.threads || [],
+      retrieval_stats: t.response?.retrieval_stats || {},
+      model: t.response?.model || '',
+      error: t.error || '',
+    }));
+}
+
+function turnsFromLoaded(loaded: AskTurn[]): ConversationTurn[] {
+  return loaded.map((t) => ({
+    id: t.turn_id,
+    question: t.question,
+    response: {
+      question: t.question,
+      answer: t.answer,
+      sources: t.sources as SourceRef[],
+      search_plan: t.search_plan as AskResponse['search_plan'],
+      executed_queries: [],
+      threads: t.threads as AskResponse['threads'],
+      retrieval_stats: t.retrieval_stats as AskResponse['retrieval_stats'],
+      model: t.model,
+      retrieval_mode: '',
+    },
+    error: t.error || undefined,
+  }));
+}
+
 const CHANNEL_OPTIONS = [
   { value: '', label: 'All Channels' },
   { value: 'kvm', label: 'KVM' },
@@ -132,9 +174,84 @@ export default function AskPage() {
   const [selectedThread, setSelectedThread] = useState<ThreadFocus | null>(null);
   const [selectedChannel, setSelectedChannel] = useState('');
 
+  // Conversation history state
+  const [conversationId, setConversationId] = useState<string>('');
+  const [conversations, setConversations] = useState<AskConversationListItem[]>([]);
+  const [convLoading, setConvLoading] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(true);
+  const savingRef = useRef(false);
+
   useEffect(() => {
     getTagStats().then(setTagStats).catch(() => {});
   }, []);
+
+  const loadConversationList = useCallback(async () => {
+    try {
+      const res = await listAskConversations(1, 50);
+      setConversations(res.conversations);
+    } catch {
+      // silently ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    loadConversationList();
+  }, [loadConversationList]);
+
+  // Auto-save after turns change (when a turn completes)
+  useEffect(() => {
+    if (turns.length === 0 || savingRef.current) return;
+    const completed = turns.filter((t) => t.response || t.error);
+    if (completed.length === 0) return;
+    savingRef.current = true;
+    const convId = conversationId;
+    const title = turns[0]?.question || 'New conversation';
+    const model = completed.find((t) => t.response?.model)?.response?.model || '';
+    saveAskConversation({
+      conversation_id: convId || undefined,
+      title,
+      model,
+      turns: turnsToSaveData(turns),
+    }).then((saved) => {
+      if (!convId) {
+        setConversationId(saved.conversation_id);
+      }
+      loadConversationList();
+    }).catch(() => {}).finally(() => {
+      savingRef.current = false;
+    });
+  }, [turns, conversationId, loadConversationList]);
+
+  const loadConversation = async (convId: string) => {
+    setConvLoading(true);
+    try {
+      const conv = await getAskConversation(convId);
+      setConversationId(conv.conversation_id);
+      setTurns(turnsFromLoaded(conv.turns));
+    } catch {
+      // silently ignore
+    } finally {
+      setConvLoading(false);
+    }
+  };
+
+  const handleNewConversation = () => {
+    setTurns([]);
+    setConversationId('');
+  };
+
+  const handleDeleteConversation = async (convId: string) => {
+    try {
+      await deleteAskConversation(convId);
+      if (conversationId === convId) {
+        setTurns([]);
+        setConversationId('');
+      }
+      await loadConversationList();
+    } catch {
+      // silently ignore
+    }
+  };
 
   const hasFilters = sender || dateFrom || dateTo || selectedTags.length > 0 || selectedChannel;
   const latestAnswer = [...turns].reverse().find((turn) => turn.response)?.response || null;
@@ -177,150 +294,231 @@ export default function AskPage() {
   };
 
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-5xl flex-col p-8">
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Ask a Question</h2>
-          <p className="mt-1 text-sm text-gray-500">Ask follow-up questions about kernel development discussions.</p>
-        </div>
-        {turns.length > 0 && (
-          <button
-            onClick={() => setTurns([])}
-            disabled={loading}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-          >
-            New conversation
-          </button>
-        )}
-      </div>
-
-      <div className="mb-4 flex gap-3">
-        <input
-          type="text"
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleAsk()}
-          placeholder={turns.length ? 'Ask a follow-up...' : 'e.g. Why was the shmem mount behavior changed?'}
-          className="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm shadow-sm focus:ring-2 focus:ring-indigo-500"
-        />
-        <select
-          value={selectedChannel}
-          onChange={(e) => setSelectedChannel(e.target.value)}
-          className="rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm"
-        >
-          {CHANNEL_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-        <button
-          onClick={handleAsk}
-          disabled={loading || !question.trim()}
-          className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {loading ? 'Thinking...' : turns.length ? 'Send' : 'Ask'}
-        </button>
-      </div>
-
-      {tagStats.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <span className="text-xs text-gray-500">Filter by tags:</span>
-          {tagStats.slice(0, 6).map((tag) => (
-            <button
-              key={tag.name}
-              onClick={() => handleTagToggle(tag.name)}
-              className={`rounded-full px-2 py-1 text-xs transition-colors ${
-                selectedTags.includes(tag.name)
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {tag.name}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <button
-        onClick={() => setShowFilters(!showFilters)}
-        className="mb-4 flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+    <div className="flex h-[calc(100vh-4rem)]">
+      {/* History Sidebar */}
+      <aside
+        className={`${
+          showSidebar ? 'w-[300px]' : 'w-0'
+        } shrink-0 overflow-hidden border-r border-gray-200 bg-white transition-all`}
       >
-        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={showFilters ? 'M19 9l-7 7-7-7' : 'M9 5l7 7-7 7'} />
-        </svg>
-        Advanced Filters
-        {hasFilters && <span className="ml-1 rounded bg-indigo-100 px-1.5 py-0.5 text-xs text-indigo-600">Active</span>}
-      </button>
-
-      {showFilters && (
-        <div className="mb-6 rounded-xl border border-gray-200 bg-gray-50 p-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Channel</label>
-              <select value={selectedChannel} onChange={(e) => setSelectedChannel(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
-                {CHANNEL_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Author</label>
-              <input value={sender} onChange={(e) => setSender(e.target.value)} placeholder="Filter by sender" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">From Date</label>
-              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">To Date</label>
-              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+        <div className="flex h-full flex-col">
+          <div className="border-b border-gray-200 p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900">History</h3>
+              <button
+                onClick={() => setShowSidebar(false)}
+                className="rounded p-1 text-gray-400 hover:text-gray-600"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
             </div>
           </div>
-          {tagStats.length > 0 && (
-            <div className="mt-4 border-t border-gray-200 pt-4">
-              <label className="mb-2 block text-xs font-medium text-gray-600">Tags</label>
-              <div className="flex flex-wrap gap-1.5">
-                {tagStats.slice(0, 20).map((tag) => (
+          <div className="flex-1 overflow-y-auto">
+            {conversations.length === 0 ? (
+              <div className="p-4 text-xs text-gray-400">No saved conversations yet.</div>
+            ) : (
+              conversations.map((conv) => (
+                <button
+                  key={conv.conversation_id}
+                  onClick={() => loadConversation(conv.conversation_id)}
+                  className={`w-full border-b border-gray-50 px-4 py-3 text-left hover:bg-gray-50 ${
+                    conversationId === conv.conversation_id ? 'bg-indigo-50/80' : ''
+                  }`}
+                >
+                  <div className="truncate text-sm font-medium text-gray-900">{conv.title}</div>
+                  <div className="mt-1 flex items-center gap-2 text-[10px] text-gray-400">
+                    <span>{conv.turn_count} turns</span>
+                    <span>·</span>
+                    <span>{new Date(conv.updated_at).toLocaleDateString()}</span>
+                  </div>
                   <button
-                    key={tag.name}
-                    onClick={() => handleTagToggle(tag.name)}
-                    className={`rounded-full px-2 py-1 text-xs transition-colors ${
-                      selectedTags.includes(tag.name)
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteConversation(conv.conversation_id);
+                    }}
+                    className="mt-1 text-[10px] text-red-400 hover:text-red-600"
                   >
-                    {tag.name} ({tag.count})
+                    Delete
                   </button>
-                ))}
-              </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      </aside>
+
+      {/* Toggle sidebar button when hidden */}
+      {!showSidebar && (
+        <button
+          onClick={() => setShowSidebar(true)}
+          className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-r-lg border border-l-0 border-gray-200 bg-white p-2 text-gray-400 hover:text-gray-600"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      )}
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto">
+        <div className="mx-auto flex min-h-full max-w-5xl flex-col p-8">
+          <div className="mb-6 flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">Ask a Question</h2>
+              <p className="mt-1 text-sm text-gray-500">Ask follow-up questions about kernel development discussions.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {conversationId && (
+                <span className="rounded-full bg-green-50 px-2.5 py-1 text-[10px] text-green-600">
+                  Auto-saving
+                </span>
+              )}
+              <button
+                onClick={handleNewConversation}
+                disabled={loading}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                New conversation
+              </button>
+            </div>
+          </div>
+
+          {convLoading && (
+            <div className="mb-4 text-center text-sm text-gray-400">Loading conversation...</div>
+          )}
+
+          <div className="mb-4 flex gap-3">
+            <input
+              type="text"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAsk()}
+              placeholder={turns.length ? 'Ask a follow-up...' : 'e.g. Why was the shmem mount behavior changed?'}
+              className="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm shadow-sm focus:ring-2 focus:ring-indigo-500"
+            />
+            <select
+              value={selectedChannel}
+              onChange={(e) => setSelectedChannel(e.target.value)}
+              className="rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm"
+            >
+              {CHANNEL_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <button
+              onClick={handleAsk}
+              disabled={loading || !question.trim()}
+              className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {loading ? 'Thinking...' : turns.length ? 'Send' : 'Ask'}
+            </button>
+          </div>
+
+          {tagStats.length > 0 && (
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-gray-500">Filter by tags:</span>
+              {tagStats.slice(0, 6).map((tag) => (
+                <button
+                  key={tag.name}
+                  onClick={() => handleTagToggle(tag.name)}
+                  className={`rounded-full px-2 py-1 text-xs transition-colors ${
+                    selectedTags.includes(tag.name)
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {tag.name}
+                </button>
+              ))}
             </div>
           )}
-        </div>
-      )}
 
-      <div className="flex-1 space-y-6">
-        {turns.length === 0 && !loading && (
-          <div className="py-20 text-center text-gray-400">
-            <p>Ask a question, then follow up without restating all context.</p>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="mb-4 flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={showFilters ? 'M19 9l-7 7-7-7' : 'M9 5l7 7-7 7'} />
+            </svg>
+            Advanced Filters
+            {hasFilters && <span className="ml-1 rounded bg-indigo-100 px-1.5 py-0.5 text-xs text-indigo-600">Active</span>}
+          </button>
+
+          {showFilters && (
+            <div className="mb-6 rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">Channel</label>
+                  <select value={selectedChannel} onChange={(e) => setSelectedChannel(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                    {CHANNEL_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">Author</label>
+                  <input value={sender} onChange={(e) => setSender(e.target.value)} placeholder="Filter by sender" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">From Date</label>
+                  <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">To Date</label>
+                  <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                </div>
+              </div>
+              {tagStats.length > 0 && (
+                <div className="mt-4 border-t border-gray-200 pt-4">
+                  <label className="mb-2 block text-xs font-medium text-gray-600">Tags</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tagStats.slice(0, 20).map((tag) => (
+                      <button
+                        key={tag.name}
+                        onClick={() => handleTagToggle(tag.name)}
+                        className={`rounded-full px-2 py-1 text-xs transition-colors ${
+                          selectedTags.includes(tag.name)
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        {tag.name} ({tag.count})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex-1 space-y-6">
+            {turns.length === 0 && !loading && (
+              <div className="py-20 text-center text-gray-400">
+                <p>Ask a question, then follow up without restating all context.</p>
+              </div>
+            )}
+
+            {turns.map((turn) => (
+              <ConversationCard
+                key={turn.id}
+                turn={turn}
+                onOpenThread={openThread}
+              />
+            ))}
           </div>
-        )}
 
-        {turns.map((turn) => (
-          <ConversationCard
-            key={turn.id}
-            turn={turn}
-            onOpenThread={openThread}
-          />
-        ))}
-      </div>
+          {latestAnswer && <AskDraftPanel answer={latestAnswer} />}
 
-      {latestAnswer && <AskDraftPanel answer={latestAnswer} />}
-
-      {selectedThread && (
-        <ThreadDrawer
-          threadId={selectedThread.threadId}
-          focusMessageId={selectedThread.focusMessageId}
-          onClose={() => setSelectedThread(null)}
-        />
-      )}
+          {selectedThread && (
+            <ThreadDrawer
+              threadId={selectedThread.threadId}
+              focusMessageId={selectedThread.focusMessageId}
+              onClose={() => setSelectedThread(null)}
+            />
+          )}
+        </div>
+      </main>
     </div>
   );
 }

@@ -492,6 +492,48 @@ export async function askQuestion(
   });
 }
 
+export async function listAskConversations(
+  page = 1,
+  pageSize = 50,
+): Promise<import('./types').AskConversationListResponse> {
+  return fetchJSON<import('./types').AskConversationListResponse>(
+    `${API_BASE}/ask/conversations?page=${page}&page_size=${pageSize}`
+  );
+}
+
+export async function getAskConversation(
+  conversationId: string,
+): Promise<import('./types').AskConversation> {
+  return fetchJSON<import('./types').AskConversation>(
+    `${API_BASE}/ask/conversations/${encodeURIComponent(conversationId)}`
+  );
+}
+
+export async function saveAskConversation(data: {
+  conversation_id?: string;
+  title?: string;
+  model?: string;
+  turns: Record<string, unknown>[];
+}): Promise<import('./types').AskConversation> {
+  return fetchWithBody<import('./types').AskConversation>(
+    `${API_BASE}/ask/conversations`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    },
+  );
+}
+
+export async function deleteAskConversation(
+  conversationId: string,
+): Promise<{ deleted: boolean }> {
+  return fetchWithBody<{ deleted: boolean }>(
+    `${API_BASE}/ask/conversations/${encodeURIComponent(conversationId)}`,
+    { method: 'DELETE' },
+  );
+}
+
 export async function createAskDraft(answer: AskResponse): Promise<AskDraftResponse> {
   return fetchWithBody<AskDraftResponse>(`${API_BASE}/ask/draft`, {
     method: 'POST',
