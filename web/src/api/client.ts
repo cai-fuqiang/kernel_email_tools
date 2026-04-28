@@ -1,6 +1,7 @@
 import type {
   SearchHit,
   SearchResponse,
+  AskResponse,
   SummarizeResponse,
   AskDraftApplyResponse,
   AskDraftResponse,
@@ -453,6 +454,50 @@ export async function summarizeSearchResults(req: SummarizeRequest): Promise<Sum
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
+  });
+}
+
+export interface AskOptions {
+  list_name?: string;
+  sender?: string;
+  date_from?: string;
+  date_to?: string;
+  tags?: string | string[];
+}
+
+export async function askQuestion(
+  question: string,
+  opts: AskOptions = {},
+): Promise<AskResponse> {
+  const params = new URLSearchParams({ q: question });
+  if (opts.list_name) params.set('list_name', opts.list_name);
+  if (opts.sender) params.set('sender', opts.sender);
+  if (opts.date_from) params.set('date_from', opts.date_from);
+  if (opts.date_to) params.set('date_to', opts.date_to);
+  if (opts.tags) {
+    const tags = Array.isArray(opts.tags) ? opts.tags.join(',') : opts.tags;
+    params.set('tags', tags);
+  }
+  return fetchJSON<AskResponse>(`${API_BASE}/ask?${params}`);
+}
+
+export async function createAskDraft(answer: AskResponse): Promise<AskDraftResponse> {
+  return fetchWithBody<AskDraftResponse>(`${API_BASE}/ask/draft`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(answer),
+  });
+}
+
+export async function applyAskDraft(draft: AskDraftResponse): Promise<AskDraftApplyResponse> {
+  return fetchWithBody<AskDraftApplyResponse>(`${API_BASE}/ask/draft/apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      knowledge_drafts: draft.knowledge_drafts,
+      annotation_drafts: draft.annotation_drafts,
+      tag_assignment_drafts: draft.tag_assignment_drafts,
+    }),
   });
 }
 

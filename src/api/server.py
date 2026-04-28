@@ -18,9 +18,10 @@ from fastapi import FastAPI, HTTPException, Query, Body, Depends, Request, Respo
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
+from src.qa.ask_agent import AskAgent
 from src.qa.ask_drafts import AskDraftService
 from src.qa.manual_qa import ManualQA
-from src.qa.providers import ChatLLMClient
+from src.qa.providers import ChatLLMClient, DashScopeEmbeddingProvider, resolve_api_key
 from src.retriever.base import SearchQuery
 from src.retriever.hybrid import HybridRetriever
 from src.retriever.keyword import KeywordRetriever
@@ -75,6 +76,7 @@ logger = logging.getLogger(__name__)
 _storage: Optional[PostgresStorage] = None
 _retriever: Optional[HybridRetriever] = None
 _llm_client: Optional[ChatLLMClient] = None
+_qa: Optional[AskAgent] = None
 _tag_store: Optional[TagStore] = None
 
 # 芯片手册相关组件
@@ -613,7 +615,7 @@ async def _ensure_annotation_publish_request_access(annotation_id: str, current_
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理：启动时初始化组件，关闭时释放资源。"""
-    global _storage, _retriever, _llm_client, _tag_store
+    global _storage, _retriever, _llm_client, _qa, _tag_store
     global _manual_storage, _manual_retriever, _manual_qa
     global _translator, _translation_cache
     global _annotation_store
@@ -665,6 +667,34 @@ async def lifespan(app: FastAPI):
         model=email_qa_cfg.get("model", "qwen-plus"),
         api_key=email_qa_cfg.get("api_key", ""),
     )
+    vector_cfg = indexer_cfg.get("vector", {})
+    embedding_provider = None
+    if vector_cfg.get("enabled", False):
+        embedding_provider_name = vector_cfg.get("provider", "dashscope")
+        if embedding_provider_name == "dashscope":
+            embedding_api_key = resolve_api_key(
+                "dashscope",
+                vector_cfg.get("api_key", "") or email_qa_cfg.get("api_key", ""),
+            )
+            if embedding_api_key:
+                embedding_provider = DashScopeEmbeddingProvider(
+                    api_key=embedding_api_key,
+                    model=vector_cfg.get("model", "text-embedding-v3"),
+                    dimension=vector_cfg.get("dimension", 1536),
+                )
+            else:
+                logger.warning("Vector retrieval enabled but DashScope API key is missing")
+        else:
+            logger.warning("Unsupported embedding provider for Ask vector retrieval: %s", embedding_provider_name)
+
+    _qa = AskAgent(
+        storage=_storage,
+        retriever=_retriever,
+        llm=_llm_client,
+        embedding_provider=embedding_provider,
+        embedding_provider_name=vector_cfg.get("provider", "dashscope"),
+    )
+    logger.info("Mail Ask agent initialized")
 
     # ========== 翻译组件初始化 ==========
     translator_cfg = config.get("translator", {})
@@ -872,6 +902,19 @@ class SummarizeResponse(BaseModel):
     answer: str
     sources: list[dict] = Field(default_factory=list)
     model: str = ""
+
+
+class AskResponse(BaseModel):
+    """邮件 Ask 响应。"""
+    question: str
+    answer: str
+    sources: list[dict] = Field(default_factory=list)
+    model: str = ""
+    retrieval_mode: str = "agentic_rag"
+    search_plan: dict = Field(default_factory=dict)
+    executed_queries: list[dict] = Field(default_factory=list)
+    threads: list[dict] = Field(default_factory=list)
+    retrieval_stats: dict = Field(default_factory=dict)
 
 
 class DraftRequest(BaseModel):
@@ -2139,6 +2182,71 @@ async def search(
     )
 
 
+@app.get("/api/ask", response_model=AskResponse)
+async def ask(
+    q: str = Query(..., min_length=1, description="问题"),
+    list_name: Optional[str] = Query(None, description="限定邮件列表"),
+    sender: Optional[str] = Query(None, description="发件人模糊匹配"),
+    date_from: Optional[datetime] = Query(None, description="起始日期 (ISO 格式)"),
+    date_to: Optional[datetime] = Query(None, description="结束日期 (ISO 格式)"),
+    tags: Optional[str] = Query(None, description="标签列表（逗号分隔，如 memory,vm）"),
+):
+    """Agentic Ask — 生成检索计划、多路召回邮件证据并回答。"""
+    if not _qa:
+        raise HTTPException(status_code=503, detail="Ask service not initialized")
+
+    tag_list = None
+    if tags:
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+    answer = await _qa.ask(
+        question=q,
+        list_name=list_name,
+        sender=sender,
+        date_from=date_from,
+        date_to=date_to,
+        tags=tag_list,
+    )
+
+    return AskResponse(
+        question=answer.question,
+        answer=answer.answer,
+        sources=[
+            {
+                "chunk_id": s.chunk_id,
+                "message_id": s.message_id,
+                "subject": s.subject,
+                "sender": s.sender,
+                "date": s.date,
+                "list_name": s.list_name,
+                "thread_id": s.thread_id,
+                "chunk_index": s.chunk_index,
+                "snippet": s.snippet,
+                "score": round(s.score, 4),
+                "source": s.source,
+            }
+            for s in answer.sources
+        ],
+        model=answer.model,
+        retrieval_mode=answer.retrieval_mode,
+        search_plan=answer.search_plan,
+        executed_queries=[
+            {"query": item.query, "mode": item.mode, "hits": item.hits}
+            for item in answer.executed_queries
+        ],
+        threads=[
+            {
+                "thread_id": thread.thread_id,
+                "subject": thread.subject,
+                "message_count": thread.message_count,
+                "messages": thread.messages,
+            }
+            for thread in answer.threads
+        ],
+        retrieval_stats=answer.retrieval_stats,
+    )
+
+
 @app.post("/api/search/summarize", response_model=SummarizeResponse)
 async def summarize_search(request: SummarizeRequest):
     """AI 概括搜索结果 — 基于搜索命中邮件生成引用式概览。
@@ -2333,6 +2441,31 @@ async def apply_summary_draft(
         created_tag_assignments=created_tag_assignments,
         errors=errors,
     )
+
+
+@app.post("/api/ask/draft", response_model=DraftResponse)
+async def create_ask_draft(
+    request: AskResponse,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    """基于 Ask 结果生成可编辑的 Knowledge / Annotation / Tag 草稿。"""
+    return await create_summary_draft(
+        DraftRequest(
+            query=request.question,
+            summary=request.answer,
+            sources=request.sources,
+        ),
+        current_user,
+    )
+
+
+@app.post("/api/ask/draft/apply", response_model=DraftApplyResponse)
+async def apply_ask_draft(
+    request: DraftApplyRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    """保存用户确认后的 Ask 草稿。"""
+    return await apply_summary_draft(request, current_user)
 
 
 @app.get("/api/thread/{thread_id:path}", response_model=ThreadResponse)
