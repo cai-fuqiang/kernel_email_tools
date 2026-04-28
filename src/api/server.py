@@ -3850,7 +3850,7 @@ async def create_knowledge_entity(
     }
 
 
-@app.get("/api/knowledge/entities/{entity_id:path}/relations", response_model=KnowledgeRelationListResponse)
+@app.get("/api/knowledge/entities/{entity_id}/relations", response_model=KnowledgeRelationListResponse)
 async def list_knowledge_relations(entity_id: str):
     if not _knowledge_store:
         raise HTTPException(status_code=503, detail="Knowledge store not initialized")
@@ -3862,12 +3862,12 @@ async def list_knowledge_relations(entity_id: str):
     return KnowledgeRelationListResponse(outgoing=outgoing, incoming=incoming)
 
 
-@app.get("/api/knowledge/entities/{entity_id:path}", response_model=KnowledgeEntityRead)
+@app.get("/api/knowledge/entities/{entity_id}", response_model=KnowledgeEntityRead)
 async def get_knowledge_entity(entity_id: str):
     if not _knowledge_store:
         raise HTTPException(status_code=503, detail="Knowledge store not initialized")
 
-    entity = await _knowledge_store.get(entity_id)
+    entity = await _knowledge_store.get(entity_id.strip())
     if entity is None:
         raise HTTPException(status_code=404, detail="Knowledge entity not found")
     return entity
@@ -3899,7 +3899,7 @@ async def create_knowledge_relation(
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-@app.patch("/api/knowledge/relations/{relation_id:path}", response_model=KnowledgeRelationRead)
+@app.patch("/api/knowledge/relations/{relation_id}", response_model=KnowledgeRelationRead)
 async def update_knowledge_relation(
     relation_id: str,
     request: KnowledgeRelationUpdateRequest,
@@ -3926,7 +3926,7 @@ async def update_knowledge_relation(
     return relation
 
 
-@app.delete("/api/knowledge/relations/{relation_id:path}")
+@app.delete("/api/knowledge/relations/{relation_id}")
 async def delete_knowledge_relation(
     relation_id: str,
     current_user: CurrentUser = Depends(require_roles("admin", "editor")),
@@ -3939,7 +3939,7 @@ async def delete_knowledge_relation(
     return {"deleted": True}
 
 
-@app.patch("/api/knowledge/entities/{entity_id:path}", response_model=KnowledgeEntityRead)
+@app.patch("/api/knowledge/entities/{entity_id}", response_model=KnowledgeEntityRead)
 async def update_knowledge_entity(
     entity_id: str,
     request: "KnowledgeEntityUpdateRequest",
@@ -3949,7 +3949,7 @@ async def update_knowledge_entity(
         raise HTTPException(status_code=503, detail="Knowledge store not initialized")
 
     entity = await _knowledge_store.update(
-        entity_id=entity_id,
+        entity_id=entity_id.strip(),
         data=KnowledgeEntityUpdate(
             canonical_name=request.canonical_name,
             aliases=request.aliases,
@@ -3966,7 +3966,7 @@ async def update_knowledge_entity(
     return entity
 
 
-@app.delete("/api/knowledge/entities/{entity_id:path}")
+@app.delete("/api/knowledge/entities/{entity_id}")
 async def delete_knowledge_entity(
     entity_id: str,
     force: bool = Query(False, description="强制删除，级联删除关联关系"),
@@ -3980,7 +3980,7 @@ async def delete_knowledge_entity(
     if not _knowledge_store:
         raise HTTPException(status_code=503, detail="Knowledge store not initialized")
 
-    ok, blocked = await _knowledge_store.delete_entity(entity_id, force=force)
+    ok, blocked = await _knowledge_store.delete_entity(entity_id.strip(), force=force)
     if not ok and not blocked:
         raise HTTPException(status_code=404, detail="Knowledge entity not found")
     if not ok:
@@ -3994,7 +3994,7 @@ async def delete_knowledge_entity(
     return {"deleted": True}
 
 
-@app.get("/api/knowledge/entities/{entity_id:path}/graph")
+@app.get("/api/knowledge/entities/{entity_id}/graph")
 async def get_knowledge_graph(
     entity_id: str,
     depth: int = Query(2, ge=1, le=3, description="遍历深度（1-3）"),
