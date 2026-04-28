@@ -4,6 +4,8 @@ import type { SearchResponse, SearchHit, SummarizeResponse, AskDraftResponse, So
 import ThreadDrawer from '../components/ThreadDrawer';
 import TagFilter from '../components/TagFilter';
 import EmailTagEditor from '../components/EmailTagEditor';
+import DraftReviewPanel from '../components/DraftReviewPanel';
+import type { AskDraftApplyResponse } from '../api/types';
 
 function escapeHtml(text: string): string {
   return text
@@ -100,7 +102,7 @@ export default function SearchPage() {
   const [summary, setSummary] = useState<SummarizeResponse | null>(null);
   const [draftBundle, setDraftBundle] = useState<AskDraftResponse | null>(null);
   const [draftLoading, setDraftLoading] = useState(false);
-  const [draftSaved, setDraftSaved] = useState<{ entities: number; annotations: number; tags: number; errors: number } | null>(null);
+  const [draftSaved, setDraftSaved] = useState<AskDraftApplyResponse | null>(null);
   const [showDraftPanel, setShowDraftPanel] = useState(false);
 
   // Channel/channel 选择状态
@@ -174,6 +176,7 @@ export default function SearchPage() {
     setSummarizing(true);
     setSummary(null);
     setDraftBundle(null);
+    setDraftSaved(null);
     try {
       const hits = result.hits.slice(0, 10);
       const resp = await summarizeSearchResults({
@@ -192,6 +195,7 @@ export default function SearchPage() {
     if (!summary || draftLoading) return;
     setDraftLoading(true);
     setDraftBundle(null);
+    setDraftSaved(null);
     try {
       const sources: SourceRef[] = summary.sources.map(s => ({
         message_id: s.message_id,
@@ -217,12 +221,7 @@ export default function SearchPage() {
     setDraftLoading(true);
     try {
       const resp = await applySummaryDraft(draftBundle);
-      setDraftSaved({
-        entities: resp.created_entities.length,
-        annotations: resp.created_annotations.length,
-        tags: resp.created_tag_assignments.length,
-        errors: resp.errors.length,
-      });
+      setDraftSaved(resp);
       if (resp.errors.length > 0) {
         setError(`Draft saved with ${resp.errors.length} error(s): ${resp.errors.map(e => e.message).join(', ')}`);
       }
@@ -509,7 +508,7 @@ export default function SearchPage() {
                   )}
                   {draftSaved && (
                     <span className="text-xs text-green-600">
-                      已保存: {draftSaved.entities} 实体, {draftSaved.annotations} 批注, {draftSaved.tags} 标签
+                      已保存: {draftSaved.created_entities.length} 实体, {draftSaved.created_annotations.length} 批注, {draftSaved.created_tag_assignments.length} 标签
                     </span>
                   )}
                 </div>
@@ -537,75 +536,23 @@ export default function SearchPage() {
               {/* 草稿面板 */}
               {showDraftPanel && draftBundle && (
                 <div className="mt-4 pt-4 border-t border-indigo-200">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3">Knowledge Drafts</h4>
-                  {draftBundle.warnings.length > 0 && (
-                    <div className="mb-3 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2">
-                      {draftBundle.warnings.join(', ')}
-                    </div>
-                  )}
-                  <div className="space-y-3">
-                    {draftBundle.knowledge_drafts.length > 0 && (
-                      <details className="text-xs" open>
-                        <summary className="font-medium text-gray-700 cursor-pointer">
-                          Knowledge Entities ({draftBundle.knowledge_drafts.length})
-                        </summary>
-                        <div className="mt-2 space-y-2">
-                          {draftBundle.knowledge_drafts.map((d, i) => (
-                            <div key={i} className="bg-white rounded-lg p-3 border border-gray-200">
-                              <div className="flex items-center gap-2">
-                                <span className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 text-xs font-medium">{d.entity_type}</span>
-                                <span className="font-medium text-gray-800">{d.canonical_name}</span>
-                              </div>
-                              {d.summary && <p className="text-gray-600 mt-1">{d.summary}</p>}
-                            </div>
-                          ))}
-                        </div>
-                      </details>
-                    )}
-                    {draftBundle.annotation_drafts.length > 0 && (
-                      <details className="text-xs">
-                        <summary className="font-medium text-gray-700 cursor-pointer">
-                          Annotations ({draftBundle.annotation_drafts.length})
-                        </summary>
-                        <div className="mt-2 space-y-1">
-                          {draftBundle.annotation_drafts.map((d, i) => (
-                            <div key={i} className="bg-white rounded p-2 border border-gray-100">
-                              <span className="text-gray-500">{d.target_type}: {d.target_label || d.target_ref}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </details>
-                    )}
-                    {draftBundle.tag_assignment_drafts.length > 0 && (
-                      <details className="text-xs">
-                        <summary className="font-medium text-gray-700 cursor-pointer">
-                          Tag Assignments ({draftBundle.tag_assignment_drafts.length})
-                        </summary>
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {draftBundle.tag_assignment_drafts.map((d, i) => (
-                            <span key={i} className={`px-2 py-0.5 rounded-full text-xs ${d.tag_exists ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500 line-through'}`}>
-                              {d.tag_name}
-                            </span>
-                          ))}
-                        </div>
-                      </details>
-                    )}
-                  </div>
-                  <div className="mt-3 flex gap-2">
-                    <button
-                      onClick={handleApplyDraft}
-                      disabled={draftLoading || !!draftSaved}
-                      className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium hover:bg-indigo-700 disabled:opacity-50"
-                    >
-                      {draftLoading ? '保存中...' : draftSaved ? '已保存' : '保存选中草稿'}
-                    </button>
-                    <button
-                      onClick={() => { setShowDraftPanel(false); setDraftBundle(null); }}
-                      className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50"
-                    >
-                      关闭
-                    </button>
-                  </div>
+                  <DraftReviewPanel
+                    draft={draftBundle}
+                    onChange={(nextDraft) => {
+                      setDraftBundle(nextDraft);
+                      setDraftSaved(null);
+                    }}
+                    onSave={handleApplyDraft}
+                    saving={draftLoading}
+                    saved={draftSaved}
+                    compact
+                  />
+                  <button
+                    onClick={() => { setShowDraftPanel(false); setDraftBundle(null); setDraftSaved(null); }}
+                    className="mt-3 rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+                  >
+                    关闭草稿
+                  </button>
                 </div>
               )}
             </div>
