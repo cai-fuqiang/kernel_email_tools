@@ -244,36 +244,43 @@ If any condition fails, output remains `pending_review`.
 
 ### Phase 1: Identity and permissions
 
-- Add `agent` role to backend role normalization and frontend role types.
-- Add agent capabilities.
-- Add bootstrap/config support for a system agent account.
+- Add `agent` role to backend role normalization (`VALID_ROLES`, `_normalize_role()`, `_capabilities_for_role()`).
+- Add agent-specific capabilities: `agent:research`, `agent:create_draft`, `agent:create_private_note`, `agent:suggest_merge`.
+- Add bootstrap/config support for a system agent account (similar to `bootstrap_admin`). At startup, resolve or create the agent user and hold a `CurrentUser` reference for internal calls (no HTTP auth needed — see Design Decision #1).
 - Ensure agent-created writes use the agent user id and display name.
 
 ### Phase 2: Agent run model and APIs
 
-- Add persistent run records and API endpoints.
-- Store topic, status, budgets, filters, trace, confidence, and draft ids.
+- Add `agent_research_runs` table (dedicated, NOT embedded in KnowledgeDraft — see Design Decision #2).
+- Add `agent_run_actions` table for search traces, relevance decisions, and query refinements (see Design Decision #3).
+- Store topic, status, budgets, filters, confidence, heartbeat timestamp, and draft ids on the run record.
+- Add run recovery: on startup, mark `running` runs as `failed` with `failure_reason: server_restart` (see Design Decision #8).
+- Add API endpoints: create, list, get, cancel, retry.
 - Add cancellation and retry.
 - Add lightweight tests for permissions and run lifecycle.
 
 ### Phase 3: Research loop
 
-- Implement agent orchestration service.
-- Use existing `/api/search` semantics internally with `mode=semantic` first, then fallback to hybrid/keyword.
-- Use existing AskAgent for follow-up synthesis.
+- Implement agent orchestration service (in-process, uses internal `CurrentUser` — see Design Decision #1).
+- Before each search iteration, query `KnowledgeStore.search_entities()` to check existing knowledge and avoid re-discovering known facts (see Design Decision #4, PLAN-33000).
+- Use existing Search semantics internally with `mode=semantic` first, then fallback to hybrid/keyword.
+- Use existing AskAgent for follow-up synthesis (with knowledge graph context from PLAN-33000).
 - Implement relevance judging and query refinement.
-- Save trace and partial results after each iteration.
+- Save trace and partial results after each iteration into `agent_run_actions`.
 
 ### Phase 4: Draft generation and review
 
 - Generate KnowledgeDraft bundles with evidence, relations, tags, and self-review.
-- Add Draft Inbox UI badges, confidence, trace preview, and agent filters.
+- Each draft references `agent_run_id` for traceability.
+- Add Draft Inbox UI badges, confidence, trace preview, and agent filters (human-created / agent-created / accepted agent output / rejected agent output).
+- Sort agent drafts by confidence descending by default (see Design Decision #7).
 - Ensure accept/reject remains human-owned unless auto-accept is explicitly enabled.
 
 ### Phase 5: Agent Research UI
 
 - Add Agent Research page and navigation entry.
 - Show run status, trace, evidence decisions, generated drafts, and failure states.
+- Use polling (`setInterval` every 2–3s) for run status updates, consistent with the Translation Job polling pattern in `ThreadDrawer.tsx` (see Design Decision #6).
 - Add controls for budget and scope.
 
 ### Phase 6: Optional auto-accept
@@ -314,3 +321,93 @@ If any condition fails, output remains `pending_review`.
 - Default policy is human review before active knowledge.
 - The first concrete agent is named `Lobster Research Agent`, but the design supports multiple agents later.
 - `mode=semantic` is available and should be the default retrieval path for agent topic research.
+
+## Design Decisions (reviewed 2026-04-28)
+
+### 1. Agent authentication — internal call, not HTTP
+
+The agent orchestration service runs in the same process as the API server.
+It should construct a `CurrentUser` object for the agent account and pass it
+directly to existing service/store methods, bypassing HTTP auth entirely.
+
+- The agent account is bootstrapped via config (similar to bootstrap_admin).
+- At startup, resolve or create the agent user record, then hold a
+  `CurrentUser` reference in memory for the orchestration service to use.
+- No API key, no header auth, no new auth mechanism needed.
+
+### 2. `agent_research_runs` must be a separate table
+
+Do NOT embed run data as JSONB metadata on `KnowledgeDraft`. Reasons:
+
+- One run can produce multiple drafts (1:N).
+- Run lifecycle (queued → running → needs_review → accepted/rejected/failed)
+  is independent of any single draft's review lifecycle.
+- Search traces and relevance decisions are too large for draft payload.
+
+A dedicated `agent_research_runs` table with a typed status column is the
+right foundation. Drafts reference the run via `agent_run_id`.
+
+### 3. `agent_run_actions` table for search traces
+
+Each iteration of the research loop generates multiple actions
+(search, ask, thread_inspect, relevance_judge, query_refine).
+Store them in a normalized table rather than a single JSONB blob:
+
+```
+agent_run_id | action_index | action_type | payload (JSONB) | created_at
+```
+
+- `action_type` enum: search, ask, thread_inspect, relevance_judge, query_refine
+- Ordered by `action_index` to reconstruct the full trace
+- Allows querying specific action types without parsing a monolithic blob
+
+### 4. Knowledge graph context (PLAN-33000)
+
+The Agent Research Loop must query existing knowledge entities before
+each search iteration, using the same `KnowledgeStore.search_entities()`
+introduced in PLAN-33000. This prevents re-discovering already-known facts
+and allows the agent to detect contradictions between new evidence and
+existing knowledge.
+
+### 5. `agent` role capabilities
+
+The current `_capabilities_for_role()` returns `["read", "write"]` for
+editor and `["read"]` for viewer. The agent role must NOT receive `write`
+(because that bypasses draft review for direct knowledge-entity mutation).
+Instead, return fine-grained agent capabilities:
+
+```python
+if role == "agent":
+    return [
+        "read",
+        "agent:research",
+        "agent:create_draft",
+        "agent:create_private_note",
+        "agent:suggest_merge",
+    ]
+```
+
+All existing `_is_admin()` and `require_roles("admin")` guards remain intact.
+
+### 6. Frontend real-time — polling, not WebSocket
+
+The Agent Research page needs to show run status updates. Use polling
+(`setInterval` every 2–3 seconds) consistent with the existing
+Translation Job polling pattern in `ThreadDrawer.tsx`. Avoid introducing
+WebSocket or SSE complexity in the first implementation.
+
+### 7. Draft Inbox agent hygiene
+
+Agent runs can produce many drafts. Mitigations:
+
+- Sort agent drafts by confidence descending (high-confidence first for review).
+- Add a filter by `agent_run_id` to scope review to one research topic.
+- Rejected agent drafts older than 30 days may be auto-archived in a future
+  cleanup job (not in Phase 1).
+
+### 8. Run recovery after server restart
+
+On startup, query for any `agent_research_runs` with status `running` and
+mark them `failed` with `failure_reason: server_restart`. Each running
+iteration should also update a heartbeat timestamp, so stuck runs can be
+detected and failed by a watchdog.
