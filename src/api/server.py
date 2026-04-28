@@ -2449,13 +2449,28 @@ async def create_ask_draft(
     current_user: CurrentUser = Depends(require_roles("admin", "editor")),
 ):
     """基于 Ask 结果生成可编辑的 Knowledge / Annotation / Tag 草稿。"""
-    return await create_summary_draft(
-        DraftRequest(
-            query=request.question,
-            summary=request.answer,
-            sources=request.sources,
-        ),
-        current_user,
+    if not _llm_client:
+        raise HTTPException(status_code=503, detail="LLM service not initialized")
+    if not _tag_store:
+        raise HTTPException(status_code=503, detail="Tag store not initialized")
+
+    async def tag_exists(tag_name: str) -> bool:
+        return await _tag_store.get_tag_by_name(tag_name) is not None
+
+    bundle = await AskDraftService(llm=_llm_client).generate(
+        query=request.question,
+        summary=request.answer,
+        sources=request.sources,
+        search_plan=request.search_plan,
+        threads=request.threads,
+        retrieval_stats=request.retrieval_stats,
+        tag_exists=tag_exists,
+    )
+    return DraftResponse(
+        knowledge_drafts=bundle.knowledge_drafts,
+        annotation_drafts=bundle.annotation_drafts,
+        tag_assignment_drafts=bundle.tag_assignment_drafts,
+        warnings=bundle.warnings,
     )
 
 

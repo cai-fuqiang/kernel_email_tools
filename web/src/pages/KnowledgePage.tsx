@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import EmailTagEditor from '../components/EmailTagEditor';
+import ThreadDrawer from '../components/ThreadDrawer';
 import {
   createAnnotation,
   createKnowledgeEntity,
@@ -13,6 +14,55 @@ import type { AnnotationListItem, KnowledgeEntity } from '../api/types';
 import { useAuth } from '../auth';
 
 const DEFAULT_ENTITY_TYPE = 'concept';
+
+type ThreadFocus = {
+  threadId: string;
+  focusMessageId?: string;
+};
+
+type KnowledgeEvidenceSource = {
+  message_id: string;
+  thread_id: string;
+  subject: string;
+  sender: string;
+  date: string;
+  list_name: string;
+  source: string;
+};
+
+function asStringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+}
+
+function extractKnowledgeEvidence(entity: KnowledgeEntity | null) {
+  const ask = entity?.meta?.ask;
+  if (!ask || typeof ask !== 'object') {
+    return { question: '', generatedAt: '', sources: [] as KnowledgeEvidenceSource[], threadIds: [] as string[] };
+  }
+  const askMeta = ask as Record<string, unknown>;
+  const rawSources = Array.isArray(askMeta.sources) ? askMeta.sources : [];
+  const sources = rawSources
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    .map((source) => ({
+      message_id: String(source.message_id || ''),
+      thread_id: String(source.thread_id || ''),
+      subject: String(source.subject || ''),
+      sender: String(source.sender || ''),
+      date: String(source.date || ''),
+      list_name: String(source.list_name || ''),
+      source: String(source.source || ''),
+    }))
+    .filter((source) => source.message_id || source.thread_id || source.subject);
+
+  return {
+    question: String(askMeta.question || ''),
+    generatedAt: String(askMeta.generated_at || ''),
+    sources,
+    threadIds: asStringList(askMeta.thread_ids),
+  };
+}
 
 export default function KnowledgePage() {
   const { canWrite, isAdmin } = useAuth();
@@ -35,6 +85,7 @@ export default function KnowledgePage() {
     description: '',
   });
   const [annotationBody, setAnnotationBody] = useState('');
+  const [selectedThread, setSelectedThread] = useState<ThreadFocus | null>(null);
 
   const loadEntities = useCallback(async () => {
     setLoading(true);
@@ -112,6 +163,7 @@ export default function KnowledgePage() {
     () => (selectedEntity?.aliases || []).join(', '),
     [selectedEntity]
   );
+  const evidence = useMemo(() => extractKnowledgeEvidence(selectedEntity), [selectedEntity]);
 
   const handleCreateEntity = async () => {
     if (!newEntity.canonical_name.trim()) return;
@@ -349,6 +401,72 @@ export default function KnowledgePage() {
               </div>
             </section>
 
+            {(evidence.sources.length > 0 || evidence.threadIds.length > 0) && (
+              <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900">Evidence</h2>
+                    <p className="text-sm text-gray-500">Structured sources captured when this entity was generated from Ask or search summaries.</p>
+                  </div>
+                  {evidence.generatedAt && (
+                    <span className="text-xs text-gray-400">{new Date(evidence.generatedAt).toLocaleString()}</span>
+                  )}
+                </div>
+                {evidence.question && (
+                  <div className="mt-4 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+                    {evidence.question}
+                  </div>
+                )}
+                {evidence.sources.length > 0 ? (
+                  <div className="mt-4 space-y-2">
+                    {evidence.sources.map((source, index) => (
+                      <button
+                        key={`${source.message_id || source.thread_id}-${index}`}
+                        type="button"
+                        onClick={() => source.thread_id && setSelectedThread({ threadId: source.thread_id, focusMessageId: source.message_id || undefined })}
+                        disabled={!source.thread_id}
+                        className="block w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-left hover:border-indigo-200 hover:bg-indigo-50/50 disabled:cursor-default disabled:hover:border-gray-200 disabled:hover:bg-gray-50"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium text-gray-900">
+                              {source.subject || source.message_id || source.thread_id}
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                              {source.sender && <span>{source.sender}</span>}
+                              {source.date && <span>{source.date}</span>}
+                              {source.message_id && <span className="font-mono">{source.message_id}</span>}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1">
+                            {source.list_name && (
+                              <span className="rounded bg-white px-2 py-1 text-xs text-gray-500">{source.list_name}</span>
+                            )}
+                            {source.source && (
+                              <span className="rounded bg-white px-2 py-1 text-xs text-gray-500">{source.source}</span>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {evidence.threadIds.map((threadId) => (
+                      <button
+                        key={threadId}
+                        type="button"
+                        onClick={() => setSelectedThread({ threadId })}
+                        className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-mono text-gray-700 hover:border-indigo-200 hover:bg-indigo-50"
+                      >
+                        {threadId}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
             <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
               <div className="flex items-center justify-between">
                 <div>
@@ -401,6 +519,13 @@ export default function KnowledgePage() {
           </div>
         )}
       </main>
+      {selectedThread && (
+        <ThreadDrawer
+          threadId={selectedThread.threadId}
+          focusMessageId={selectedThread.focusMessageId}
+          onClose={() => setSelectedThread(null)}
+        />
+      )}
     </div>
   );
 }

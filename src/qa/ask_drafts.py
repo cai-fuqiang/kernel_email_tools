@@ -84,6 +84,9 @@ class AskDraftService:
         summary: str,
         sources: list[dict],
         tag_exists,
+        search_plan: Optional[dict] = None,
+        threads: Optional[list[dict]] = None,
+        retrieval_stats: Optional[dict] = None,
     ) -> AskDraftBundle:
         """Generate normalized drafts from AI summary results.
 
@@ -93,14 +96,32 @@ class AskDraftService:
             sources: List of source dicts with message_id, subject, sender, date, snippet, thread_id.
             tag_exists: async callable accepting tag name and returning bool.
         """
-        payload = {"question": query, "answer": summary, "sources": sources}
-        parsed = await self._generate_with_llm(query, summary, sources)
+        payload = {
+            "question": query,
+            "answer": summary,
+            "sources": sources,
+            "search_plan": search_plan or {},
+            "threads": threads or [],
+            "retrieval_stats": retrieval_stats or {},
+        }
+        parsed = await self._generate_with_llm(
+            query,
+            summary,
+            sources,
+            search_plan=search_plan or {},
+            threads=threads or [],
+        )
         bundle = self._normalize_bundle(parsed or self._fallback_bundle(query, summary, sources), payload)
         await self._mark_tag_existence(bundle, tag_exists)
         return bundle
 
     async def _generate_with_llm(
-        self, query: str, summary: str, sources: list[dict]
+        self,
+        query: str,
+        summary: str,
+        sources: list[dict],
+        search_plan: dict,
+        threads: list[dict],
     ) -> Optional[dict]:
         if not self.llm or not self.llm.available:
             return None
@@ -110,8 +131,8 @@ class AskDraftService:
                 question=query,
                 answer=summary,
                 sources=sources,
-                search_plan={},
-                threads=[],
+                search_plan=search_plan,
+                threads=threads,
             ),
             temperature=0.1,
             max_tokens=1800,
@@ -198,6 +219,20 @@ class AskDraftService:
         sources = payload.get("sources") or []
         source_message_ids = [s.get("message_id") for s in sources if s.get("message_id")]
         thread_ids = sorted({s.get("thread_id") for s in sources if s.get("thread_id")})
+        compact_sources = [
+            {
+                "message_id": source.get("message_id", ""),
+                "thread_id": source.get("thread_id", ""),
+                "subject": source.get("subject", ""),
+                "sender": source.get("sender", ""),
+                "date": source.get("date", ""),
+                "list_name": source.get("list_name", ""),
+                "chunk_id": source.get("chunk_id", ""),
+                "chunk_index": source.get("chunk_index", 0),
+                "source": source.get("source", ""),
+            }
+            for source in sources[:12]
+        ]
         now = datetime.utcnow().isoformat()
 
         normalized_knowledge = []
@@ -228,6 +263,9 @@ class AskDraftService:
                         "answer_excerpt": str(payload.get("answer") or "")[:1000],
                         "source_message_ids": source_message_ids,
                         "thread_ids": thread_ids,
+                        "sources": compact_sources,
+                        "search_plan": payload.get("search_plan") or {},
+                        "retrieval_stats": payload.get("retrieval_stats") or {},
                         "generated_at": now,
                     },
                 },
