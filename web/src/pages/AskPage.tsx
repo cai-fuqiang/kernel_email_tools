@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { askQuestion, getTagStats, type TagStats } from '../api/client';
-import type { AskMessage, AskResponse } from '../api/types';
+import type { AskMessage, AskResponse, SourceRef } from '../api/types';
 import AskDraftPanel from '../components/AskDraftPanel';
 import ThreadDrawer from '../components/ThreadDrawer';
 
@@ -26,20 +26,17 @@ function normalizeMessageId(value: string): string {
 }
 
 function buildSourceMap(answer?: AskResponse | null) {
-  const sourceByMessageId = new Map<string, { threadId: string; messageId: string }>();
+  const sourceByMessageId = new Map<string, SourceRef>();
   for (const source of answer?.sources || []) {
     if (!source.message_id || !source.thread_id) continue;
-    sourceByMessageId.set(normalizeMessageId(source.message_id), {
-      threadId: source.thread_id,
-      messageId: source.message_id,
-    });
+    sourceByMessageId.set(normalizeMessageId(source.message_id), source);
   }
   return sourceByMessageId;
 }
 
 function resolveCitationSource(
   citation: string,
-  sourceByMessageId: Map<string, { threadId: string; messageId: string }>,
+  sourceByMessageId: Map<string, SourceRef>,
 ) {
   const normalized = normalizeMessageId(citation);
   const exact = sourceByMessageId.get(normalized);
@@ -56,9 +53,34 @@ function resolveCitationSource(
   return candidates.length === 1 ? sourceByMessageId.get(candidates[0]) : undefined;
 }
 
+function compactSender(sender: string): string {
+  return (sender.split('<')[0] || sender).replace(/^"|"$/g, '').trim() || 'unknown';
+}
+
+function compactDate(date: string): string {
+  if (!date) return '';
+  const parsed = new Date(date);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  return date.slice(0, 10);
+}
+
+function truncateText(text: string, max = 54): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  return clean.length > max ? `${clean.slice(0, max - 1)}...` : clean;
+}
+
+function citationLabel(source: SourceRef): string {
+  const parts = [
+    compactSender(source.sender || ''),
+    compactDate(source.date || ''),
+    truncateText(source.subject || source.message_id || 'email'),
+  ].filter(Boolean);
+  return `[${parts.join(' · ')}]`;
+}
+
 function renderAnswerWithLinks(
   text: string,
-  sourceByMessageId: Map<string, { threadId: string; messageId: string }>,
+  sourceByMessageId: Map<string, SourceRef>,
   onOpenSource: (threadId: string, messageId?: string) => void,
 ) {
   return text.split(/(\[[^\]]+\])/g).map((part, index) => {
@@ -70,11 +92,11 @@ function renderAnswerWithLinks(
       <button
         key={index}
         type="button"
-        onClick={() => onOpenSource(source.threadId, source.messageId)}
-        className="mx-0.5 rounded bg-indigo-50 px-1.5 py-0.5 font-mono text-xs text-indigo-700 hover:bg-indigo-100"
-        title="Open cited email"
+        onClick={() => onOpenSource(source.thread_id || '', source.message_id)}
+        className="mx-0.5 rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+        title={`Open cited email: ${source.message_id}`}
       >
-        {part}
+        {citationLabel(source)}
       </button>
     );
   });

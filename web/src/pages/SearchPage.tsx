@@ -51,6 +51,31 @@ function resolveCitationSource(
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
+function compactSender(sender: string): string {
+  return (sender.split('<')[0] || sender).replace(/^"|"$/g, '').trim() || 'unknown';
+}
+
+function compactDate(date: string): string {
+  if (!date) return '';
+  const parsed = new Date(date);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  return date.slice(0, 10);
+}
+
+function truncateText(text: string, max = 54): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  return clean.length > max ? `${clean.slice(0, max - 1)}...` : clean;
+}
+
+function citationLabel(source: SourceRef): string {
+  const parts = [
+    compactSender(source.sender || ''),
+    compactDate(source.date || ''),
+    truncateText(source.subject || source.message_id || 'email'),
+  ].filter(Boolean);
+  return `[${parts.join(' · ')}]`;
+}
+
 export default function SearchPage() {
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState('hybrid');
@@ -496,15 +521,15 @@ export default function SearchPage() {
                   const src = resolveCitationSource(m[1], summary.sources);
                   if (!src || !src.thread_id) return <span key={i}>{part}</span>;
                   return (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setSelectedThread(src.thread_id!)}
-                      className="mx-0.5 rounded bg-indigo-50 px-1.5 py-0.5 font-mono text-xs text-indigo-700 hover:bg-indigo-100"
-                      title="Open thread"
-                    >
-                      {part}
-                    </button>
+	                    <button
+	                      key={i}
+	                      type="button"
+	                      onClick={() => setSelectedThread(src.thread_id!)}
+	                      className="mx-0.5 rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+	                      title={`Open cited email: ${src.message_id}`}
+	                    >
+	                      {citationLabel(src)}
+	                    </button>
                   );
                 })}
               </div>
