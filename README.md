@@ -453,6 +453,7 @@ export DASHSCOPE_API_KEY=...
 ## 相关计划文档
 
 - [.joycode/plans/PLAN-31002-knowledge-workbench-roadmap.md](.joycode/plans/PLAN-31002-knowledge-workbench-roadmap.md)：Knowledge Workbench、Evidence、Draft Inbox 与知识沉淀路线。
+- [.joycode/plans/PLAN-31003-ui-workbench-refresh.md](.joycode/plans/PLAN-31003-ui-workbench-refresh.md)：全站 UI 统一与知识沉淀工作流优化计划。
 - [.joycode/plans/PLAN-31000-unified-knowledge-graph.md](.joycode/plans/PLAN-31000-unified-knowledge-graph.md)：统一知识对象与知识图谱设计。
 - [.joycode/plans/PLAN-30000-code-definition-navigation.md](.joycode/plans/PLAN-30000-code-definition-navigation.md)：代码定义跳转后续计划。
 - [.joycode/plans/PLAN-20000-generalized-knowledge-tagging.md](.joycode/plans/PLAN-20000-generalized-knowledge-tagging.md)：通用标签系统设计与当前状态。

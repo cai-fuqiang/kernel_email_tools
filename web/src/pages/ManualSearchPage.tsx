@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { Search } from 'lucide-react';
 import { searchManuals } from '../api/client';
 import type { ManualSearchResponse, ManualSearchHit } from '../api/types';
+import { EmptyState, PageHeader, PageShell, PrimaryButton, SectionPanel } from '../components/ui';
 
 export default function ManualSearchPage() {
   const [query, setQuery] = useState('');
@@ -32,13 +34,15 @@ export default function ManualSearchPage() {
   };
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Search Chip Manuals</h2>
-        <p className="text-sm text-gray-500">Full-text search across processor manuals (Intel SDM, ARM, AMD)</p>
-      </div>
+    <PageShell>
+      <PageHeader
+        eyebrow="Manuals"
+        title="Search Chip Manuals"
+        description="Full-text search across processor manuals such as Intel SDM, ARM ARM, and AMD APM."
+      />
 
       {/* 搜索栏 */}
+      <SectionPanel title="Find manual sections">
       <div className="flex gap-3 mb-4">
         <div className="flex-1 relative">
           <input
@@ -49,27 +53,14 @@ export default function ManualSearchPage() {
             placeholder="Search manuals... e.g. MOV instruction encoding"
             className="w-full px-4 py-3 pl-11 bg-white border border-gray-300 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
           />
-          <svg
-            className="absolute left-3.5 top-3.5 w-4 h-4 text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
+          <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-gray-400" />
         </div>
-        <button
+        <PrimaryButton
           onClick={handleSearch}
           disabled={loading}
-          className="px-6 py-3 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 shadow-sm"
         >
           {loading ? 'Searching...' : 'Search'}
-        </button>
+        </PrimaryButton>
       </div>
 
       {/* 过滤选项 */}
@@ -104,6 +95,7 @@ export default function ManualSearchPage() {
           </select>
         </div>
       </div>
+      </SectionPanel>
 
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
@@ -130,7 +122,10 @@ export default function ManualSearchPage() {
           <p>Enter a query to search chip manuals</p>
         </div>
       )}
-    </div>
+      {!result && !loading && (
+        <EmptyState title="Search manuals" description="Enter an instruction, register, or architecture concept to find relevant manual sections." />
+      )}
+    </PageShell>
   );
 }
 

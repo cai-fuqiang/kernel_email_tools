@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { askManualQuestion } from '../api/client';
 import type { ManualAskResponse } from '../api/types';
+import { PageHeader, PageShell, PrimaryButton, SectionPanel } from '../components/ui';
 
 export default function ManualAskPage() {
   const [question, setQuestion] = useState('');
@@ -31,11 +32,13 @@ export default function ManualAskPage() {
   };
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Ask Chip Manuals</h2>
-        <p className="text-sm text-gray-500">Ask questions about processor architecture and instruction sets</p>
-      </div>
+    <PageShell>
+      <PageHeader
+        eyebrow="Manuals"
+        title="Ask Chip Manuals"
+        description="Ask questions about processor architecture and instruction sets."
+      />
+      <SectionPanel>
 
       {/* 过滤选项 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -80,14 +83,14 @@ export default function ManualAskPage() {
           placeholder="e.g. How does the MOV instruction work in x86-64?"
           className="flex-1 px-4 py-3 bg-white border border-gray-300 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
         />
-        <button
+        <PrimaryButton
           onClick={handleAsk}
           disabled={loading}
-          className="px-6 py-3 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 shadow-sm"
         >
           {loading ? 'Thinking...' : 'Ask'}
-        </button>
+        </PrimaryButton>
       </div>
+      </SectionPanel>
 
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
@@ -142,6 +145,6 @@ export default function ManualAskPage() {
           <p>Ask a question about processor architecture and instruction sets</p>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
