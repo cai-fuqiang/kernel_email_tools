@@ -969,6 +969,10 @@ export async function listKnowledgeEntities(opts?: {
   return fetchJSON<KnowledgeEntityListResponse>(`${API_BASE}/knowledge/entities?${params}`);
 }
 
+export async function getEntitiesByMessageId(messageId: string): Promise<{ message_id: string; entities: KnowledgeEntity[] }> {
+  return fetchJSON<{ message_id: string; entities: KnowledgeEntity[] }>(`${API_BASE}/knowledge/entities/by-message/${encodeURIComponent(messageId)}`);
+}
+
 export async function getKnowledgeEntity(entityId: string): Promise<KnowledgeEntity> {
   return fetchJSON<KnowledgeEntity>(`${API_BASE}/knowledge/entities/${encodeURIComponent(entityId)}`);
 }

@@ -313,6 +313,32 @@ class KnowledgeStore:
             result = await session.execute(stmt)
             return [KnowledgeEntityRead.model_validate(row) for row in result.scalars().all()]
 
+    async def search_entities(
+        self,
+        queries: list[str],
+        limit: int = 10,
+    ) -> list[KnowledgeEntityRead]:
+        """用多个查询词搜索知识实体（匹配 canonical_name / aliases / summary）。"""
+        if not queries:
+            return []
+        async with self._session_factory() as session:
+            conditions = []
+            for q in queries:
+                like = f"%{q.strip()}%"
+                conditions.append(KnowledgeEntityORM.canonical_name.ilike(like))
+                conditions.append(cast(KnowledgeEntityORM.aliases, Text).ilike(like))
+                conditions.append(KnowledgeEntityORM.summary.ilike(like))
+            if not conditions:
+                return []
+            stmt = (
+                select(KnowledgeEntityORM)
+                .where(or_(*conditions))
+                .order_by(KnowledgeEntityORM.updated_at.desc())
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            return [KnowledgeEntityRead.model_validate(row) for row in result.scalars().all()]
+
     async def create_relation(self, data: KnowledgeRelationCreate) -> KnowledgeRelationRead:
         source_entity_id = data.source_entity_id.strip()
         target_entity_id = data.target_entity_id.strip()
@@ -408,6 +434,28 @@ class KnowledgeStore:
                 .order_by(KnowledgeEvidenceORM.created_at.desc())
             )
             return [KnowledgeEvidenceRead.model_validate(row) for row in result.scalars().all()]
+
+    async def find_entities_by_message_id(
+        self,
+        message_id: str,
+    ) -> list[KnowledgeEntityRead]:
+        """查找引用了指定 message_id 的知识实体（通过证据关联）。"""
+        normalized = message_id.strip()
+        if not normalized:
+            return []
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(KnowledgeEntityORM)
+                .distinct()
+                .join(
+                    KnowledgeEvidenceORM,
+                    KnowledgeEvidenceORM.entity_id == KnowledgeEntityORM.entity_id,
+                )
+                .where(KnowledgeEvidenceORM.message_id == normalized)
+                .order_by(KnowledgeEntityORM.updated_at.desc())
+                .limit(20)
+            )
+            return [KnowledgeEntityRead.model_validate(row) for row in result.scalars().all()]
 
     async def update_evidence(
         self,

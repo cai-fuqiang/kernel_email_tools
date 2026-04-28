@@ -752,6 +752,7 @@ async def lifespan(app: FastAPI):
     logger.info("Kernel symbol store initialized")
 
     _knowledge_store = KnowledgeStore(_storage.session_factory)
+    _qa.knowledge_store = _knowledge_store
     _ask_store = AskStore(_storage.session_factory)
     logger.info("Knowledge store initialized")
 
@@ -3972,6 +3973,18 @@ async def list_knowledge_entities(
         "total": total,
         "page": page,
         "page_size": page_size,
+    }
+
+
+@app.get("/api/knowledge/entities/by-message/{message_id:path}")
+async def get_knowledge_entities_by_message(message_id: str):
+    """根据邮件 Message-ID 反向查找引用了该邮件的知识实体。"""
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    entities = await _knowledge_store.find_entities_by_message_id(message_id)
+    return {
+        "message_id": message_id,
+        "entities": [e.model_dump(mode="json") for e in entities],
     }
 
 

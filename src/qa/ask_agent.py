@@ -11,6 +11,10 @@ from src.retriever.base import SearchQuery
 from src.retriever.hybrid import HybridRetriever
 from src.storage.models import EmailChunkSearchResult
 from src.storage.postgres import PostgresStorage
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.storage.knowledge_store import KnowledgeStore
 
 logger = logging.getLogger(__name__)
 
@@ -107,13 +111,18 @@ Conversation context:
 Search plan:
 {plan}
 
-Evidence:
+Existing knowledge (from the knowledge graph):
+{knowledge_context}
+
+Evidence (from mailing list):
 {evidence}
 
 Relevant thread context:
 {threads}
 
-Write the final answer using only the evidence above. Include citations like [Message-ID]."""
+Write the final answer using the evidence above. When existing knowledge is relevant, cite the knowledge entity
+by its canonical name in brackets. If new evidence contradicts existing knowledge, note the discrepancy.
+Include email citations like [Message-ID]."""
 
 
 def _clean_history(history: Optional[list[dict]], limit: int = 6) -> list[dict]:
@@ -185,6 +194,7 @@ class AskAgent:
         llm: ChatLLMClient,
         embedding_provider: Optional[DashScopeEmbeddingProvider] = None,
         embedding_provider_name: str = "dashscope",
+        knowledge_store: Optional["KnowledgeStore"] = None,
         max_queries: int = 6,
         per_query_limit: int = 12,
         max_sources: int = 12,
@@ -195,6 +205,7 @@ class AskAgent:
         self.llm = llm
         self.embedding_provider = embedding_provider
         self.embedding_provider_name = embedding_provider_name
+        self.knowledge_store = knowledge_store
         self.max_queries = max_queries
         self.per_query_limit = per_query_limit
         self.max_sources = max_sources
@@ -228,7 +239,11 @@ class AskAgent:
         sources = self._select_sources(chunks)
         threads = await self._expand_threads(sources)
 
-        answer_text = await self._answer(question, conversation_context, plan, sources, threads)
+        knowledge_context = await self._retrieve_knowledge(
+            plan, retrieval_question
+        )
+
+        answer_text = await self._answer(question, conversation_context, plan, knowledge_context, sources, threads)
         if not answer_text:
             answer_text = self._fallback_answer(question, sources)
 
@@ -245,6 +260,7 @@ class AskAgent:
                 "thread_count": len(threads),
                 "query_count": len(executed),
                 "vector_enabled": bool(self.embedding_provider),
+                "knowledge_entities_found": 1 if knowledge_context else 0,
                 "history_turns": len(cleaned_history),
                 "standalone_question": retrieval_question,
                 "rewrite": rewrite_meta,
@@ -520,11 +536,40 @@ class AskAgent:
                 break
         return summaries
 
+    async def _retrieve_knowledge(
+        self,
+        plan: dict,
+        question: str,
+    ) -> str:
+        if not self.knowledge_store:
+            return ""
+        queries = list(dict.fromkeys(
+            [question] + (plan.get("keyword_queries") or [])
+        ))[:5]
+        try:
+            entities = await self.knowledge_store.search_entities(queries, limit=8)
+        except Exception:
+            return ""
+        if not entities:
+            return ""
+        lines = []
+        for entity in entities:
+            parts = [f"[{entity.canonical_name}]"]
+            if entity.entity_type:
+                parts.append(f"(type: {entity.entity_type})")
+            if entity.summary:
+                parts.append(f"\n  Summary: {entity.summary}")
+            if entity.description:
+                parts.append(f"\n  Description: {entity.description[:500]}")
+            lines.append(" ".join(parts))
+        return "\n\n".join(lines)
+
     async def _answer(
         self,
         question: str,
         conversation_context: str,
         plan: dict,
+        knowledge_context: str,
         sources: list[AskSource],
         threads: list[ThreadSummary],
     ) -> str:
@@ -552,8 +597,9 @@ class AskAgent:
                 question=question,
                 conversation_context=conversation_context,
                 plan=plan,
-                evidence=evidence[:12000],
-                threads=thread_text[:12000],
+                knowledge_context=knowledge_context or "None",
+                evidence=evidence[:10000],
+                threads=thread_text[:10000],
             ),
             temperature=0.2,
             max_tokens=1800,
