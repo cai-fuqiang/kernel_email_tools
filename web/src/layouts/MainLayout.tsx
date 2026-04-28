@@ -1,16 +1,62 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import {
+  BookOpen,
+  Bot,
+  Code2,
+  FileCheck2,
+  Languages,
+  Library,
+  LogOut,
+  MailSearch,
+  NotebookText,
+  Search,
+  Tags,
+  Users,
+} from 'lucide-react';
 import { getStats } from '../api/client';
 import { useAuth } from '../auth';
+import { StatusBadge } from '../components/ui';
 
-function getRoleSummary(role: string) {
-  if (role === 'admin') {
-    return 'Can edit any tag or annotation, and manage users.';
-  }
-  if (role === 'editor') {
-    return 'Can create private content and only edit their own private tags and annotations.';
-  }
-  return 'Read-only access to public content and your private items.';
+type NavItem = {
+  to: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  end?: boolean;
+};
+
+function roleTone(role: string) {
+  if (role === 'admin') return 'success';
+  if (role === 'editor') return 'info';
+  return 'muted';
+}
+
+function NavSection({ title, items }: { title: string; items: NavItem[] }) {
+  const linkClass = ({ isActive }: { isActive: boolean }) =>
+    `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
+      isActive
+        ? 'bg-slate-900 text-white shadow-sm'
+        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+    }`;
+
+  return (
+    <div>
+      <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+        {title}
+      </div>
+      <div className="space-y-1">
+        {items.map((item) => {
+          const Icon = item.icon;
+          return (
+            <NavLink key={item.to} to={item.to} end={item.end} className={linkClass}>
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className="truncate">{item.label}</span>
+            </NavLink>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export default function MainLayout() {
@@ -22,149 +68,96 @@ export default function MainLayout() {
     getStats().then(s => setTotalEmails(s.total_emails)).catch(() => {});
   }, []);
 
-  const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-      isActive
-        ? 'bg-indigo-50 text-indigo-700'
-        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-    }`;
+  const researchItems: NavItem[] = [
+    { to: '/', label: 'Search Emails', icon: Search, end: true },
+    { to: '/ask', label: 'Ask Agent', icon: Bot },
+  ];
+  const workbenchItems: NavItem[] = [
+    { to: '/knowledge', label: 'Knowledge', icon: Library },
+    { to: '/tags', label: 'Tags', icon: Tags },
+    { to: '/annotations', label: 'Annotations', icon: NotebookText },
+    { to: '/translations', label: 'Translations', icon: Languages },
+  ];
+  const manualItems: NavItem[] = [
+    { to: '/manual/search', label: 'Search Manuals', icon: BookOpen },
+    { to: '/manual/ask', label: 'Ask Manuals', icon: MailSearch },
+  ];
 
   return (
-    <div className="min-h-screen flex">
-      {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-6 border-b border-gray-200">
-          <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-            <span className="text-2xl">&#9993;</span>
-            Kernel Mail KB
-          </h1>
-          <p className="text-xs text-gray-500 mt-1">Linux Kernel Mailing List Knowledge Base</p>
-          <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+    <div className="flex min-h-screen bg-slate-50">
+      <aside className="flex w-72 shrink-0 flex-col border-r border-slate-200 bg-white">
+        <div className="border-b border-slate-200 p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+              <MailSearch className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-semibold text-slate-950">Kernel Mail KB</h1>
+              <p className="mt-0.5 text-xs text-slate-500">Research to reusable knowledge</p>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
             {authLoading ? (
-              <span>Loading user...</span>
+              <div className="text-xs text-slate-500">Loading user...</div>
             ) : currentUser ? (
-              <>
-                <div className="font-medium text-slate-800">{currentUser.display_name}</div>
-                <div>{currentUser.role} via {currentUser.auth_source}</div>
-                <div className="mt-1 text-[11px] leading-4 text-slate-500">
-                  {getRoleSummary(currentUser.role)}
+              <div className="space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-slate-900">{currentUser.display_name}</div>
+                    <div className="truncate text-xs text-slate-500">{currentUser.auth_source}</div>
+                  </div>
+                  <StatusBadge tone={roleTone(currentUser.role)}>{currentUser.role}</StatusBadge>
                 </div>
-                <div className="mt-2">
-                  <button
-                    onClick={async () => {
-                      await logout();
-                      navigate('/login');
-                    }}
-                    className="text-xs text-red-600 hover:text-red-700"
-                  >
-                    Sign out
-                  </button>
-                </div>
-              </>
+                {!canWrite && (
+                  <div className="rounded-lg bg-amber-50 px-2 py-1.5 text-xs leading-5 text-amber-700">
+                    Read-only mode
+                  </div>
+                )}
+                <button
+                  onClick={async () => {
+                    await logout();
+                    navigate('/login');
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-600 hover:text-rose-700"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Sign out
+                </button>
+              </div>
             ) : (
-              <span>{authError || 'Unauthenticated'}</span>
+              <div className="text-xs text-slate-500">{authError || 'Unauthenticated'}</div>
             )}
           </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
-          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-4">Kernel Emails</div>
-          <NavLink to="/" end className={linkClass}>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            Search
-          </NavLink>
-          <NavLink to="/ask" className={linkClass}>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-            </svg>
-            Ask
-          </NavLink>
-          <NavLink to="/tags" className={linkClass}>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
-            </svg>
-            Tags
-          </NavLink>
-          <NavLink to="/knowledge" className={linkClass}>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v12m6-6H6m13-7H5a2 2 0 00-2 2v10a2 2 0 002 2h14a2 2 0 002-2V7a2 2 0 00-2-2z" />
-            </svg>
-            Knowledge
-          </NavLink>
-          <NavLink to="/annotations" className={linkClass}>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-            </svg>
-            Annotations
-          </NavLink>
-          <NavLink to="/translations" className={linkClass}>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
-            </svg>
-            Translations
-          </NavLink>
-          {!canWrite && (
-            <div className="mx-4 mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              Current role is read-only. Public content and your private items remain visible.
-            </div>
-          )}
-
-          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-6 px-4">Kernel Code</div>
-          <NavLink to="/kernel-code" className={linkClass}>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-            </svg>
-            Code Browser
-          </NavLink>
-
+        <nav className="flex-1 space-y-6 overflow-y-auto p-4">
+          <NavSection title="Research" items={researchItems} />
+          <NavSection title="Knowledge Workbench" items={workbenchItems} />
+          <NavSection title="Code" items={[{ to: '/kernel-code', label: 'Code Browser', icon: Code2 }]} />
           {isAdmin && (
-            <>
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-6 px-4">Admin</div>
-              <NavLink to="/users" className={linkClass}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5V9H2v11h5m10 0v-2a4 4 0 00-4-4H11a4 4 0 00-4 4v2m10 0H7m5-7a3 3 0 100-6 3 3 0 000 6z" />
-                </svg>
-                Users
-              </NavLink>
-              <NavLink to="/admin/annotation-review" className={linkClass}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2zm0 0V2m10 2V2" />
-                </svg>
-                Annotation Review
-              </NavLink>
-            </>
+            <NavSection
+              title="Admin"
+              items={[
+                { to: '/users', label: 'Users', icon: Users },
+                { to: '/admin/annotation-review', label: 'Annotation Review', icon: FileCheck2 },
+              ]}
+            />
           )}
-
-          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-6 px-4">Chip Manuals</div>
-          <NavLink to="/manual/search" className={linkClass}>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-            Search Manuals
-          </NavLink>
-          <NavLink to="/manual/ask" className={linkClass}>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-            </svg>
-            Ask Manuals
-          </NavLink>
+          <NavSection title="Manuals" items={manualItems} />
         </nav>
 
-        <div className="p-4 border-t border-gray-200">
-          <div className="bg-gray-50 rounded-lg p-3">
-            <p className="text-xs text-gray-500">Database</p>
-            <p className="text-lg font-semibold text-gray-900">
+        <div className="border-t border-slate-200 p-4">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs font-medium uppercase text-slate-400">Indexed emails</p>
+            <p className="mt-1 text-xl font-semibold text-slate-950">
               {totalEmails !== null ? totalEmails.toLocaleString() : '...'}
             </p>
-            <p className="text-xs text-gray-500">emails indexed</p>
           </div>
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-auto">
+      <main className="min-w-0 flex-1 overflow-auto">
         <Outlet />
       </main>
     </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { ChevronDown, Search, Sparkles } from 'lucide-react';
 import { searchEmails, getTagStats, summarizeSearchResults, createSummaryDraft, applySummaryDraft, type TagStats } from '../api/client';
 import type { SearchResponse, SearchHit, SummarizeResponse, AskDraftResponse, SourceRef } from '../api/types';
 import ThreadDrawer from '../components/ThreadDrawer';
@@ -6,6 +7,7 @@ import TagFilter from '../components/TagFilter';
 import EmailTagEditor from '../components/EmailTagEditor';
 import DraftReviewPanel from '../components/DraftReviewPanel';
 import type { AskDraftApplyResponse } from '../api/types';
+import { EmptyState, PageHeader, PageShell, PrimaryButton, SecondaryButton, SectionPanel, StatusBadge } from '../components/ui';
 
 function escapeHtml(text: string): string {
   return text
@@ -233,14 +235,23 @@ export default function SearchPage() {
   };
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Search Emails</h2>
-        <p className="text-sm text-gray-500">Full-text search across kernel mailing list archives</p>
-      </div>
+    <PageShell>
+      <PageHeader
+        eyebrow="Research"
+        title="Search Emails"
+        description="Find source discussions first, then summarize and promote durable findings into Knowledge."
+        meta={
+          <div className="flex flex-wrap gap-2">
+            <StatusBadge tone="muted">Search</StatusBadge>
+            <StatusBadge tone="info">Summarize</StatusBadge>
+            <StatusBadge tone="success">Draft Knowledge</StatusBadge>
+          </div>
+        }
+      />
 
       {/* 主要搜索栏 */}
-      <div className="flex gap-3 mb-4">
+      <SectionPanel title="Find discussions" description="Start broad, then tighten with channel, tags, author, date, or patch filters.">
+      <div className="flex flex-col gap-3 lg:flex-row">
         <div className="flex-1 relative">
           <input
             type="text"
@@ -248,26 +259,14 @@ export default function SearchPage() {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             placeholder="Search emails... e.g. shmem mount"
-            className="w-full px-4 py-3 pl-11 bg-white border border-gray-300 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 pl-11 text-sm shadow-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-100"
           />
-          <svg
-            className="absolute left-3.5 top-3.5 w-4 h-4 text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
+          <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
         </div>
         <select
           value={mode}
           onChange={(e) => setMode(e.target.value)}
-          className="px-3 py-3 bg-white border border-gray-300 rounded-xl text-sm"
+          className="rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
         >
           <option value="hybrid">Hybrid</option>
           <option value="keyword">Keyword</option>
@@ -277,24 +276,23 @@ export default function SearchPage() {
         <select
           value={selectedChannel}
           onChange={(e) => setSelectedChannel(e.target.value)}
-          className="px-3 py-3 bg-white border border-gray-300 rounded-xl text-sm"
+          className="rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
         >
           {CHANNEL_OPTIONS.map(opt => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
-        <button
+        <PrimaryButton
           onClick={() => handleSearch()}
           disabled={loading}
-          className="px-6 py-3 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 shadow-sm"
         >
           {loading ? 'Searching...' : 'Search'}
-        </button>
+        </PrimaryButton>
       </div>
 
       {/* 标签筛选快捷入口 */}
       {tagStats.length > 0 && (
-        <div className="mb-4">
+        <div className="mt-4">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-gray-500">Popular tags:</span>
             {tagStats.slice(0, 8).map(tag => (
@@ -320,23 +318,16 @@ export default function SearchPage() {
           setShowAdvanced(!showAdvanced);
           if (showAdvanced) resetFilters();
         }}
-        className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 mb-4"
+        className="mt-4 flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
       >
-        <svg
-          className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-90' : ''}`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
+        <ChevronDown className={`h-4 w-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
         Advanced Filters
-        {hasFilters && <span className="ml-1 px-1.5 py-0.5 bg-indigo-100 text-indigo-600 text-xs rounded">Active</span>}
+        {hasFilters && <StatusBadge tone="info" className="ml-1 py-0.5">Active</StatusBadge>}
       </button>
 
       {/* 高级搜索面板 */}
       {showAdvanced && (
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-6">
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* 发件人过滤 */}
             <div>
@@ -415,31 +406,31 @@ export default function SearchPage() {
 
           {/* 搜索按钮 */}
           <div className="mt-4 flex justify-between items-center">
-            <button
+            <SecondaryButton
               onClick={resetFilters}
-              className="text-xs text-gray-500 hover:text-gray-700"
+              className="px-3 py-1.5 text-xs"
             >
               Reset filters
-            </button>
-            <button
+            </SecondaryButton>
+            <PrimaryButton
               onClick={() => handleSearch()}
               disabled={loading || (!query.trim() && !hasFilters)}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 shadow-sm"
             >
               {loading ? 'Searching...' : 'Search'}
-            </button>
+            </PrimaryButton>
           </div>
         </div>
       )}
+      </SectionPanel>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {error}
         </div>
       )}
 
       {result && (
-        <div>
+        <SectionPanel>
           <p className="text-sm text-gray-500 mb-4">
             Found <span className="font-semibold text-gray-900">{result.total}</span> results
             {selectedChannel && (
@@ -461,10 +452,9 @@ export default function SearchPage() {
 
           {/* AI 概括按钮 */}
           <div className="mb-4">
-            <button
+            <PrimaryButton
               onClick={handleSummarize}
               disabled={summarizing || result.hits.length === 0}
-              className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg text-sm font-medium hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 shadow-sm flex items-center gap-2"
             >
               {summarizing ? (
                 <>
@@ -476,18 +466,16 @@ export default function SearchPage() {
                 </>
               ) : (
                 <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
+                  <Sparkles className="h-4 w-4" />
                   AI 概括前 {Math.min(result.hits.length, 10)} 条结果
                 </>
               )}
-            </button>
+            </PrimaryButton>
           </div>
 
           {/* AI 概括结果面板 */}
           {summary && (
-            <div className="mb-4 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-5">
+            <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 p-5">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
                   <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -588,19 +576,20 @@ export default function SearchPage() {
               </button>
             </div>
           )}
-        </div>
+        </SectionPanel>
       )}
 
       {!result && !loading && (
-        <div className="text-center py-20 text-gray-400">
-          <p>Enter a query to search kernel mailing list emails</p>
-        </div>
+        <EmptyState
+          title="Search the mailing list archive"
+          description="Try a subsystem, function name, regression symptom, or historical decision. Good search results become the evidence for durable knowledge."
+        />
       )}
 
       {selectedThread && (
         <ThreadDrawer threadId={selectedThread} onClose={() => setSelectedThread(null)} />
       )}
-    </div>
+    </PageShell>
   );
 }
 

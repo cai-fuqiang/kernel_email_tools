@@ -8,6 +8,7 @@ import {
 } from '../api/client';
 import { useAuth } from '../auth';
 import type { UserRead } from '../api/types';
+import { PageHeader, PageShell, StatusBadge } from '../components/ui';
 
 const ROLE_GUIDE: Array<{
   role: 'admin' | 'editor' | 'viewer';
@@ -240,26 +241,21 @@ export default function UsersPage() {
   const disabledUsers = useMemo(() => users.filter((user) => user.status !== 'active' || user.approval_status === 'rejected'), [users]);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">User Management</h2>
-        <p className="text-sm text-gray-500">Approve new accounts, update roles, disable access, and reset passwords.</p>
-      </div>
+    <PageShell wide>
+      <PageHeader
+        eyebrow="Admin"
+        title="User Management"
+        description="Approve new accounts, update roles, disable access, and reset passwords."
+      />
 
       <section className="grid gap-3 md:grid-cols-3">
         {ROLE_GUIDE.map((item) => (
           <div key={item.role} className="rounded-xl border border-gray-200 bg-white px-4 py-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">{item.title}</h3>
-              <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-medium ${
-                item.role === 'admin'
-                  ? 'bg-indigo-50 text-indigo-700'
-                  : item.role === 'editor'
-                    ? 'bg-emerald-50 text-emerald-700'
-                    : 'bg-slate-100 text-slate-600'
-              }`}>
+              <StatusBadge tone={item.role === 'admin' ? 'success' : item.role === 'editor' ? 'info' : 'muted'} className="py-0.5 text-[11px]">
                 {item.role}
-              </span>
+              </StatusBadge>
             </div>
             <p className="mt-2 text-sm leading-6 text-gray-600">{item.description}</p>
           </div>
@@ -277,6 +273,6 @@ export default function UsersPage() {
           <UserSection title="Disabled / Rejected" users={disabledUsers} emptyText="No disabled users." onRefresh={loadUsers} />
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CheckCircle2, ChevronLeft, ChevronRight, MessageSquarePlus } from 'lucide-react';
 import {
   askQuestion,
   deleteAskConversation,
@@ -11,6 +12,7 @@ import {
 import type { AskConversationListItem, AskMessage, AskResponse, AskTurn, SourceRef } from '../api/types';
 import AskDraftPanel from '../components/AskDraftPanel';
 import ThreadDrawer from '../components/ThreadDrawer';
+import { EmptyState, PageHeader, PrimaryButton, SecondaryButton, SectionPanel, StatusBadge } from '../components/ui';
 
 type ThreadFocus = {
   threadId: string;
@@ -294,24 +296,22 @@ export default function AskPage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
+    <div className="flex h-screen bg-slate-50">
       {/* History Sidebar */}
       <aside
         className={`${
           showSidebar ? 'w-[300px]' : 'w-0'
-        } shrink-0 overflow-hidden border-r border-gray-200 bg-white transition-all`}
+        } shrink-0 overflow-hidden border-r border-slate-200 bg-white transition-all`}
       >
         <div className="flex h-full flex-col">
-          <div className="border-b border-gray-200 p-4">
+          <div className="border-b border-slate-200 p-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-900">History</h3>
+              <h3 className="text-sm font-semibold text-slate-900">History</h3>
               <button
                 onClick={() => setShowSidebar(false)}
-                className="rounded p-1 text-gray-400 hover:text-gray-600"
+                className="rounded p-1 text-slate-400 hover:text-slate-600"
               >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
+                <ChevronLeft className="h-4 w-4" />
               </button>
             </div>
           </div>
@@ -324,7 +324,7 @@ export default function AskPage() {
                   key={conv.conversation_id}
                   onClick={() => loadConversation(conv.conversation_id)}
                   className={`w-full border-b border-gray-50 px-4 py-3 text-left hover:bg-gray-50 ${
-                    conversationId === conv.conversation_id ? 'bg-indigo-50/80' : ''
+                    conversationId === conv.conversation_id ? 'bg-slate-100' : ''
                   }`}
                 >
                   <div className="truncate text-sm font-medium text-gray-900">{conv.title}</div>
@@ -354,71 +354,70 @@ export default function AskPage() {
       {!showSidebar && (
         <button
           onClick={() => setShowSidebar(true)}
-          className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-r-lg border border-l-0 border-gray-200 bg-white p-2 text-gray-400 hover:text-gray-600"
+          className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-r-lg border border-l-0 border-slate-200 bg-white p-2 text-slate-400 hover:text-slate-600"
         >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
+          <ChevronRight className="h-4 w-4" />
         </button>
       )}
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex min-h-full max-w-5xl flex-col p-8">
-          <div className="mb-6 flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900">Ask a Question</h2>
-              <p className="mt-1 text-sm text-gray-500">Ask follow-up questions about kernel development discussions.</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {conversationId && (
-                <span className="rounded-full bg-green-50 px-2.5 py-1 text-[10px] text-green-600">
-                  Auto-saving
-                </span>
-              )}
-              <button
+        <div className="mx-auto flex min-h-full max-w-5xl flex-col space-y-5 p-8">
+          <PageHeader
+            eyebrow="Ask Agent"
+            title="Ask a Question"
+            description="Ask follow-up questions over mailing-list evidence, then turn useful answers into reviewable knowledge drafts."
+            meta={
+              <div className="flex flex-wrap gap-2">
+                <StatusBadge tone="muted">Multi-turn</StatusBadge>
+                <StatusBadge tone="info">Evidence linked</StatusBadge>
+                {conversationId && <StatusBadge tone="success">Auto-saving</StatusBadge>}
+              </div>
+            }
+            actions={
+              <SecondaryButton
                 onClick={handleNewConversation}
                 disabled={loading}
-                className="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
               >
+                <MessageSquarePlus className="h-4 w-4" />
                 New conversation
-              </button>
-            </div>
-          </div>
+              </SecondaryButton>
+            }
+          />
 
           {convLoading && (
             <div className="mb-4 text-center text-sm text-gray-400">Loading conversation...</div>
           )}
 
-          <div className="mb-4 flex gap-3">
+          <SectionPanel title="Question" description="Use English or Chinese. The agent can expand query terms and cite source emails.">
+          <div className="flex flex-col gap-3 lg:flex-row">
             <input
               type="text"
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleAsk()}
               placeholder={turns.length ? 'Ask a follow-up...' : 'e.g. Why was the shmem mount behavior changed?'}
-              className="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm shadow-sm focus:ring-2 focus:ring-indigo-500"
+              className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-100"
             />
             <select
               value={selectedChannel}
               onChange={(e) => setSelectedChannel(e.target.value)}
-              className="rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm"
+              className="rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
             >
               {CHANNEL_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
-            <button
+            <PrimaryButton
               onClick={handleAsk}
               disabled={loading || !question.trim()}
-              className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
             >
               {loading ? 'Thinking...' : turns.length ? 'Send' : 'Ask'}
-            </button>
+            </PrimaryButton>
           </div>
 
           {tagStats.length > 0 && (
-            <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="mt-4 flex flex-wrap items-center gap-2">
               <span className="text-xs text-gray-500">Filter by tags:</span>
               {tagStats.slice(0, 6).map((tag) => (
                 <button
@@ -438,7 +437,7 @@ export default function AskPage() {
 
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className="mb-4 flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+              className="mt-4 flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={showFilters ? 'M19 9l-7 7-7-7' : 'M9 5l7 7-7 7'} />
@@ -448,7 +447,7 @@ export default function AskPage() {
           </button>
 
           {showFilters && (
-            <div className="mb-6 rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-600">Channel</label>
@@ -491,12 +490,14 @@ export default function AskPage() {
               )}
             </div>
           )}
+          </SectionPanel>
 
           <div className="flex-1 space-y-6">
             {turns.length === 0 && !loading && (
-              <div className="py-20 text-center text-gray-400">
-                <p>Ask a question, then follow up without restating all context.</p>
-              </div>
+              <EmptyState
+                title="Ask over the archive"
+                description="Start with a mechanism, regression, patch discussion, or historical design question. Follow-ups keep prior turns as context."
+              />
             )}
 
             {turns.map((turn) => (
@@ -547,7 +548,7 @@ function ConversationCard({
       {turn.response ? (
         <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-5">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
             Answer
             <span className="ml-auto text-xs font-normal text-gray-400">{turn.response.retrieval_mode} mode</span>
           </div>
@@ -586,7 +587,7 @@ function ConversationCard({
           )}
 
           <details className="rounded-xl border border-gray-100 bg-gray-50 p-3">
-            <summary className="cursor-pointer text-sm font-semibold text-gray-700">Retrieval Details</summary>
+            <summary className="cursor-pointer text-sm font-semibold text-gray-700">Explainability</summary>
             <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div>
                 <p className="mb-2 text-xs font-medium text-gray-500">Search Plan</p>
