@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Text, cast, func, or_, select
+from sqlalchemy import Text, cast, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -20,6 +20,7 @@ from src.storage.models import (
     KnowledgeRelationORM,
     KnowledgeRelationRead,
     KnowledgeRelationUpdate,
+    TagAssignmentORM,
 )
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -74,6 +75,78 @@ class KnowledgeStore:
             )
             entity = result.scalar_one_or_none()
             return KnowledgeEntityRead.model_validate(entity) if entity else None
+
+    async def delete_entity(self, entity_id: str, force: bool = False) -> tuple[bool, list[dict]]:
+        """删除知识实体。
+
+        Args:
+            entity_id: 实体 ID。
+            force: 是否强制删除（级联删除关联关系）。
+
+        Returns:
+            (是否已删除, 阻挡删除的关系列表)。每条关系包含
+            relation_id, relation_type, other_entity_id, other_entity_name。
+        """
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(KnowledgeEntityORM).where(KnowledgeEntityORM.entity_id == entity_id)
+            )
+            entity = result.scalar_one_or_none()
+            if entity is None:
+                return False, []
+
+            # 查询关联关系
+            blocking = await session.execute(
+                select(KnowledgeRelationORM).where(
+                    or_(
+                        KnowledgeRelationORM.source_entity_id == entity_id,
+                        KnowledgeRelationORM.target_entity_id == entity_id,
+                    )
+                )
+            )
+            blocking_relations = blocking.scalars().all()
+
+            if blocking_relations and not force:
+                entity_map = await self._get_entity_map(
+                    session,
+                    [
+                        rel.source_entity_id if rel.source_entity_id != entity_id else rel.target_entity_id
+                        for rel in blocking_relations
+                    ],
+                )
+                blocked_by = [
+                    {
+                        "relation_id": rel.relation_id,
+                        "relation_type": rel.relation_type,
+                        "other_entity_id": rel.source_entity_id if rel.source_entity_id != entity_id else rel.target_entity_id,
+                        "other_entity_name": (
+                            entity_map.get(
+                                rel.source_entity_id if rel.source_entity_id != entity_id else rel.target_entity_id
+                            ).canonical_name
+                        ) if (
+                            rel.source_entity_id if rel.source_entity_id != entity_id else rel.target_entity_id
+                        ) in entity_map else "",
+                    }
+                    for rel in blocking_relations
+                ]
+                return False, blocked_by
+
+            # force 模式下级联删除关系
+            if blocking_relations:
+                for rel in blocking_relations:
+                    await session.delete(rel)
+
+            # 删除关联的标签分配
+            await session.execute(
+                delete(TagAssignmentORM).where(
+                    TagAssignmentORM.target_type == "knowledge_entity",
+                    TagAssignmentORM.target_ref == entity_id,
+                )
+            )
+
+            await session.delete(entity)
+            await session.commit()
+            return True, []
 
     async def update(
         self,
@@ -214,6 +287,91 @@ class KnowledgeStore:
             outgoing = [relation for relation in reads if relation.source_entity_id == entity_id]
             incoming = [relation for relation in reads if relation.target_entity_id == entity_id]
             return outgoing, incoming
+
+    async def get_graph(
+        self,
+        entity_id: str,
+        depth: int = 2,
+        relation_types: Optional[list[str]] = None,
+    ) -> dict:
+        """BFS 遍历获取实体邻域子图。
+
+        Args:
+            entity_id: 中心实体 ID。
+            depth: 遍历深度（1-3）。
+            relation_types: 可选的关系类型过滤。
+
+        Returns:
+            dict with nodes (list[KnowledgeEntityRead]),
+            edges (list[KnowledgeRelationRead]), center, depth.
+        """
+        depth = max(1, min(depth, 3))
+        async with self._session_factory() as session:
+            visited_entities: set[str] = set()
+            visited_relations: dict[str, KnowledgeRelationORM] = {}
+            frontier: set[str] = {entity_id}
+
+            for _ in range(depth):
+                if not frontier:
+                    break
+
+                stmt = select(KnowledgeRelationORM).where(
+                    or_(
+                        KnowledgeRelationORM.source_entity_id.in_(frontier),
+                        KnowledgeRelationORM.target_entity_id.in_(frontier),
+                    )
+                )
+                if relation_types:
+                    stmt = stmt.where(KnowledgeRelationORM.relation_type.in_(relation_types))
+
+                result = await session.execute(stmt)
+                batch_relations = result.scalars().all()
+
+                next_frontier: set[str] = set()
+                for rel in batch_relations:
+                    if rel.relation_id not in visited_relations:
+                        visited_relations[rel.relation_id] = rel
+                    if rel.source_entity_id not in visited_entities:
+                        next_frontier.add(rel.source_entity_id)
+                    if rel.target_entity_id not in visited_entities:
+                        next_frontier.add(rel.target_entity_id)
+
+                visited_entities.update(frontier)
+                frontier = next_frontier - visited_entities
+
+            # 确保中心实体在 nodes 中
+            visited_entities.add(entity_id)
+            # 最终一步产生的实体
+            visited_entities.update(frontier)
+
+            entity_map = await self._get_entity_map(session, list(visited_entities))
+
+            edges: list[KnowledgeRelationRead] = []
+            for rel in visited_relations.values():
+                edges.append(KnowledgeRelationRead(
+                    relation_id=rel.relation_id,
+                    source_entity_id=rel.source_entity_id,
+                    target_entity_id=rel.target_entity_id,
+                    relation_type=rel.relation_type,
+                    description=rel.description,
+                    evidence_id=rel.evidence_id,
+                    meta=rel.meta,
+                    created_by=rel.created_by,
+                    updated_by=rel.updated_by,
+                    created_by_user_id=rel.created_by_user_id,
+                    updated_by_user_id=rel.updated_by_user_id,
+                    created_at=rel.created_at,
+                    updated_at=rel.updated_at,
+                    source_entity=entity_map.get(rel.source_entity_id),
+                    target_entity=entity_map.get(rel.target_entity_id),
+                ))
+
+            return {
+                "nodes": [entity_map[eid] for eid in visited_entities if eid in entity_map],
+                "edges": edges,
+                "center": entity_id,
+                "depth": depth,
+            }
 
     async def update_relation(
         self,

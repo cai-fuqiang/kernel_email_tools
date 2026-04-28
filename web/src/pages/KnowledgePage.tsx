@@ -2,19 +2,22 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import EmailTagEditor from '../components/EmailTagEditor';
 import ThreadDrawer from '../components/ThreadDrawer';
+import KnowledgeGraphView from '../components/KnowledgeGraphView';
 import {
   createAnnotation,
   createKnowledgeEntity,
   createKnowledgeRelation,
+  deleteKnowledgeEntity,
   deleteKnowledgeRelation,
   getKnowledgeEntity,
+  getKnowledgeGraph,
   listAnnotations,
   listKnowledgeEntities,
   listKnowledgeRelations,
   updateKnowledgeRelation,
   updateKnowledgeEntity,
 } from '../api/client';
-import type { AnnotationListItem, KnowledgeEntity, KnowledgeRelation } from '../api/types';
+import type { AnnotationListItem, KnowledgeEntity, KnowledgeRelation, KnowledgeGraphResponse } from '../api/types';
 import { useAuth } from '../auth';
 
 const DEFAULT_ENTITY_TYPE = 'concept';
@@ -146,7 +149,12 @@ export default function KnowledgePage() {
     target_entity_id: '',
     description: '',
   });
+  const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
+  const [graphDepth, setGraphDepth] = useState(1);
+  const [graphData, setGraphData] = useState<KnowledgeGraphResponse | null>(null);
+  const [graphLoading, setGraphLoading] = useState(false);
   const [relationDrafts, setRelationDrafts] = useState<Record<string, string>>({});
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedThread, setSelectedThread] = useState<ThreadFocus | null>(null);
 
   const loadEntities = useCallback(async () => {
@@ -241,6 +249,25 @@ export default function KnowledgePage() {
   useEffect(() => {
     loadRelations();
   }, [loadRelations]);
+
+  const loadGraph = useCallback(async (depth: number) => {
+    if (!selectedEntityId) return;
+    setGraphLoading(true);
+    try {
+      const data = await getKnowledgeGraph(selectedEntityId, depth);
+      setGraphData(data);
+    } catch {
+      setGraphData(null);
+    } finally {
+      setGraphLoading(false);
+    }
+  }, [selectedEntityId]);
+
+  useEffect(() => {
+    if (viewMode === 'graph') {
+      loadGraph(graphDepth);
+    }
+  }, [viewMode, graphDepth, loadGraph]);
 
   const selectedAliases = useMemo(
     () => (selectedEntity?.aliases || []).join(', '),
@@ -372,6 +399,37 @@ export default function KnowledgePage() {
       await loadRelations();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to delete relation');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteEntity = async (forceDelete: boolean) => {
+    if (!selectedEntity || !canWrite) return;
+    setSaving(true);
+    setError('');
+    try {
+      await deleteKnowledgeEntity(selectedEntity.entity_id, forceDelete);
+      setShowDeleteConfirm(false);
+      setSelectedEntity(null);
+      setSearchParams({}, { replace: true });
+      await loadEntities();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to delete entity';
+      try {
+        const jsonPart = msg.split(': ').slice(1).join(': ') || msg;
+        const parsed = JSON.parse(jsonPart);
+        const blocked = parsed?.blocked_by || parsed?.detail?.blocked_by;
+        if (blocked) {
+          setError(
+            `Cannot delete: ${blocked.length} relation(s) exist. Force delete will also remove them.`
+          );
+        } else {
+          setError(msg);
+        }
+      } catch {
+        setError(msg);
+      }
     } finally {
       setSaving(false);
     }
@@ -568,9 +626,61 @@ export default function KnowledgePage() {
                 </div>
                 <div className="w-72 shrink-0">
                   <EmailTagEditor targetType="knowledge_entity" targetRef={selectedEntity.entity_id} />
+                  {canWrite && (
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteConfirm(true)}
+                      className="mt-3 w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                    >
+                      Delete entity
+                    </button>
+                  )}
                 </div>
               </div>
             </section>
+
+            {showDeleteConfirm && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+                  <h3 className="text-lg font-semibold text-gray-950">Delete &ldquo;{selectedEntity.canonical_name}&rdquo;?</h3>
+                  <p className="mt-2 text-sm leading-5 text-gray-600">
+                    This will permanently delete this knowledge entity and its tag assignments.
+                    {relationCount > 0 && (
+                      <span className="mt-1 block font-medium text-red-600">
+                        Warning: {relationCount} relation(s) exist. Use force delete to also remove them.
+                      </span>
+                    )}
+                  </p>
+                  <div className="mt-6 flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    {relationCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteEntity(true)}
+                        disabled={saving}
+                        className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                      >
+                        Force delete (with relations)
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteEntity(false)}
+                      disabled={saving}
+                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {relationCount > 0 ? 'Try delete' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <section className="grid gap-3 md:grid-cols-5">
               <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -652,10 +762,75 @@ export default function KnowledgePage() {
                     Start the knowledge graph with explicit, reviewable relationships between concepts.
                   </p>
                 </div>
-                <div className="text-sm text-gray-400">
-                  {relationLoading ? 'Loading...' : `${relationCount} relations`}
+                <div className="flex items-center gap-3">
+                  <div className="text-sm text-gray-400">
+                    {relationLoading ? 'Loading...' : `${relationCount} relations`}
+                  </div>
+                  <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('list')}
+                      className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+                        viewMode === 'list'
+                          ? 'bg-white text-gray-950 shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      List
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('graph')}
+                      className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+                        viewMode === 'graph'
+                          ? 'bg-white text-gray-950 shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Graph
+                    </button>
+                  </div>
                 </div>
               </div>
+
+              {viewMode === 'graph' ? (
+                <div className="mt-4">
+                  <div className="mb-3 flex items-center gap-3">
+                    <span className="text-xs font-medium text-gray-500">Depth:</span>
+                    {[1, 2, 3].map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setGraphDepth(d)}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                          graphDepth === d
+                            ? 'bg-indigo-600 text-white'
+                            : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        {d} hop{d > 1 ? 's' : ''}
+                      </button>
+                    ))}
+                  </div>
+                  {graphLoading ? (
+                    <div className="flex h-[520px] items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-500">
+                      Loading graph...
+                    </div>
+                  ) : graphData && graphData.nodes.length > 0 ? (
+                    <KnowledgeGraphView
+                      nodes={graphData.nodes}
+                      edges={graphData.edges}
+                      centerEntityId={selectedEntity.entity_id}
+                      onNodeClick={(entityId) => setSearchParams({ entity_id: entityId })}
+                    />
+                  ) : (
+                    <div className="flex h-[200px] items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-500">
+                      No graph data available.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
 
               {canWrite && (
                 <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
@@ -809,6 +984,8 @@ export default function KnowledgePage() {
                   </div>
                 </div>
               </div>
+                </>
+              )}
             </section>
 
             <section className="rounded-xl border border-gray-200 bg-white p-5">

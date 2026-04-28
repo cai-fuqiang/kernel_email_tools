@@ -67,7 +67,10 @@ from src.storage.tag_store import (
 )
 from src.storage.translation_cache import TranslationCacheStore
 from src.storage.annotation_store import AnnotationStore
+from src.kernel_source.base import BaseKernelSource
 from src.kernel_source.git_local import GitLocalSource
+from src.kernel_source.elixir import ElixirSource
+from src.kernel_source.fallback import FallbackKernelSource
 from src.translator.base import TranslationError
 from src.translator.google_translator import GoogleTranslator, is_available as is_translator_available
 
@@ -97,7 +100,7 @@ _translation_jobs_by_thread: dict[str, str] = {}
 _annotation_store: Optional[AnnotationStore] = None
 
 # 内核源码浏览组件
-_kernel_source: Optional[GitLocalSource] = None
+_kernel_source: Optional[BaseKernelSource] = None
 
 _knowledge_store: Optional[KnowledgeStore] = None
 
@@ -768,11 +771,17 @@ async def lifespan(app: FastAPI):
         expanded = os.path.expanduser(kernel_repo_path)
         if os.path.isdir(expanded):
             cache_cfg = kernel_cfg.get("cache", {})
-            _kernel_source = GitLocalSource(
+            _git_source = GitLocalSource(
                 repo_path=kernel_repo_path,
                 max_file_size=kernel_cfg.get("max_file_size", 1_048_576),
                 tree_cache_size=cache_cfg.get("tree_cache_size", 256),
                 file_cache_size=cache_cfg.get("file_cache_size", 128),
+            )
+            # 用 elixir.bootlin.com 作为回退：当本地 git 缺少 tag 时（如 3.15.8），
+            # 自动从 elixir 抓取源码
+            _kernel_source = FallbackKernelSource(
+                primary=_git_source,
+                fallback=ElixirSource(),
             )
             logger.info(f"Kernel source initialized: {expanded}")
         else:
@@ -3845,6 +3854,56 @@ async def update_knowledge_entity(
     if entity is None:
         raise HTTPException(status_code=404, detail="Knowledge entity not found")
     return entity
+
+
+@app.delete("/api/knowledge/entities/{entity_id:path}")
+async def delete_knowledge_entity(
+    entity_id: str,
+    force: bool = Query(False, description="强制删除，级联删除关联关系"),
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    """删除知识实体。
+
+    - force=false: 若存在关联关系则返回 409，列出阻挡的关系。
+    - force=true: 级联删除所有关联关系和标签分配。
+    """
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+
+    ok, blocked = await _knowledge_store.delete_entity(entity_id, force=force)
+    if not ok and not blocked:
+        raise HTTPException(status_code=404, detail="Knowledge entity not found")
+    if not ok:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Entity has relations. Use force=true to cascade delete.",
+                "blocked_by": blocked,
+            },
+        )
+    return {"deleted": True}
+
+
+@app.get("/api/knowledge/entities/{entity_id:path}/graph")
+async def get_knowledge_graph(
+    entity_id: str,
+    depth: int = Query(2, ge=1, le=3, description="遍历深度（1-3）"),
+    relation_type: str = Query("", description="关系类型过滤，逗号分隔"),
+):
+    """获取以指定实体为中心的邻域子图（BFS 遍历）。
+
+    Returns:
+        nodes: 子图中的所有实体。
+        edges: 子图中的所有关系（含 source_entity/target_entity 详情）。
+        center: 中心实体 ID。
+        depth: 实际遍历深度。
+    """
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+
+    types = [t.strip() for t in relation_type.split(",") if t.strip()] if relation_type else None
+    graph = await _knowledge_store.get_graph(entity_id, depth=depth, relation_types=types)
+    return graph
 
 
 # ============================================================

@@ -493,6 +493,13 @@ export interface KnowledgeRelationListResponse {
   incoming: KnowledgeRelation[];
 }
 
+export interface KnowledgeGraphResponse {
+  nodes: KnowledgeEntity[];
+  edges: KnowledgeRelation[];
+  center: string;
+  depth: number;
+}
+
 // ============================================================
 // 内核源码浏览相关类型 (PLAN-10000)
 // ============================================================

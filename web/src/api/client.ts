@@ -966,6 +966,29 @@ export async function listKnowledgeRelations(entityId: string): Promise<Knowledg
   );
 }
 
+export async function deleteKnowledgeEntity(
+  entityId: string,
+  force = false,
+): Promise<{ deleted: boolean }> {
+  const params = force ? '?force=true' : '';
+  return fetchWithBody<{ deleted: boolean }>(
+    `${API_BASE}/knowledge/entities/${encodeURIComponent(entityId)}${params}`,
+    { method: 'DELETE' },
+  );
+}
+
+export async function getKnowledgeGraph(
+  entityId: string,
+  depth = 2,
+  relationType?: string,
+): Promise<import('./types').KnowledgeGraphResponse> {
+  const params = new URLSearchParams({ depth: String(depth) });
+  if (relationType) params.set('relation_type', relationType);
+  return fetchJSON<import('./types').KnowledgeGraphResponse>(
+    `${API_BASE}/knowledge/entities/${encodeURIComponent(entityId)}/graph?${params}`
+  );
+}
+
 export async function createKnowledgeRelation(data: {
   source_entity_id: string;
   target_entity_id: string;
