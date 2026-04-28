@@ -640,8 +640,8 @@ async def lifespan(app: FastAPI):
     global _manual_storage, _manual_retriever, _manual_qa
     global _translator, _translation_cache
     global _annotation_store
-    global _kernel_source, _knowledge_store
-    global _auth_config
+    global _kernel_source, _knowledge_store, _ask_store
+    global _auth_config, _app_config
 
     config = _load_config()
     storage_cfg = config.get("storage", {})
