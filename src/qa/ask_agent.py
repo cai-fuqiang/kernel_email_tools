@@ -25,6 +25,9 @@ Return only JSON."""
 PLAN_USER_TEMPLATE = """Question:
 {question}
 
+Conversation context:
+{conversation_context}
+
 Available filters:
 list_name={list_name}
 sender={sender}
@@ -40,6 +43,23 @@ Return JSON with this shape:
   "rationale": "brief explanation"
 }}
 Use at most 6 keyword queries and 3 semantic queries."""
+
+REWRITE_SYSTEM_PROMPT = """You rewrite follow-up questions for Linux kernel mailing list research.
+Given recent conversation turns, produce a standalone research question that preserves the
+user's intent, concrete kernel terms, cited Message-IDs, subsystem names, versions, and dates.
+If the latest question is already standalone, return it unchanged. Return only JSON."""
+
+REWRITE_USER_TEMPLATE = """Recent conversation:
+{conversation_context}
+
+Latest user question:
+{question}
+
+Return JSON:
+{{
+  "standalone_question": "self-contained question for retrieval",
+  "rationale": "brief note"
+}}"""
 
 QUERY_TRANSLATION_HINTS = {
     "为什么": "why rationale reason",
@@ -81,6 +101,9 @@ Answer in the same language as the user's question."""
 ANSWER_USER_TEMPLATE = """Question:
 {question}
 
+Conversation context:
+{conversation_context}
+
 Search plan:
 {plan}
 
@@ -91,6 +114,22 @@ Relevant thread context:
 {threads}
 
 Write the final answer using only the evidence above. Include citations like [Message-ID]."""
+
+
+def _clean_history(history: Optional[list[dict]], limit: int = 6) -> list[dict]:
+    cleaned: list[dict] = []
+    for item in (history or [])[-limit:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip().lower()
+        content = str(item.get("content") or "").strip()
+        if role not in {"user", "assistant"} or not content:
+            continue
+        cleaned.append({
+            "role": role,
+            "content": content[:2000],
+        })
+    return cleaned
 
 
 @dataclass
@@ -169,15 +208,27 @@ class AskAgent:
         date_from: Optional[datetime] = None,
         date_to: Optional[datetime] = None,
         tags: Optional[list[str]] = None,
+        history: Optional[list[dict]] = None,
     ) -> AskAgentAnswer:
-        plan = await self._build_search_plan(question, list_name, sender, date_from, date_to, tags)
+        cleaned_history = _clean_history(history)
+        conversation_context = self._format_history(cleaned_history)
+        retrieval_question, rewrite_meta = await self._rewrite_question(question, cleaned_history)
+        plan = await self._build_search_plan(
+            retrieval_question,
+            list_name,
+            sender,
+            date_from,
+            date_to,
+            tags,
+            conversation_context,
+        )
         chunks, executed = await self._retrieve_chunks(
-            plan, question, list_name, sender, date_from, date_to, tags
+            plan, retrieval_question, list_name, sender, date_from, date_to, tags
         )
         sources = self._select_sources(chunks)
         threads = await self._expand_threads(sources)
 
-        answer_text = await self._answer(question, plan, sources, threads)
+        answer_text = await self._answer(question, conversation_context, plan, sources, threads)
         if not answer_text:
             answer_text = self._fallback_answer(question, sources)
 
@@ -194,8 +245,40 @@ class AskAgent:
                 "thread_count": len(threads),
                 "query_count": len(executed),
                 "vector_enabled": bool(self.embedding_provider),
+                "history_turns": len(cleaned_history),
+                "standalone_question": retrieval_question,
+                "rewrite": rewrite_meta,
             },
         )
+
+    async def _rewrite_question(self, question: str, history: list[dict]) -> tuple[str, dict]:
+        if not history:
+            return question, {"rewritten": False}
+        context = self._format_history(history)
+        raw = await self.llm.complete(
+            REWRITE_SYSTEM_PROMPT,
+            REWRITE_USER_TEMPLATE.format(conversation_context=context, question=question),
+            temperature=0.0,
+            max_tokens=500,
+        )
+        parsed = parse_json_object(raw) if raw else None
+        standalone = str((parsed or {}).get("standalone_question") or "").strip()
+        if not standalone:
+            standalone = f"{context}\n\nFollow-up question: {question}"
+        return standalone, {
+            "rewritten": standalone != question,
+            "original_question": question,
+            "rationale": str((parsed or {}).get("rationale") or ""),
+        }
+
+    def _format_history(self, history: list[dict]) -> str:
+        if not history:
+            return "None"
+        lines = []
+        for item in history[-6:]:
+            label = "User" if item["role"] == "user" else "Assistant"
+            lines.append(f"{label}: {item['content']}")
+        return "\n\n".join(lines)
 
     async def _build_search_plan(
         self,
@@ -205,9 +288,11 @@ class AskAgent:
         date_from: Optional[datetime],
         date_to: Optional[datetime],
         tags: Optional[list[str]],
+        conversation_context: str = "None",
     ) -> dict:
         prompt = PLAN_USER_TEMPLATE.format(
             question=question,
+            conversation_context=conversation_context,
             list_name=list_name or "",
             sender=sender or "",
             date_from=date_from.isoformat() if date_from else "",
@@ -232,6 +317,7 @@ class AskAgent:
                     "semantic_queries": semantic_queries or [question],
                     "rationale": str(parsed.get("rationale") or ""),
                     "planner": "llm",
+                    "standalone_question": question,
                 }
         fallback_queries = self._fallback_queries(question)
         return {
@@ -240,6 +326,7 @@ class AskAgent:
             "semantic_queries": fallback_queries[:3],
             "rationale": "Fallback plan because LLM planning was unavailable.",
             "planner": "fallback",
+            "standalone_question": question,
         }
 
     def _augment_queries(self, question: str, queries: list[str]) -> list[str]:
@@ -436,6 +523,7 @@ class AskAgent:
     async def _answer(
         self,
         question: str,
+        conversation_context: str,
         plan: dict,
         sources: list[AskSource],
         threads: list[ThreadSummary],
@@ -462,6 +550,7 @@ class AskAgent:
             ANSWER_SYSTEM_PROMPT,
             ANSWER_USER_TEMPLATE.format(
                 question=question,
+                conversation_context=conversation_context,
                 plan=plan,
                 evidence=evidence[:12000],
                 threads=thread_text[:12000],

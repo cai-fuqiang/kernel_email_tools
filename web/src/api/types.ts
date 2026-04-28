@@ -80,6 +80,11 @@ export interface AskResponse {
   retrieval_stats: Record<string, unknown>;
 }
 
+export interface AskMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface AskKnowledgeDraft {
   selected: boolean;
   entity_type: string;

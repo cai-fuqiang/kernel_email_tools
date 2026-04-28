@@ -917,6 +917,21 @@ class AskResponse(BaseModel):
     retrieval_stats: dict = Field(default_factory=dict)
 
 
+class AskMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(..., min_length=1, max_length=12000)
+
+
+class AskRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=4000)
+    history: list[AskMessage] = Field(default_factory=list, max_length=12)
+    list_name: Optional[str] = None
+    sender: Optional[str] = None
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
+    tags: list[str] = Field(default_factory=list)
+
+
 class DraftRequest(BaseModel):
     """生成草稿请求."""
     query: str = Field("", description="原始搜索关键词")
@@ -2182,30 +2197,20 @@ async def search(
     )
 
 
-@app.get("/api/ask", response_model=AskResponse)
-async def ask(
-    q: str = Query(..., min_length=1, description="问题"),
-    list_name: Optional[str] = Query(None, description="限定邮件列表"),
-    sender: Optional[str] = Query(None, description="发件人模糊匹配"),
-    date_from: Optional[datetime] = Query(None, description="起始日期 (ISO 格式)"),
-    date_to: Optional[datetime] = Query(None, description="结束日期 (ISO 格式)"),
-    tags: Optional[str] = Query(None, description="标签列表（逗号分隔，如 memory,vm）"),
-):
+@app.post("/api/ask", response_model=AskResponse)
+async def ask(request: AskRequest):
     """Agentic Ask — 生成检索计划、多路召回邮件证据并回答。"""
     if not _qa:
         raise HTTPException(status_code=503, detail="Ask service not initialized")
 
-    tag_list = None
-    if tags:
-        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-
     answer = await _qa.ask(
-        question=q,
-        list_name=list_name,
-        sender=sender,
-        date_from=date_from,
-        date_to=date_to,
-        tags=tag_list,
+        question=request.question,
+        list_name=request.list_name,
+        sender=request.sender,
+        date_from=request.date_from,
+        date_to=request.date_to,
+        tags=[tag.strip() for tag in request.tags if tag.strip()],
+        history=[item.model_dump() for item in request.history],
     )
 
     return AskResponse(

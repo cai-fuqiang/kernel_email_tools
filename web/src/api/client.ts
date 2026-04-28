@@ -1,6 +1,7 @@
 import type {
   SearchHit,
   SearchResponse,
+  AskMessage,
   AskResponse,
   SummarizeResponse,
   AskDraftApplyResponse,
@@ -463,22 +464,30 @@ export interface AskOptions {
   date_from?: string;
   date_to?: string;
   tags?: string | string[];
+  history?: AskMessage[];
 }
 
 export async function askQuestion(
   question: string,
   opts: AskOptions = {},
 ): Promise<AskResponse> {
-  const params = new URLSearchParams({ q: question });
-  if (opts.list_name) params.set('list_name', opts.list_name);
-  if (opts.sender) params.set('sender', opts.sender);
-  if (opts.date_from) params.set('date_from', opts.date_from);
-  if (opts.date_to) params.set('date_to', opts.date_to);
-  if (opts.tags) {
-    const tags = Array.isArray(opts.tags) ? opts.tags.join(',') : opts.tags;
-    params.set('tags', tags);
-  }
-  return fetchJSON<AskResponse>(`${API_BASE}/ask?${params}`);
+  return fetchWithBody<AskResponse>(`${API_BASE}/ask`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      question,
+      history: opts.history || [],
+      list_name: opts.list_name,
+      sender: opts.sender,
+      date_from: opts.date_from,
+      date_to: opts.date_to,
+      tags: Array.isArray(opts.tags)
+        ? opts.tags
+        : opts.tags
+          ? opts.tags.split(',').map((tag) => tag.trim()).filter(Boolean)
+          : [],
+    }),
+  });
 }
 
 export async function createAskDraft(answer: AskResponse): Promise<AskDraftResponse> {
