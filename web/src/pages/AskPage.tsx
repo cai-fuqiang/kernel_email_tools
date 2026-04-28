@@ -190,14 +190,20 @@ export default function AskPage() {
     try {
       const res = await listAskConversations(1, 50);
       setConversations(res.conversations);
+      return res.conversations;
     } catch {
       showToast('Failed to load conversation list', 'error');
+      return [];
     }
   }, []);
 
   useEffect(() => {
-    loadConversationList();
-  }, [loadConversationList]);
+    loadConversationList().then((convs) => {
+      if (convs.length > 0 && !conversationId) {
+        loadConversation(convs[0].conversation_id);
+      }
+    });
+  }, [loadConversationList]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-save after turns change (when a turn completes)
   useEffect(() => {
@@ -216,9 +222,12 @@ export default function AskPage() {
     }).then((saved) => {
       if (!convId) {
         setConversationId(saved.conversation_id);
+        showToast('Conversation saved', 'success');
       }
       loadConversationList();
-    }).catch(() => {}).finally(() => {
+    }).catch((e) => {
+      showToast(`Failed to save: ${e instanceof Error ? e.message : 'Unknown error'}`, 'error');
+    }).finally(() => {
       savingRef.current = false;
     });
   }, [turns, conversationId, loadConversationList]);
@@ -229,8 +238,8 @@ export default function AskPage() {
       const conv = await getAskConversation(convId);
       setConversationId(conv.conversation_id);
       setTurns(turnsFromLoaded(conv.turns));
-    } catch {
-      // silently ignore
+    } catch (e) {
+      showToast(`Failed to load conversation: ${e instanceof Error ? e.message : 'Unknown error'}`, 'error');
     } finally {
       setConvLoading(false);
     }
@@ -249,8 +258,9 @@ export default function AskPage() {
         setConversationId('');
       }
       await loadConversationList();
-    } catch {
-      // silently ignore
+      showToast('Conversation deleted', 'info');
+    } catch (e) {
+      showToast(`Failed to delete: ${e instanceof Error ? e.message : 'Unknown error'}`, 'error');
     }
   };
 
@@ -518,7 +528,7 @@ export default function AskPage() {
               </div>
             )}
 
-            {turns.map((turn) => (
+            {[...turns].reverse().map((turn) => (
               <ConversationCard
                 key={turn.id}
                 turn={turn}
