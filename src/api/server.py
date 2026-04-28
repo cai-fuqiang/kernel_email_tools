@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import logging
+import os
 import re
 import secrets
 import uuid
@@ -34,6 +35,7 @@ from src.storage.models import (
     AnnotationRead,
     AnnotationUpdate,
     CurrentUserRead,
+    EmailORM,
     EmailRead,
     KnowledgeEntityCreate,
     KnowledgeEntityRead,
@@ -116,6 +118,9 @@ _ask_store: Optional["AskStore"] = None
 
 # 认证配置
 _auth_config: dict = {}
+
+# 全量应用配置（用于读取 email_collector 等非 auth 配置）
+_app_config: dict = {}
 
 VALID_ROLES = {"admin", "editor", "viewer"}
 VALID_VISIBILITY = {"public", "private"}
@@ -322,7 +327,7 @@ async def _maybe_bootstrap_admin() -> None:
         return
     bootstrap = _local_auth_config().get("bootstrap_admin", {}) or {}
     username = str(bootstrap.get("username", "")).strip()
-    password = str(bootstrap.get("password", "")).strip()
+    password = str(os.environ.get("KERNEL_ADMIN_PASSWORD") or bootstrap.get("password", "")).strip()
     if not username or not password:
         return
 
@@ -644,6 +649,7 @@ async def lifespan(app: FastAPI):
     qa_cfg = config.get("qa", {})
     indexer_cfg = config.get("indexer", {})
     _auth_config = config.get("auth", {})
+    _app_config = config
 
     # ========== 邮件存储初始化 ==========
     email_storage_cfg = storage_cfg.get("email", {})
@@ -1884,6 +1890,23 @@ async def get_tag_stats(current_user: Optional[CurrentUser] = Depends(get_option
     return await _tag_store.get_tag_stats(
         viewer_user_id=current_user.user_id if current_user else None
     )
+
+
+@app.get("/api/channels")
+async def get_channels():
+    """获取可用的邮件 channel 列表（来自配置文件 email_collector.local_channels）。"""
+    channels_config = _app_config.get("email_collector", {}).get("local_channels", [])
+    if not channels_config:
+        # 从数据库获取 distinct list_name 作为降级方案
+        if _storage:
+            async with _storage.session_factory() as session:
+                result = await session.execute(
+                    select(EmailORM.list_name).distinct()
+                )
+                names = [row[0] for row in result.fetchall() if row[0]]
+                return [{"value": name, "label": name.upper()} for name in sorted(names)]
+        return []
+    return [{"value": ch["name"], "label": ch["name"].upper()} for ch in channels_config]
 
 
 @app.get("/api/tags/{tag_name}/emails")

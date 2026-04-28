@@ -142,6 +142,10 @@ export async function getTagTree(flat: boolean = false): Promise<TagTree[]> {
   return fetchJSON<TagTree[]>(`${API_BASE}/tags${params}`);
 }
 
+export async function getChannels(): Promise<{ value: string; label: string }[]> {
+  return fetchJSON<{ value: string; label: string }[]>(`${API_BASE}/channels`);
+}
+
 export async function getTagStats(): Promise<TagStats[]> {
   return fetchJSON<TagStats[]>(`${API_BASE}/tags/stats`);
 }

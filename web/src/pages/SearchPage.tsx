@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { ChevronDown, Search, Sparkles } from 'lucide-react';
-import { searchEmails, getTagStats, summarizeSearchResults, createSummaryDraft, applySummaryDraft, type TagStats } from '../api/client';
-import type { SearchResponse, SearchHit, SummarizeResponse, AskDraftResponse, SourceRef } from '../api/types';
+import { searchEmails, getTagStats, getChannels, summarizeSearchResults, createSummaryDraft, applySummaryDraft, type TagStats } from '../api/client';
+import type { SearchResponse, SearchHit, SummarizeResponse, AskDraftResponse, SourceRef, ChannelOption } from '../api/types';
 import ThreadDrawer from '../components/ThreadDrawer';
 import TagFilter from '../components/TagFilter';
 import EmailTagEditor from '../components/EmailTagEditor';
 import DraftReviewPanel from '../components/DraftReviewPanel';
 import type { AskDraftApplyResponse } from '../api/types';
-import { EmptyState, PageHeader, PageShell, PrimaryButton, SecondaryButton, SectionPanel, StatusBadge } from '../components/ui';
+import { EmptyState, PageHeader, PageShell, PrimaryButton, SecondaryButton, SectionPanel, SkeletonCard, StatusBadge } from '../components/ui';
+import { showToast } from '../components/Toast';
 
 function escapeHtml(text: string): string {
   return text
@@ -85,7 +86,6 @@ export default function SearchPage() {
   const [mode, setMode] = useState('hybrid');
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [selectedThread, setSelectedThread] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [tagStats, setTagStats] = useState<TagStats[]>([]);
@@ -109,18 +109,13 @@ export default function SearchPage() {
 
   // Channel/channel 选择状态
   const [selectedChannel, setSelectedChannel] = useState<string>('');
-  
+  const [channelOptions, setChannelOptions] = useState<ChannelOption[]>([{ value: '', label: 'All Channels' }]);
 
-  // 预定义的 channel 列表（与 settings.yaml 的 local_channels 对应）
-  const CHANNEL_OPTIONS = [
-    { value: '', label: 'All Channels' },
-    { value: 'kvm', label: 'KVM' },
-    { value: 'linux-mm', label: 'Linux-MM' },
-    { value: 'lkml', label: 'LKML' },
-  ];
-
-  // 加载标签统计
+  // 加载 channel 列表和标签统计
   useEffect(() => {
+    getChannels().then((channels) => {
+      setChannelOptions([{ value: '', label: 'All Channels' }, ...channels]);
+    }).catch(() => {});
     getTagStats().then(setTagStats).catch(() => {});
   }, []);
 
@@ -131,7 +126,6 @@ export default function SearchPage() {
     // 至少要有关键词或过滤条件
     if (!query.trim() && !hasFilters) return;
     setLoading(true);
-    setError('');
     setPage(p);
     try {
       const data = await searchEmails(query, {
@@ -148,7 +142,7 @@ export default function SearchPage() {
       });
       setResult(data);
     } catch (e: any) {
-      setError(e.message);
+      showToast(e.message || 'Search failed', 'error');
     } finally {
       setLoading(false);
     }
@@ -187,7 +181,7 @@ export default function SearchPage() {
       });
       setSummary(resp);
     } catch (e: any) {
-      setError(e.message);
+      showToast(e.message || 'Summarize failed', 'error');
     } finally {
       setSummarizing(false);
     }
@@ -212,7 +206,7 @@ export default function SearchPage() {
       setDraftBundle(bundle);
       setShowDraftPanel(true);
     } catch (e: any) {
-      setError(e.message);
+      showToast(e.message || 'Create draft failed', 'error');
     } finally {
       setDraftLoading(false);
     }
@@ -225,10 +219,10 @@ export default function SearchPage() {
       const resp = await applySummaryDraft(draftBundle);
       setDraftSaved(resp);
       if (resp.errors.length > 0) {
-        setError(`Draft saved with ${resp.errors.length} error(s): ${resp.errors.map(e => e.message).join(', ')}`);
+        showToast(`Draft saved with ${resp.errors.length} error(s): ${resp.errors.map(e => e.message).join(', ')}`, 'error');
       }
     } catch (e: any) {
-      setError(e.message);
+      showToast(e.message || 'Apply draft failed', 'error');
     } finally {
       setDraftLoading(false);
     }
@@ -278,7 +272,7 @@ export default function SearchPage() {
           onChange={(e) => setSelectedChannel(e.target.value)}
           className="rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
         >
-          {CHANNEL_OPTIONS.map(opt => (
+          {channelOptions.map(opt => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
@@ -422,12 +416,6 @@ export default function SearchPage() {
         </div>
       )}
       </SectionPanel>
-
-      {error && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </div>
-      )}
 
       {result && (
         <SectionPanel>
@@ -576,6 +564,16 @@ export default function SearchPage() {
               </button>
             </div>
           )}
+        </SectionPanel>
+      )}
+
+      {loading && (
+        <SectionPanel title="Searching...">
+          <div className="space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
+          </div>
         </SectionPanel>
       )}
 

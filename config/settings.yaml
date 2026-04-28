@@ -104,7 +104,7 @@ qa:
   email:
     llm_provider: dashscope              # openai | anthropic | dashscope | minimax
     model: qwen3-coder-plus          # 千问模型
-    api_key: "sk-ae19a6f47bf94122ae253ded970a6b9d"                          # API Key
+    api_key: ""                          # API Key, set DASHSCOPE_API_KEY env var
   manual:
     llm_provider: openai
     model: gpt-4
@@ -129,7 +129,7 @@ auth:
     cookie_secure: false
     bootstrap_admin:
       username: admin
-      password: admin123456
+      password: ""                         # Set KERNEL_ADMIN_PASSWORD env var
       display_name: System Admin
       email: admin@example.com
   headers:

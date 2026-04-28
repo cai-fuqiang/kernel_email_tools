@@ -179,6 +179,31 @@ export function IconButton({
   );
 }
 
+export function SkeletonLine({ className = '' }: { className?: string }) {
+  return <div className={cx('h-4 animate-pulse rounded bg-slate-200', className)} />;
+}
+
+export function SkeletonBlock({ className = '' }: { className?: string }) {
+  return <div className={cx('animate-pulse rounded-lg bg-slate-200', className)} />;
+}
+
+export function SkeletonCard() {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+      <div className="flex items-center gap-3">
+        <SkeletonBlock className="h-10 w-10 rounded-full" />
+        <div className="flex-1 space-y-2">
+          <SkeletonLine className="w-3/4" />
+          <SkeletonLine className="w-1/2" />
+        </div>
+      </div>
+      <SkeletonLine className="w-full" />
+      <SkeletonLine className="w-5/6" />
+      <SkeletonLine className="w-2/3" />
+    </div>
+  );
+}
+
 export function MetricCard({
   label,
   value,

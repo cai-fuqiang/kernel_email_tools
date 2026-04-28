@@ -4,15 +4,17 @@ import {
   askQuestion,
   deleteAskConversation,
   getAskConversation,
+  getChannels,
   getTagStats,
   listAskConversations,
   saveAskConversation,
   type TagStats,
 } from '../api/client';
-import type { AskConversationListItem, AskMessage, AskResponse, AskTurn, SourceRef } from '../api/types';
+import type { AskConversationListItem, AskMessage, AskResponse, AskTurn, SourceRef, ChannelOption } from '../api/types';
 import AskDraftPanel from '../components/AskDraftPanel';
 import ThreadDrawer from '../components/ThreadDrawer';
-import { EmptyState, PageHeader, PrimaryButton, SecondaryButton, SectionPanel, StatusBadge } from '../components/ui';
+import { EmptyState, PageHeader, PrimaryButton, SecondaryButton, SectionPanel, SkeletonBlock, SkeletonCard, SkeletonLine, StatusBadge } from '../components/ui';
+import { showToast } from '../components/Toast';
 
 type ThreadFocus = {
   threadId: string;
@@ -156,13 +158,6 @@ function turnsFromLoaded(loaded: AskTurn[]): ConversationTurn[] {
   }));
 }
 
-const CHANNEL_OPTIONS = [
-  { value: '', label: 'All Channels' },
-  { value: 'kvm', label: 'KVM' },
-  { value: 'linux-mm', label: 'Linux-MM' },
-  { value: 'lkml', label: 'LKML' },
-];
-
 export default function AskPage() {
   const [question, setQuestion] = useState('');
   const [sender, setSender] = useState('');
@@ -175,6 +170,7 @@ export default function AskPage() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedThread, setSelectedThread] = useState<ThreadFocus | null>(null);
   const [selectedChannel, setSelectedChannel] = useState('');
+  const [channelOptions, setChannelOptions] = useState<ChannelOption[]>([{ value: '', label: 'All Channels' }]);
 
   // Conversation history state
   const [conversationId, setConversationId] = useState<string>('');
@@ -184,6 +180,9 @@ export default function AskPage() {
   const savingRef = useRef(false);
 
   useEffect(() => {
+    getChannels().then((channels) => {
+      setChannelOptions([{ value: '', label: 'All Channels' }, ...channels]);
+    }).catch(() => {});
     getTagStats().then(setTagStats).catch(() => {});
   }, []);
 
@@ -192,7 +191,7 @@ export default function AskPage() {
       const res = await listAskConversations(1, 50);
       setConversations(res.conversations);
     } catch {
-      // silently ignore
+      showToast('Failed to load conversation list', 'error');
     }
   }, []);
 
@@ -278,6 +277,7 @@ export default function AskPage() {
       setTurns((prev) => prev.map((turn) => turn.id === id ? { ...turn, response } : turn));
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Ask failed';
+      showToast(message, 'error');
       setTurns((prev) => prev.map((turn) => turn.id === id ? { ...turn, error: message } : turn));
     } finally {
       setLoading(false);
@@ -386,7 +386,10 @@ export default function AskPage() {
           />
 
           {convLoading && (
-            <div className="mb-4 text-center text-sm text-gray-400">Loading conversation...</div>
+            <div className="mb-4 space-y-2">
+              <SkeletonLine className="w-1/3" />
+              <SkeletonLine className="w-1/2" />
+            </div>
           )}
 
           <SectionPanel title="Question" description="Use English or Chinese. The agent can expand query terms and cite source emails.">
@@ -404,7 +407,7 @@ export default function AskPage() {
               onChange={(e) => setSelectedChannel(e.target.value)}
               className="rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
             >
-              {CHANNEL_OPTIONS.map((opt) => (
+              {channelOptions.map((opt) =>(
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
@@ -452,7 +455,7 @@ export default function AskPage() {
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-600">Channel</label>
                   <select value={selectedChannel} onChange={(e) => setSelectedChannel(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
-                    {CHANNEL_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                    {channelOptions.map((opt) =><option key={opt.value} value={opt.value}>{opt.label}</option>)}
                   </select>
                 </div>
                 <div>
@@ -498,6 +501,21 @@ export default function AskPage() {
                 title="Ask over the archive"
                 description="Start with a mechanism, regression, patch discussion, or historical design question. Follow-ups keep prior turns as context."
               />
+            )}
+
+            {loading && (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-3">
+                  <SkeletonBlock className="h-6 w-1/3" />
+                  <SkeletonLine className="w-full" />
+                  <SkeletonLine className="w-5/6" />
+                  <SkeletonLine className="w-4/6" />
+                  <div className="pt-3 space-y-2">
+                    <SkeletonCard />
+                    <SkeletonCard />
+                  </div>
+                </div>
+              </div>
             )}
 
             {turns.map((turn) => (

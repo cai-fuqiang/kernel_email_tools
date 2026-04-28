@@ -3,12 +3,12 @@ import { Search } from 'lucide-react';
 import { searchManuals } from '../api/client';
 import type { ManualSearchResponse, ManualSearchHit } from '../api/types';
 import { EmptyState, PageHeader, PageShell, PrimaryButton, SectionPanel } from '../components/ui';
+import { showToast } from '../components/Toast';
 
 export default function ManualSearchPage() {
   const [query, setQuery] = useState('');
   const [result, setResult] = useState<ManualSearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
 
   // 过滤选项
   const [manualType, setManualType] = useState('');
@@ -17,7 +17,6 @@ export default function ManualSearchPage() {
   const handleSearch = async () => {
     if (!query.trim()) return;
     setLoading(true);
-    setError('');
     try {
       const data = await searchManuals(query, {
         manual_type: manualType || undefined,
@@ -27,7 +26,7 @@ export default function ManualSearchPage() {
       });
       setResult(data);
     } catch (e: any) {
-      setError(e.message);
+      showToast(e.message || 'Search failed', 'error');
     } finally {
       setLoading(false);
     }
@@ -97,12 +96,6 @@ export default function ManualSearchPage() {
       </div>
       </SectionPanel>
 
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-          {error}
-        </div>
-      )}
-
       {result && (
         <div>
           <p className="text-sm text-gray-500 mb-4">
@@ -117,11 +110,6 @@ export default function ManualSearchPage() {
         </div>
       )}
 
-      {!result && !loading && (
-        <div className="text-center py-20 text-gray-400">
-          <p>Enter a query to search chip manuals</p>
-        </div>
-      )}
       {!result && !loading && (
         <EmptyState title="Search manuals" description="Enter an instruction, register, or architecture concept to find relevant manual sections." />
       )}

@@ -2,12 +2,12 @@ import { useState } from 'react';
 import { askManualQuestion } from '../api/client';
 import type { ManualAskResponse } from '../api/types';
 import { PageHeader, PageShell, PrimaryButton, SectionPanel } from '../components/ui';
+import { showToast } from '../components/Toast';
 
 export default function ManualAskPage() {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState<ManualAskResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
 
   // 过滤选项
   const [manualType, setManualType] = useState('');
@@ -16,7 +16,6 @@ export default function ManualAskPage() {
   const handleAsk = async () => {
     if (!question.trim()) return;
     setLoading(true);
-    setError('');
     try {
       const data = await askManualQuestion(
         question,
@@ -25,7 +24,7 @@ export default function ManualAskPage() {
       );
       setAnswer(data);
     } catch (e: any) {
-      setError(e.message);
+      showToast(e.message || 'Ask failed', 'error');
     } finally {
       setLoading(false);
     }
@@ -91,12 +90,6 @@ export default function ManualAskPage() {
         </PrimaryButton>
       </div>
       </SectionPanel>
-
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-          {error}
-        </div>
-      )}
 
       {answer && (
         <div className="space-y-6">

@@ -1,6 +1,7 @@
 """Git 数据源采集器，从 lore.kernel.org git mirror 采集邮件。"""
 
 import email
+import email.errors
 import logging
 import os
 import re
@@ -124,7 +125,7 @@ class GitCollector(BaseCollector):
                 epoch=epoch,
                 commit_hash=str(commit.hexsha),
             )
-        except Exception as e:
+        except (GitCommandError, ValueError, KeyError, email.errors.MessageError) as e:
             logger.error("Failed to extract email from commit %s: %s", commit.hexsha[:8], e)
             return None
 
@@ -142,7 +143,7 @@ class GitCollector(BaseCollector):
         skipped = 0
         try:
             commit_iter = repo.iter_commits("HEAD")
-        except Exception:
+        except GitCommandError:
             logger.info("HEAD not available, using --all for bare repo")
             commit_iter = repo.iter_commits(all=True)
 

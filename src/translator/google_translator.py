@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import urllib.error
 import urllib.request
 import urllib.parse
 import json
@@ -151,7 +152,7 @@ class GoogleTranslator(BaseTranslator):
                 logger.warning(f"Empty translation result for: '{clean_text[:50]}...'")
                 return text
                 
-        except Exception as e:
+        except (urllib.error.URLError, json.JSONDecodeError, OSError, ValueError) as e:
             logger.error(f"Direct translation API failed: {e}")
             raise TranslationError(f"Translation failed: {str(e)}", original_error=e)
 
@@ -182,7 +183,7 @@ class GoogleTranslator(BaseTranslator):
                 try:
                     translation = await self.translate(text, source_lang, target_lang)
                     results.append(translation)
-                except Exception as e:
+                except TranslationError as e:
                     logger.warning(f"Failed to translate text: {e}")
                     results.append(text)  # 返回原文作为 fallback
 

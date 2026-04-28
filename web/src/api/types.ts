@@ -197,6 +197,11 @@ export interface TagStats {
   target_count: number;
 }
 
+export interface ChannelOption {
+  value: string;
+  label: string;
+}
+
 export interface TagAssignment {
   id: number;
   assignment_id: string;

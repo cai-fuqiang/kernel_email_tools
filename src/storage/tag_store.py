@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Select, and_, func, inspect, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.orm.attributes import NO_VALUE
 from sqlalchemy.orm import selectinload
@@ -352,7 +353,7 @@ class TagStore:
             session.add(assignment)
             try:
                 await session.commit()
-            except Exception:
+            except IntegrityError:
                 await session.rollback()
                 result = await session.execute(
                     select(TagAssignmentORM)

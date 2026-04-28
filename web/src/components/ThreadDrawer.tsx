@@ -1339,7 +1339,7 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
       setThread(t);
       rebuildTree(t);
     } catch (e) {
-      console.error('Failed to create annotation:', e);
+      showToast(`创建批注失败: ${e instanceof Error ? e.message : String(e)}`, 'error');
     }
   }, [threadId, rebuildTree]);
 
@@ -1350,7 +1350,7 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
       setThread(t);
       rebuildTree(t);
     } catch (e) {
-      console.error('Failed to update annotation:', e);
+      showToast(`更新批注失败: ${e instanceof Error ? e.message : String(e)}`, 'error');
     }
   }, [threadId, rebuildTree]);
 
@@ -1362,7 +1362,7 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
         setThread(t);
         rebuildTree(t);
       } catch (e) {
-        console.error('Failed to delete annotation:', e);
+        showToast(`删除批注失败: ${e instanceof Error ? e.message : String(e)}`, 'error');
       }
     });
   }, [threadId, rebuildTree, openConfirm]);
@@ -1378,7 +1378,7 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      console.error('Failed to export annotations:', e);
+      showToast(`导出批注失败: ${e instanceof Error ? e.message : String(e)}`, 'error');
     }
   }, [threadId]);
 
@@ -1399,10 +1399,9 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
           setThread(t);
           rebuildTree(t);
         }
-        alert(`导入完成：${result.total_imported} 条批注`);
+        showToast(`导入完成：${result.total_imported} 条批注`, 'success');
       } catch (err) {
-        console.error('Failed to import annotations:', err);
-        alert('导入失败：' + (err instanceof Error ? err.message : String(err)));
+        showToast(`导入失败：${err instanceof Error ? err.message : String(err)}`, 'error');
       }
     };
     input.click();
@@ -1435,7 +1434,7 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
         const nextJob = await getTranslationJob(translationJob.job_id);
         setTranslationJob(nextJob);
       } catch (e) {
-        console.error('Failed to poll translation job:', e);
+        // 轮询失败静默处理，下次间隔会重试
       }
     }, 1000);
 
@@ -1553,7 +1552,7 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
       const job = await startThreadTranslation(thread.thread_id || threadId, 'auto', 'zh-CN');
       setTranslationJob(job);
     } catch (e) {
-      console.error('Failed to start translation job:', e);
+      showToast(`启动翻译失败: ${e instanceof Error ? e.message : String(e)}`, 'error');
       setTranslating(false);
     }
   }, [thread, threadId, translating]);

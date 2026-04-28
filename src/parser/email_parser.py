@@ -1,6 +1,7 @@
 """标准邮件解析器，解析 RFC2822 格式邮件头和正文。"""
 
 import email
+import email.errors
 import email.utils
 import logging
 import re
@@ -163,7 +164,7 @@ class EmailParser(BaseParser):
                 thread_id=thread_id,
                 epoch=raw_email.epoch,
             )
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError, email.errors.MessageError) as e:
             logger.error("Failed to parse email %s: %s", raw_email.message_id, e)
             return None
     def parse_batch(self, raw_emails: list[RawEmail]) -> list[ParsedEmail]:

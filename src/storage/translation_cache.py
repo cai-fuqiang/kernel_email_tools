@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Column, DateTime, Integer, String, Text, select, func
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.storage.postgres import Base
@@ -203,7 +204,7 @@ class TranslationCacheStore:
                 )
                 if success:
                     count += 1
-            except Exception as e:
+            except (IntegrityError, OperationalError) as e:
                 logger.warning(f"Failed to cache translation: {e}")
         
         return count
