@@ -49,7 +49,8 @@ class AskStore:
             if conversation_id:
                 conv_result = await session.execute(
                     select(AskConversationORM).where(
-                        AskConversationORM.conversation_id == conversation_id
+                        AskConversationORM.conversation_id == conversation_id,
+                        AskConversationORM.user_id == user_id,
                     )
                 )
                 conv = conv_result.scalar_one_or_none()

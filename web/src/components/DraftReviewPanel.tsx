@@ -240,11 +240,11 @@ export default function DraftReviewPanel({
           ) : draft.tag_assignment_drafts.map((item, i) => (
             <div key={i} className="rounded-xl border border-gray-200 p-3">
               <div className="grid grid-cols-[auto_1fr_1fr_auto] items-center gap-3">
-                <input type="checkbox" checked={item.selected} onChange={(e) => updateTag(i, { selected: e.target.checked })} />
+                <input type="checkbox" checked={item.selected} disabled={item.tag_exists === false} onChange={(e) => updateTag(i, { selected: e.target.checked })} />
                 <input className="rounded-lg border border-gray-300 px-3 py-2 text-sm" value={item.tag_name} onChange={(e) => updateTag(i, { tag_name: e.target.value })} />
                 <input className="rounded-lg border border-gray-300 px-3 py-2 text-sm" value={item.target_ref} onChange={(e) => updateTag(i, { target_ref: e.target.value })} />
                 <span className={`text-xs ${item.tag_exists === false ? 'text-amber-600' : 'text-emerald-600'}`}>
-                  {item.tag_exists === false ? 'will be created' : 'ready'}
+                  {item.tag_exists === false ? 'create tag first' : 'ready'}
                 </span>
               </div>
               <p className="mt-2 text-xs text-gray-500">{item.target_type}</p>

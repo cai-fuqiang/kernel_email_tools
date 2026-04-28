@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Text, cast, delete, func, or_, select, text
+from sqlalchemy import Text, cast, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -189,7 +189,6 @@ class KnowledgeStore:
         entity_type: str = "",
         page: int = 1,
         page_size: int = 20,
-        search_mode: str = "simple",
     ) -> tuple[list[KnowledgeEntityRead], int]:
         async with self._session_factory() as session:
             stmt = select(KnowledgeEntityORM)
@@ -197,39 +196,23 @@ class KnowledgeStore:
                 stmt = stmt.where(KnowledgeEntityORM.entity_type == entity_type.strip())
             if q.strip():
                 query_text = q.strip()
-                if search_mode == "fulltext":
-                    # 使用 raw SQL 引用 search_vector 列（通过外部迁移脚本添加），
-                    # 避免 ORM 感知该列导致未迁移库的 INSERT 报错
-                    stmt = stmt.where(
-                        text(
-                            "knowledge_entities.search_vector @@ plainto_tsquery('english', :q)"
-                        ).bindparams(q=query_text)
+                like = f"%{query_text}%"
+                stmt = stmt.where(
+                    or_(
+                        KnowledgeEntityORM.entity_id.ilike(like),
+                        KnowledgeEntityORM.canonical_name.ilike(like),
+                        KnowledgeEntityORM.slug.ilike(like),
+                        KnowledgeEntityORM.summary.ilike(like),
+                        cast(KnowledgeEntityORM.aliases, Text).ilike(like),
                     )
-                else:
-                    like = f"%{query_text}%"
-                    stmt = stmt.where(
-                        or_(
-                            KnowledgeEntityORM.entity_id.ilike(like),
-                            KnowledgeEntityORM.canonical_name.ilike(like),
-                            KnowledgeEntityORM.slug.ilike(like),
-                            KnowledgeEntityORM.summary.ilike(like),
-                            cast(KnowledgeEntityORM.aliases, Text).ilike(like),
-                        )
-                    )
+                )
 
             count_stmt = select(func.count()).select_from(stmt.subquery())
             total = (await session.execute(count_stmt)).scalar() or 0
 
-            if q.strip() and search_mode == "fulltext":
-                stmt = stmt.order_by(
-                    text(
-                        "ts_rank(knowledge_entities.search_vector, plainto_tsquery('english', :q)) DESC"
-                    ).bindparams(q=query_text)
-                )
-            else:
-                stmt = stmt.order_by(
-                    KnowledgeEntityORM.updated_at.desc(), KnowledgeEntityORM.entity_id.asc()
-                )
+            stmt = stmt.order_by(
+                KnowledgeEntityORM.updated_at.desc(), KnowledgeEntityORM.entity_id.asc()
+            )
 
             result = await session.execute(
                 stmt.offset((page - 1) * page_size).limit(page_size)

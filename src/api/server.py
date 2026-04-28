@@ -2537,11 +2537,7 @@ async def apply_summary_draft(
             if not tag_name:
                 raise ValueError("tag_name is required")
             if await _tag_store.get_tag_by_name(tag_name) is None:
-                await _tag_store.get_or_create_tag(
-                    tag_name,
-                    actor_user_id=current_user.user_id,
-                    actor_display_name=current_user.display_name,
-                )
+                raise ValueError(f"Tag '{tag_name}' does not exist")
             assignment = await _tag_store.assign_tag(
                 TagAssignmentCreate(
                     tag_name=tag_name,
@@ -3780,7 +3776,6 @@ async def list_knowledge_entities(
     entity_type: str = Query("", description="实体类型过滤"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    search_mode: str = Query("simple", description="搜索模式: simple (ILIKE) 或 fulltext (tsvector)"),
 ):
     if not _knowledge_store:
         raise HTTPException(status_code=503, detail="Knowledge store not initialized")
@@ -3790,7 +3785,6 @@ async def list_knowledge_entities(
         entity_type=entity_type,
         page=page,
         page_size=page_size,
-        search_mode=search_mode,
     )
     return {
         "entities": [item.model_dump(mode="json") for item in items],

@@ -155,7 +155,6 @@ export default function KnowledgePage() {
   const [graphData, setGraphData] = useState<KnowledgeGraphResponse | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
   const [stats, setStats] = useState<KnowledgeStats | null>(null);
-  const [searchMode, setSearchMode] = useState<'simple' | 'fulltext'>('simple');
   const [relationDrafts, setRelationDrafts] = useState<Record<string, string>>({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedThread, setSelectedThread] = useState<ThreadFocus | null>(null);
@@ -164,7 +163,7 @@ export default function KnowledgePage() {
     setLoading(true);
     setError('');
     try {
-      const res = await listKnowledgeEntities({ q: query || undefined, page_size: 100, search_mode: searchMode });
+      const res = await listKnowledgeEntities({ q: query || undefined, page_size: 100 });
       setEntities(res.entities);
       if (!selectedEntityId && res.entities.length > 0) {
         setSearchParams({ entity_id: res.entities[0].entity_id }, { replace: true });
@@ -482,33 +481,6 @@ export default function KnowledgePage() {
             >
               Search
             </button>
-          </div>
-
-          <div className="mt-2 flex items-center gap-2">
-            <div className="flex rounded-md border border-gray-200 bg-gray-50 p-0.5">
-              <button
-                type="button"
-                onClick={() => setSearchMode('simple')}
-                className={`rounded px-2 py-1 text-[10px] font-medium ${
-                  searchMode === 'simple'
-                    ? 'bg-white text-gray-800 shadow-sm'
-                    : 'text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                Simple
-              </button>
-              <button
-                type="button"
-                onClick={() => setSearchMode('fulltext')}
-                className={`rounded px-2 py-1 text-[10px] font-medium ${
-                  searchMode === 'fulltext'
-                    ? 'bg-white text-gray-800 shadow-sm'
-                    : 'text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                Full-text
-              </button>
-            </div>
           </div>
 
           {stats && (
