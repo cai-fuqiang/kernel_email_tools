@@ -142,10 +142,10 @@ function turnsFromLoaded(loaded: AskTurn[]): ConversationTurn[] {
     response: {
       question: t.question,
       answer: t.answer,
-      sources: t.sources as SourceRef[],
+      sources: t.sources as unknown as SourceRef[],
       search_plan: t.search_plan as AskResponse['search_plan'],
       executed_queries: [],
-      threads: t.threads as AskResponse['threads'],
+      threads: t.threads as unknown as AskResponse['threads'],
       retrieval_stats: t.retrieval_stats as AskResponse['retrieval_stats'],
       model: t.model,
       retrieval_mode: '',
