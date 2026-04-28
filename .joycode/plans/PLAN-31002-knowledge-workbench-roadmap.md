@@ -16,7 +16,12 @@
   - 保存后提供跳转到新 Knowledge item 的入口。
 - 已有基础数据对象：`knowledge_entities`、annotations、tags。
 - 已新增基础 `knowledge_relations`：支持人工建立、查看正向/反向关系、编辑关系说明、删除关系。
-- 仍缺少：一等 evidence 表、relation 草稿推荐、持久化 Draft Inbox、图谱可视化。
+- 已新增局部知识图谱：支持以当前知识项为中心的一跳/二跳关系图，节点可点击跳转。
+- 已实现 Ask 多轮对话、Ask 邮件引用跳转、中文问题检索 query 扩展、缺失 tag 默认不保存。
+- 已实现一等 `knowledge_evidence` MVP：Ask/Search 保存 knowledge 草稿时同步写入 claim-level source evidence，Knowledge 页面优先展示结构化 evidence，并保留旧 `meta.ask.sources` 兼容展示。
+- 已实现持久化 Draft Inbox MVP：Ask/Search 生成草稿时写入 `knowledge_drafts`，Knowledge 页面可集中 review、编辑、接受或拒绝。
+- 已实现实体合并 MVP：支持把重复实体的 tags、relations、annotations、evidence 合并到目标实体，源实体标记为 `deprecated`。
+- 仍缺少：Ask 使用已有 Knowledge 作为检索上下文、relation 草稿推荐、索引/导入状态面板、全局图谱浏览。
 
 ## Current Problems
 - 页面术语过多：entity、annotation、meta、id 等内部概念直接暴露，用户难以判断下一步该做什么。
@@ -55,6 +60,7 @@
 ### Phase 2: Draft Inbox
 - 增加 Knowledge Drafts 页面或右侧队列，集中接收 Ask/Search 生成的草稿。
 - 当前已有共享草稿审核组件，可作为 Draft Inbox 的编辑表单基础。
+- 2026-04 已实现：持久化草稿列表、编辑、接受、拒绝；暂不做复杂多人协作审核流。
 - 草稿状态：
   - `new`: AI 刚生成，未读。
   - `reviewing`: 用户正在编辑或核查证据。
@@ -69,6 +75,7 @@
 
 ### Phase 3: First-class Evidence Model
 - 新增 `knowledge_evidence` 表，避免长期依赖 `meta.ask`。
+- 2026-04 已实现：Ask/Search draft apply 时同步写入 evidence；旧 `meta.ask.sources` 继续作为兼容展示来源。
 - 建议字段：
   - `evidence_id`
   - `entity_id`
@@ -92,6 +99,7 @@
   - 合并 evidence。
   - 合并 annotations。
   - 旧实体转为 redirect/deprecated。
+- 2026-04 已实现合并 MVP：支持手动选择目标实体并迁移 tags、relations、annotations、evidence，源实体转为 `deprecated`。
 - 增加审核 checklist：
   - 是否有至少一个 source email。
   - 摘要是否可独立理解。
@@ -171,7 +179,7 @@
 - 验收标准：Ask 回答能引用已有 Knowledge 和原始邮件证据，且能解释为什么扩展到了相关实体。
 
 ### Phase G6: Graph Visualization
-- 先做单实体局部邻接图：当前实体在中心，一跳关系按类型分组。
+- 单实体局部邻接图已实现：当前实体在中心，一跳/二跳关系可视化，节点可点击跳转。
 - 再做全局图谱浏览、过滤、聚类。
 - 图谱只作为导航和发现工具，不替代列表、证据审核和人工编辑。
 - 验收标准：局部图谱节点可点击跳转；空关系时不显示无意义图。

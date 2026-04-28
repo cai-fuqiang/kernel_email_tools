@@ -3,7 +3,9 @@ import { useSearchParams } from 'react-router-dom';
 import EmailTagEditor from '../components/EmailTagEditor';
 import ThreadDrawer from '../components/ThreadDrawer';
 import KnowledgeGraphView from '../components/KnowledgeGraphView';
+import DraftReviewPanel from '../components/DraftReviewPanel';
 import {
+  acceptKnowledgeDraft,
   createAnnotation,
   createKnowledgeEntity,
   createKnowledgeRelation,
@@ -12,13 +14,28 @@ import {
   getKnowledgeEntity,
   getKnowledgeGraph,
   getKnowledgeStats,
+  listKnowledgeDrafts,
+  listKnowledgeEvidence,
   listAnnotations,
   listKnowledgeEntities,
   listKnowledgeRelations,
+  mergeKnowledgeEntities,
+  rejectKnowledgeDraft,
+  updateKnowledgeDraft,
   updateKnowledgeRelation,
   updateKnowledgeEntity,
 } from '../api/client';
-import type { AnnotationListItem, KnowledgeEntity, KnowledgeRelation, KnowledgeGraphResponse, KnowledgeStats } from '../api/types';
+import type {
+  AnnotationListItem,
+  AskDraftApplyResponse,
+  AskDraftResponse,
+  KnowledgeDraft,
+  KnowledgeEntity,
+  KnowledgeEvidence,
+  KnowledgeRelation,
+  KnowledgeGraphResponse,
+  KnowledgeStats,
+} from '../api/types';
 import { useAuth } from '../auth';
 
 const DEFAULT_ENTITY_TYPE = 'concept';
@@ -114,6 +131,25 @@ function sourceTitle(source: KnowledgeEvidenceSource) {
   return [sender, date, subject].filter(Boolean).join(' · ');
 }
 
+function evidenceTitle(row: KnowledgeEvidence) {
+  const meta = row.meta || {};
+  const sender = String(meta.sender || '').split('<')[0].trim();
+  const date = formatDate(String(meta.date || ''));
+  const subject = String(meta.subject || row.message_id || row.thread_id);
+  return [sender, date, subject].filter(Boolean).join(' · ');
+}
+
+function normalizeDraftPayload(payload: unknown): AskDraftResponse {
+  const raw = payload && typeof payload === 'object' ? payload as Partial<AskDraftResponse> : {};
+  return {
+    draft_id: raw.draft_id || '',
+    knowledge_drafts: Array.isArray(raw.knowledge_drafts) ? raw.knowledge_drafts : [],
+    annotation_drafts: Array.isArray(raw.annotation_drafts) ? raw.annotation_drafts : [],
+    tag_assignment_drafts: Array.isArray(raw.tag_assignment_drafts) ? raw.tag_assignment_drafts : [],
+    warnings: Array.isArray(raw.warnings) ? raw.warnings : [],
+  };
+}
+
 function relationEntityName(entity: KnowledgeEntity | null | undefined, fallback: string) {
   return entity?.canonical_name || fallback;
 }
@@ -126,6 +162,7 @@ export default function KnowledgePage() {
   const [entities, setEntities] = useState<KnowledgeEntity[]>([]);
   const [selectedEntity, setSelectedEntity] = useState<KnowledgeEntity | null>(null);
   const [annotations, setAnnotations] = useState<AnnotationListItem[]>([]);
+  const [evidenceRows, setEvidenceRows] = useState<KnowledgeEvidence[]>([]);
   const [relations, setRelations] = useState<{ outgoing: KnowledgeRelation[]; incoming: KnowledgeRelation[] }>({
     outgoing: [],
     incoming: [],
@@ -155,9 +192,17 @@ export default function KnowledgePage() {
   const [graphData, setGraphData] = useState<KnowledgeGraphResponse | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
   const [stats, setStats] = useState<KnowledgeStats | null>(null);
+  const [drafts, setDrafts] = useState<KnowledgeDraft[]>([]);
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [activeDraft, setActiveDraft] = useState<KnowledgeDraft | null>(null);
+  const [activeDraftPayload, setActiveDraftPayload] = useState<AskDraftResponse | null>(null);
+  const [draftSaved, setDraftSaved] = useState<AskDraftApplyResponse | null>(null);
+  const [draftError, setDraftError] = useState('');
+  const [draftSaving, setDraftSaving] = useState(false);
   const [relationDrafts, setRelationDrafts] = useState<Record<string, string>>({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedThread, setSelectedThread] = useState<ThreadFocus | null>(null);
+  const [mergeTargetId, setMergeTargetId] = useState('');
 
   const loadEntities = useCallback(async () => {
     setLoading(true);
@@ -236,6 +281,30 @@ export default function KnowledgePage() {
     }
   }, [selectedEntityId]);
 
+  const loadEvidence = useCallback(async () => {
+    if (!selectedEntityId) {
+      setEvidenceRows([]);
+      return;
+    }
+    try {
+      setEvidenceRows(await listKnowledgeEvidence(selectedEntityId));
+    } catch {
+      setEvidenceRows([]);
+    }
+  }, [selectedEntityId]);
+
+  const loadDrafts = useCallback(async () => {
+    setDraftLoading(true);
+    try {
+      const res = await listKnowledgeDrafts({ status: 'new', page_size: 20 });
+      setDrafts(res.drafts);
+    } catch {
+      setDrafts([]);
+    } finally {
+      setDraftLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadEntities();
   }, [loadEntities]);
@@ -251,6 +320,14 @@ export default function KnowledgePage() {
   useEffect(() => {
     loadRelations();
   }, [loadRelations]);
+
+  useEffect(() => {
+    loadEvidence();
+  }, [loadEvidence]);
+
+  useEffect(() => {
+    loadDrafts();
+  }, [loadDrafts]);
 
   useEffect(() => {
     setGraphData(null);
@@ -288,12 +365,15 @@ export default function KnowledgePage() {
     [selectedEntity]
   );
   const evidence = useMemo(() => extractKnowledgeEvidence(selectedEntity), [selectedEntity]);
-  const selectedEvidenceCount = selectedEntity ? evidence.sources.length || evidence.threadIds.length : 0;
+  const selectedEvidenceCount = selectedEntity ? evidenceRows.length || evidence.sources.length || evidence.threadIds.length : 0;
   const relationCount = relations.outgoing.length + relations.incoming.length;
   const relationTargets = useMemo(
     () => entities.filter((entity) => entity.entity_id !== selectedEntityId),
     [entities, selectedEntityId]
   );
+  const activeDraftCounts = activeDraftPayload
+    ? activeDraftPayload.knowledge_drafts.length + activeDraftPayload.annotation_drafts.length + activeDraftPayload.tag_assignment_drafts.length
+    : 0;
 
   const handleCreateEntity = async () => {
     if (!newEntity.canonical_name.trim()) return;
@@ -346,8 +426,71 @@ export default function KnowledgePage() {
       });
       setSelectedEntity(updated);
       await loadEntities();
+      await loadEvidence();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to update knowledge item');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleOpenDraft = (draft: KnowledgeDraft) => {
+    setActiveDraft(draft);
+    setActiveDraftPayload(normalizeDraftPayload(draft.payload));
+    setDraftSaved(null);
+    setDraftError('');
+  };
+
+  const handleAcceptDraft = async () => {
+    if (!activeDraft || !activeDraftPayload) return;
+    setDraftSaving(true);
+    setDraftError('');
+    try {
+      await updateKnowledgeDraft(activeDraft.draft_id, {
+        payload: activeDraftPayload as unknown as Record<string, unknown>,
+        status: 'reviewing',
+      });
+      const result = await acceptKnowledgeDraft(activeDraft.draft_id);
+      setDraftSaved(result);
+      await loadDrafts();
+      await loadEntities();
+      await loadEvidence();
+    } catch (e: unknown) {
+      setDraftError(e instanceof Error ? e.message : 'Failed to accept draft');
+    } finally {
+      setDraftSaving(false);
+    }
+  };
+
+  const handleRejectDraft = async (draft: KnowledgeDraft) => {
+    setDraftSaving(true);
+    setDraftError('');
+    try {
+      await rejectKnowledgeDraft(draft.draft_id, 'Rejected from Knowledge Draft Inbox');
+      if (activeDraft?.draft_id === draft.draft_id) {
+        setActiveDraft(null);
+        setActiveDraftPayload(null);
+      }
+      await loadDrafts();
+    } catch (e: unknown) {
+      setDraftError(e instanceof Error ? e.message : 'Failed to reject draft');
+    } finally {
+      setDraftSaving(false);
+    }
+  };
+
+  const handleMergeEntity = async () => {
+    if (!selectedEntity || !mergeTargetId || !canWrite) return;
+    setSaving(true);
+    setError('');
+    try {
+      const result = await mergeKnowledgeEntities(selectedEntity.entity_id, mergeTargetId);
+      setMergeTargetId('');
+      await loadEntities();
+      setSearchParams({ entity_id: result.target.entity_id });
+      setError(`Merged into ${result.target.canonical_name}. Moved ${Object.values(result.moved).reduce((sum, value) => sum + value, 0)} linked records.`);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to merge entity');
     } finally {
       setSaving(false);
     }
@@ -572,6 +715,71 @@ export default function KnowledgePage() {
           </div>
         )}
 
+        <div className="border-b border-gray-200 bg-amber-50/60 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-semibold text-gray-950">Draft Inbox</div>
+              <p className="mt-1 text-xs leading-5 text-gray-500">Ask/Search drafts waiting for human review.</p>
+            </div>
+            <button
+              type="button"
+              onClick={loadDrafts}
+              className="rounded-lg border border-amber-200 bg-white px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
+            >
+              Refresh
+            </button>
+          </div>
+          {draftError && (
+            <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {draftError}
+            </div>
+          )}
+          <div className="mt-3 space-y-2">
+            {draftLoading ? (
+              <div className="text-xs text-gray-500">Loading drafts...</div>
+            ) : drafts.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-amber-200 bg-white/70 px-3 py-3 text-xs leading-5 text-gray-500">
+                No new drafts. Ask or Search can generate candidates here.
+              </div>
+            ) : drafts.slice(0, 4).map((draft) => (
+              <div key={draft.draft_id} className="rounded-lg border border-amber-100 bg-white p-3">
+                <button
+                  type="button"
+                  onClick={() => handleOpenDraft(draft)}
+                  className="block w-full text-left"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="truncate text-xs font-semibold text-gray-900">
+                      {draft.question || draft.source_ref || draft.source_type}
+                    </div>
+                    <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                      {draft.source_type}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-gray-400">Created {formatDateTime(draft.created_at)}</div>
+                </button>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenDraft(draft)}
+                    className="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white"
+                  >
+                    Review
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRejectDraft(draft)}
+                    disabled={draftSaving}
+                    className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-600 disabled:opacity-50"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="p-5 text-sm text-gray-500">Loading knowledge...</div>
@@ -623,6 +831,41 @@ export default function KnowledgePage() {
           </div>
         )}
 
+        {activeDraft && activeDraftPayload && (
+          <div className="m-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div className="mb-3 flex items-start justify-between gap-4">
+              <div>
+                <div className="text-sm font-semibold text-gray-950">Review draft from {activeDraft.source_type}</div>
+                <div className="mt-1 text-xs leading-5 text-gray-500">
+                  {activeDraft.question || activeDraft.source_ref || activeDraft.draft_id}
+                  {activeDraftCounts > 0 && <span> · {activeDraftCounts} candidate items</span>}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDraft(null);
+                  setActiveDraftPayload(null);
+                  setDraftSaved(null);
+                  setDraftError('');
+                }}
+                className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-medium text-amber-700"
+              >
+                Close
+              </button>
+            </div>
+            <DraftReviewPanel
+              draft={activeDraftPayload}
+              onChange={setActiveDraftPayload}
+              onSave={handleAcceptDraft}
+              saving={draftSaving}
+              saved={draftSaved}
+              error={draftError}
+              compact
+            />
+          </div>
+        )}
+
         {!selectedEntity ? (
           <div className="mx-auto flex h-full max-w-3xl items-center px-8">
             <div>
@@ -671,10 +914,35 @@ export default function KnowledgePage() {
                     disabled={!canWrite}
                   />
                 </div>
-                <div className="w-72 shrink-0">
-                  <EmailTagEditor targetType="knowledge_entity" targetRef={selectedEntity.entity_id} />
-                  {canWrite && (
-                    <button
+	                <div className="w-72 shrink-0">
+	                  <EmailTagEditor targetType="knowledge_entity" targetRef={selectedEntity.entity_id} />
+                  {canWrite && relationTargets.length > 0 && (
+                    <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                      <div className="text-xs font-semibold text-gray-700">Merge this duplicate into</div>
+                      <select
+                        value={mergeTargetId}
+                        onChange={(e) => setMergeTargetId(e.target.value)}
+                        className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs"
+                      >
+                        <option value="">Choose target...</option>
+                        {relationTargets.map((entity) => (
+                          <option key={entity.entity_id} value={entity.entity_id}>
+                            {entity.canonical_name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleMergeEntity}
+                        disabled={saving || !mergeTargetId}
+                        className="mt-2 w-full rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                      >
+                        Merge into target
+                      </button>
+                    </div>
+                  )}
+	                  {canWrite && (
+	                    <button
                       type="button"
                       onClick={() => setShowDeleteConfirm(true)}
                       className="mt-3 w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
@@ -1069,7 +1337,38 @@ export default function KnowledgePage() {
                   Ask question: {evidence.question}
                 </div>
               )}
-              {evidence.sources.length > 0 ? (
+              {evidenceRows.length > 0 ? (
+                <div className="mt-4 space-y-3">
+                  {evidenceRows.map((row) => (
+                    <div key={row.evidence_id} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                      <div className="text-xs font-semibold uppercase text-indigo-600">{row.source_type}</div>
+                      <div className="mt-1 text-sm font-semibold leading-6 text-gray-950">
+                        {row.claim || selectedEntity.canonical_name}
+                      </div>
+                      {row.quote && (
+                        <div className="mt-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm leading-6 text-gray-600">
+                          {row.quote}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => row.thread_id && setSelectedThread({ threadId: row.thread_id, focusMessageId: row.message_id || undefined })}
+                        disabled={!row.thread_id}
+                        className="mt-3 block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-left hover:border-indigo-200 hover:bg-indigo-50/60 disabled:cursor-default disabled:hover:border-gray-200 disabled:hover:bg-white"
+                      >
+                        <div className="truncate text-sm font-semibold text-gray-900">
+                          {evidenceTitle(row) || row.message_id || row.thread_id}
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                          {String(row.meta?.list_name || '') && <span>{String(row.meta?.list_name || '')}</span>}
+                          {row.confidence && <span>{row.confidence}</span>}
+                          {row.message_id && <span className="font-mono">{row.message_id}</span>}
+                        </div>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : evidence.sources.length > 0 ? (
                 <div className="mt-4 space-y-2">
                   {evidence.sources.map((source, index) => (
                     <button

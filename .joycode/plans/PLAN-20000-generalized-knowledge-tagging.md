@@ -9,6 +9,12 @@
 
 第一版支持：邮件线程、单封邮件、邮件段落、代码行范围、邮件/代码批注，并允许重建当前 tag 相关数据库结构。
 
+## Current Status
+- 已实现统一 `tags`、`tag_aliases`、`tag_assignments` 模型。
+- 已实现 thread/message/paragraph/kernel line range/annotation/knowledge entity 的统一 target 打标。
+- 已实现搜索按 tag 过滤、Thread/Code/Annotation/Knowledge 页面标签编辑。
+- Ask/Search 草稿可建议 tag assignment；缺失 tag 默认取消选中并在保存时拒绝自动创建，避免污染全局 taxonomy。
+
 ## Key Changes
 ### 1. 统一数据模型
 - `tags`

@@ -15,6 +15,13 @@
 3. 增加“结构化事实/关系”层，用于表达可计算、可推理的知识
 4. 最终将知识对象、事实、来源之间的连接投影为知识图谱
 
+## Current Status
+- 已实现：统一 `Tag` / `TagAssignment`、邮件/段落/代码/annotation/knowledge entity 目标打标、`knowledge_entities` CRUD。
+- 已实现：`knowledge_relations` CRUD、关系方向展示、局部知识图谱 API/UI。
+- 已实现：Ask/Search 可生成 knowledge、annotation、tag 草稿，缺失 tag 默认不保存。
+- 已实现：将 `meta.ask.sources` 升级为一等 `knowledge_evidence`，增加持久化 Draft Inbox 和实体合并 MVP。
+- 后续未实现：Ask 使用 Knowledge/关系作为检索上下文、relation 草稿推荐、质量指标与全局图谱。
+
 ## Design Goals
 - 不推翻现有 `TagAssignment` / `Annotation` 设计
 - 支持多种 target 类型持续扩展

@@ -38,6 +38,12 @@ from src.storage.models import (
     KnowledgeEntityCreate,
     KnowledgeEntityRead,
     KnowledgeEntityUpdate,
+    KnowledgeDraftCreate,
+    KnowledgeDraftRead,
+    KnowledgeDraftUpdate,
+    KnowledgeEvidenceCreate,
+    KnowledgeEvidenceRead,
+    KnowledgeEvidenceUpdate,
     KnowledgeRelationCreate,
     KnowledgeRelationRead,
     KnowledgeRelationUpdate,
@@ -957,6 +963,7 @@ class DraftRequest(BaseModel):
 
 
 class DraftResponse(BaseModel):
+    draft_id: str = ""
     knowledge_drafts: list[dict] = Field(default_factory=list)
     annotation_drafts: list[dict] = Field(default_factory=list)
     tag_assignment_drafts: list[dict] = Field(default_factory=list)
@@ -995,6 +1002,53 @@ class KnowledgeRelationUpdateRequest(BaseModel):
 class KnowledgeRelationListResponse(BaseModel):
     outgoing: list[KnowledgeRelationRead] = Field(default_factory=list)
     incoming: list[KnowledgeRelationRead] = Field(default_factory=list)
+
+
+class KnowledgeEvidenceCreateRequest(BaseModel):
+    source_type: str = Field("email", max_length=64)
+    message_id: str = Field("", max_length=512)
+    thread_id: str = Field("", max_length=512)
+    claim: str = Field("", max_length=4000)
+    quote: str = Field("", max_length=12000)
+    confidence: str = Field("", max_length=32)
+    meta: dict = Field(default_factory=dict)
+
+
+class KnowledgeEvidenceUpdateRequest(BaseModel):
+    source_type: Optional[str] = Field(None, max_length=64)
+    message_id: Optional[str] = Field(None, max_length=512)
+    thread_id: Optional[str] = Field(None, max_length=512)
+    claim: Optional[str] = Field(None, max_length=4000)
+    quote: Optional[str] = Field(None, max_length=12000)
+    confidence: Optional[str] = Field(None, max_length=32)
+    meta: Optional[dict] = None
+
+
+class KnowledgeDraftListResponse(BaseModel):
+    drafts: list[KnowledgeDraftRead] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    page_size: int = 20
+
+
+class KnowledgeDraftCreateRequest(BaseModel):
+    source_type: str = Field("manual", max_length=64)
+    source_ref: str = Field("", max_length=512)
+    question: str = ""
+    payload: dict = Field(default_factory=dict)
+    status: str = Field("new", max_length=32)
+    review_note: str = ""
+
+
+class KnowledgeDraftUpdateRequest(BaseModel):
+    payload: Optional[dict] = None
+    status: Optional[str] = Field(None, max_length=32)
+    review_note: Optional[str] = None
+
+
+class KnowledgeEntityMergeRequest(BaseModel):
+    source_entity_id: str = Field(..., min_length=1, max_length=160)
+    target_entity_id: str = Field(..., min_length=1, max_length=160)
 
 
 class ThreadResponse(BaseModel):
@@ -2427,40 +2481,88 @@ async def summarize_search(request: SummarizeRequest):
     )
 
 
-@app.post("/api/search/summarize/draft", response_model=DraftResponse)
-async def create_summary_draft(
-    request: DraftRequest,
-    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
-):
-    """基于 AI 概括结果生成可编辑的 Knowledge / Annotation / Tag 草稿。"""
-    if not _llm_client:
-        raise HTTPException(status_code=503, detail="LLM service not initialized")
-    if not _tag_store:
-        raise HTTPException(status_code=503, detail="Tag store not initialized")
+def _draft_response_payload(bundle: DraftResponse) -> dict:
+    return {
+        "knowledge_drafts": bundle.knowledge_drafts,
+        "annotation_drafts": bundle.annotation_drafts,
+        "tag_assignment_drafts": bundle.tag_assignment_drafts,
+        "warnings": bundle.warnings,
+    }
 
-    async def tag_exists(tag_name: str) -> bool:
-        return await _tag_store.get_tag_by_name(tag_name) is not None
 
-    bundle = await AskDraftService(llm=_llm_client).generate(
-        query=request.query,
-        summary=request.summary,
-        sources=request.sources,
-        tag_exists=tag_exists,
+async def _persist_draft_response(
+    *,
+    source_type: str,
+    source_ref: str,
+    question: str,
+    response: DraftResponse,
+    current_user: CurrentUser,
+) -> str:
+    if not _knowledge_store:
+        return ""
+    draft = await _knowledge_store.create_draft(
+        KnowledgeDraftCreate(
+            source_type=source_type,
+            source_ref=source_ref,
+            question=question,
+            payload=_draft_response_payload(response),
+            created_by=current_user.display_name,
+            updated_by=current_user.display_name,
+            created_by_user_id=current_user.user_id,
+            updated_by_user_id=current_user.user_id,
+        )
     )
-    return DraftResponse(
-        knowledge_drafts=bundle.knowledge_drafts,
-        annotation_drafts=bundle.annotation_drafts,
-        tag_assignment_drafts=bundle.tag_assignment_drafts,
-        warnings=bundle.warnings,
-    )
+    return draft.draft_id
 
 
-@app.post("/api/search/summarize/draft/apply", response_model=DraftApplyResponse)
-async def apply_summary_draft(
+def _evidence_items_from_knowledge_draft(
+    draft: dict,
+    entity_id: str,
+    current_user: CurrentUser,
+) -> list[KnowledgeEvidenceCreate]:
+    meta = draft.get("meta") if isinstance(draft.get("meta"), dict) else {}
+    ask_meta = meta.get("ask") if isinstance(meta.get("ask"), dict) else {}
+    sources = ask_meta.get("sources") if isinstance(ask_meta.get("sources"), list) else []
+    claim = str(draft.get("summary") or draft.get("canonical_name") or "").strip()
+    items: list[KnowledgeEvidenceCreate] = []
+    for source in sources[:12]:
+        if not isinstance(source, dict):
+            continue
+        message_id = str(source.get("message_id") or "").strip()
+        thread_id = str(source.get("thread_id") or "").strip()
+        if not message_id and not thread_id:
+            continue
+        items.append(
+            KnowledgeEvidenceCreate(
+                entity_id=entity_id,
+                source_type=str(source.get("source") or "email"),
+                message_id=message_id,
+                thread_id=thread_id,
+                claim=claim[:4000],
+                quote=str(source.get("snippet") or "").strip()[:12000],
+                confidence="draft",
+                meta={
+                    "subject": source.get("subject", ""),
+                    "sender": source.get("sender", ""),
+                    "date": source.get("date", ""),
+                    "list_name": source.get("list_name", ""),
+                    "chunk_id": source.get("chunk_id", ""),
+                    "chunk_index": source.get("chunk_index", 0),
+                    "ask_question": ask_meta.get("question", ""),
+                },
+                created_by=current_user.display_name,
+                updated_by=current_user.display_name,
+                created_by_user_id=current_user.user_id,
+                updated_by_user_id=current_user.user_id,
+            )
+        )
+    return items
+
+
+async def _apply_draft_request(
     request: DraftApplyRequest,
-    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
-):
-    """保存用户确认后的 AI 概括草稿。"""
+    current_user: CurrentUser,
+) -> DraftApplyResponse:
     if not _knowledge_store or not _annotation_store or not _tag_store:
         raise HTTPException(status_code=503, detail="Knowledge, annotation or tag store not initialized")
 
@@ -2490,6 +2592,9 @@ async def apply_summary_draft(
                     updated_by_user_id=current_user.user_id,
                 )
             )
+            evidence_items = _evidence_items_from_knowledge_draft(draft, entity.entity_id, current_user)
+            if evidence_items:
+                await _knowledge_store.create_evidence_many(evidence_items)
             created_entities.append(entity.model_dump(mode="json"))
         except Exception as exc:
             errors.append({"type": "knowledge", "index": index, "message": str(exc)})
@@ -2565,6 +2670,51 @@ async def apply_summary_draft(
     )
 
 
+@app.post("/api/search/summarize/draft", response_model=DraftResponse)
+async def create_summary_draft(
+    request: DraftRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    """基于 AI 概括结果生成可编辑的 Knowledge / Annotation / Tag 草稿。"""
+    if not _llm_client:
+        raise HTTPException(status_code=503, detail="LLM service not initialized")
+    if not _tag_store:
+        raise HTTPException(status_code=503, detail="Tag store not initialized")
+
+    async def tag_exists(tag_name: str) -> bool:
+        return await _tag_store.get_tag_by_name(tag_name) is not None
+
+    bundle = await AskDraftService(llm=_llm_client).generate(
+        query=request.query,
+        summary=request.summary,
+        sources=request.sources,
+        tag_exists=tag_exists,
+    )
+    response = DraftResponse(
+        knowledge_drafts=bundle.knowledge_drafts,
+        annotation_drafts=bundle.annotation_drafts,
+        tag_assignment_drafts=bundle.tag_assignment_drafts,
+        warnings=bundle.warnings,
+    )
+    response.draft_id = await _persist_draft_response(
+        source_type="search_summarize",
+        source_ref=request.query,
+        question=request.query,
+        response=response,
+        current_user=current_user,
+    )
+    return response
+
+
+@app.post("/api/search/summarize/draft/apply", response_model=DraftApplyResponse)
+async def apply_summary_draft(
+    request: DraftApplyRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    """保存用户确认后的 AI 概括草稿。"""
+    return await _apply_draft_request(request, current_user)
+
+
 @app.post("/api/ask/draft", response_model=DraftResponse)
 async def create_ask_draft(
     request: AskResponse,
@@ -2588,12 +2738,20 @@ async def create_ask_draft(
         retrieval_stats=request.retrieval_stats,
         tag_exists=tag_exists,
     )
-    return DraftResponse(
+    response = DraftResponse(
         knowledge_drafts=bundle.knowledge_drafts,
         annotation_drafts=bundle.annotation_drafts,
         tag_assignment_drafts=bundle.tag_assignment_drafts,
         warnings=bundle.warnings,
     )
+    response.draft_id = await _persist_draft_response(
+        source_type="ask",
+        source_ref=request.question,
+        question=request.question,
+        response=response,
+        current_user=current_user,
+    )
+    return response
 
 
 @app.post("/api/ask/draft/apply", response_model=DraftApplyResponse)
@@ -2602,7 +2760,7 @@ async def apply_ask_draft(
     current_user: CurrentUser = Depends(require_roles("admin", "editor")),
 ):
     """保存用户确认后的 Ask 草稿。"""
-    return await apply_summary_draft(request, current_user)
+    return await _apply_draft_request(request, current_user)
 
 
 @app.get("/api/thread/{thread_id:path}", response_model=ThreadResponse)
@@ -3802,6 +3960,134 @@ async def get_knowledge_stats():
     return await _knowledge_store.get_stats()
 
 
+@app.get("/api/knowledge/drafts", response_model=KnowledgeDraftListResponse)
+async def list_knowledge_drafts(
+    status: str = Query("", description="草稿状态过滤"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    drafts, total = await _knowledge_store.list_drafts(status=status, page=page, page_size=page_size)
+    return KnowledgeDraftListResponse(drafts=drafts, total=total, page=page, page_size=page_size)
+
+
+@app.post("/api/knowledge/drafts", response_model=KnowledgeDraftRead)
+async def create_knowledge_draft(
+    request: KnowledgeDraftCreateRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    return await _knowledge_store.create_draft(
+        KnowledgeDraftCreate(
+            source_type=request.source_type,
+            source_ref=request.source_ref,
+            question=request.question,
+            payload=request.payload,
+            status=request.status,
+            review_note=request.review_note,
+            created_by=current_user.display_name,
+            updated_by=current_user.display_name,
+            created_by_user_id=current_user.user_id,
+            updated_by_user_id=current_user.user_id,
+        )
+    )
+
+
+@app.patch("/api/knowledge/drafts/{draft_id}", response_model=KnowledgeDraftRead)
+async def update_knowledge_draft(
+    draft_id: str,
+    request: KnowledgeDraftUpdateRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    draft = await _knowledge_store.update_draft(
+        draft_id,
+        KnowledgeDraftUpdate(
+            payload=request.payload,
+            status=request.status,
+            review_note=request.review_note,
+        ),
+        updated_by=current_user.display_name,
+        updated_by_user_id=current_user.user_id,
+    )
+    if draft is None:
+        raise HTTPException(status_code=404, detail="Knowledge draft not found")
+    return draft
+
+
+@app.post("/api/knowledge/drafts/{draft_id}/accept", response_model=DraftApplyResponse)
+async def accept_knowledge_draft(
+    draft_id: str,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    draft = await _knowledge_store.get_draft(draft_id)
+    if draft is None:
+        raise HTTPException(status_code=404, detail="Knowledge draft not found")
+    payload = draft.payload if isinstance(draft.payload, dict) else {}
+    result = await _apply_draft_request(
+        DraftApplyRequest(
+            knowledge_drafts=payload.get("knowledge_drafts") if isinstance(payload.get("knowledge_drafts"), list) else [],
+            annotation_drafts=payload.get("annotation_drafts") if isinstance(payload.get("annotation_drafts"), list) else [],
+            tag_assignment_drafts=payload.get("tag_assignment_drafts") if isinstance(payload.get("tag_assignment_drafts"), list) else [],
+        ),
+        current_user,
+    )
+    await _knowledge_store.update_draft(
+        draft_id,
+        KnowledgeDraftUpdate(status="accepted" if not result.errors else "reviewing"),
+        updated_by=current_user.display_name,
+        updated_by_user_id=current_user.user_id,
+    )
+    return result
+
+
+@app.post("/api/knowledge/drafts/{draft_id}/reject", response_model=KnowledgeDraftRead)
+async def reject_knowledge_draft(
+    draft_id: str,
+    request: KnowledgeDraftUpdateRequest = Body(default=KnowledgeDraftUpdateRequest()),
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    draft = await _knowledge_store.update_draft(
+        draft_id,
+        KnowledgeDraftUpdate(status="rejected", review_note=request.review_note),
+        updated_by=current_user.display_name,
+        updated_by_user_id=current_user.user_id,
+    )
+    if draft is None:
+        raise HTTPException(status_code=404, detail="Knowledge draft not found")
+    return draft
+
+
+@app.post("/api/knowledge/entities/merge")
+async def merge_knowledge_entities(
+    request: KnowledgeEntityMergeRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    try:
+        result = await _knowledge_store.merge_entities(
+            source_entity_id=request.source_entity_id,
+            target_entity_id=request.target_entity_id,
+            updated_by=current_user.display_name,
+            updated_by_user_id=current_user.user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {
+        "source": result["source"].model_dump(mode="json"),
+        "target": result["target"].model_dump(mode="json"),
+        "moved": result["moved"],
+    }
+
+
 @app.post("/api/knowledge/entities")
 async def create_knowledge_entity(
     request: "KnowledgeEntityCreateRequest",
@@ -3856,6 +4142,45 @@ async def list_knowledge_relations(entity_id: str):
     return KnowledgeRelationListResponse(outgoing=outgoing, incoming=incoming)
 
 
+@app.get("/api/knowledge/entities/{entity_id}/evidence", response_model=list[KnowledgeEvidenceRead])
+async def list_knowledge_evidence(entity_id: str):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    entity = await _knowledge_store.get(entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Knowledge entity not found")
+    return await _knowledge_store.list_evidence(entity_id)
+
+
+@app.post("/api/knowledge/entities/{entity_id}/evidence", response_model=KnowledgeEvidenceRead)
+async def create_knowledge_evidence(
+    entity_id: str,
+    request: KnowledgeEvidenceCreateRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    try:
+        return await _knowledge_store.create_evidence(
+            KnowledgeEvidenceCreate(
+                entity_id=entity_id,
+                source_type=request.source_type,
+                message_id=request.message_id,
+                thread_id=request.thread_id,
+                claim=request.claim,
+                quote=request.quote,
+                confidence=request.confidence,
+                meta=request.meta,
+                created_by=current_user.display_name,
+                updated_by=current_user.display_name,
+                created_by_user_id=current_user.user_id,
+                updated_by_user_id=current_user.user_id,
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @app.get("/api/knowledge/entities/{entity_id}", response_model=KnowledgeEntityRead)
 async def get_knowledge_entity(entity_id: str):
     if not _knowledge_store:
@@ -3865,6 +4190,46 @@ async def get_knowledge_entity(entity_id: str):
     if entity is None:
         raise HTTPException(status_code=404, detail="Knowledge entity not found")
     return entity
+
+
+@app.patch("/api/knowledge/evidence/{evidence_id}", response_model=KnowledgeEvidenceRead)
+async def update_knowledge_evidence(
+    evidence_id: str,
+    request: KnowledgeEvidenceUpdateRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    evidence = await _knowledge_store.update_evidence(
+        evidence_id,
+        KnowledgeEvidenceUpdate(
+            source_type=request.source_type,
+            message_id=request.message_id,
+            thread_id=request.thread_id,
+            claim=request.claim,
+            quote=request.quote,
+            confidence=request.confidence,
+            meta=request.meta,
+        ),
+        updated_by=current_user.display_name,
+        updated_by_user_id=current_user.user_id,
+    )
+    if evidence is None:
+        raise HTTPException(status_code=404, detail="Knowledge evidence not found")
+    return evidence
+
+
+@app.delete("/api/knowledge/evidence/{evidence_id}")
+async def delete_knowledge_evidence(
+    evidence_id: str,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not _knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    deleted = await _knowledge_store.delete_evidence(evidence_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Knowledge evidence not found")
+    return {"deleted": True}
 
 
 @app.post("/api/knowledge/relations", response_model=KnowledgeRelationRead)

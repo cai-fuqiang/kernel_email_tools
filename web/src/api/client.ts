@@ -20,6 +20,9 @@ import type {
   AnnotationListResponse,
   KnowledgeEntity,
   KnowledgeEntityListResponse,
+  KnowledgeDraftListResponse,
+  KnowledgeEntityMergeResponse,
+  KnowledgeEvidence,
   KnowledgeRelation,
   KnowledgeRelationListResponse,
   TagAssignment,
@@ -1012,6 +1015,76 @@ export async function listKnowledgeRelations(entityId: string): Promise<Knowledg
   );
 }
 
+export async function listKnowledgeEvidence(entityId: string): Promise<KnowledgeEvidence[]> {
+  return fetchJSON<KnowledgeEvidence[]>(
+    `${API_BASE}/knowledge/entities/${encodeURIComponent(entityId)}/evidence`
+  );
+}
+
+export async function createKnowledgeEvidence(
+  entityId: string,
+  data: {
+    source_type?: string;
+    message_id?: string;
+    thread_id?: string;
+    claim?: string;
+    quote?: string;
+    confidence?: string;
+    meta?: Record<string, unknown>;
+  },
+): Promise<KnowledgeEvidence> {
+  return fetchWithBody<KnowledgeEvidence>(`${API_BASE}/knowledge/entities/${encodeURIComponent(entityId)}/evidence`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function listKnowledgeDrafts(opts?: {
+  status?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<KnowledgeDraftListResponse> {
+  const params = new URLSearchParams();
+  if (opts?.status) params.set('status', opts.status);
+  if (opts?.page) params.set('page', String(opts.page));
+  if (opts?.page_size) params.set('page_size', String(opts.page_size));
+  return fetchJSON<KnowledgeDraftListResponse>(`${API_BASE}/knowledge/drafts?${params}`);
+}
+
+export async function updateKnowledgeDraft(
+  draftId: string,
+  patch: {
+    payload?: Record<string, unknown>;
+    status?: string;
+    review_note?: string;
+  },
+): Promise<import('./types').KnowledgeDraft> {
+  return fetchWithBody<import('./types').KnowledgeDraft>(`${API_BASE}/knowledge/drafts/${encodeURIComponent(draftId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function acceptKnowledgeDraft(draftId: string): Promise<import('./types').AskDraftApplyResponse> {
+  return fetchWithBody<import('./types').AskDraftApplyResponse>(
+    `${API_BASE}/knowledge/drafts/${encodeURIComponent(draftId)}/accept`,
+    { method: 'POST' },
+  );
+}
+
+export async function rejectKnowledgeDraft(draftId: string, reviewNote = ''): Promise<import('./types').KnowledgeDraft> {
+  return fetchWithBody<import('./types').KnowledgeDraft>(
+    `${API_BASE}/knowledge/drafts/${encodeURIComponent(draftId)}/reject`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ review_note: reviewNote }),
+    },
+  );
+}
+
 export async function deleteKnowledgeEntity(
   entityId: string,
   force = false,
@@ -1021,6 +1094,20 @@ export async function deleteKnowledgeEntity(
     `${API_BASE}/knowledge/entities/${encodeURIComponent(entityId)}${params}`,
     { method: 'DELETE' },
   );
+}
+
+export async function mergeKnowledgeEntities(
+  sourceEntityId: string,
+  targetEntityId: string,
+): Promise<KnowledgeEntityMergeResponse> {
+  return fetchWithBody<KnowledgeEntityMergeResponse>(`${API_BASE}/knowledge/entities/merge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      source_entity_id: sourceEntityId,
+      target_entity_id: targetEntityId,
+    }),
+  });
 }
 
 export async function getKnowledgeGraph(

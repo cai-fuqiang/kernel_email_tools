@@ -230,6 +230,7 @@ class AskDraftService:
                 "chunk_id": source.get("chunk_id", ""),
                 "chunk_index": source.get("chunk_index", 0),
                 "source": source.get("source", ""),
+                "snippet": source.get("snippet", ""),
             }
             for source in sources[:12]
         ]

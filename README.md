@@ -452,8 +452,10 @@ export DASHSCOPE_API_KEY=...
 
 ## 相关计划文档
 
-- [plan-ask-agent.md](plan-ask-agent.md)：Ask Agent、RAG 索引、Ask 转知识草稿设计。
-- `plan-30000.md` / `plan-31000.md`：历史设计计划。
+- [.joycode/plans/PLAN-31002-knowledge-workbench-roadmap.md](.joycode/plans/PLAN-31002-knowledge-workbench-roadmap.md)：Knowledge Workbench、Evidence、Draft Inbox 与知识沉淀路线。
+- [.joycode/plans/PLAN-31000-unified-knowledge-graph.md](.joycode/plans/PLAN-31000-unified-knowledge-graph.md)：统一知识对象与知识图谱设计。
+- [.joycode/plans/PLAN-30000-code-definition-navigation.md](.joycode/plans/PLAN-30000-code-definition-navigation.md)：代码定义跳转后续计划。
+- [.joycode/plans/PLAN-20000-generalized-knowledge-tagging.md](.joycode/plans/PLAN-20000-generalized-knowledge-tagging.md)：通用标签系统设计与当前状态。
 
 ## 致谢
 

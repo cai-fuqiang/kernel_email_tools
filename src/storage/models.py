@@ -426,6 +426,69 @@ class KnowledgeRelationORM(Base):
         return f"<KnowledgeRelationORM relation_id={self.relation_id!r} type={self.relation_type}>"
 
 
+class KnowledgeEvidenceORM(Base):
+    """知识实体的一等证据记录。"""
+
+    __tablename__ = "knowledge_evidence"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    evidence_id: Mapped[str] = mapped_column(String(160), nullable=False, unique=True, index=True)
+    entity_id: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False, default="email", index=True)
+    message_id: Mapped[str] = mapped_column(String(512), nullable=False, default="", index=True)
+    thread_id: Mapped[str] = mapped_column(String(512), nullable=False, default="", index=True)
+    claim: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    quote: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    confidence: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    meta: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
+    updated_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
+    created_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    updated_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint("evidence_id", name="uq_knowledge_evidence_evidence_id"),
+        Index("ix_knowledge_evidence_entity_created", "entity_id", "created_at"),
+        Index("ix_knowledge_evidence_message_thread", "message_id", "thread_id"),
+    )
+
+
+class KnowledgeDraftORM(Base):
+    """Ask/Search 生成的待审核知识草稿。"""
+
+    __tablename__ = "knowledge_drafts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    draft_id: Mapped[str] = mapped_column(String(160), nullable=False, unique=True, index=True)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False, default="ask", index=True)
+    source_ref: Mapped[str] = mapped_column(String(512), nullable=False, default="", index=True)
+    question: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="new", index=True)
+    review_note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
+    updated_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
+    created_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    updated_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint("draft_id", name="uq_knowledge_drafts_draft_id"),
+        Index("ix_knowledge_drafts_status_updated", "status", "updated_at"),
+    )
+
+
 # ============================================================
 # Ask 对话历史 ORM 模型
 # ============================================================
@@ -870,6 +933,96 @@ class KnowledgeRelationRead(BaseModel):
     updated_at: datetime
     source_entity: Optional[KnowledgeEntityRead] = None
     target_entity: Optional[KnowledgeEntityRead] = None
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeEvidenceCreate(BaseModel):
+    entity_id: str = Field(..., min_length=1, max_length=160)
+    source_type: str = Field("email", max_length=64)
+    message_id: str = Field("", max_length=512)
+    thread_id: str = Field("", max_length=512)
+    claim: str = Field("", max_length=4000)
+    quote: str = Field("", max_length=12000)
+    confidence: str = Field("", max_length=32)
+    meta: dict = Field(default_factory=dict)
+    created_by: str = Field("me", max_length=128)
+    updated_by: str = Field("me", max_length=128)
+    created_by_user_id: Optional[str] = None
+    updated_by_user_id: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeEvidenceUpdate(BaseModel):
+    source_type: Optional[str] = Field(None, max_length=64)
+    message_id: Optional[str] = Field(None, max_length=512)
+    thread_id: Optional[str] = Field(None, max_length=512)
+    claim: Optional[str] = Field(None, max_length=4000)
+    quote: Optional[str] = Field(None, max_length=12000)
+    confidence: Optional[str] = Field(None, max_length=32)
+    meta: Optional[dict] = None
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeEvidenceRead(BaseModel):
+    evidence_id: str
+    entity_id: str
+    source_type: str = "email"
+    message_id: str = ""
+    thread_id: str = ""
+    claim: str = ""
+    quote: str = ""
+    confidence: str = ""
+    meta: dict = Field(default_factory=dict)
+    created_by: str = "me"
+    updated_by: str = "me"
+    created_by_user_id: Optional[str] = None
+    updated_by_user_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeDraftCreate(BaseModel):
+    source_type: str = Field("ask", max_length=64)
+    source_ref: str = Field("", max_length=512)
+    question: str = ""
+    payload: dict = Field(default_factory=dict)
+    status: str = Field("new", max_length=32)
+    review_note: str = ""
+    created_by: str = Field("me", max_length=128)
+    updated_by: str = Field("me", max_length=128)
+    created_by_user_id: Optional[str] = None
+    updated_by_user_id: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeDraftUpdate(BaseModel):
+    payload: Optional[dict] = None
+    status: Optional[str] = Field(None, max_length=32)
+    review_note: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeDraftRead(BaseModel):
+    draft_id: str
+    source_type: str = "ask"
+    source_ref: str = ""
+    question: str = ""
+    payload: dict = Field(default_factory=dict)
+    status: str = "new"
+    review_note: str = ""
+    created_by: str = "me"
+    updated_by: str = "me"
+    created_by_user_id: Optional[str] = None
+    updated_by_user_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}
 

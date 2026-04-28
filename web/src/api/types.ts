@@ -127,6 +127,7 @@ export interface AskTagAssignmentDraft {
 }
 
 export interface AskDraftResponse {
+  draft_id?: string;
   knowledge_drafts: AskKnowledgeDraft[];
   annotation_drafts: AskAnnotationDraft[];
   tag_assignment_drafts: AskTagAssignmentDraft[];
@@ -493,6 +494,47 @@ export interface KnowledgeRelationListResponse {
   incoming: KnowledgeRelation[];
 }
 
+export interface KnowledgeEvidence {
+  evidence_id: string;
+  entity_id: string;
+  source_type: string;
+  message_id: string;
+  thread_id: string;
+  claim: string;
+  quote: string;
+  confidence: string;
+  meta: Record<string, unknown>;
+  created_by: string;
+  updated_by: string;
+  created_by_user_id?: string | null;
+  updated_by_user_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeDraft {
+  draft_id: string;
+  source_type: string;
+  source_ref: string;
+  question: string;
+  payload: AskDraftResponse;
+  status: string;
+  review_note: string;
+  created_by: string;
+  updated_by: string;
+  created_by_user_id?: string | null;
+  updated_by_user_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeDraftListResponse {
+  drafts: KnowledgeDraft[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export interface KnowledgeGraphResponse {
   nodes: KnowledgeEntity[];
   edges: KnowledgeRelation[];
@@ -513,6 +555,12 @@ export interface KnowledgeEntityCreateResponse {
   suggestions: {
     duplicates: KnowledgeEntity[];
   };
+}
+
+export interface KnowledgeEntityMergeResponse {
+  source: KnowledgeEntity;
+  target: KnowledgeEntity;
+  moved: Record<string, number>;
 }
 
 // ============================================================

@@ -12,10 +12,19 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.storage.models import (
+    AnnotationORM,
     KnowledgeEntityCreate,
     KnowledgeEntityORM,
     KnowledgeEntityRead,
     KnowledgeEntityUpdate,
+    KnowledgeDraftCreate,
+    KnowledgeDraftORM,
+    KnowledgeDraftRead,
+    KnowledgeDraftUpdate,
+    KnowledgeEvidenceCreate,
+    KnowledgeEvidenceORM,
+    KnowledgeEvidenceRead,
+    KnowledgeEvidenceUpdate,
     KnowledgeRelationCreate,
     KnowledgeRelationORM,
     KnowledgeRelationRead,
@@ -142,6 +151,9 @@ class KnowledgeStore:
                     TagAssignmentORM.target_type == "knowledge_entity",
                     TagAssignmentORM.target_ref == entity_id,
                 )
+            )
+            await session.execute(
+                delete(KnowledgeEvidenceORM).where(KnowledgeEvidenceORM.entity_id == entity_id)
             )
 
             await session.delete(entity)
@@ -343,6 +355,313 @@ class KnowledgeStore:
                 raise ValueError("Knowledge relation already exists") from exc
             await session.refresh(relation)
             return await self._relation_read(session, relation)
+
+    async def create_evidence(self, data: KnowledgeEvidenceCreate) -> KnowledgeEvidenceRead:
+        entity_id = data.entity_id.strip()
+        async with self._session_factory() as session:
+            exists = await session.execute(
+                select(KnowledgeEntityORM.entity_id).where(KnowledgeEntityORM.entity_id == entity_id)
+            )
+            if not exists.scalar_one_or_none():
+                raise ValueError(f"Knowledge entity not found: {entity_id}")
+
+            now = datetime.utcnow()
+            evidence = KnowledgeEvidenceORM(
+                evidence_id=f"ev:{uuid.uuid4().hex}",
+                entity_id=entity_id,
+                source_type=(data.source_type or "email").strip(),
+                message_id=data.message_id.strip(),
+                thread_id=data.thread_id.strip(),
+                claim=data.claim.strip(),
+                quote=data.quote.strip(),
+                confidence=str(data.confidence or "").strip(),
+                meta=data.meta or {},
+                created_by=data.created_by,
+                updated_by=data.updated_by,
+                created_by_user_id=data.created_by_user_id,
+                updated_by_user_id=data.updated_by_user_id,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(evidence)
+            await session.commit()
+            await session.refresh(evidence)
+            return KnowledgeEvidenceRead.model_validate(evidence)
+
+    async def create_evidence_many(
+        self,
+        items: list[KnowledgeEvidenceCreate],
+    ) -> list[KnowledgeEvidenceRead]:
+        created: list[KnowledgeEvidenceRead] = []
+        for item in items:
+            try:
+                created.append(await self.create_evidence(item))
+            except ValueError:
+                continue
+        return created
+
+    async def list_evidence(self, entity_id: str) -> list[KnowledgeEvidenceRead]:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(KnowledgeEvidenceORM)
+                .where(KnowledgeEvidenceORM.entity_id == entity_id)
+                .order_by(KnowledgeEvidenceORM.created_at.desc())
+            )
+            return [KnowledgeEvidenceRead.model_validate(row) for row in result.scalars().all()]
+
+    async def update_evidence(
+        self,
+        evidence_id: str,
+        data: KnowledgeEvidenceUpdate,
+        updated_by: str,
+        updated_by_user_id: Optional[str] = None,
+    ) -> Optional[KnowledgeEvidenceRead]:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(KnowledgeEvidenceORM).where(KnowledgeEvidenceORM.evidence_id == evidence_id)
+            )
+            evidence = result.scalar_one_or_none()
+            if evidence is None:
+                return None
+            if data.source_type is not None:
+                evidence.source_type = data.source_type.strip()
+            if data.message_id is not None:
+                evidence.message_id = data.message_id.strip()
+            if data.thread_id is not None:
+                evidence.thread_id = data.thread_id.strip()
+            if data.claim is not None:
+                evidence.claim = data.claim.strip()
+            if data.quote is not None:
+                evidence.quote = data.quote.strip()
+            if data.confidence is not None:
+                evidence.confidence = str(data.confidence).strip()
+            if data.meta is not None:
+                evidence.meta = data.meta
+            evidence.updated_by = updated_by
+            evidence.updated_by_user_id = updated_by_user_id
+            evidence.updated_at = datetime.utcnow()
+            await session.commit()
+            await session.refresh(evidence)
+            return KnowledgeEvidenceRead.model_validate(evidence)
+
+    async def delete_evidence(self, evidence_id: str) -> bool:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(KnowledgeEvidenceORM).where(KnowledgeEvidenceORM.evidence_id == evidence_id)
+            )
+            evidence = result.scalar_one_or_none()
+            if evidence is None:
+                return False
+            await session.delete(evidence)
+            await session.commit()
+            return True
+
+    async def create_draft(self, data: KnowledgeDraftCreate) -> KnowledgeDraftRead:
+        now = datetime.utcnow()
+        draft = KnowledgeDraftORM(
+            draft_id=f"kdraft:{uuid.uuid4().hex}",
+            source_type=(data.source_type or "ask").strip(),
+            source_ref=data.source_ref.strip(),
+            question=data.question.strip(),
+            payload=data.payload or {},
+            status=(data.status or "new").strip(),
+            review_note=data.review_note.strip(),
+            created_by=data.created_by,
+            updated_by=data.updated_by,
+            created_by_user_id=data.created_by_user_id,
+            updated_by_user_id=data.updated_by_user_id,
+            created_at=now,
+            updated_at=now,
+        )
+        async with self._session_factory() as session:
+            session.add(draft)
+            await session.commit()
+            await session.refresh(draft)
+            return KnowledgeDraftRead.model_validate(draft)
+
+    async def list_drafts(
+        self,
+        status: str = "",
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[KnowledgeDraftRead], int]:
+        async with self._session_factory() as session:
+            stmt = select(KnowledgeDraftORM)
+            if status.strip():
+                stmt = stmt.where(KnowledgeDraftORM.status == status.strip())
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total = (await session.execute(count_stmt)).scalar() or 0
+            result = await session.execute(
+                stmt.order_by(KnowledgeDraftORM.updated_at.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+            return [KnowledgeDraftRead.model_validate(row) for row in result.scalars().all()], total
+
+    async def get_draft(self, draft_id: str) -> Optional[KnowledgeDraftRead]:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(KnowledgeDraftORM).where(KnowledgeDraftORM.draft_id == draft_id)
+            )
+            draft = result.scalar_one_or_none()
+            return KnowledgeDraftRead.model_validate(draft) if draft else None
+
+    async def update_draft(
+        self,
+        draft_id: str,
+        data: KnowledgeDraftUpdate,
+        updated_by: str,
+        updated_by_user_id: Optional[str] = None,
+    ) -> Optional[KnowledgeDraftRead]:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(KnowledgeDraftORM).where(KnowledgeDraftORM.draft_id == draft_id)
+            )
+            draft = result.scalar_one_or_none()
+            if draft is None:
+                return None
+            if data.payload is not None:
+                draft.payload = data.payload
+            if data.status is not None:
+                draft.status = data.status.strip()
+            if data.review_note is not None:
+                draft.review_note = data.review_note.strip()
+            draft.updated_by = updated_by
+            draft.updated_by_user_id = updated_by_user_id
+            draft.updated_at = datetime.utcnow()
+            await session.commit()
+            await session.refresh(draft)
+            return KnowledgeDraftRead.model_validate(draft)
+
+    async def merge_entities(
+        self,
+        source_entity_id: str,
+        target_entity_id: str,
+        updated_by: str,
+        updated_by_user_id: Optional[str] = None,
+    ) -> dict:
+        source_entity_id = source_entity_id.strip()
+        target_entity_id = target_entity_id.strip()
+        if source_entity_id == target_entity_id:
+            raise ValueError("source_entity_id and target_entity_id must be different")
+
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(KnowledgeEntityORM).where(
+                    KnowledgeEntityORM.entity_id.in_([source_entity_id, target_entity_id])
+                )
+            )
+            entities = {row.entity_id: row for row in result.scalars().all()}
+            source = entities.get(source_entity_id)
+            target = entities.get(target_entity_id)
+            if source is None or target is None:
+                missing = source_entity_id if source is None else target_entity_id
+                raise ValueError(f"Knowledge entity not found: {missing}")
+
+            counts = {"relations": 0, "tag_assignments": 0, "annotations": 0, "evidence": 0}
+
+            rel_result = await session.execute(
+                select(KnowledgeRelationORM).where(
+                    or_(
+                        KnowledgeRelationORM.source_entity_id == source_entity_id,
+                        KnowledgeRelationORM.target_entity_id == source_entity_id,
+                    )
+                )
+            )
+            for rel in rel_result.scalars().all():
+                new_source = target_entity_id if rel.source_entity_id == source_entity_id else rel.source_entity_id
+                new_target = target_entity_id if rel.target_entity_id == source_entity_id else rel.target_entity_id
+                if new_source == new_target:
+                    await session.delete(rel)
+                    continue
+                duplicate = await session.execute(
+                    select(KnowledgeRelationORM).where(
+                        KnowledgeRelationORM.source_entity_id == new_source,
+                        KnowledgeRelationORM.target_entity_id == new_target,
+                        KnowledgeRelationORM.relation_type == rel.relation_type,
+                        KnowledgeRelationORM.relation_id != rel.relation_id,
+                    )
+                )
+                if duplicate.scalar_one_or_none():
+                    await session.delete(rel)
+                    continue
+                rel.source_entity_id = new_source
+                rel.target_entity_id = new_target
+                rel.updated_by = updated_by
+                rel.updated_by_user_id = updated_by_user_id
+                rel.updated_at = datetime.utcnow()
+                counts["relations"] += 1
+
+            tag_result = await session.execute(
+                select(TagAssignmentORM).where(
+                    TagAssignmentORM.target_type == "knowledge_entity",
+                    TagAssignmentORM.target_ref == source_entity_id,
+                )
+            )
+            for assignment in tag_result.scalars().all():
+                duplicate = await session.execute(
+                    select(TagAssignmentORM).where(
+                        TagAssignmentORM.tag_id == assignment.tag_id,
+                        TagAssignmentORM.target_type == "knowledge_entity",
+                        TagAssignmentORM.target_ref == target_entity_id,
+                        TagAssignmentORM.anchor_hash == assignment.anchor_hash,
+                    )
+                )
+                if duplicate.scalar_one_or_none():
+                    await session.delete(assignment)
+                    continue
+                assignment.target_ref = target_entity_id
+                counts["tag_assignments"] += 1
+
+            ann_result = await session.execute(
+                select(AnnotationORM).where(
+                    AnnotationORM.target_type == "knowledge_entity",
+                    AnnotationORM.target_ref == source_entity_id,
+                )
+            )
+            for annotation in ann_result.scalars().all():
+                annotation.target_ref = target_entity_id
+                annotation.target_label = target.canonical_name
+                counts["annotations"] += 1
+
+            ev_result = await session.execute(
+                select(KnowledgeEvidenceORM).where(KnowledgeEvidenceORM.entity_id == source_entity_id)
+            )
+            for evidence in ev_result.scalars().all():
+                evidence.entity_id = target_entity_id
+                evidence.updated_by = updated_by
+                evidence.updated_by_user_id = updated_by_user_id
+                evidence.updated_at = datetime.utcnow()
+                counts["evidence"] += 1
+
+            aliases = list(dict.fromkeys([
+                *(target.aliases or []),
+                source.canonical_name,
+                *(source.aliases or []),
+            ]))
+            target.aliases = [alias for alias in aliases if alias and alias != target.canonical_name]
+            target.updated_by = updated_by
+            target.updated_by_user_id = updated_by_user_id
+            target.updated_at = datetime.utcnow()
+
+            source.status = "deprecated"
+            source.meta = {
+                **(source.meta or {}),
+                "merged_into": target_entity_id,
+                "merged_at": datetime.utcnow().isoformat(),
+            }
+            source.updated_by = updated_by
+            source.updated_by_user_id = updated_by_user_id
+            source.updated_at = datetime.utcnow()
+
+            await session.commit()
+            await session.refresh(target)
+            await session.refresh(source)
+            return {
+                "source": KnowledgeEntityRead.model_validate(source),
+                "target": KnowledgeEntityRead.model_validate(target),
+                "moved": counts,
+            }
 
     async def list_relations(self, entity_id: str) -> tuple[list[KnowledgeRelationRead], list[KnowledgeRelationRead]]:
         async with self._session_factory() as session:
