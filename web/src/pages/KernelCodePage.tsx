@@ -361,7 +361,7 @@ export default function KernelCodePage() {
       }
       setScriptCopied(true);
       setTimeout(() => setScriptCopied(false), 2000);
-    } catch (e) {
+    } catch {
       alert('复制失败，请手动从 /app/userscripts/elixir-annotate.user.js 下载');
     }
   };

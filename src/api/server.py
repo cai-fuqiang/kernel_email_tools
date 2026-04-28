@@ -670,18 +670,6 @@ async def lifespan(app: FastAPI):
         default_actor=config.get("annotations", {}).get("default_author", "me"),
     )
 
-    # 初始化检索层
-    keyword_retriever = KeywordRetriever(storage=_storage)
-    semantic_retriever = SemanticRetriever(
-        database_url=email_database_url,
-        model=indexer_cfg.get("vector", {}).get("model", "text-embedding-3-small"),
-        enabled=indexer_cfg.get("vector", {}).get("enabled", False),
-    )
-    _retriever = HybridRetriever(
-        keyword_retriever=keyword_retriever,
-        semantic_retriever=semantic_retriever,
-    )
-
     # 初始化 LLM 客户端（用于 AI 概括和草稿生成）
     email_qa_cfg = qa_cfg.get("email", qa_cfg)
     _llm_client = ChatLLMClient(
@@ -708,6 +696,21 @@ async def lifespan(app: FastAPI):
                 logger.warning("Vector retrieval enabled but DashScope API key is missing")
         else:
             logger.warning("Unsupported embedding provider for Ask vector retrieval: %s", embedding_provider_name)
+
+    # 初始化检索层
+    keyword_retriever = KeywordRetriever(storage=_storage)
+    semantic_retriever = SemanticRetriever(
+        database_url=email_database_url,
+        model=vector_cfg.get("model", "text-embedding-3-small"),
+        enabled=vector_cfg.get("enabled", False),
+        storage=_storage,
+        embedding_provider=embedding_provider,
+        embedding_provider_name=vector_cfg.get("provider", "dashscope"),
+    )
+    _retriever = HybridRetriever(
+        keyword_retriever=keyword_retriever,
+        semantic_retriever=semantic_retriever,
+    )
 
     _qa = AskAgent(
         storage=_storage,
@@ -2266,6 +2269,8 @@ async def search(
     # 至少要有关键词或过滤条件
     if not q.strip() and not sender and not date_from and not date_to and has_patch is None and not tag_list:
         raise HTTPException(status_code=400, detail="At least one search condition is required")
+    if mode == "semantic" and not q.strip():
+        raise HTTPException(status_code=400, detail="Semantic search requires a non-empty query")
 
     query = SearchQuery(
         text=q,

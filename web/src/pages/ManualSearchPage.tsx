@@ -25,8 +25,8 @@ export default function ManualSearchPage() {
         page_size: 20,
       });
       setResult(data);
-    } catch (e: any) {
-      showToast(e.message || 'Search failed', 'error');
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : 'Search failed', 'error');
     } finally {
       setLoading(false);
     }

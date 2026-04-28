@@ -752,6 +752,7 @@ class EmailChunkSearchResult(EmailChunkRead):
     score: float = 0.0
     snippet: str = ""
     source: str = "chunk_keyword"
+    has_patch: bool = False
 
 
 class AnnotationCreate(BaseModel):

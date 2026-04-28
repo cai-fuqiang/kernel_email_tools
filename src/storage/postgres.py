@@ -564,6 +564,7 @@ class PostgresStorage(BaseStorage):
         date_to=None,
         tags: Optional[list[str]] = None,
         tag_mode: str = "any",
+        has_patch: Optional[bool] = None,
         limit: int = 30,
     ) -> list[EmailChunkSearchResult]:
         """使用 pgvector 余弦距离检索 RAG 分片。"""
@@ -601,6 +602,8 @@ class PostgresStorage(BaseStorage):
                     subqueries = [self._message_ids_for_tag(tag) for tag in tags]
                     merged = subqueries[0] if len(subqueries) == 1 else union(*subqueries)
                     conditions.append(EmailChunkORM.message_id.in_(merged))
+            if has_patch is not None:
+                conditions.append(EmailORM.has_patch == has_patch)
 
             stmt = (
                 select(
@@ -614,9 +617,11 @@ class PostgresStorage(BaseStorage):
                     EmailChunkORM.chunk_index,
                     EmailChunkORM.content,
                     EmailChunkORM.content_hash,
+                    EmailORM.has_patch,
                     distance_col.label("distance"),
                 )
                 .join(EmailChunkEmbeddingORM, EmailChunkEmbeddingORM.chunk_id == EmailChunkORM.chunk_id)
+                .join(EmailORM, EmailORM.message_id == EmailChunkORM.message_id)
                 .where(*conditions)
                 .order_by(distance_col.asc())
                 .limit(limit)
@@ -635,6 +640,7 @@ class PostgresStorage(BaseStorage):
                 chunk_index=row.chunk_index,
                 content=row.content,
                 content_hash=row.content_hash,
+                has_patch=bool(row.has_patch),
                 score=max(0.0, 1.0 - float(row.distance or 0.0)),
                 snippet=row.content[:300],
                 source="chunk_vector",

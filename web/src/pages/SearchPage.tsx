@@ -72,6 +72,10 @@ function truncateText(text: string, max = 54): string {
   return clean.length > max ? `${clean.slice(0, max - 1)}...` : clean;
 }
 
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
 function citationLabel(source: SourceRef): string {
   const parts = [
     compactSender(source.sender || ''),
@@ -83,7 +87,7 @@ function citationLabel(source: SourceRef): string {
 
 export default function SearchPage() {
   const [query, setQuery] = useState('');
-  const [mode, setMode] = useState('hybrid');
+  const [mode, setMode] = useState('semantic');
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedThread, setSelectedThread] = useState<string | null>(null);
@@ -121,10 +125,12 @@ export default function SearchPage() {
 
   // 检查是否有任何过滤条件
   const hasFilters = sender || dateFrom || dateTo || hasPatch !== null || selectedTags.length > 0 || selectedChannel;
+  const semanticNeedsQuery = mode === 'semantic' && !query.trim();
 
   const handleSearch = async (p = 1) => {
     // 至少要有关键词或过滤条件
     if (!query.trim() && !hasFilters) return;
+    if (semanticNeedsQuery) return;
     setLoading(true);
     setPage(p);
     try {
@@ -141,8 +147,8 @@ export default function SearchPage() {
         tag_mode: tagMode,
       });
       setResult(data);
-    } catch (e: any) {
-      showToast(e.message || 'Search failed', 'error');
+    } catch (e: unknown) {
+      showToast(errorMessage(e, 'Search failed'), 'error');
     } finally {
       setLoading(false);
     }
@@ -180,8 +186,8 @@ export default function SearchPage() {
         hits,
       });
       setSummary(resp);
-    } catch (e: any) {
-      showToast(e.message || 'Summarize failed', 'error');
+    } catch (e: unknown) {
+      showToast(errorMessage(e, 'Summarize failed'), 'error');
     } finally {
       setSummarizing(false);
     }
@@ -205,8 +211,8 @@ export default function SearchPage() {
       const bundle = await createSummaryDraft(query || 'kernel discussion', summary.answer, sources);
       setDraftBundle(bundle);
       setShowDraftPanel(true);
-    } catch (e: any) {
-      showToast(e.message || 'Create draft failed', 'error');
+    } catch (e: unknown) {
+      showToast(errorMessage(e, 'Create draft failed'), 'error');
     } finally {
       setDraftLoading(false);
     }
@@ -221,8 +227,8 @@ export default function SearchPage() {
       if (resp.errors.length > 0) {
         showToast(`Draft saved with ${resp.errors.length} error(s): ${resp.errors.map(e => e.message).join(', ')}`, 'error');
       }
-    } catch (e: any) {
-      showToast(e.message || 'Apply draft failed', 'error');
+    } catch (e: unknown) {
+      showToast(errorMessage(e, 'Apply draft failed'), 'error');
     } finally {
       setDraftLoading(false);
     }
@@ -278,11 +284,16 @@ export default function SearchPage() {
         </select>
         <PrimaryButton
           onClick={() => handleSearch()}
-          disabled={loading}
+          disabled={loading || semanticNeedsQuery}
         >
           {loading ? 'Searching...' : 'Search'}
         </PrimaryButton>
       </div>
+      {semanticNeedsQuery && (
+        <p className="mt-2 text-xs text-amber-700">
+          Semantic search needs query text. Use Keyword or Hybrid for filter-only searches.
+        </p>
+      )}
 
       {/* 标签筛选快捷入口 */}
       {tagStats.length > 0 && (
@@ -408,7 +419,7 @@ export default function SearchPage() {
             </SecondaryButton>
             <PrimaryButton
               onClick={() => handleSearch()}
-              disabled={loading || (!query.trim() && !hasFilters)}
+              disabled={loading || (!query.trim() && !hasFilters) || semanticNeedsQuery}
             >
               {loading ? 'Searching...' : 'Search'}
             </PrimaryButton>
@@ -611,6 +622,11 @@ function ResultCard({
             {hit.has_patch && (
               <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-xs font-medium">
                 patch
+              </span>
+            )}
+            {hit.source && (
+              <span className="px-1.5 py-0.5 bg-sky-50 text-sky-700 rounded text-xs font-medium">
+                {hit.source}
               </span>
             )}
           </div>

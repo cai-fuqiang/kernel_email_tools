@@ -483,7 +483,7 @@ function AnnotationCard({
         <AnnotationInput
           initialBody={annotation.body}
           submitLabel="保存修改"
-          onSubmit={(body, _visibility) => { onEdit(annotation.annotation_id, body); setEditing(false); }}
+          onSubmit={(body) => { onEdit(annotation.annotation_id, body); setEditing(false); }}
           onCancel={() => setEditing(false)}
           showVisibility={false}
         />
@@ -1506,7 +1506,7 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
       try {
         const nextJob = await getTranslationJob(translationJob.job_id);
         setTranslationJob(nextJob);
-      } catch (e) {
+      } catch {
         // 轮询失败静默处理，下次间隔会重试
       }
     }, 1000);

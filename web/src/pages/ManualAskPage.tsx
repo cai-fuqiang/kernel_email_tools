@@ -23,8 +23,8 @@ export default function ManualAskPage() {
         contentType || undefined
       );
       setAnswer(data);
-    } catch (e: any) {
-      showToast(e.message || 'Ask failed', 'error');
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : 'Ask failed', 'error');
     } finally {
       setLoading(false);
     }
