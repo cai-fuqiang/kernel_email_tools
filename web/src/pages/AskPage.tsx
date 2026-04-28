@@ -192,7 +192,6 @@ export default function AskPage() {
       setConversations(res.conversations);
       return res.conversations;
     } catch {
-      showToast('Failed to load conversation list', 'error');
       return [];
     }
   }, []);
