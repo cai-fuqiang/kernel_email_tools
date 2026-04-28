@@ -38,6 +38,7 @@ export default function KnowledgeGraphView({
 
   useEffect(() => {
     if (!containerRef.current) return;
+    const container = containerRef.current;
 
     const elements: cytoscape.ElementDefinition[] = [];
 
@@ -82,7 +83,7 @@ export default function KnowledgeGraphView({
     }
 
     const cy = cytoscape({
-      container: containerRef.current,
+      container,
       elements,
       style: [
         {
@@ -163,6 +164,12 @@ export default function KnowledgeGraphView({
       wheelSensitivity: 0.3,
     });
 
+    const resizeObserver = new ResizeObserver(() => {
+      cy.resize();
+      cy.fit(undefined, 40);
+    });
+    resizeObserver.observe(container);
+
     cy.on('tap', 'node', (evt: EventObject) => {
       const nodeId = evt.target.data('id');
       if (nodeId) handleNodeClick(nodeId);
@@ -172,25 +179,30 @@ export default function KnowledgeGraphView({
     cy.on('mouseover', 'node', (evt: EventObject) => {
       const summary = evt.target.data('summary');
       if (summary) {
+        const existing = container.querySelector('[data-graph-tooltip="true"]');
+        if (existing) existing.remove();
         const tip = document.createElement('div');
-        tip.id = 'cy-tooltip';
+        tip.dataset.graphTooltip = 'true';
         tip.className =
           'absolute z-50 max-w-xs rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs leading-5 text-gray-700 shadow-lg';
         tip.textContent = summary;
         tip.style.left = evt.renderedPosition.x + 12 + 'px';
         tip.style.top = evt.renderedPosition.y - 12 + 'px';
-        containerRef.current?.appendChild(tip);
+        container.appendChild(tip);
       }
     });
 
     cy.on('mouseout', 'node', () => {
-      const tip = document.getElementById('cy-tooltip');
+      const tip = container.querySelector('[data-graph-tooltip="true"]');
       if (tip) tip.remove();
     });
 
     cyRef.current = cy;
 
     return () => {
+      resizeObserver.disconnect();
+      const tip = container.querySelector('[data-graph-tooltip="true"]');
+      if (tip) tip.remove();
       cy.destroy();
       cyRef.current = null;
     };
@@ -198,7 +210,19 @@ export default function KnowledgeGraphView({
 
   return (
     <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <div className="absolute left-3 top-3 z-10 rounded-lg border border-gray-200 bg-white/95 px-3 py-2 shadow-sm">
+        <div className="text-xs font-semibold text-gray-900">Local relationship map</div>
+        <div className="mt-1 text-[11px] text-gray-500">{nodes.length} nodes · {edges.length} relations</div>
+      </div>
       <div ref={containerRef} className="h-[520px] w-full" />
+      <div className="flex flex-wrap items-center gap-3 border-t border-gray-100 px-3 py-2 text-[11px] text-gray-500">
+        {Object.entries(TYPE_COLORS).map(([type, color]) => (
+          <span key={type} className="inline-flex items-center gap-1">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+            {type.replace(/_/g, ' ')}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

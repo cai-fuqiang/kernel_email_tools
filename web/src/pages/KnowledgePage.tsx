@@ -150,7 +150,7 @@ export default function KnowledgePage() {
     target_entity_id: '',
     description: '',
   });
-  const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'graph'>('graph');
   const [graphDepth, setGraphDepth] = useState(1);
   const [graphData, setGraphData] = useState<KnowledgeGraphResponse | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
@@ -253,6 +253,12 @@ export default function KnowledgePage() {
   }, [loadRelations]);
 
   useEffect(() => {
+    setGraphData(null);
+    setGraphDepth(1);
+    setViewMode('graph');
+  }, [selectedEntityId]);
+
+  useEffect(() => {
     getKnowledgeStats()
       .then(setStats)
       .catch(() => setStats(null));
@@ -275,7 +281,7 @@ export default function KnowledgePage() {
     if (viewMode === 'graph') {
       loadGraph(graphDepth);
     }
-  }, [viewMode, graphDepth, loadGraph]);
+  }, [viewMode, graphDepth, loadGraph, relations.outgoing.length, relations.incoming.length]);
 
   const selectedAliases = useMemo(
     () => (selectedEntity?.aliases || []).join(', '),
@@ -798,9 +804,9 @@ export default function KnowledgePage() {
             <section className="rounded-xl border border-gray-200 bg-white p-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-950">Related knowledge</h2>
+                  <h2 className="text-lg font-semibold text-gray-950">Local knowledge graph</h2>
                   <p className="text-sm text-gray-500">
-                    Start the knowledge graph with explicit, reviewable relationships between concepts.
+                    Explore this item's immediate neighborhood, then switch to List to edit the reviewed relations.
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -836,8 +842,8 @@ export default function KnowledgePage() {
 
               {viewMode === 'graph' ? (
                 <div className="mt-4">
-                  <div className="mb-3 flex items-center gap-3">
-                    <span className="text-xs font-medium text-gray-500">Depth:</span>
+                  <div className="mb-3 flex flex-wrap items-center gap-3">
+                    <span className="text-xs font-medium text-gray-500">Neighborhood depth:</span>
                     {[1, 2, 3].map((d) => (
                       <button
                         key={d}
@@ -852,12 +858,29 @@ export default function KnowledgePage() {
                         {d} hop{d > 1 ? 's' : ''}
                       </button>
                     ))}
+                    <span className="text-xs text-gray-400">
+                      Click a node to open that knowledge item.
+                    </span>
                   </div>
-                  {graphLoading ? (
+                  {relationCount === 0 ? (
+                    <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-10 text-center">
+                      <div className="text-sm font-semibold text-gray-900">No graph relations yet</div>
+                      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-500">
+                        A useful graph starts with explicit relationships. Add a relation in List view, then return here to see the local map.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('list')}
+                        className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+                      >
+                        Add relation
+                      </button>
+                    </div>
+                  ) : graphLoading ? (
                     <div className="flex h-[520px] items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-500">
                       Loading graph...
                     </div>
-                  ) : graphData && graphData.nodes.length > 0 ? (
+                  ) : graphData && graphData.edges.length > 0 ? (
                     <KnowledgeGraphView
                       nodes={graphData.nodes}
                       edges={graphData.edges}
@@ -866,7 +889,7 @@ export default function KnowledgePage() {
                     />
                   ) : (
                     <div className="flex h-[200px] items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-500">
-                      No graph data available.
+                      No graph data available for the selected depth.
                     </div>
                   )}
                 </div>
