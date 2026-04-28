@@ -305,10 +305,10 @@ export default function AskPage() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex min-h-screen bg-slate-50 lg:h-screen">
       {/* History Sidebar */}
       <aside
-        className={`${
+        className={`hidden lg:flex ${
           showSidebar ? 'w-[300px]' : 'w-0'
         } shrink-0 overflow-hidden border-r border-slate-200 bg-white transition-all`}
       >
@@ -363,7 +363,7 @@ export default function AskPage() {
       {!showSidebar && (
         <button
           onClick={() => setShowSidebar(true)}
-          className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-r-lg border border-l-0 border-slate-200 bg-white p-2 text-slate-400 hover:text-slate-600"
+          className="absolute left-0 top-1/2 z-10 hidden -translate-y-1/2 rounded-r-lg border border-l-0 border-slate-200 bg-white p-2 text-slate-400 hover:text-slate-600 lg:block"
         >
           <ChevronRight className="h-4 w-4" />
         </button>
@@ -371,7 +371,7 @@ export default function AskPage() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex min-h-full max-w-5xl flex-col space-y-5 p-8">
+        <div className="mx-auto flex min-h-full max-w-5xl flex-col space-y-5 p-4 md:p-8">
           <PageHeader
             eyebrow="Ask Agent"
             title="Ask a Question"

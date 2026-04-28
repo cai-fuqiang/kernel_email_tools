@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   createTag,
@@ -353,7 +353,7 @@ function TagTargetList({
   const [error, setError] = useState('');
   const pageSize = 10;
 
-  const load = async (p: number) => {
+  const load = useCallback(async (p: number) => {
     setLoading(true);
     setError('');
     try {
@@ -366,11 +366,11 @@ function TagTargetList({
     } finally {
       setLoading(false);
     }
-  };
+  }, [tagName]);
 
   useEffect(() => {
     load(1);
-  }, [tagName]);
+  }, [load]);
 
   const totalPages = Math.ceil(total / pageSize);
 

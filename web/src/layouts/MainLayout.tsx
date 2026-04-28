@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import {
   BookOpen,
@@ -9,10 +9,12 @@ import {
   Library,
   LogOut,
   MailSearch,
+  Menu,
   NotebookText,
   Search,
   Tags,
   Users,
+  X,
 } from 'lucide-react';
 import { getStats } from '../api/client';
 import { useAuth } from '../auth';
@@ -61,12 +63,18 @@ function NavSection({ title, items }: { title: string; items: NavItem[] }) {
 
 export default function MainLayout() {
   const [totalEmails, setTotalEmails] = useState<number | null>(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentUser, loading: authLoading, isAdmin, canWrite, error: authError, logout } = useAuth();
 
   useEffect(() => {
     getStats().then(s => setTotalEmails(s.total_emails)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
 
   const researchItems: NavItem[] = [
     { to: '/', label: 'Search Emails', icon: Search, end: true },
@@ -83,9 +91,8 @@ export default function MainLayout() {
     { to: '/manual/ask', label: 'Ask Manuals', icon: MailSearch },
   ];
 
-  return (
-    <div className="flex min-h-screen bg-slate-50">
-      <aside className="flex w-72 shrink-0 flex-col border-r border-slate-200 bg-white">
+  const SidebarContent = () => (
+    <>
         <div className="border-b border-slate-200 p-5">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
@@ -155,6 +162,55 @@ export default function MainLayout() {
             </p>
           </div>
         </div>
+    </>
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-50 lg:flex">
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-white">
+            <MailSearch className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold text-slate-950">Kernel Mail KB</div>
+            <div className="truncate text-xs text-slate-500">Research workbench</div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setMobileNavOpen(true)}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600"
+          aria-label="Open navigation"
+        >
+          <Menu className="h-4 w-4" />
+        </button>
+      </header>
+
+      {mobileNavOpen && (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/30"
+            aria-label="Close navigation"
+            onClick={() => setMobileNavOpen(false)}
+          />
+          <aside className="relative flex h-full w-72 max-w-[86vw] flex-col border-r border-slate-200 bg-white shadow-xl">
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(false)}
+              className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500"
+              aria-label="Close navigation"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <SidebarContent />
+          </aside>
+        </div>
+      )}
+
+      <aside className="hidden w-72 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
+        <SidebarContent />
       </aside>
 
       <main className="min-w-0 flex-1 overflow-auto">

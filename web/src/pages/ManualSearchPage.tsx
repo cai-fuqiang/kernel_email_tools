@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { searchManuals } from '../api/client';
 import type { ManualSearchResponse, ManualSearchHit } from '../api/types';
@@ -97,17 +98,28 @@ export default function ManualSearchPage() {
       </SectionPanel>
 
       {result && (
-        <div>
-          <p className="text-sm text-gray-500 mb-4">
+        <SectionPanel
+          title="Manual evidence"
+          description="Review larger snippets before asking a follow-up question or using a section as supporting evidence."
+          actions={
+            <Link
+              to="/manual/ask"
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Ask Manuals
+            </Link>
+          }
+        >
+          <p className="mb-4 text-sm text-gray-500">
             Found <span className="font-semibold text-gray-900">{result.total}</span> results{' '}
-            <span className="ml-2 px-2 py-0.5 bg-gray-100 rounded-full text-xs">{result.mode}</span>
+            <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs">{result.mode}</span>
           </p>
           <div className="space-y-3">
             {result.hits.map((hit) => (
               <ManualResultCard key={hit.chunk_id} hit={hit} />
             ))}
           </div>
-        </div>
+        </SectionPanel>
       )}
 
       {!result && !loading && (
@@ -119,7 +131,7 @@ export default function ManualSearchPage() {
 
 function ManualResultCard({ hit }: { hit: ManualSearchHit }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow">
+    <div className="rounded-xl border border-gray-200 bg-white p-5 transition-shadow hover:shadow-md">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
@@ -133,10 +145,12 @@ function ManualResultCard({ hit }: { hit: ManualSearchHit }) {
           <h3 className="text-sm font-semibold text-gray-900">
             {hit.section_title || hit.section}
           </h3>
-          <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500">
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-gray-500">
             <span>{hit.volume}</span>
-            <span>Section {hit.section}</span>
-            <span>Pages {hit.page_start}-{hit.page_end}</span>
+            {hit.manual_version && <span className="rounded bg-gray-50 px-1.5 py-0.5">{hit.manual_version}</span>}
+            {hit.chapter && <span className="rounded bg-gray-50 px-1.5 py-0.5">Chapter {hit.chapter}</span>}
+            <span className="rounded bg-gray-50 px-1.5 py-0.5">Section {hit.section}</span>
+            <span className="rounded bg-gray-50 px-1.5 py-0.5">Pages {hit.page_start}-{hit.page_end}</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -146,7 +160,7 @@ function ManualResultCard({ hit }: { hit: ManualSearchHit }) {
         </div>
       </div>
       {hit.snippet && (
-        <p className="mt-3 text-xs text-gray-600 leading-relaxed line-clamp-3">
+        <p className="mt-4 whitespace-pre-wrap rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm leading-6 text-gray-700">
           {hit.snippet}
         </p>
       )}

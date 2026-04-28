@@ -6,6 +6,14 @@ This plan turns the current broad feature surface into a more trustworthy and us
 
 The implementation is split into phases so the first delivery can be small and safe, while still recording the broader improvements previously identified across UI, workflow, code quality, Knowledge, Code Browser, Manuals, responsiveness, and performance.
 
+## Implementation Status
+
+- Phase 1 is implemented: `mode=semantic` now uses `email_chunks` / `email_chunk_embeddings`, supports query embeddings, email-level dedupe, pagination, and shared filters including `has_patch`.
+- Phase 3 is partially implemented: the main app navigation, Ask layout, Knowledge layout, and Kernel Code layout are responsive; browser-native alerts in touched paths use toast feedback.
+- Phase 4 is implemented for the current warning set: `npm run lint` is clean with zero warnings and zero errors.
+- Phase 5 is partially implemented: route-level code splitting is active, Manual Search has richer previews and an Ask Manuals path, Knowledge shows evidence quality summary, and Code Browser uses the existing kernel tree API for path browsing.
+- Larger follow-ups still intentionally remain: deeper Knowledge duplicate prevention, full ThreadDrawer extraction, full Kernel annotation review UX replacement for confirm/prompt flows, and annotation drift detection across kernel versions.
+
 ## Phase 1: Make `mode=semantic` Real
 
 ### Backend semantic retrieval

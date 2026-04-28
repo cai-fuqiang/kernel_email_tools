@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   getKernelFile,
+  getKernelTree,
   getKernelVersions,
   createCodeAnnotation,
   deleteCodeAnnotation,
@@ -15,9 +16,10 @@ import {
   approveAnnotationPublication,
   rejectAnnotationPublication,
 } from '../api/client';
-import type { KernelVersionInfo, KernelFileResponse, CodeAnnotation } from '../api/types';
+import type { KernelVersionInfo, KernelFileResponse, KernelTreeEntry, CodeAnnotation } from '../api/types';
 import EmailTagEditor from '../components/EmailTagEditor';
 import { useAuth } from '../auth';
+import { showToast } from '../components/Toast';
 
 // ============================================================
 // Helpers
@@ -53,7 +55,7 @@ function AnnotationPanel({
   const [saving, setSaving] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  const rootAnnotations = annotations.filter(a => !a.in_reply_to);
+  const rootAnnotations = useMemo(() => annotations.filter(a => !a.in_reply_to), [annotations]);
   const replyCounts = useMemo(() => {
     const acc: Record<string, number> = {};
     annotations.forEach(a => {
@@ -70,7 +72,7 @@ function AnnotationPanel({
 
   useEffect(() => {
     setExpandedIds(new Set(rootAnnotations.map(a => a.annotation_id)));
-  }, [annotations]);
+  }, [rootAnnotations]);
 
   const handleCreate = async () => {
     if (!body.trim() || selectedLines.size === 0) return;
@@ -85,7 +87,7 @@ function AnnotationPanel({
       setBody('');
       onAnnotationCreated();
     } catch (e: unknown) {
-      alert(`创建失败: ${e instanceof Error ? e.message : e}`);
+      showToast(`创建失败: ${e instanceof Error ? e.message : e}`, 'error');
     } finally { setSaving(false); }
   };
 
@@ -121,7 +123,7 @@ function AnnotationPanel({
   };
 
   return (
-    <div className="w-80 border-l border-gray-200 bg-gray-50 flex flex-col overflow-hidden">
+    <div className="flex max-h-[40vh] w-full flex-col overflow-hidden border-t border-gray-200 bg-gray-50 lg:max-h-none lg:w-80 lg:border-l lg:border-t-0">
       <div className="p-3 border-b border-gray-200 bg-white flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-700">注解</h3>
         {canWrite && selectedLines.size > 0 && (
@@ -268,27 +270,9 @@ export default function KernelCodePage() {
   });
   const [error, setError] = useState<string | null>(null);
   const [scriptCopied, setScriptCopied] = useState(false);
-
-  // Load versions
-  useEffect(() => {
-    setVersionsLoading(true);
-    getKernelVersions('all')
-      .then(res => {
-        setVersions(res.versions);
-        if (!selectedVersion && res.versions.length > 0) {
-          setSelectedVersion(res.versions[0].tag);
-        }
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setVersionsLoading(false));
-  }, []);
-
-  // Auto-load file from URL params
-  useEffect(() => {
-    if (urlPath && selectedVersion) {
-      loadFile(urlPath, urlLine);
-    }
-  }, [selectedVersion]);
+  const [treePath, setTreePath] = useState('');
+  const [treeEntries, setTreeEntries] = useState<KernelTreeEntry[]>([]);
+  const [treeLoading, setTreeLoading] = useState(false);
 
   const loadFile = useCallback(async (path: string, targetLine?: number | null) => {
     if (!selectedVersion || !path) return;
@@ -311,11 +295,55 @@ export default function KernelCodePage() {
     } finally { setFileLoading(false); }
   }, [selectedVersion, urlLine, setSearchParams]);
 
+  const loadTree = useCallback(async (path: string = '') => {
+    if (!selectedVersion) return;
+    setTreeLoading(true);
+    try {
+      const res = await getKernelTree(selectedVersion, path);
+      setTreePath(res.path);
+      setTreeEntries(res.entries.slice().sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      }));
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : 'Failed to load file tree', 'error');
+    } finally {
+      setTreeLoading(false);
+    }
+  }, [selectedVersion]);
+
+  // Load versions
+  useEffect(() => {
+    setVersionsLoading(true);
+    getKernelVersions('all')
+      .then(res => {
+        setVersions(res.versions);
+        setSelectedVersion(current => current || res.versions[0]?.tag || '');
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setVersionsLoading(false));
+  }, []);
+
+  // Auto-load file from URL params
+  useEffect(() => {
+    if (urlPath && selectedVersion) {
+      loadFile(urlPath, urlLine);
+    }
+  }, [loadFile, selectedVersion, urlLine, urlPath]);
+
+  useEffect(() => {
+    if (selectedVersion) {
+      loadTree(treePath);
+    }
+  }, [loadTree, selectedVersion, treePath]);
+
   const handleVersionSelect = (tag: string) => {
     setSelectedVersion(tag);
     setCurrentFile(null);
     setCurrentPath('');
     setPathInput('');
+    setTreePath('');
+    setTreeEntries([]);
     setAnnotations([]);
     setSelectedLines(new Set());
     setSearchParams({ v: tag }, { replace: true });
@@ -362,7 +390,7 @@ export default function KernelCodePage() {
       setScriptCopied(true);
       setTimeout(() => setScriptCopied(false), 2000);
     } catch {
-      alert('复制失败，请手动从 /app/userscripts/elixir-annotate.user.js 下载');
+      showToast('复制失败，请手动从 /app/userscripts/elixir-annotate.user.js 下载', 'error');
     }
   };
 
@@ -388,11 +416,11 @@ export default function KernelCodePage() {
   }, [currentFile]);
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
+    <div className="flex min-h-screen lg:h-[calc(100vh-4rem)]">
       {/* Main content area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Toolbar */}
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-200 bg-white">
+        <div className="flex flex-wrap items-center gap-3 border-b border-gray-200 bg-white px-4 py-2">
           {versionsLoading ? (
             <span className="text-sm text-gray-400">加载版本...</span>
           ) : (
@@ -448,8 +476,57 @@ export default function KernelCodePage() {
           </button>
         </div>
 
+        <div className="border-b border-gray-200 bg-gray-50 px-4 py-2">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => setTreePath('')}
+              className="rounded border border-gray-200 bg-white px-2 py-1 font-medium text-gray-600 hover:bg-gray-100"
+            >
+              /
+            </button>
+            {treePath && (
+              <button
+                type="button"
+                onClick={() => setTreePath(treePath.split('/').slice(0, -1).join('/'))}
+                className="rounded border border-gray-200 bg-white px-2 py-1 font-medium text-gray-600 hover:bg-gray-100"
+              >
+                ..
+              </button>
+            )}
+            <span className="mr-1 text-gray-400">{treePath || 'root'}</span>
+            {treeLoading ? (
+              <span className="text-gray-400">Loading tree...</span>
+            ) : treeEntries.length === 0 ? (
+              <span className="text-gray-400">No entries</span>
+            ) : (
+              treeEntries.slice(0, 16).map((entry) => (
+                <button
+                  key={entry.path}
+                  type="button"
+                  onClick={() => {
+                    if (entry.type === 'directory') {
+                      setTreePath(entry.path);
+                    } else {
+                      setPathInput(entry.path);
+                      loadFile(entry.path);
+                    }
+                  }}
+                  className={`rounded border px-2 py-1 font-medium ${
+                    entry.type === 'directory'
+                      ? 'border-sky-100 bg-sky-50 text-sky-700 hover:bg-sky-100'
+                      : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {entry.type === 'directory' ? `${entry.name}/` : entry.name}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
         {/* Content */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
           {/* Code view */}
           <div className="flex-1 overflow-auto">
             {error && (

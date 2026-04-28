@@ -35,6 +35,7 @@ import type {
   UserRead,
   KernelVersionsResponse,
   KernelFileResponse,
+  KernelTreeResponse,
   CodeAnnotation,
   CodeAnnotationCreate,
   CodeAnnotationListResponse,
@@ -1185,6 +1186,16 @@ export async function getKernelFile(
 ): Promise<KernelFileResponse> {
   return fetchJSON<KernelFileResponse>(
     `${API_BASE}/kernel/file/${encodeURIComponent(version)}/${path}`
+  );
+}
+
+export async function getKernelTree(
+  version: string,
+  path: string = '',
+): Promise<KernelTreeResponse> {
+  const suffix = path ? `/${path}` : '';
+  return fetchJSON<KernelTreeResponse>(
+    `${API_BASE}/kernel/tree/${encodeURIComponent(version)}${suffix}`
   );
 }
 

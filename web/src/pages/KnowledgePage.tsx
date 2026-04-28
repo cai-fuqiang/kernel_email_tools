@@ -368,6 +368,13 @@ export default function KnowledgePage() {
   );
   const evidence = useMemo(() => extractKnowledgeEvidence(selectedEntity), [selectedEntity]);
   const selectedEvidenceCount = selectedEntity ? evidenceRows.length || evidence.sources.length || evidence.threadIds.length : 0;
+  const directEvidenceCount = evidenceRows.filter((row) => row.source_type !== 'generated').length;
+  const generatedEvidenceCount = evidence.sources.length + evidence.threadIds.length;
+  const evidenceDates = evidenceRows
+    .map((row) => row.created_at)
+    .filter(Boolean)
+    .sort();
+  const lastEvidenceAt = evidenceDates[evidenceDates.length - 1] || evidence.generatedAt;
   const relationCount = relations.outgoing.length + relations.incoming.length;
   const relationTargets = useMemo(
     () => entities.filter((entity) => entity.entity_id !== selectedEntityId),
@@ -603,8 +610,8 @@ export default function KnowledgePage() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50">
-      <aside className="flex w-[390px] shrink-0 flex-col border-r border-slate-200 bg-white">
+    <div className="min-h-screen bg-slate-50 xl:flex xl:h-screen">
+      <aside className="flex max-h-[50vh] w-full shrink-0 flex-col border-b border-slate-200 bg-white xl:max-h-none xl:w-[390px] xl:border-b-0 xl:border-r">
         <div className="border-b border-slate-200 p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -894,7 +901,7 @@ export default function KnowledgePage() {
             </div>
           </div>
         ) : (
-          <div className="mx-auto max-w-6xl p-6 space-y-5">
+          <div className="mx-auto max-w-6xl space-y-5 p-4 md:p-6">
             <PageHeader
               eyebrow="Knowledge Workbench"
               title={selectedEntity.canonical_name}
@@ -1359,6 +1366,22 @@ export default function KnowledgePage() {
                   Ask question: {evidence.question}
                 </div>
               )}
+              <div className="mt-4 grid gap-2 md:grid-cols-3">
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <div className="text-[11px] font-semibold uppercase text-gray-400">Direct evidence</div>
+                  <div className="mt-1 text-sm font-semibold text-gray-950">{directEvidenceCount}</div>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <div className="text-[11px] font-semibold uppercase text-gray-400">Generated sources</div>
+                  <div className="mt-1 text-sm font-semibold text-gray-950">{generatedEvidenceCount}</div>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <div className="text-[11px] font-semibold uppercase text-gray-400">Last verified</div>
+                  <div className="mt-1 truncate text-sm font-semibold text-gray-950">
+                    {lastEvidenceAt ? formatDateTime(lastEvidenceAt) : 'Not verified'}
+                  </div>
+                </div>
+              </div>
               {evidenceRows.length > 0 ? (
                 <div className="mt-4 space-y-3">
                   {evidenceRows.map((row) => (

@@ -643,6 +643,20 @@ export interface KernelFileResponse {
   truncated: boolean;
 }
 
+export interface KernelTreeEntry {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  size: number;
+}
+
+export interface KernelTreeResponse {
+  version: string;
+  path: string;
+  entries: KernelTreeEntry[];
+  total: number;
+}
+
 export interface CodeAnnotation {
   annotation_id: string;
   annotation_type: string;

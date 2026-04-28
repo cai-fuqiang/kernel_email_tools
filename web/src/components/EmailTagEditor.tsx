@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createTagAssignment,
   deleteTagAssignment,
@@ -64,25 +64,27 @@ export default function EmailTagEditor({
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const resolvedAnchorKey = JSON.stringify(resolvedAnchor);
 
-  const loadTargetTags = async () => {
+  const loadTargetTags = useCallback(async () => {
     if (!resolvedTargetRef) return;
+    const anchorValue = JSON.parse(resolvedAnchorKey) as Record<string, unknown>;
     const [bundle, assignments] = await Promise.all([
-      getTargetTags(resolvedTargetType, resolvedTargetRef, resolvedAnchor),
+      getTargetTags(resolvedTargetType, resolvedTargetRef, anchorValue),
       listTagAssignments({
         target_type: resolvedTargetType,
         target_ref: resolvedTargetRef,
-        anchor: resolvedAnchor,
+        anchor: anchorValue,
       }),
     ]);
     setDirectTags(bundle.direct_tags);
     setAggregatedTags(bundle.aggregated_tags);
     setDirectAssignments(assignments);
-  };
+  }, [resolvedAnchorKey, resolvedTargetRef, resolvedTargetType]);
 
   useEffect(() => {
     loadTargetTags().catch(() => {});
-  }, [resolvedTargetType, resolvedTargetRef, JSON.stringify(resolvedAnchor)]);
+  }, [loadTargetTags]);
 
   // Cache tag tree for 60s to avoid re-fetching on every popover open
   const tagTreeCache = useRef<{ tree: TagTree[]; ts: number } | null>(null);
