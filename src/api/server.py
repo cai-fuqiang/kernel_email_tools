@@ -1341,7 +1341,12 @@ async def _run_agent_research(run_id: str) -> None:
             )
         )
         payload["draft_id"] = draft.draft_id
-        await _knowledge_store.update_draft(draft.draft_id, KnowledgeDraftUpdate(payload=payload))
+        await _knowledge_store.update_draft(
+            draft.draft_id,
+            KnowledgeDraftUpdate(payload=payload),
+            updated_by=_agent_user.display_name,
+            updated_by_user_id=_agent_user.user_id,
+        )
         action_index += 1
         await _record_agent_action(
             run_id,
