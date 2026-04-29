@@ -113,10 +113,10 @@ storage:
 indexer:
   vector:
     enabled: true
-    provider: dashscope
+    provider: dashscope     # dashscope | local
     model: text-embedding-v3
-    dimension: 1536
-    batch_size: 16
+    dimension: 1024         # text-embedding-v3 最大 1024
+    batch_size: 8           # DashScope 上限 10
 
 qa:
   email:
@@ -237,6 +237,61 @@ python scripts/index.py --build-vector --list lkml
 
 当前脚本的 chunk/vector 构建偏全量重建。后续计划是增量 chunk/vector，只处理新邮件。
 
+## Embedding Provider（向量模型）
+
+Semantic 检索需要 embedding 模型，支持两种 provider：
+
+### 云端：DashScope
+
+```bash
+# 需要 API key（复用 qa.email.api_key 或配置 indexer.vector.api_key）
+python scripts/index.py --build-vector --list lkml --embedding-provider dashscope
+```
+
+- 模型：`text-embedding-v3`，维度 1024
+- 不占本地资源，有 API 额度消耗
+- 单次请求最多 10 条，建议 batch_size ≤ 8
+
+### 本地：sentence-transformers
+
+首次运行自动从 HuggingFace 下载模型到 `~/.cache/huggingface/`。
+
+```bash
+# CPU（默认 auto 检测，无 GPU 自动 CPU）
+python scripts/index.py --build-vector --list lkml \
+  --embedding-provider local --device cpu
+
+# GPU（需要 CUDA 版 PyTorch）
+python scripts/index.py --build-vector --list lkml \
+  --embedding-provider local --device cuda
+```
+
+安装（分两种情况）：
+
+```bash
+# CPU 版（推荐先装，避免下载 2GB CUDA 依赖）
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install sentence-transformers
+
+# GPU / CUDA 版
+pip install torch                     # ~2GB，含 CUDA 依赖
+pip install sentence-transformers
+```
+
+常用本地模型：
+
+| 模型 | 维度 | 大小 | 说明 |
+|------|------|------|------|
+| `BAAI/bge-m3` | 1024 | ~2.2GB | 多语言，质量最高，需 3GB+ 显存 |
+| `BAAI/bge-large-en-v1.5` | 1024 | ~1.3GB | 英文专项，3GB 显存轻松跑 |
+| `all-MiniLM-L6-v2` | 384 | ~80MB | 英文轻量，CPU 也很快 |
+
+> **1060 3GB**：不建议跑 bge-m3（显存卡边），推荐 `bge-large-en-v1.5` 或 `all-MiniLM-L6-v2`。
+>
+> **大规模邮件（百万级）CPU 参考**：32 核 CPU 跑 bge-m3 约 20~40 条/秒（200 万 ≈ 14~28 小时）；`all-MiniLM-L6-v2` 约 150~300 条/秒（200 万 ≈ 2~4 小时）。PyTorch CPU 后端自动利用 MKL/OpenMP 多线程，无需额外配置。
+
+如果用了与数据库现有维度不同的模型，需要重建 vector 列并重跑 embedding。
+
 ## Ask Agent
 
 `POST /api/ask` 的流程：
@@ -258,45 +313,42 @@ Ask 页面可以把回答转换成可编辑草稿：
 
 ## AI Research Agent
 
-Agent Research 是一个第一版 MVP。它把 AI 作为特殊系统用户，而不是普通登录用户。
-
-默认 agent 用户：
+Agent Research 把 AI 作为特殊系统用户。默认 agent 身份：
 
 - `user_id`: `agent:lobster-agent`
 - `username`: `lobster-agent`
 - `role`: `agent`
 - `auth_source`: `system_agent`
 
-Web 入口：
+Web 入口：`/app/agent-research`（左侧导航 `Research` -> `Agent Research`）
 
-- `/app/agent-research`
-- 左侧导航：`Research` -> `Agent Research`
+### Run 流程
 
-当前 run 流程：
+1. 用户输入 topic、过滤条件、budget（迭代次数/搜索次数/线程数）。
+2. 后端创建 `agent_research_runs`，启动后台多轮研究循环。
+3. **多轮迭代**：semantic search → LLM relevance judge → query refinement → 直到证据充分或 budget 用完。
+4. 每次 LLM 调用记录 token usage；迭代边界检查取消信号（cooperative cancellation）。
+5. 检索到的所有内容标记为 `[UNTRUSTED SOURCE EVIDENCE]`，不被视为系统指令。
+6. Ask synthesis + Knowledge Draft 生成（`source_type=agent_research`）。
+7. 人工在 Knowledge Draft Inbox 审核 accept/reject（按 confidence 排序，支持 AI Agent / Accepted / Rejected 过滤器）。
 
-1. 用户输入 topic 和过滤条件。
-2. 后端创建 `agent_research_runs`。
-3. 后台任务执行 semantic-first 搜索，失败时回退 hybrid/search flow。
-4. 记录 `agent_run_actions` trace。
-5. 调用 Ask synthesis。
-6. 创建 `source_type=agent_research` 的 Knowledge Draft。
-7. 人工在 Knowledge Draft Inbox review/accept/reject。
+### API
 
-相关 API：
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/agent/research-runs` | POST | 创建 run |
+| `/api/agent/research-runs` | GET | 列出 runs（支持 status 过滤） |
+| `/api/agent/research-runs/{run_id}` | GET | run 详情 + trace |
+| `/api/agent/research-runs/{run_id}/cancel` | POST | 取消（cooperative） |
+| `/api/agent/research-runs/{run_id}/retry` | POST | 重试失败的 run |
 
-- `POST /api/agent/research-runs`
-- `GET /api/agent/research-runs`
-- `GET /api/agent/research-runs/{run_id}`
-- `POST /api/agent/research-runs/{run_id}/cancel`
-- `POST /api/agent/research-runs/{run_id}/retry`
+### 代码结构
 
-当前限制：
+- `src/agent/research_service.py` — 研究循环编排（多轮迭代、relevance judge、prompt 硬化、token 追踪）
+- `src/storage/agent_store.py` — `agent_research_runs` / `agent_run_actions` 持久化
+- `web/src/pages/AgentResearchPage.tsx` — 前端操作台（创建、监控、trace 查看）
 
-- 还不是完整自主多轮 agent，只是 bounded single-pass MVP。
-- cancel API 会更新 run 状态，但已运行任务尚未完全 cooperative cancellation。
-- 不自动 accept Knowledge，只生成 draft。
-- 还没有 token/cost accounting。
-- 详细 TODO 见 [.joycode/plans/PLAN-35000-ai-agent-special-user.md](.joycode/plans/PLAN-35000-ai-agent-special-user.md)。
+详细设计见 [.joycode/plans/PLAN-35000-ai-agent-special-user.md](.joycode/plans/PLAN-35000-ai-agent-special-user.md)。
 
 ## Web 功能
 

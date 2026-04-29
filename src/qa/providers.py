@@ -28,7 +28,7 @@ class DashScopeEmbeddingProvider:
         self,
         api_key: str,
         model: str = "text-embedding-v3",
-        dimension: int = 1536,
+        dimension: int = 1024,
         base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
         timeout: float = 60.0,
     ):
@@ -217,6 +217,42 @@ class ChatLLMClient:
             "total_tokens": usage_raw.get("total_tokens", 0) or 0,
         }
         return text, usage
+
+
+class LocalEmbeddingProvider:
+    """本地 sentence-transformers embedding，无需 API key。"""
+
+    def __init__(
+        self,
+        model: str = "BAAI/bge-m3",
+        dimension: int = 1024,
+        normalize: bool = True,
+        device: str = "",
+    ):
+        self.model = model
+        self.dimension = dimension
+        self.normalize = normalize
+        self.device = device or None  # "" → auto, "cpu" → CPU, "cuda" → GPU
+        self._encoder = None
+
+    def _load(self):
+        if self._encoder is None:
+            from sentence_transformers import SentenceTransformer
+
+            logger.info("Loading local embedding model: %s (device=%s)", self.model, self.device or "auto")
+            self._encoder = SentenceTransformer(self.model, device=self.device)
+        return self._encoder
+
+    async def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        encoder = self._load()
+        embeddings = encoder.encode(
+            texts,
+            normalize_embeddings=self.normalize,
+            show_progress_bar=False,
+        )
+        return [emb.tolist() for emb in embeddings]
 
 
 def parse_json_object(text: str) -> Optional[dict]:

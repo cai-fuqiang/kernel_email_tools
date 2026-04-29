@@ -199,7 +199,14 @@ async def run_build_chunks(config: dict, list_name: str | None = None) -> None:
         await storage.close()
 
 
-async def run_build_vector(config: dict, list_name: str | None = None, limit: int | None = None) -> None:
+async def run_build_vector(
+    config: dict,
+    list_name: str | None = None,
+    limit: int | None = None,
+    embedding_provider: str = "",
+    embedding_model: str = "",
+    device: str = "",
+) -> None:
     """构建邮件 RAG vector index。"""
     storage_cfg = config.get("storage", {}).get("email", {})
     vector_cfg = config.get("indexer", {}).get("vector", {})
@@ -208,40 +215,68 @@ async def run_build_vector(config: dict, list_name: str | None = None, limit: in
     if not database_url:
         logger.error("email storage database_url not configured")
         return
-    if vector_cfg.get("provider", "dashscope") != "dashscope":
-        logger.error("Only dashscope embedding provider is implemented")
-        return
-    api_key = resolve_api_key(
-        "dashscope",
-        vector_cfg.get("api_key", "") or qa_cfg.get("api_key", ""),
-    )
-    if not api_key:
-        logger.error("DashScope API key is required for vector indexing")
-        return
+
+    provider_type = embedding_provider or vector_cfg.get("provider", "dashscope")
+    model = embedding_model or vector_cfg.get("model", "text-embedding-v3")
+    dimension = vector_cfg.get("dimension", 1024)
+    batch_size = vector_cfg.get("batch_size", 8)
 
     storage = PostgresStorage(database_url=database_url, pool_size=storage_cfg.get("pool_size", 5))
-    provider = DashScopeEmbeddingProvider(
-        api_key=api_key,
-        model=vector_cfg.get("model", "text-embedding-v3"),
-        dimension=vector_cfg.get("dimension", 1536),
-    )
+
+    if provider_type == "local":
+        from src.qa.providers import LocalEmbeddingProvider
+
+        logger.info("Using local embedding model: %s (dim=%d, device=%s)", model, dimension, device or "auto")
+        provider = LocalEmbeddingProvider(model=model, dimension=dimension, device=device)
+        provider_name = "local"
+    elif provider_type == "dashscope":
+        from src.qa.providers import DashScopeEmbeddingProvider, resolve_api_key
+
+        api_key = resolve_api_key(
+            "dashscope",
+            vector_cfg.get("api_key", "") or qa_cfg.get("api_key", ""),
+        )
+        if not api_key:
+            logger.error("DashScope API key is required")
+            await storage.close()
+            return
+        logger.info("Using DashScope embedding: %s (dim=%d)", model, dimension)
+        provider = DashScopeEmbeddingProvider(api_key=api_key, model=model, dimension=dimension)
+        provider_name = "dashscope"
+    else:
+        logger.error("Unsupported embedding provider: %s", provider_type)
+        await storage.close()
+        return
+
     try:
         await storage.init_db()
         count = await EmailVectorIndexer(
             storage=storage,
             provider=provider,
-            provider_name="dashscope",
-            batch_size=vector_cfg.get("batch_size", 16),
+            provider_name=provider_name,
+            batch_size=batch_size,
         ).build(list_name=list_name, limit=limit)
         logger.info("Email vector embeddings built: %d", count)
     finally:
         await storage.close()
 
 
-async def run_rebuild_rag_index(config: dict, list_name: str | None = None, limit: int | None = None) -> None:
+async def run_rebuild_rag_index(
+    config: dict,
+    list_name: str | None = None,
+    limit: int | None = None,
+    embedding_provider: str = "",
+    embedding_model: str = "",
+    device: str = "",
+) -> None:
     """重建邮件 RAG chunk + vector index。"""
     await run_build_chunks(config, list_name=list_name)
-    await run_build_vector(config, list_name=list_name, limit=limit)
+    await run_build_vector(
+        config, list_name=list_name, limit=limit,
+        embedding_provider=embedding_provider,
+        embedding_model=embedding_model,
+        device=device,
+    )
 
 
 async def run_stats(config: dict) -> None:
@@ -282,6 +317,9 @@ def main() -> None:
     parser.add_argument("--rebuild-fulltext", action="store_true", help="重建全文索引")
     parser.add_argument("--build-chunks", action="store_true", help="构建邮件 RAG chunks")
     parser.add_argument("--build-vector", action="store_true", help="构建邮件 RAG 向量索引")
+    parser.add_argument("--embedding-provider", default="", choices=["local", "dashscope"], help="Embedding provider (overrides config)")
+    parser.add_argument("--embedding-model", default="", help="Embedding model name (overrides config)")
+    parser.add_argument("--device", default="", choices=["cpu", "cuda", "auto"], help="Device for local model (default: auto)")
     parser.add_argument("--rebuild-rag-index", action="store_true", help="重建邮件 RAG chunks 和向量索引")
     parser.add_argument("--stats", action="store_true", help="显示统计信息")
     args = parser.parse_args()
@@ -293,9 +331,19 @@ def main() -> None:
     elif args.build_chunks:
         asyncio.run(run_build_chunks(config, list_name=args.list))
     elif args.build_vector:
-        asyncio.run(run_build_vector(config, list_name=args.list, limit=args.limit or None))
+        asyncio.run(run_build_vector(
+            config, list_name=args.list, limit=args.limit or None,
+            embedding_provider=args.embedding_provider,
+            embedding_model=args.embedding_model,
+            device=args.device,
+        ))
     elif args.rebuild_rag_index:
-        asyncio.run(run_rebuild_rag_index(config, list_name=args.list, limit=args.limit or None))
+        asyncio.run(run_rebuild_rag_index(
+            config, list_name=args.list, limit=args.limit or None,
+            embedding_provider=args.embedding_provider,
+            embedding_model=args.embedding_model,
+            device=args.device,
+        ))
     elif args.list:
         asyncio.run(run_collect_and_store(args, config))
     else:

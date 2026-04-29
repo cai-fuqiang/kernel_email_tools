@@ -68,11 +68,11 @@ indexer:
     language: english
   vector:
     enabled: true
-    provider: dashscope
-    model: text-embedding-v3
-    dimension: 1536
-    batch_size: 16
-    api_key: ""                         # 默认复用 qa.email.api_key，也可用 DASHSCOPE_API_KEY
+    provider: dashscope                  # dashscope | local
+    model: text-embedding-v3             # dashscope: text-embedding-v3, local: BAAI/bge-m3 / all-MiniLM-L6-v2 等
+    dimension: 1024                      # 向量维度
+    batch_size: 8                        # DashScope 上限 10, 本地可调大
+    api_key: ""                          # 默认复用 qa.email.api_key，也可用 DASHSCOPE_API_KEY
 
 # 检索配置
 retriever:

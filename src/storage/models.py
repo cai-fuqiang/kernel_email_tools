@@ -251,8 +251,8 @@ if Vector is not None:
         )
         provider: Mapped[str] = mapped_column(String(64), nullable=False, default="dashscope")
         model: Mapped[str] = mapped_column(String(128), nullable=False, default="")
-        dimension: Mapped[int] = mapped_column(Integer, nullable=False, default=1536)
-        embedding = mapped_column(Vector(1536), nullable=False)
+        dimension: Mapped[int] = mapped_column(Integer, nullable=False, default=1024)
+        embedding = mapped_column(Vector(1024), nullable=False)
         content_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)
         created_at: Mapped[datetime] = mapped_column(
             DateTime(timezone=True), nullable=False, default=datetime.utcnow

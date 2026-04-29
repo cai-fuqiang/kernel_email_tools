@@ -752,7 +752,15 @@ async def lifespan(app: FastAPI):
     embedding_provider = None
     if vector_cfg.get("enabled", False):
         embedding_provider_name = vector_cfg.get("provider", "dashscope")
-        if embedding_provider_name == "dashscope":
+        if embedding_provider_name == "local":
+            from src.qa.providers import LocalEmbeddingProvider
+
+            embedding_provider = LocalEmbeddingProvider(
+                model=vector_cfg.get("model", "BAAI/bge-m3"),
+                dimension=vector_cfg.get("dimension", 1024),
+            )
+            logger.info("Using local embedding model for vector retrieval")
+        elif embedding_provider_name == "dashscope":
             embedding_api_key = resolve_api_key(
                 "dashscope",
                 vector_cfg.get("api_key", "") or email_qa_cfg.get("api_key", ""),
@@ -761,7 +769,7 @@ async def lifespan(app: FastAPI):
                 embedding_provider = DashScopeEmbeddingProvider(
                     api_key=embedding_api_key,
                     model=vector_cfg.get("model", "text-embedding-v3"),
-                    dimension=vector_cfg.get("dimension", 1536),
+                    dimension=vector_cfg.get("dimension", 1024),
                 )
             else:
                 logger.warning("Vector retrieval enabled but DashScope API key is missing")
