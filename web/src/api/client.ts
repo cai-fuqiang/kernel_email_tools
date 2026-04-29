@@ -1104,11 +1104,15 @@ export async function createKnowledgeEvidence(
 
 export async function listKnowledgeDrafts(opts?: {
   status?: string;
+  source_type?: string;
+  created_by_user_id?: string;
   page?: number;
   page_size?: number;
 }): Promise<KnowledgeDraftListResponse> {
   const params = new URLSearchParams();
   if (opts?.status) params.set('status', opts.status);
+  if (opts?.source_type) params.set('source_type', opts.source_type);
+  if (opts?.created_by_user_id) params.set('created_by_user_id', opts.created_by_user_id);
   if (opts?.page) params.set('page', String(opts.page));
   if (opts?.page_size) params.set('page_size', String(opts.page_size));
   return fetchJSON<KnowledgeDraftListResponse>(`${API_BASE}/knowledge/drafts?${params}`);

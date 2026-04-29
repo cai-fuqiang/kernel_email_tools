@@ -125,6 +125,50 @@ class ChatLLMClient:
             logger.error("LLM call failed: %s", exc)
         return ""
 
+    async def complete_with_usage(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.2,
+        max_tokens: int = 1500,
+    ) -> tuple[str, dict]:
+        """Return (text, usage_dict) from the LLM call."""
+        if not self.api_key:
+            return "", {}
+        try:
+            if self.provider == "dashscope":
+                return await self._complete_openai_compatible_with_usage(
+                    "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+                    system_prompt,
+                    user_prompt,
+                    temperature,
+                    max_tokens,
+                )
+            if self.provider == "openai":
+                from openai import AsyncOpenAI
+
+                client = AsyncOpenAI(api_key=self.api_key)
+                response = await client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                usage = {}
+                if hasattr(response, "usage") and response.usage:
+                    usage = {
+                        "prompt_tokens": response.usage.prompt_tokens or 0,
+                        "completion_tokens": response.usage.completion_tokens or 0,
+                        "total_tokens": response.usage.total_tokens or 0,
+                    }
+                return (response.choices[0].message.content or "", usage)
+        except Exception as exc:
+            logger.error("LLM call failed: %s", exc)
+        return "", {}
+
     async def _complete_openai_compatible(
         self,
         url: str,
@@ -133,6 +177,19 @@ class ChatLLMClient:
         temperature: float,
         max_tokens: int,
     ) -> str:
+        text, _ = await self._complete_openai_compatible_with_usage(
+            url, system_prompt, user_prompt, temperature, max_tokens
+        )
+        return text
+
+    async def _complete_openai_compatible_with_usage(
+        self,
+        url: str,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> tuple[str, dict]:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
                 url,
@@ -152,7 +209,14 @@ class ChatLLMClient:
             )
             response.raise_for_status()
             data = response.json()
-        return data.get("choices", [{}])[0].get("message", {}).get("content", "") or ""
+        text = data.get("choices", [{}])[0].get("message", {}).get("content", "") or ""
+        usage_raw = data.get("usage") or {}
+        usage = {
+            "prompt_tokens": usage_raw.get("prompt_tokens", 0) or 0,
+            "completion_tokens": usage_raw.get("completion_tokens", 0) or 0,
+            "total_tokens": usage_raw.get("total_tokens", 0) or 0,
+        }
+        return text, usage
 
 
 def parse_json_object(text: str) -> Optional[dict]:

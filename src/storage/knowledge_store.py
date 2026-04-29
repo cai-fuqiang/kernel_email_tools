@@ -530,6 +530,8 @@ class KnowledgeStore:
     async def list_drafts(
         self,
         status: str = "",
+        source_type: str = "",
+        created_by_user_id: str = "",
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[KnowledgeDraftRead], int]:
@@ -537,6 +539,10 @@ class KnowledgeStore:
             stmt = select(KnowledgeDraftORM)
             if status.strip():
                 stmt = stmt.where(KnowledgeDraftORM.status == status.strip())
+            if source_type.strip():
+                stmt = stmt.where(KnowledgeDraftORM.source_type == source_type.strip())
+            if created_by_user_id.strip():
+                stmt = stmt.where(KnowledgeDraftORM.created_by_user_id == created_by_user_id.strip())
             count_stmt = select(func.count()).select_from(stmt.subquery())
             total = (await session.execute(count_stmt)).scalar() or 0
             result = await session.execute(

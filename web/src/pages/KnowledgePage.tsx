@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Inbox, Plus, RefreshCw } from 'lucide-react';
 import EmailTagEditor from '../components/EmailTagEditor';
 import ThreadDrawer from '../components/ThreadDrawer';
@@ -204,6 +204,7 @@ export default function KnowledgePage() {
   const [stats, setStats] = useState<KnowledgeStats | null>(null);
   const [drafts, setDrafts] = useState<KnowledgeDraft[]>([]);
   const [draftLoading, setDraftLoading] = useState(false);
+  const [draftFilter, setDraftFilter] = useState<string>('all');
   const [activeDraft, setActiveDraft] = useState<KnowledgeDraft | null>(null);
   const [activeDraftPayload, setActiveDraftPayload] = useState<AskDraftResponse | null>(null);
   const [draftSaved, setDraftSaved] = useState<AskDraftApplyResponse | null>(null);
@@ -306,38 +307,34 @@ export default function KnowledgePage() {
   const loadDrafts = useCallback(async () => {
     setDraftLoading(true);
     try {
-      const res = await listKnowledgeDrafts({ status: 'new', page_size: 20 });
+      const opts: { status?: string; source_type?: string; page_size: number } = { page_size: 20 };
+      if (draftFilter === 'agent') {
+        opts.source_type = 'agent_research';
+        opts.status = 'new';
+      } else if (draftFilter === 'accepted') {
+        opts.source_type = 'agent_research';
+        opts.status = 'accepted';
+      } else if (draftFilter === 'rejected') {
+        opts.source_type = 'agent_research';
+        opts.status = 'rejected';
+      } else {
+        opts.status = 'new';
+      }
+      const res = await listKnowledgeDrafts(opts);
       setDrafts(res.drafts);
     } catch {
       setDrafts([]);
     } finally {
       setDraftLoading(false);
     }
-  }, []);
+  }, [draftFilter]);
 
-  useEffect(() => {
-    loadEntities();
-  }, [loadEntities]);
-
-  useEffect(() => {
-    loadSelectedEntity();
-  }, [loadSelectedEntity]);
-
-  useEffect(() => {
-    loadAnnotations();
-  }, [loadAnnotations]);
-
-  useEffect(() => {
-    loadRelations();
-  }, [loadRelations]);
-
-  useEffect(() => {
-    loadEvidence();
-  }, [loadEvidence]);
-
-  useEffect(() => {
-    loadDrafts();
-  }, [loadDrafts]);
+  useEffect(() => { loadEntities(); }, [loadEntities]);
+  useEffect(() => { loadSelectedEntity(); }, [loadSelectedEntity]);
+  useEffect(() => { loadAnnotations(); }, [loadAnnotations]);
+  useEffect(() => { loadRelations(); }, [loadRelations]);
+  useEffect(() => { loadEvidence(); }, [loadEvidence]);
+  useEffect(() => { loadDrafts(); }, [loadDrafts]);
 
   useEffect(() => {
     setGraphData(null);
@@ -751,6 +748,28 @@ export default function KnowledgePage() {
               Refresh
             </SecondaryButton>
           </div>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {[
+              { value: 'all', label: 'All' },
+              { value: 'human', label: 'Human' },
+              { value: 'agent', label: 'AI Agent' },
+              { value: 'accepted', label: 'Accepted Agent' },
+              { value: 'rejected', label: 'Rejected Agent' },
+            ].map((filter) => (
+              <button
+                key={filter.value}
+                type="button"
+                onClick={() => setDraftFilter(filter.value)}
+                className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition ${
+                  draftFilter === filter.value
+                    ? 'bg-amber-200 text-amber-800'
+                    : 'bg-white/60 text-slate-600 hover:bg-amber-100 hover:text-amber-700'
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
           {draftError && (
             <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
               {draftError}
@@ -761,9 +780,18 @@ export default function KnowledgePage() {
               <div className="text-xs text-gray-500">Loading drafts...</div>
             ) : drafts.length === 0 ? (
               <div className="rounded-lg border border-dashed border-amber-200 bg-white/70 px-3 py-3 text-xs leading-5 text-gray-500">
-                No new drafts. Ask or Search can generate candidates here.
+                No drafts for this filter. Ask or Search can generate candidates here.
               </div>
-            ) : drafts.slice(0, 4).map((draft) => {
+            ) : [...drafts]
+              .sort((a, b) => {
+                const aConf = agentDraftMeta(a).confidence;
+                const bConf = agentDraftMeta(b).confidence;
+                if (aConf !== null && bConf !== null) return bConf - aConf;
+                if (aConf !== null) return -1;
+                if (bConf !== null) return 1;
+                return 0;
+              })
+              .slice(0, 6).map((draft) => {
               const agentMeta = agentDraftMeta(draft);
               return (
               <div key={draft.draft_id} className="rounded-lg border border-amber-100 bg-white p-3">
@@ -777,14 +805,41 @@ export default function KnowledgePage() {
                       <div className="truncate text-xs font-semibold text-gray-900">
                         {draft.question || draft.source_ref || draft.source_type}
                       </div>
-                      {agentMeta.runId && (
-                        <div className="mt-1 truncate text-[11px] text-slate-500">
-                          AI research · {agentMeta.runId}
-                          {agentMeta.confidence !== null && ` · confidence ${agentMeta.confidence.toFixed(2)}`}
+                      {draft.source_type === 'agent_research' ? (
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">
+                            AI Research Agent
+                          </span>
+                          {agentMeta.confidence !== null && (
+                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                              agentMeta.confidence >= 0.7 ? 'bg-emerald-100 text-emerald-700' :
+                              agentMeta.confidence >= 0.5 ? 'bg-amber-100 text-amber-700' :
+                              'bg-red-100 text-red-700'
+                            }`}>
+                              confidence {agentMeta.confidence.toFixed(2)}
+                            </span>
+                          )}
+                          {agentMeta.runId && (
+                            <Link
+                              to={`/agent-research?run_id=${agentMeta.runId}`}
+                              className="text-[10px] text-purple-600 underline hover:text-purple-800"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              run {agentMeta.runId.slice(-12)}
+                            </Link>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="mt-1 text-[11px] text-slate-500">
+                          Created by {draft.created_by || 'human'}
                         </div>
                       )}
                     </div>
-                    <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      draft.source_type === 'agent_research'
+                        ? 'bg-purple-100 text-purple-700'
+                        : 'bg-amber-100 text-amber-700'
+                    }`}>
                       {draft.source_type}
                     </span>
                   </div>

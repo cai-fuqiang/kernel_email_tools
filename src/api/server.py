@@ -68,6 +68,7 @@ from src.storage.models import (
     UserSessionORM,
     UserUpdate,
 )
+from src.agent.research_service import AgentResearchService
 from src.storage.agent_store import AgentStore
 from src.storage.ask_store import AskStore
 from src.storage.knowledge_store import KnowledgeStore
@@ -125,6 +126,7 @@ _ask_store: Optional["AskStore"] = None
 # AI agent research components
 _agent_store: Optional[AgentStore] = None
 _agent_user: Optional["CurrentUser"] = None
+_agent_service: Optional[AgentResearchService] = None
 
 # 认证配置
 _auth_config: dict = {}
@@ -826,6 +828,15 @@ async def lifespan(app: FastAPI):
     _knowledge_store = KnowledgeStore(_storage.session_factory)
     _qa.knowledge_store = _knowledge_store
     _ask_store = AskStore(_storage.session_factory)
+    _agent_service = AgentResearchService(
+        agent_store=_agent_store,
+        knowledge_store=_knowledge_store,
+        retriever=_retriever,
+        llm_client=_llm_client,
+        qa=_qa,
+        agent_user_id=_agent_user.user_id if _agent_user else "agent:lobster-agent",
+        agent_name=_agent_user.display_name if _agent_user else "Lobster Research Agent",
+    )
     logger.info("Knowledge store initialized")
 
     # ========== 芯片手册存储初始化 ==========
@@ -1153,226 +1164,6 @@ class KnowledgeDraftUpdateRequest(BaseModel):
     status: Optional[str] = Field(None, max_length=32)
     review_note: Optional[str] = None
 
-
-def _agent_capable(capability: str) -> bool:
-    return bool(_agent_user and capability in _capabilities_for_role(_agent_user.role))
-
-
-async def _record_agent_action(
-    run_id: str,
-    action_index: int,
-    action_type: str,
-    payload: dict,
-    status: str = "ok",
-    error: str = "",
-    model: str = "",
-) -> None:
-    if not _agent_store:
-        return
-    await _agent_store.add_action(
-        AgentRunActionCreate(
-            run_id=run_id,
-            action_index=action_index,
-            action_type=action_type,
-            status=status,
-            payload=payload,
-            error=error,
-            model=model,
-        )
-    )
-
-
-async def _run_agent_research(run_id: str) -> None:
-    if not _agent_store or not _agent_user or not _knowledge_store:
-        return
-    if not _agent_capable("agent:research") or not _agent_capable("agent:create_draft"):
-        await _agent_store.update_run(
-            run_id,
-            AgentResearchRunUpdate(status="failed", failure_reason="agent_missing_capability"),
-        )
-        return
-
-    run = await _agent_store.get_run(run_id)
-    if not run:
-        return
-
-    action_index = 0
-    try:
-        await _agent_store.update_run(
-            run_id,
-            AgentResearchRunUpdate(status="running", heartbeat_at=datetime.utcnow()),
-        )
-
-        filters = run.filters or {}
-        budget = run.budget or {}
-        max_threads = int(budget.get("max_threads") or 6)
-        query = SearchQuery(
-            text=run.topic,
-            list_name=filters.get("list_name") or None,
-            sender=filters.get("sender") or None,
-            date_from=datetime.fromisoformat(filters["date_from"]) if filters.get("date_from") else None,
-            date_to=datetime.fromisoformat(filters["date_to"]) if filters.get("date_to") else None,
-            has_patch=filters.get("has_patch"),
-            tags=filters.get("tags") or None,
-            page=1,
-            page_size=max_threads,
-            top_k=max_threads,
-        )
-
-        result = await _retriever.semantic_retriever.search(query) if _retriever else None
-        if result is None or not result.hits:
-            result = await _retriever.search(query) if _retriever else None
-        hits = result.hits if result else []
-        sources = [
-            {
-                "message_id": hit.message_id,
-                "thread_id": hit.thread_id,
-                "subject": hit.subject,
-                "sender": hit.sender,
-                "date": hit.date,
-                "list_name": hit.list_name,
-                "snippet": hit.snippet,
-                "score": hit.score,
-                "source": hit.source,
-            }
-            for hit in hits[:max_threads]
-        ]
-        action_index += 1
-        await _record_agent_action(
-            run_id,
-            action_index,
-            "search",
-            {
-                "query": run.topic,
-                "mode": result.mode if result else "none",
-                "hits": len(hits),
-                "sources": sources,
-            },
-        )
-
-        existing_knowledge = [
-            item.model_dump(mode="json")
-            for item in await _knowledge_store.search_entities([run.topic], limit=5)
-        ]
-        action_index += 1
-        await _record_agent_action(
-            run_id,
-            action_index,
-            "relevance_judge",
-            {
-                "relevant_hits": len(sources),
-                "existing_knowledge": existing_knowledge,
-                "sufficient_for_draft": bool(sources),
-            },
-        )
-
-        answer = None
-        if _qa:
-            answer = await _qa.ask(
-                run.topic,
-                list_name=query.list_name,
-                sender=query.sender,
-                date_from=query.date_from,
-                date_to=query.date_to,
-                tags=query.tags,
-            )
-        answer_text = answer.answer if answer else (
-            "Insufficient evidence found for an agent-generated synthesis."
-            if not sources else
-            f"Found {len(sources)} relevant source(s), but AskAgent is unavailable."
-        )
-        action_index += 1
-        await _record_agent_action(
-            run_id,
-            action_index,
-            "ask",
-            {
-                "answer": answer_text,
-                "source_count": len(answer.sources) if answer else len(sources),
-                "executed_queries": [item.__dict__ for item in answer.executed_queries] if answer else [],
-            },
-            model=answer.model if answer else "",
-        )
-
-        draft_service = AskDraftService(_llm_client)
-
-        async def tag_exists(_tag_name: str) -> bool:
-            return True
-
-        bundle = await draft_service.generate(
-            query=run.topic,
-            summary=answer_text,
-            sources=sources,
-            tag_exists=tag_exists,
-            search_plan=answer.search_plan if answer else {},
-            threads=[item.__dict__ for item in answer.threads] if answer else [],
-            retrieval_stats=answer.retrieval_stats if answer else {},
-        )
-        payload = {
-            "draft_id": "",
-            "knowledge_drafts": bundle.knowledge_drafts,
-            "annotation_drafts": bundle.annotation_drafts,
-            "tag_assignment_drafts": bundle.tag_assignment_drafts,
-            "warnings": bundle.warnings,
-            "agent_run_id": run_id,
-            "agent_user_id": _agent_user.user_id,
-            "agent_name": _agent_user.display_name,
-            "confidence": min(0.9, 0.45 + 0.05 * len(sources)),
-            "search_trace": {"source_count": len(sources), "existing_knowledge": existing_knowledge},
-            "self_review": {
-                "uncertainties": [] if sources else ["No relevant source evidence found."],
-                "weak_points": [] if len(sources) >= 2 else ["Evidence set is small."],
-                "contradictions": [],
-            },
-            "source_evidence": sources,
-            "existing_knowledge_context": existing_knowledge,
-        }
-        draft = await _knowledge_store.create_draft(
-            KnowledgeDraftCreate(
-                source_type="agent_research",
-                source_ref=run_id,
-                question=run.topic,
-                payload=payload,
-                status="new",
-                created_by=_agent_user.display_name,
-                updated_by=_agent_user.display_name,
-                created_by_user_id=_agent_user.user_id,
-                updated_by_user_id=_agent_user.user_id,
-            )
-        )
-        payload["draft_id"] = draft.draft_id
-        await _knowledge_store.update_draft(
-            draft.draft_id,
-            KnowledgeDraftUpdate(payload=payload),
-            updated_by=_agent_user.display_name,
-            updated_by_user_id=_agent_user.user_id,
-        )
-        action_index += 1
-        await _record_agent_action(
-            run_id,
-            action_index,
-            "draft_generate",
-            {"draft_id": draft.draft_id, "knowledge_drafts": len(bundle.knowledge_drafts)},
-        )
-
-        await _agent_store.update_run(
-            run_id,
-            AgentResearchRunUpdate(
-                status="needs_review",
-                confidence=payload["confidence"],
-                summary=answer_text[:2000],
-                draft_ids=[draft.draft_id],
-                heartbeat_at=datetime.utcnow(),
-            ),
-        )
-    except Exception as exc:
-        logger.exception("Agent research run failed: %s", run_id)
-        action_index += 1
-        await _record_agent_action(run_id, action_index, "failure", {}, status="failed", error=str(exc))
-        await _agent_store.update_run(
-            run_id,
-            AgentResearchRunUpdate(status="failed", failure_reason=str(exc)),
-        )
 
 
 class KnowledgeEntityMergeRequest(BaseModel):
@@ -4325,7 +4116,7 @@ async def create_agent_research_run(
     request: AgentResearchRunCreateRequest,
     current_user: CurrentUser = Depends(require_roles("admin", "editor")),
 ):
-    if not _agent_store or not _agent_user:
+    if not _agent_store or not _agent_user or not _agent_service:
         raise HTTPException(status_code=503, detail="Agent research service not initialized")
     filters = {
         "list_name": request.list_name.strip(),
@@ -4347,7 +4138,7 @@ async def create_agent_research_run(
             budget=request.budget.model_dump(),
         )
     )
-    asyncio.create_task(_run_agent_research(run.run_id))
+    asyncio.create_task(_agent_service.execute(run.run_id))
     return run
 
 
@@ -4383,12 +4174,9 @@ async def cancel_agent_research_run(
     run_id: str,
     current_user: CurrentUser = Depends(require_roles("admin", "editor")),
 ):
-    if not _agent_store:
+    if not _agent_service:
         raise HTTPException(status_code=503, detail="Agent research service not initialized")
-    run = await _agent_store.update_run(
-        run_id,
-        AgentResearchRunUpdate(status="cancelled", failure_reason="cancelled_by_user"),
-    )
+    run = await _agent_service.cancel(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Agent research run not found")
     return run
@@ -4399,35 +4187,31 @@ async def retry_agent_research_run(
     run_id: str,
     current_user: CurrentUser = Depends(require_roles("admin", "editor")),
 ):
-    if not _agent_store or not _agent_user:
+    if not _agent_service:
         raise HTTPException(status_code=503, detail="Agent research service not initialized")
-    previous = await _agent_store.get_run(run_id)
-    if not previous:
+    retry = await _agent_service.retry(run_id, current_user.user_id, current_user.display_name)
+    if not retry:
         raise HTTPException(status_code=404, detail="Agent research run not found")
-    retry = await _agent_store.create_run(
-        AgentResearchRunCreate(
-            topic=previous.topic,
-            requested_by_user_id=current_user.user_id,
-            requested_by=current_user.display_name,
-            agent_user_id=_agent_user.user_id,
-            agent_name=_agent_user.display_name,
-            filters=previous.filters,
-            budget=previous.budget,
-        )
-    )
-    asyncio.create_task(_run_agent_research(retry.run_id))
     return retry
 
 
 @app.get("/api/knowledge/drafts", response_model=KnowledgeDraftListResponse)
 async def list_knowledge_drafts(
     status: str = Query("", description="草稿状态过滤"),
+    source_type: str = Query("", description="按来源类型过滤，如 agent_research"),
+    created_by_user_id: str = Query("", description="按创建者用户 ID 过滤"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
     if not _knowledge_store:
         raise HTTPException(status_code=503, detail="Knowledge store not initialized")
-    drafts, total = await _knowledge_store.list_drafts(status=status, page=page, page_size=page_size)
+    drafts, total = await _knowledge_store.list_drafts(
+        status=status,
+        source_type=source_type,
+        created_by_user_id=created_by_user_id,
+        page=page,
+        page_size=page_size,
+    )
     return KnowledgeDraftListResponse(drafts=drafts, total=total, page=page, page_size=page_size)
 
 

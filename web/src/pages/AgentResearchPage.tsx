@@ -412,7 +412,9 @@ export default function AgentResearchPage() {
                   <EmptyState title="No actions recorded yet" />
                 ) : (
                   <div className="space-y-3">
-                    {detail.actions.map((action) => (
+                    {detail.actions.map((action) => {
+                      const usage = action.token_usage as Record<string, number> | undefined;
+                      return (
                       <div key={action.action_id} className="rounded-lg border border-slate-200 bg-white p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div className="flex items-center gap-2">
@@ -420,8 +422,18 @@ export default function AgentResearchPage() {
                             <div className="text-sm font-semibold capitalize text-slate-950">{actionTitle(action)}</div>
                             <StatusBadge tone={statusTone(action.status)}>{action.status}</StatusBadge>
                           </div>
-                          <div className="text-xs text-slate-500">{formatDateTime(action.created_at)}</div>
+                          <div className="flex items-center gap-3 text-xs text-slate-500">
+                            {action.iteration_index > 0 && (
+                              <span className="rounded bg-slate-100 px-1.5 py-0.5">iter {action.iteration_index}</span>
+                            )}
+                            <span>{formatDateTime(action.created_at)}</span>
+                          </div>
                         </div>
+                        {usage && usage.total_tokens > 0 && (
+                          <div className="mt-1 text-[11px] text-slate-400">
+                            Tokens: {usage.total_tokens.toLocaleString()} (prompt {usage.prompt_tokens?.toLocaleString() || 0}, completion {usage.completion_tokens?.toLocaleString() || 0})
+                          </div>
+                        )}
                         {action.error && (
                           <div className="mt-2 rounded border border-rose-100 bg-rose-50 px-2 py-1.5 text-xs text-rose-700">
                             {action.error}
@@ -433,7 +445,8 @@ export default function AgentResearchPage() {
                           </pre>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </SectionPanel>
