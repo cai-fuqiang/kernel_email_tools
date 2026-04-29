@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ChevronDown, Search, Sparkles } from 'lucide-react';
-import { searchEmails, getTagStats, getChannels, summarizeSearchResults, createSummaryDraft, applySummaryDraft, type TagStats } from '../api/client';
-import type { SearchResponse, SearchHit, SummarizeResponse, AskDraftResponse, SourceRef, ChannelOption } from '../api/types';
+import { searchEmails, listAnnotations, getTagStats, getChannels, summarizeSearchResults, createSummaryDraft, applySummaryDraft, type TagStats } from '../api/client';
+import type { SearchResponse, SearchHit, SummarizeResponse, AskDraftResponse, SourceRef, ChannelOption, AnnotationListItem } from '../api/types';
 import ThreadDrawer from '../components/ThreadDrawer';
 import TagFilter from '../components/TagFilter';
 import EmailTagEditor from '../components/EmailTagEditor';
@@ -111,6 +111,11 @@ export default function SearchPage() {
   const [draftSaved, setDraftSaved] = useState<AskDraftApplyResponse | null>(null);
   const [showDraftPanel, setShowDraftPanel] = useState(false);
 
+  // Annotation search
+  const [includeAnnotations, setIncludeAnnotations] = useState(false);
+  const [annotationResults, setAnnotationResults] = useState<AnnotationListItem[]>([]);
+  const [annotationTotal, setAnnotationTotal] = useState(0);
+
   // Channel/channel 选择状态
   const [selectedChannel, setSelectedChannel] = useState<string>('');
   const [channelOptions, setChannelOptions] = useState<ChannelOption[]>([{ value: '', label: 'All Channels' }]);
@@ -128,7 +133,6 @@ export default function SearchPage() {
   const semanticNeedsQuery = mode === 'semantic' && !query.trim();
 
   const handleSearch = async (p = 1) => {
-    // 至少要有关键词或过滤条件
     if (!query.trim() && !hasFilters) return;
     if (semanticNeedsQuery) return;
     setLoading(true);
@@ -147,6 +151,21 @@ export default function SearchPage() {
         tag_mode: tagMode,
       });
       setResult(data);
+
+      // 并行搜索批注
+      if (includeAnnotations && query.trim()) {
+        try {
+          const annRes = await listAnnotations({ q: query.trim(), page: 1, page_size: 10 });
+          setAnnotationResults(annRes.annotations);
+          setAnnotationTotal(annRes.total);
+        } catch {
+          setAnnotationResults([]);
+          setAnnotationTotal(0);
+        }
+      } else {
+        setAnnotationResults([]);
+        setAnnotationTotal(0);
+      }
     } catch (e: unknown) {
       showToast(errorMessage(e, 'Search failed'), 'error');
     } finally {
@@ -411,12 +430,23 @@ export default function SearchPage() {
 
           {/* 搜索按钮 */}
           <div className="mt-4 flex justify-between items-center">
-            <SecondaryButton
-              onClick={resetFilters}
-              className="px-3 py-1.5 text-xs"
-            >
-              Reset filters
-            </SecondaryButton>
+            <div className="flex items-center gap-3">
+              <SecondaryButton
+                onClick={resetFilters}
+                className="px-3 py-1.5 text-xs"
+              >
+                Reset filters
+              </SecondaryButton>
+              <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={includeAnnotations}
+                  onChange={(e) => setIncludeAnnotations(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-slate-300"
+                />
+                搜索批注
+              </label>
+            </div>
             <PrimaryButton
               onClick={() => handleSearch()}
               disabled={loading || (!query.trim() && !hasFilters) || semanticNeedsQuery}
@@ -554,6 +584,35 @@ export default function SearchPage() {
               />
             ))}
           </div>
+          {annotationResults.length > 0 && (
+            <div className="mt-6 pt-4 border-t border-slate-200">
+              <p className="text-sm text-slate-500 mb-3">
+                批注匹配 <span className="font-semibold text-slate-900">{annotationTotal}</span> 条
+              </p>
+              <div className="space-y-2">
+                {annotationResults.map((ann) => (
+                  <button
+                    key={ann.annotation_id}
+                    type="button"
+                    onClick={() => ann.thread_id && setSelectedThread(ann.thread_id)}
+                    className="block w-full rounded-lg border border-purple-200 bg-purple-50/50 p-4 text-left hover:bg-purple-50 transition"
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px] font-medium">批注</span>
+                      <span className="text-xs text-slate-500">{ann.author}</span>
+                      <span className="text-xs text-slate-400">{ann.created_at ? new Date(ann.created_at).toLocaleDateString() : ''}</span>
+                    </div>
+                    <div className="text-sm text-slate-700 line-clamp-3">{ann.body}</div>
+                    {ann.email_subject && (
+                      <div className="mt-1 text-[11px] text-slate-400 truncate">
+                        在: {ann.email_subject}
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-2 mt-6">
               <button

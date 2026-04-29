@@ -132,7 +132,7 @@ export default function EmailTagEditor({
     () =>
       allTags
         .filter((tag) => !directTagNames.includes(tag.name))
-        .filter((tag) => isAdmin || (tag.visibility === 'private' && tag.owner_user_id === currentUser?.user_id))
+        .filter((tag) => isAdmin || tag.visibility === 'public' || (tag.visibility === 'private' && tag.owner_user_id === currentUser?.user_id))
         .filter((tag) => !inputValue || tag.name.toLowerCase().includes(inputValue.toLowerCase())),
     [allTags, currentUser?.user_id, directTagNames, inputValue, isAdmin],
   );

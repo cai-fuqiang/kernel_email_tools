@@ -415,6 +415,7 @@ function AnnotationCard({
   onEdit,
   onDelete,
   onReply,
+  onRefresh,
 }: {
   annotation: Annotation;
   depth: number;
@@ -422,6 +423,7 @@ function AnnotationCard({
   onEdit: (annotationId: string, body: string) => void;
   onDelete: (annotationId: string) => void;
   onReply: (annotationId: string) => void;
+  onRefresh: () => void;
 }) {
   const { canWrite, currentUser, isAdmin } = useAuth();
   const [editing, setEditing] = useState(false);
@@ -511,7 +513,7 @@ function AnnotationCard({
                   onClick={async () => {
                     try {
                       await requestAnnotationPublication(annotation.annotation_id);
-                      window.location.reload();
+                      onRefresh();
                     } catch (e) {
                       showToast(e instanceof Error ? e.message : '申请公开失败', 'error');
                     }
@@ -526,7 +528,7 @@ function AnnotationCard({
                   onClick={async () => {
                     try {
                       await withdrawAnnotationPublication(annotation.annotation_id);
-                      window.location.reload();
+                      onRefresh();
                     } catch (e) {
                       showToast(e instanceof Error ? e.message : '撤回申请失败', 'error');
                     }
@@ -543,7 +545,7 @@ function AnnotationCard({
                       try {
                         const reviewComment = window.prompt('审核备注（可选）', '') || '';
                         await approveAnnotationPublication(annotation.annotation_id, reviewComment);
-                        window.location.reload();
+                        onRefresh();
                       } catch (e) {
                         showToast(e instanceof Error ? e.message : '审核通过失败', 'error');
                       }
@@ -557,7 +559,7 @@ function AnnotationCard({
                       try {
                         const reviewComment = window.prompt('驳回原因（可选）', '') || '';
                         await rejectAnnotationPublication(annotation.annotation_id, reviewComment);
-                        window.location.reload();
+                        onRefresh();
                       } catch (e) {
                         showToast(e instanceof Error ? e.message : '驳回失败', 'error');
                       }
@@ -951,6 +953,7 @@ function LayeredEmailCard({
         onEdit={onEditAnnotation}
         onDelete={onDeleteAnnotation}
         onReply={(id) => onSetReplyingTo(id)}
+        onRefresh={handleRefreshThread}
       />
     );
   }
@@ -1177,6 +1180,7 @@ function TreeEmailCard({
           onEdit={onEditAnnotation}
           onDelete={onDeleteAnnotation}
           onReply={(id) => onSetReplyingTo(id)}
+          onRefresh={handleRefreshThread}
         />
         {children.length > 0 && (
           <div className="replies mt-3">
@@ -1424,6 +1428,16 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
       rebuildTree(t);
     } catch (e) {
       showToast(`更新批注失败: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
+  }, [threadId, rebuildTree]);
+
+  const handleRefreshThread = useCallback(async () => {
+    try {
+      const t = await getThread(threadId);
+      setThread(t);
+      rebuildTree(t);
+    } catch (e) {
+      showToast(`刷新线程失败: ${e instanceof Error ? e.message : String(e)}`, 'error');
     }
   }, [threadId, rebuildTree]);
 
