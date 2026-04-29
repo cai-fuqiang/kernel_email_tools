@@ -2,77 +2,101 @@
 
 ## 定位
 
-面向 Linux 内核邮件列表的本地知识库系统。将 lore.kernel.org 邮件导入、内核源码注解、标签、批注和 AI 辅助检索组织到一个 Web 应用中。**目标是把邮件讨论沉淀成可引用、可维护的内核知识库。**
+面向 Linux 内核邮件列表的本地知识库系统。项目把 lore.kernel.org 邮件、keyword/semantic/hybrid 检索、Ask Agent、AI Research Agent、手册问答、内核源码浏览、标签、批注和 Knowledge Draft Review 组织到一个 Web 工作台中。
+
+核心目标：把邮件讨论、patch review、手册证据和代码批注沉淀成可引用、可审核、可维护的内核知识库。
 
 ## 技术栈
 
-- **后端**: Python 3.11+ / FastAPI / SQLAlchemy / PostgreSQL 16+ / pgvector
-- **前端**: React 18+ / TypeScript / Vite / Tailwind CSS
-- **AI**: DashScope (Qwen) / OpenAI-compatible API / pgvector + IVFFlat
-- **外部数据**: lore.kernel.org git mirrors (KVM, Linux-MM, LKML)
+- 后端：Python 3.11+ / FastAPI / SQLAlchemy 2 async / PostgreSQL 16+ / pgvector / Pydantic v2
+- 前端：React 18+ / TypeScript / Vite / Tailwind CSS / React Router
+- AI：DashScope Qwen / DashScope `text-embedding-v3` / pgvector
+- 数据源：lore.kernel.org git mirror、Intel SDM PDF、本地 kernel git repo
+
+## 当前主入口
+
+- Web 应用：`/app/`
+- Search：`/app/`
+- Ask Agent：`/app/ask`
+- Agent Research：`/app/agent-research`
+- Knowledge：`/app/knowledge`
+- API 文档：`/docs`
 
 ## 目录结构
 
-```
+```text
 src/
 ├── collector/       # lore git mirror 采集
-├── parser/          # 邮件、patch 解析、thread 构建
-├── storage/         # PostgreSQL ORM、Storage、TagStore、AnnotationStore、KnowledgeStore
+├── parser/          # 邮件、patch、PDF/SDM 解析
+├── chunker/         # 手册/文本分片
+├── storage/         # PostgreSQL ORM、TagStore、AnnotationStore、KnowledgeStore、AgentStore
 ├── indexer/         # 全文索引、邮件 RAG chunk、向量索引
-├── retriever/       # KeywordRetriever (GIN fulltext) / SemanticRetriever (pgvector) / HybridRetriever (RRF fusion)
-├── qa/              # ChatLLMClient、AskDraftService、ManualQA、DashScopeEmbeddingProvider
-├── kernel_source/   # 内核版本文件读取（供注解模块使用）
-├── symbol_indexer/  # [待移除] ctags 符号索引——纯浏览功能，非注解所必需
-├── translator/      # Google Translate + 缓存
-├── api/             # FastAPI server.py (所有路由)
-└── chunker/         # 手册 PDF 分片 [待评估去留]
+├── retriever/       # KeywordRetriever / SemanticRetriever / HybridRetriever / ManualRetriever
+├── qa/              # AskAgent、AskDraftService、ManualQA、LLM/embedding provider
+├── kernel_source/   # 本地 kernel git 浏览
+├── symbol_indexer/  # ctags 符号索引脚本，定义跳转仍是后续计划
+├── translator/      # 翻译与缓存
+└── api/             # FastAPI server.py
 
 web/src/
-├── pages/           # SearchPage (含 AI 概括) / KnowledgePage / TagsPage / AnnotationsPage / ManualSearchPage / ManualAskPage / KernelCodePage / UsersPage / LoginPage
-├── components/      # ThreadDrawer、TagFilter、EmailTagEditor、Tag/Annotation 组件
-├── layouts/         # MainLayout (侧边栏导航)
-├── api/             # client.ts (API 函数) / types.ts (TypeScript 类型)
+├── pages/           # Search / Ask / Agent Research / Knowledge / Tags / Annotations / Code / Manuals / Admin
+├── components/      # ThreadDrawer、DraftReviewPanel、EmailTagEditor、KnowledgeGraphView 等
+├── layouts/         # MainLayout
+├── api/             # client.ts / types.ts
 └── auth.tsx         # 前端认证状态
 ```
 
 ## 核心流程
 
-### 邮件 → 知识沉淀（主链路）
+### 邮件导入
 
-```
-采集 (git pull) → 解析 (EmailParser) → 入库 (PostgresStorage)
-  → 全文索引 (GIN trigger)
-  → 用户搜索 → 查看命中列表
-    → [可选] AI 概括 → 可点击 [Message-ID] 验证原文
-    → [可选] 一键生成 Knowledge/Annotation/Tag 草稿 → 用户确认落库
-  → Knowledge 消费（按 Tag 浏览、证据链追溯、知识关联）【当前缺失，P0】
+```text
+lore git mirror -> EmailParser -> PostgresStorage(emails)
+  -> search_vector 回填 -> GIN fulltext index
 ```
 
-### 代码注解（辅助链路）
+普通导入不构建 semantic 所需的 RAG chunk/vector。
 
+### Semantic 检索
+
+```text
+emails -> email_chunks -> email_chunk_embeddings
+  -> DashScope query embedding -> pgvector cosine search
+  -> message_id 去重 -> SearchHit(source=semantic)
 ```
-内核版本选择 → 文件查看 → 行级注解 → Annotation 落库
-  → 与邮件注解共享 publish workflow + Tag 体系
-  【注解核心正确，浏览功能（文件树、symbol）待精简】
+
+`mode=semantic` 必须依赖 `email_chunks` 和 `email_chunk_embeddings`。短缩写、宏名、函数名、Message-ID 片段优先用 `keyword` 或 `hybrid`。
+
+### Ask / Draft
+
+```text
+用户问题 -> AskAgent 生成检索计划
+  -> keyword + semantic chunk retrieval
+  -> thread expansion
+  -> LLM synthesis with sources
+  -> AskDraftService 生成可编辑 Knowledge/Annotation/Tag drafts
+  -> 用户 review 后落库
 ```
 
-## 模块状态
+### AI Research Agent
 
-| 模块 | 状态 | 说明 |
-|------|------|------|
-| 邮件采集/解析/检索 | 稳定 | 定位正确，继续维护 |
-| AI 概括 | 稳定 | Search-first 模型，设计干净 |
-| Tag / Annotation | 稳定 | 沉淀机制正确，渐进优化 |
-| Knowledge | **薄弱** | 全工程最大短板——需重点投入 |
-| 内核源码注解 | 需精简 | 定位正确但 40% 代码冗余 |
-| 翻译 | 可接受 | 实现偏重但无紧急问题 |
-| 芯片手册 | **待评估** | 独立 RAG 应用，与邮件知识库无关 |
+```text
+topic -> agent_research_runs
+  -> background task
+  -> search / relevance trace / Ask synthesis
+  -> KnowledgeDraft(source_type=agent_research)
+  -> human review
+```
+
+Agent 是特殊系统用户，默认 `agent:lobster-agent`，role 为 `agent`。Agent 不自动修改 accepted Knowledge，只写 draft 和 trace。
 
 ## 关键约束
 
-- 数据库可全量重建 (rebuild_db.py)，不做增量迁移
-- API 无流式输出
-- Ask 草稿只允许绑定已有 tag，不自动创建新 tag
-- 标签是全局 taxonomy，AI 可能生成近义/层级不一的标签，由用户确认
-- API Key 优先级: 环境变量 > settings.yaml
-- **Knowledge 模块是项目的最终产品形态，当前严重不足——所有功能开发应围绕"如何让用户消费和引用知识"展开**
+- Search 页面默认 `mode=semantic`，但 filter-only 搜索必须用 keyword/hybrid。
+- 新导入邮件后，如需 semantic，必须额外跑 `--build-chunks` 和 `--build-vector`。
+- Ask 草稿只默认绑定已有 tag，不自动创建新 tag。
+- Knowledge Draft 是 AI 输出进入知识库的审核边界，不允许绕过 review 自动落库。
+- Agent Research 当前是 single-pass MVP，不是完整自主多轮 agent。
+- API key 优先级：环境变量 > `settings.yaml`。
+- Header-based auth 仅适用于可信代理环境。
+- Knowledge 模块是最终产品形态；新功能应优先服务“如何让用户消费、验证和复用知识”。
