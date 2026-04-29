@@ -217,7 +217,12 @@ async def run_build_vector(
         return
 
     provider_type = embedding_provider or vector_cfg.get("provider", "dashscope")
-    model = embedding_model or vector_cfg.get("model", "BAAI/bge-m3" if provider_type == "local" else "text-embedding-v3")
+    if embedding_model:
+        model = embedding_model
+    elif provider_type == "local":
+        model = "BAAI/bge-m3"
+    else:
+        model = vector_cfg.get("model", "text-embedding-v3")
     dimension = vector_cfg.get("dimension", 1024)
     batch_size = vector_cfg.get("batch_size", 8)
 
