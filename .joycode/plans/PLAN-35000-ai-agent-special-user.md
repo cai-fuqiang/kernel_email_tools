@@ -117,6 +117,36 @@ Agent output should create a draft bundle containing:
 
 The draft must include enough evidence for a human reviewer to accept or reject without rerunning the full research.
 
+## Concrete Implementation Shape
+
+### Core entities
+
+- `User(role="agent")`: the persistent identity of the AI worker, for example `lobster-agent`.
+- `AgentResearchRun`: one topic-driven research task with status, scope filters, budgets, confidence, summary, and draft ids.
+- `AgentRunAction`: one trace event inside a run, such as search, relevance judging, Ask synthesis, or draft generation.
+- `KnowledgeDraft(source_type="agent_research")`: the reviewable output created by the agent, never active public knowledge by default.
+
+### UI operations
+
+- Create run: user enters topic, optional list/date/sender/tag scope, and budget limits.
+- Monitor run: UI polls run status and shows queued/running/needs_review/failed/cancelled.
+- Inspect trace: UI renders ordered actions with query, hit counts, relevance decisions, errors, and duration.
+- Open generated draft: UI links from a completed run to the Draft Inbox review payload.
+- Cancel or retry: user can cancel queued/running work or retry a failed run with the same topic/scope.
+
+### Minimum viable implementation
+
+1. Add `agent` role and default `Lobster Research Agent` bootstrap.
+2. Add `agent_research_runs` and `agent_run_actions`.
+3. Add Agent Research API for create/list/get/cancel/retry.
+4. Add Agent Research page and navigation entry.
+5. Implement a fixed first research loop:
+   - semantic search over the topic,
+   - simple relevance capture from top hits,
+   - AskAgent synthesis using the topic and search context,
+   - KnowledgeDraft bundle generation with evidence and self-review metadata.
+6. Keep human accept/reject as the only path into active Knowledge.
+
 ## Data and API Changes
 
 ### Roles and capabilities
@@ -239,6 +269,9 @@ If any condition fails, output remains `pending_review`.
 - Agent-created content must not affect active Ask answers unless accepted or explicitly included as draft context.
 - The system must prevent agents from approving their own publication requests.
 - Human edits to agent drafts must be recorded as human review, not agent authorship.
+- Agent internal execution may bypass HTTP auth transport, but must not bypass service-level authorization or provenance recording.
+- Mailing-list emails, manual text, code comments, and existing annotations are untrusted evidence, never executable agent instructions.
+- Existing Knowledge context can guide research and contradiction checks, but final claims must distinguish source evidence from previously synthesized knowledge.
 
 ## Implementation Phases
 
@@ -411,3 +444,158 @@ On startup, query for any `agent_research_runs` with status `running` and
 mark them `failed` with `failure_reason: server_restart`. Each running
 iteration should also update a heartbeat timestamp, so stuck runs can be
 detected and failed by a watchdog.
+
+### 9. Internal calls still require service-level authorization
+
+Design Decision #1 allows the agent orchestration service to avoid HTTP
+authentication because it runs in-process. This must not be implemented as
+"direct database writes with no permission checks."
+
+Required boundary:
+
+- All agent writes go through an `AgentResearchService` or existing domain
+  services that accept an explicit agent `CurrentUser`.
+- The service checks `agent:*` capabilities before creating runs, drafts,
+  private notes, merge suggestions, or relation suggestions.
+- The agent role is not added to broad `require_roles("admin", "editor")`
+  guards just to make existing API routes pass.
+- Direct mutation of active public knowledge remains a human/editor/admin
+  action unless Phase 6 auto-accept policy explicitly allows it.
+
+### 10. Agent read scope
+
+The agent's readable corpus must be explicit.
+
+Default policy:
+
+- Agent reads public/shared content only.
+- If a human requester starts a run, the run may inherit that requester's
+  readable scope only when configured.
+- Any private evidence used by the agent must be marked as private in the
+  trace and draft metadata.
+- Admins may configure an agent to include private project content, but this
+  must be visible in the run record.
+
+This avoids accidentally turning the agent into a cross-user private-data
+aggregator.
+
+### 11. Prompt-injection boundary
+
+All retrieved content is untrusted evidence.
+
+This includes:
+
+- mailing-list email bodies,
+- patch descriptions,
+- manual text,
+- code comments,
+- existing annotations,
+- previously generated knowledge summaries.
+
+The agent must quote or summarize this content as evidence only. Retrieved
+content must never be treated as system, developer, tool, or policy
+instructions. Prompt templates should label retrieved text explicitly as
+untrusted source material.
+
+### 12. Knowledge context is not source evidence
+
+Existing Knowledge entities are useful for:
+
+- avoiding duplicate discovery,
+- finding related terminology,
+- detecting contradictions,
+- suggesting merges or updates.
+
+But existing Knowledge is synthesized material, not primary source evidence.
+Agent drafts must distinguish:
+
+- `source_evidence`: emails, threads, patches, manuals, code references,
+- `existing_knowledge_context`: previously accepted knowledge,
+- `agent_synthesis`: the new generated explanation.
+
+Auto-accept policy must not pass using only existing knowledge context; it
+requires source evidence.
+
+### 13. Trace detail requirements
+
+`agent_run_actions` should store enough operational detail to debug quality
+and cost problems.
+
+Recommended fields:
+
+- `agent_run_id`
+- `iteration_index`
+- `action_index`
+- `action_type`
+- `status`
+- `payload` JSONB
+- `error`
+- `duration_ms`
+- `model`
+- `token_usage`
+- `created_at`
+
+The first implementation may leave `token_usage` empty if the provider does
+not return it consistently, but the field should exist in payload or schema.
+
+### 14. Draft archive is not destructive deletion
+
+Rejected or stale agent drafts may be hidden from the default review queue,
+but they must remain auditable.
+
+- "Auto-archive after 30 days" means status transition or filtered visibility,
+  not physical deletion.
+- Admin audit views should still be able to find archived agent output by
+  agent, topic, run id, and time range.
+- Any future destructive cleanup requires a separate explicit retention policy.
+
+## Implementation Status
+
+Partially implemented in the current codebase as a Phase 1 MVP.
+
+Implemented:
+
+- Added a persisted `agent` role and bootstrapped system agent user
+  (`agent:lobster-agent` by default).
+- Added `agent_research_runs` and `agent_run_actions` storage models plus an
+  `AgentStore` persistence helper.
+- Added `/api/agent/research-runs` APIs for create, list, detail, cancel, and
+  retry.
+- Added a background research flow that records trace actions, performs a
+  semantic-first search, calls Ask synthesis when available, and writes a
+  `KnowledgeDraft` with `source_type=agent_research`.
+- Added the Agent Research UI page for creating runs, setting filters/budgets,
+  watching run status, inspecting traces, cancelling live runs, retrying failed
+  runs, and opening the Knowledge Draft Inbox.
+- Added visible agent metadata in Knowledge Draft Inbox entries and included
+  the `agent` role in frontend auth/user types.
+- Added startup recovery that marks stale `running` agent runs as `failed` after
+  server restart.
+
+TODO:
+
+- Replace the current single-pass background task with a real bounded
+  multi-iteration loop: search, judge relevance, refine query, ask again, and
+  stop only on budget, sufficiency, or cancellation.
+- Add a real LLM relevance judge with structured output instead of the current
+  lightweight evidence-count heuristic.
+- Make cancellation cooperative inside the running task; the current cancel API
+  updates run status, but an already-running task may still finish and create a
+  draft.
+- Move orchestration out of `src/api/server.py` into an `AgentResearchService`
+  so capability checks, prompt boundaries, and domain writes are easier to test.
+- Add explicit service-level authorization for all agent writes rather than
+  relying on the current in-process helper checks.
+- Harden prompt templates so retrieved emails, manuals, code comments, and
+  existing Knowledge are always labelled as untrusted evidence.
+- Add UI filters for agent runs by status, agent, topic, time range, and
+  `agent_run_id` in the Knowledge Draft Inbox.
+- Add token/cost accounting in `agent_run_actions.token_usage` once providers
+  expose consistent usage metadata.
+- Add archive status/filtering for rejected stale agent drafts without
+  physical deletion.
+- Expand tests: API auth/validation, storage pagination, restart recovery,
+  draft payload shape, frontend Agent Research build behavior, and cancellation
+  races.
+- Keep auto-accept out of scope until confidence policy, minimum evidence
+  requirements, audit views, and rollback semantics are implemented.

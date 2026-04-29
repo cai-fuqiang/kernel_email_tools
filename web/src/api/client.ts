@@ -15,6 +15,10 @@ import type {
   ManualSearchResponse,
   ManualAskResponse,
   ManualStatsResponse,
+  AgentResearchBudget,
+  AgentResearchRun,
+  AgentResearchRunDetailResponse,
+  AgentResearchRunListResponse,
   Annotation,
   AnnotationCreate,
   AnnotationListResponse,
@@ -209,7 +213,7 @@ export async function updateUser(
   patch: {
     display_name?: string;
     email?: string;
-    role?: 'admin' | 'editor' | 'viewer';
+    role?: 'admin' | 'editor' | 'viewer' | 'agent';
     status?: string;
     approval_status?: 'pending' | 'approved' | 'rejected';
     disabled_reason?: string;
@@ -627,6 +631,55 @@ export async function askManualQuestion(
 
 export async function getManualStats(): Promise<ManualStatsResponse> {
   return fetchJSON<ManualStatsResponse>(`${API_BASE}/manual/stats`);
+}
+
+export async function createAgentResearchRun(data: {
+  topic: string;
+  list_name?: string;
+  sender?: string;
+  date_from?: string;
+  date_to?: string;
+  tags?: string[];
+  has_patch?: boolean | null;
+  budget?: AgentResearchBudget;
+}): Promise<AgentResearchRun> {
+  return fetchWithBody<AgentResearchRun>(`${API_BASE}/agent/research-runs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function listAgentResearchRuns(
+  status: string = '',
+  page: number = 1,
+  pageSize: number = 20,
+): Promise<AgentResearchRunListResponse> {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  params.set('page', String(page));
+  params.set('page_size', String(pageSize));
+  return fetchJSON<AgentResearchRunListResponse>(`${API_BASE}/agent/research-runs?${params}`);
+}
+
+export async function getAgentResearchRun(runId: string): Promise<AgentResearchRunDetailResponse> {
+  return fetchJSON<AgentResearchRunDetailResponse>(
+    `${API_BASE}/agent/research-runs/${encodeURIComponent(runId)}`
+  );
+}
+
+export async function cancelAgentResearchRun(runId: string): Promise<AgentResearchRun> {
+  return fetchWithBody<AgentResearchRun>(
+    `${API_BASE}/agent/research-runs/${encodeURIComponent(runId)}/cancel`,
+    { method: 'POST' },
+  );
+}
+
+export async function retryAgentResearchRun(runId: string): Promise<AgentResearchRun> {
+  return fetchWithBody<AgentResearchRun>(
+    `${API_BASE}/agent/research-runs/${encodeURIComponent(runId)}/retry`,
+    { method: 'POST' },
+  );
 }
 
 // ============================================================

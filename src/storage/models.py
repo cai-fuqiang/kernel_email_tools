@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, Field
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Boolean, Index, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, Boolean, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -486,6 +486,69 @@ class KnowledgeDraftORM(Base):
     __table_args__ = (
         UniqueConstraint("draft_id", name="uq_knowledge_drafts_draft_id"),
         Index("ix_knowledge_drafts_status_updated", "status", "updated_at"),
+    )
+
+
+class AgentResearchRunORM(Base):
+    """AI agent topic research run."""
+
+    __tablename__ = "agent_research_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(160), nullable=False, unique=True, index=True)
+    topic: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued", index=True)
+    requested_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    requested_by: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    agent_user_id: Mapped[str] = mapped_column(String(128), nullable=False, default="", index=True)
+    agent_name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    filters: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    budget: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    failure_reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    draft_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    heartbeat_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        Index("ix_agent_research_runs_status_updated", "status", "updated_at"),
+        Index("ix_agent_research_runs_agent_created", "agent_user_id", "created_at"),
+    )
+
+
+class AgentRunActionORM(Base):
+    """Ordered trace action for an AI agent research run."""
+
+    __tablename__ = "agent_run_actions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    action_id: Mapped[str] = mapped_column(String(160), nullable=False, unique=True, index=True)
+    run_id: Mapped[str] = mapped_column(
+        String(160), ForeignKey("agent_research_runs.run_id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    iteration_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    action_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    action_type: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="ok", index=True)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    model: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    token_usage: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+
+    __table_args__ = (
+        Index("ix_agent_run_actions_run_order", "run_id", "action_index"),
+        Index("ix_agent_run_actions_type_created", "action_type", "created_at"),
     )
 
 
@@ -1024,6 +1087,87 @@ class KnowledgeDraftRead(BaseModel):
     updated_by_user_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AgentResearchRunCreate(BaseModel):
+    topic: str
+    status: str = "queued"
+    requested_by_user_id: Optional[str] = None
+    requested_by: str = ""
+    agent_user_id: str = ""
+    agent_name: str = ""
+    filters: dict = Field(default_factory=dict)
+    budget: dict = Field(default_factory=dict)
+    confidence: float = 0.0
+    summary: str = ""
+    failure_reason: str = ""
+    draft_ids: list[str] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class AgentResearchRunUpdate(BaseModel):
+    status: Optional[str] = None
+    confidence: Optional[float] = None
+    summary: Optional[str] = None
+    failure_reason: Optional[str] = None
+    draft_ids: Optional[list[str]] = None
+    heartbeat_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class AgentResearchRunRead(BaseModel):
+    run_id: str
+    topic: str
+    status: str
+    requested_by_user_id: Optional[str] = None
+    requested_by: str = ""
+    agent_user_id: str = ""
+    agent_name: str = ""
+    filters: dict = Field(default_factory=dict)
+    budget: dict = Field(default_factory=dict)
+    confidence: float = 0.0
+    summary: str = ""
+    failure_reason: str = ""
+    draft_ids: list[str] = Field(default_factory=list)
+    heartbeat_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AgentRunActionCreate(BaseModel):
+    run_id: str
+    iteration_index: int = 0
+    action_index: int = 0
+    action_type: str
+    status: str = "ok"
+    payload: dict = Field(default_factory=dict)
+    error: str = ""
+    duration_ms: int = 0
+    model: str = ""
+    token_usage: dict = Field(default_factory=dict)
+
+    model_config = {"from_attributes": True}
+
+
+class AgentRunActionRead(BaseModel):
+    action_id: str
+    run_id: str
+    iteration_index: int = 0
+    action_index: int = 0
+    action_type: str
+    status: str = "ok"
+    payload: dict = Field(default_factory=dict)
+    error: str = ""
+    duration_ms: int = 0
+    model: str = ""
+    token_usage: dict = Field(default_factory=dict)
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 

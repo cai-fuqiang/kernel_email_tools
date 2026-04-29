@@ -226,7 +226,7 @@ export interface CurrentUser {
   display_name: string;
   email: string;
   approval_status: 'pending' | 'approved' | 'rejected';
-  role: 'admin' | 'editor' | 'viewer';
+  role: 'admin' | 'editor' | 'viewer' | 'agent';
   status: string;
   auth_source: string;
   capabilities: string[];
@@ -242,7 +242,7 @@ export interface UserRead {
   approved_at?: string | null;
   disabled_reason: string;
   last_login_at?: string | null;
-  role: 'admin' | 'editor' | 'viewer';
+  role: 'admin' | 'editor' | 'viewer' | 'agent';
   status: string;
   auth_source: string;
   last_seen_at: string;
@@ -409,6 +409,58 @@ export interface ManualStatsResponse {
   total_chunks: number;
   by_manual_type: Record<string, number>;
   by_content_type: Record<string, number>;
+}
+
+export interface AgentResearchBudget {
+  max_iterations: number;
+  max_searches: number;
+  max_threads: number;
+}
+
+export interface AgentResearchRun {
+  run_id: string;
+  topic: string;
+  status: 'queued' | 'running' | 'needs_review' | 'accepted' | 'rejected' | 'failed' | 'cancelled' | string;
+  requested_by_user_id?: string | null;
+  requested_by: string;
+  agent_user_id: string;
+  agent_name: string;
+  filters: Record<string, unknown>;
+  budget: Record<string, unknown>;
+  confidence: number;
+  summary: string;
+  failure_reason: string;
+  draft_ids: string[];
+  heartbeat_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentRunAction {
+  action_id: string;
+  run_id: string;
+  iteration_index: number;
+  action_index: number;
+  action_type: string;
+  status: string;
+  payload: Record<string, unknown>;
+  error: string;
+  duration_ms: number;
+  model: string;
+  token_usage: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AgentResearchRunListResponse {
+  runs: AgentResearchRun[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AgentResearchRunDetailResponse {
+  run: AgentResearchRun;
+  actions: AgentRunAction[];
 }
 
 // 批注列表相关类型

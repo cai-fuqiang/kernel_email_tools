@@ -30,6 +30,7 @@ type NavItem = {
 function roleTone(role: string) {
   if (role === 'admin') return 'success';
   if (role === 'editor') return 'info';
+  if (role === 'agent') return 'warning';
   return 'muted';
 }
 
@@ -79,6 +80,7 @@ export default function MainLayout() {
   const researchItems: NavItem[] = [
     { to: '/', label: 'Search Emails', icon: Search, end: true },
     { to: '/ask', label: 'Ask Agent', icon: Bot },
+    { to: '/agent-research', label: 'Agent Research', icon: Bot },
   ];
   const workbenchItems: NavItem[] = [
     { to: '/knowledge', label: 'Knowledge', icon: Library },

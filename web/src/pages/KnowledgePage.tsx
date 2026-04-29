@@ -152,6 +152,14 @@ function normalizeDraftPayload(payload: unknown): AskDraftResponse {
   };
 }
 
+function agentDraftMeta(draft: KnowledgeDraft) {
+  const payload = draft.payload as unknown as Record<string, unknown>;
+  const confidence = typeof payload.confidence === 'number' ? payload.confidence : null;
+  const runId = typeof payload.agent_run_id === 'string' ? payload.agent_run_id : '';
+  const review = typeof payload.self_review === 'string' ? payload.self_review : '';
+  return { confidence, runId, review };
+}
+
 function relationEntityName(entity: KnowledgeEntity | null | undefined, fallback: string) {
   return entity?.canonical_name || fallback;
 }
@@ -755,7 +763,9 @@ export default function KnowledgePage() {
               <div className="rounded-lg border border-dashed border-amber-200 bg-white/70 px-3 py-3 text-xs leading-5 text-gray-500">
                 No new drafts. Ask or Search can generate candidates here.
               </div>
-            ) : drafts.slice(0, 4).map((draft) => (
+            ) : drafts.slice(0, 4).map((draft) => {
+              const agentMeta = agentDraftMeta(draft);
+              return (
               <div key={draft.draft_id} className="rounded-lg border border-amber-100 bg-white p-3">
                 <button
                   type="button"
@@ -763,8 +773,16 @@ export default function KnowledgePage() {
                   className="block w-full text-left"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <div className="truncate text-xs font-semibold text-gray-900">
-                      {draft.question || draft.source_ref || draft.source_type}
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-semibold text-gray-900">
+                        {draft.question || draft.source_ref || draft.source_type}
+                      </div>
+                      {agentMeta.runId && (
+                        <div className="mt-1 truncate text-[11px] text-slate-500">
+                          AI research · {agentMeta.runId}
+                          {agentMeta.confidence !== null && ` · confidence ${agentMeta.confidence.toFixed(2)}`}
+                        </div>
+                      )}
                     </div>
                     <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
                       {draft.source_type}
@@ -790,7 +808,8 @@ export default function KnowledgePage() {
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

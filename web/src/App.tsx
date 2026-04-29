@@ -7,6 +7,7 @@ import { SkeletonCard } from './components/ui';
 
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const AskPage = lazy(() => import('./pages/AskPage'));
+const AgentResearchPage = lazy(() => import('./pages/AgentResearchPage'));
 const TagsPage = lazy(() => import('./pages/TagsPage'));
 const TranslationsPage = lazy(() => import('./pages/TranslationsPage'));
 const AnnotationsPage = lazy(() => import('./pages/AnnotationsPage'));
@@ -67,6 +68,7 @@ export default function App() {
               <Route element={<MainLayout />}>
                 <Route path="/" element={<SearchPage />} />
                 <Route path="/ask" element={<AskPage />} />
+                <Route path="/agent-research" element={<AgentResearchPage />} />
 
                 <Route path="/tags" element={<TagsPage />} />
                 <Route path="/knowledge" element={<KnowledgePage />} />
