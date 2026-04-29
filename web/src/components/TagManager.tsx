@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   createTag,
+  createTagAssignment,
   deleteTag,
+  deleteTagAssignment,
   getTagStats,
   getTagTargets,
   getTagTree,
@@ -139,6 +141,40 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
       onTagsChanged?.();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to rename tag');
+    }
+  };
+
+  const handleMoveAssignment = async (assignment: TagTargetItem, sourceTagName: string) => {
+    const targetTagName = window.prompt(`将此项从 "${sourceTagName}" 移动到哪个标签？（输入目标标签名）`, '');
+    if (!targetTagName?.trim() || targetTagName.trim() === sourceTagName) return;
+    setError('');
+    try {
+      await deleteTagAssignment(assignment.assignment_id);
+      try {
+        await createTagAssignment({
+          tag_name: targetTagName.trim(),
+          target_type: assignment.target_type,
+          target_ref: assignment.target_ref,
+          anchor: assignment.target_meta || undefined,
+        });
+      } catch {
+        // Rollback: re-create original assignment
+        await createTagAssignment({
+          tag_name: sourceTagName,
+          target_type: assignment.target_type,
+          target_ref: assignment.target_ref,
+          anchor: assignment.target_meta || undefined,
+        });
+        throw new Error(`Failed to assign to "${targetTagName}", rolled back`);
+      }
+      await loadTags();
+      if (expandedTag === sourceTagName) {
+        // Refresh the target list
+        setExpandedTag(null);
+        setTimeout(() => setExpandedTag(sourceTagName), 50);
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to move assignment');
     }
   };
 
@@ -297,6 +333,7 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
             onStartRename={handleStartRename}
             onRename={handleRename}
             onMerge={handleMerge}
+            onMoveAssignment={handleMoveAssignment}
           />
         )}
       </div>
@@ -329,6 +366,7 @@ function TagNodeList({
   onStartRename,
   onRename,
   onMerge,
+  onMoveAssignment,
 }: {
   nodes: TagTree[];
   onDelete: (id: number, name: string) => void;
@@ -338,6 +376,7 @@ function TagNodeList({
   expandedTag: string | null;
   onToggleExpand: (tagName: string) => void;
   onJumpToTarget: (target: TagTargetItem) => void;
+  onMoveAssignment?: (assignment: TagTargetItem, sourceTagName: string) => void;
   canWrite: boolean;
   currentUserId: string;
   isAdmin: boolean;
@@ -405,7 +444,7 @@ function TagNodeList({
                 </button>
               )}
             </div>
-            {isExpanded && <TagTargetList tagName={tag.name} onJumpToTarget={onJumpToTarget} />}
+            {isExpanded && <TagTargetList tagName={tag.name} onJumpToTarget={onJumpToTarget} onMoveAssignment={onMoveAssignment} />}
             {tag.children.length > 0 && (
               <TagNodeList
                 nodes={tag.children}
@@ -423,6 +462,7 @@ function TagNodeList({
                 onStartRename={onStartRename}
                 onRename={onRename}
                 onMerge={onMerge}
+                onMoveAssignment={onMoveAssignment}
               />
             )}
           </li>
@@ -435,9 +475,11 @@ function TagNodeList({
 function TagTargetList({
   tagName,
   onJumpToTarget,
+  onMoveAssignment,
 }: {
   tagName: string;
   onJumpToTarget: (target: TagTargetItem) => void;
+  onMoveAssignment?: (assignment: TagTargetItem, sourceTagName: string) => void;
 }) {
   const [targets, setTargets] = useState<TagTargetItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -501,15 +543,28 @@ function TagTargetList({
               <td className="px-3 py-2 text-gray-500">{target.target_type}</td>
               <td className="px-3 py-2 text-gray-400 truncate">{getTargetMeta(target)}</td>
               <td className="px-3 py-2">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onJumpToTarget(target);
-                  }}
-                  className="text-indigo-600 hover:text-indigo-800"
-                >
-                  Open
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onJumpToTarget(target);
+                    }}
+                    className="text-indigo-600 hover:text-indigo-800"
+                  >
+                    Open
+                  </button>
+                  {onMoveAssignment && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onMoveAssignment(target, tagName);
+                      }}
+                      className="text-amber-600 hover:text-amber-800"
+                    >
+                      Move
+                    </button>
+                  )}
+                </div>
               </td>
             </tr>
           ))}
