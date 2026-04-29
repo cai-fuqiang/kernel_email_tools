@@ -14,7 +14,6 @@ import {
 } from '../api/client';
 import ThreadDrawer from './ThreadDrawer';
 import { useAuth } from '../auth';
-import { showToast } from './Toast';
 
 interface TagManagerProps {
   onTagsChanged?: () => void;
@@ -329,6 +328,7 @@ function TagNodeList({
   editTagName,
   onStartRename,
   onRename,
+  onMerge,
 }: {
   nodes: TagTree[];
   onDelete: (id: number, name: string) => void;
@@ -422,6 +422,7 @@ function TagNodeList({
                 editTagName={editTagName}
                 onStartRename={onStartRename}
                 onRename={onRename}
+                onMerge={onMerge}
               />
             )}
           </li>

@@ -741,6 +741,8 @@ function LayeredEmailCard({
   onDeleteAnnotation,
   replyingTo,
   onSetReplyingTo,
+  threadId,
+  onRefresh,
 }: {
   node: ThreadNode;
   isExpanded: boolean;
@@ -753,6 +755,8 @@ function LayeredEmailCard({
   onEditAnnotation: (annotationId: string, body: string) => void;
   onDeleteAnnotation: (annotationId: string) => void;
   replyingTo: string | null;
+  threadId: string;
+  onRefresh: () => void;
   onSetReplyingTo: (id: string | null) => void;
 }) {
   const { canWrite } = useAuth();
@@ -960,7 +964,7 @@ function LayeredEmailCard({
         onEdit={onEditAnnotation}
         onDelete={onDeleteAnnotation}
         onReply={(id) => onSetReplyingTo(id)}
-        onRefresh={handleRefreshThread}
+        onRefresh={onRefresh}
       />
     );
   }
@@ -1016,8 +1020,8 @@ function LayeredEmailCard({
 // =============================================================
 // 树形模式邮件卡片组件（递归渲染 children）
 // =============================================================
-function TreeEmailCard({ 
-  node, 
+function TreeEmailCard({
+  node,
   expandedIds,
   highlightedTarget,
   toggleExpand,
@@ -1029,7 +1033,9 @@ function TreeEmailCard({
   onDeleteAnnotation,
   replyingTo,
   onSetReplyingTo,
-}: { 
+  threadId,
+  onRefresh,
+}: {
   node: ThreadNode;
   expandedIds: Set<number>;
   highlightedTarget: string | null;
@@ -1042,6 +1048,8 @@ function TreeEmailCard({
   onDeleteAnnotation: (annotationId: string) => void;
   replyingTo: string | null;
   onSetReplyingTo: (id: string | null) => void;
+  threadId: string;
+  onRefresh: () => void;
 }) {
   const { canWrite } = useAuth();
   const { email, children, depth } = node;
@@ -1194,7 +1202,7 @@ function TreeEmailCard({
           onEdit={onEditAnnotation}
           onDelete={onDeleteAnnotation}
           onReply={(id) => onSetReplyingTo(id)}
-          onRefresh={handleRefreshThread}
+          onRefresh={onRefresh}
         />
         {children.length > 0 && (
           <div className="replies mt-3">
@@ -1213,6 +1221,8 @@ function TreeEmailCard({
                 onDeleteAnnotation={onDeleteAnnotation}
                 replyingTo={replyingTo}
                 onSetReplyingTo={onSetReplyingTo}
+                threadId={threadId}
+                onRefresh={onRefresh}
               />
             ))}
           </div>
@@ -1289,6 +1299,8 @@ function TreeEmailCard({
               onDeleteAnnotation={onDeleteAnnotation}
               replyingTo={replyingTo}
               onSetReplyingTo={onSetReplyingTo}
+              threadId={threadId}
+              onRefresh={onRefresh}
             />
           ))}
         </div>
@@ -1839,6 +1851,8 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
                       onDeleteAnnotation={handleDeleteAnnotation}
                       replyingTo={replyingTo}
                       onSetReplyingTo={setReplyingTo}
+                      threadId={threadId}
+                      onRefresh={handleRefreshThread}
                     />
                   ))
                 ) : (
@@ -1857,6 +1871,8 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
                       onDeleteAnnotation={handleDeleteAnnotation}
                       replyingTo={replyingTo}
                       onSetReplyingTo={setReplyingTo}
+                      threadId={threadId}
+                      onRefresh={handleRefreshThread}
                     />
                   ))
                 )}
