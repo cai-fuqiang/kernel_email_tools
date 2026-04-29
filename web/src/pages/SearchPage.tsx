@@ -102,6 +102,8 @@ export default function SearchPage() {
   const [hasPatch, setHasPatch] = useState<boolean | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [tagMode, setTagMode] = useState<'any' | 'all'>('any');
+  const [sortBy, setSortBy] = useState<string>('');
+  const [sortOrder, setSortOrder] = useState<string>('');
 
   // AI 概括状态
   const [summarizing, setSummarizing] = useState(false);
@@ -149,6 +151,8 @@ export default function SearchPage() {
         has_patch: hasPatch ?? undefined,
         tags: selectedTags.length > 0 ? selectedTags : undefined,
         tag_mode: tagMode,
+        sort_by: sortBy || undefined,
+        sort_order: sortOrder || undefined,
       });
       setResult(data);
 
@@ -300,6 +304,19 @@ export default function SearchPage() {
           {channelOptions.map(opt => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
+        </select>
+        <select
+          value={`${sortBy}:${sortOrder}`}
+          onChange={(e) => {
+            const [by, order] = e.target.value.split(':');
+            setSortBy(by);
+            setSortOrder(order);
+          }}
+          className="rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
+        >
+          <option value=":">Relevance (default)</option>
+          <option value="date:desc">Newest first</option>
+          <option value="date:asc">Oldest first</option>
         </select>
         <PrimaryButton
           onClick={() => handleSearch()}

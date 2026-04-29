@@ -35,6 +35,8 @@ class SearchQuery:
     has_patch: Optional[bool] = None
     tags: Optional[list[str]] = None
     tag_mode: str = "any"
+    sort_by: str = ""       # "" 或 "relevance" 或 "date"
+    sort_order: str = ""    # "" 或 "desc" 或 "asc"
 
 
 @dataclass

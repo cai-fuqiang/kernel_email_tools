@@ -6,12 +6,15 @@ import {
   getTagStats,
   getTagTargets,
   getTagTree,
+  updateTag,
+  mergeTags,
   type TagStats,
   type TagTargetItem,
   type TagTree,
 } from '../api/client';
 import ThreadDrawer from './ThreadDrawer';
 import { useAuth } from '../auth';
+import { showToast } from './Toast';
 
 interface TagManagerProps {
   onTagsChanged?: () => void;
@@ -28,6 +31,8 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
   const [newTagParentId, setNewTagParentId] = useState<number | undefined>(undefined);
   const [newTagVisibility, setNewTagVisibility] = useState<'public' | 'private'>('public');
   const [creating, setCreating] = useState(false);
+  const [editingTagId, setEditingTagId] = useState<number | null>(null);
+  const [editTagName, setEditTagName] = useState('');
   const [error, setError] = useState('');
   const [expandedTag, setExpandedTag] = useState<string | null>(null);
   const [selectedThread, setSelectedThread] = useState<{
@@ -88,6 +93,53 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
       onTagsChanged?.();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to delete tag');
+    }
+  };
+
+  const handleStartRename = (tagId: number, name: string) => {
+    setEditingTagId(tagId);
+    setEditTagName(name);
+  };
+
+  const handleMerge = async (sourceId: number, sourceName: string) => {
+    const targetName = window.prompt(`将 "${sourceName}" 合并到哪个标签？（输入目标标签名）`);
+    if (!targetName?.trim()) return;
+    setError('');
+    try {
+      // Look up the target tag ID by name from the tree
+      const findTag = (nodes: TagTree[]): number | null => {
+        for (const n of nodes) {
+          if (n.name === targetName.trim()) return n.id;
+          const found = findTag(n.children);
+          if (found) return found;
+        }
+        return null;
+      };
+      const targetId = findTag(tags);
+      if (!targetId) throw new Error(`Tag "${targetName}" not found`);
+      const result = await mergeTags(sourceId, targetId);
+      if (result.status === 'ok') {
+        await loadTags();
+        onTagsChanged?.();
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to merge tags');
+    }
+  };
+
+  const handleRename = async () => {
+    if (!editingTagId || !editTagName.trim()) {
+      setEditingTagId(null);
+      return;
+    }
+    setError('');
+    try {
+      await updateTag(editingTagId, { name: editTagName.trim() });
+      setEditingTagId(null);
+      await loadTags();
+      onTagsChanged?.();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to rename tag');
     }
   };
 
@@ -241,6 +293,11 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
             canWrite={canWrite}
             currentUserId={currentUser?.user_id ?? ''}
             isAdmin={isAdmin}
+            editingTagId={editingTagId}
+            editTagName={editTagName}
+            onStartRename={handleStartRename}
+            onRename={handleRename}
+            onMerge={handleMerge}
           />
         )}
       </div>
@@ -268,9 +325,14 @@ function TagNodeList({
   canWrite,
   currentUserId,
   isAdmin,
+  editingTagId,
+  editTagName,
+  onStartRename,
+  onRename,
 }: {
   nodes: TagTree[];
   onDelete: (id: number, name: string) => void;
+  onMerge?: (id: number, name: string) => void;
   depth: number;
   tagStats: Map<string, number>;
   expandedTag: string | null;
@@ -279,6 +341,10 @@ function TagNodeList({
   canWrite: boolean;
   currentUserId: string;
   isAdmin: boolean;
+  editingTagId: number | null;
+  editTagName: string;
+  onStartRename: (tagId: number, name: string) => void;
+  onRename: () => void;
 }) {
   return (
     <ul className={depth > 0 ? 'ml-4 border-l border-gray-100 pl-3' : ''}>
@@ -300,7 +366,19 @@ function TagNodeList({
                 onClick={() => count > 0 && onToggleExpand(tag.name)}
                 className={`text-sm flex-1 text-left flex items-center gap-1.5 ${count > 0 ? 'text-gray-800 hover:text-indigo-600 cursor-pointer' : 'text-gray-400 cursor-default'}`}
               >
-                <span className={isExpanded ? 'font-semibold text-indigo-700' : ''}>{tag.name}</span>
+                {editingTagId === tag.id ? (
+                  <input
+                    value={editTagName}
+                    onChange={(e) => onStartRename(tag.id, e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onRename(); } if (e.key === 'Escape') onStartRename(0, ''); }}
+                    onBlur={onRename}
+                    className="w-32 border border-indigo-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                    autoFocus
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <span className={isExpanded ? 'font-semibold text-indigo-700' : ''}>{tag.name}</span>
+                )}
                 <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${tag.visibility === 'private' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
                   {tag.visibility}
                 </span>
@@ -312,8 +390,18 @@ function TagNodeList({
                 )}
               </button>
               {canDeleteTag && (
+                <button onClick={() => onStartRename(tag.id, tag.name)} className="text-xs text-slate-400 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                  Edit
+                </button>
+              )}
+              {canDeleteTag && (
                 <button onClick={() => onDelete(tag.id, tag.name)} className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">
                   Delete
+                </button>
+              )}
+              {canDeleteTag && onMerge && (
+                <button onClick={() => onMerge(tag.id, tag.name)} className="text-xs text-amber-400 hover:text-amber-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                  Merge
                 </button>
               )}
             </div>
@@ -330,6 +418,10 @@ function TagNodeList({
                 canWrite={canWrite}
                 currentUserId={currentUserId}
                 isAdmin={isAdmin}
+                editingTagId={editingTagId}
+                editTagName={editTagName}
+                onStartRename={onStartRename}
+                onRename={onRename}
               />
             )}
           </li>

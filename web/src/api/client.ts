@@ -315,6 +315,18 @@ export async function getTagTargets(
   );
 }
 
+export async function mergeTags(sourceId: number, targetId: number): Promise<{ status: string; merged_assignments: number; source_name: string; target_name: string }> {
+  const res = await fetch(`${API_BASE}/tags/${sourceId}/merge/${targetId}`, {
+    credentials: 'include',
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || res.statusText);
+  }
+  return res.json();
+}
+
 export async function deleteTag(tagId: number): Promise<void> {
   const res = await fetch(`${API_BASE}/tags/${tagId}`, { method: 'DELETE', credentials: 'include' });
   if (!res.ok) {
@@ -433,6 +445,8 @@ export interface SearchOptions {
   has_patch?: boolean;
   tags?: string | string[];
   tag_mode?: 'any' | 'all';
+  sort_by?: string;
+  sort_order?: string;
   page?: number;
   page_size?: number;
   mode?: string;
@@ -453,6 +467,8 @@ export async function searchEmails(
     params.set('tags', tags);
   }
   if (opts.tag_mode) params.set('tag_mode', opts.tag_mode);
+  if (opts.sort_by) params.set('sort_by', opts.sort_by);
+  if (opts.sort_order) params.set('sort_order', opts.sort_order);
   if (opts.page) params.set('page', String(opts.page));
   if (opts.page_size) params.set('page_size', String(opts.page_size));
   if (opts.mode) params.set('mode', opts.mode);

@@ -46,6 +46,8 @@ class KeywordRetriever(BaseRetriever):
             has_patch=query.has_patch,
             tags=query.tags,
             tag_mode=query.tag_mode,
+            sort_by=query.sort_by,
+            sort_order=query.sort_order,
             page=query.page,
             page_size=query.page_size,
         )

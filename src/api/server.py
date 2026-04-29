@@ -2098,6 +2098,29 @@ async def delete_tag(
     return {"status": "ok", "message": f"Tag {tag_id} deleted"}
 
 
+@app.post("/api/tags/{source_id}/merge/{target_id}")
+async def merge_tags(
+    source_id: int,
+    target_id: int,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    """将 source 标签合并到 target 标签。
+
+    所有 source 的 tag assignment 被重新分配到 target，
+    source 的子标签迁移到 target 下，source 标签被删除。
+    """
+    if not _tag_store:
+        raise HTTPException(status_code=503, detail="Tag store not initialized")
+    await _ensure_tag_manage_access(source_id, current_user)
+    await _ensure_tag_manage_access(target_id, current_user)
+
+    try:
+        result = await _tag_store.merge_tag(source_id, target_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"status": "ok", **result}
+
+
 @app.post("/api/tag-assignments", response_model=TagAssignmentRead)
 async def create_tag_assignment(
     request: TagAssignmentCreateRequest,
@@ -2358,6 +2381,8 @@ async def search(
     has_patch: Optional[bool] = Query(None, description="是否必须包含补丁"),
     tags: Optional[str] = Query(None, description="标签列表（逗号分隔，如 memory,vm）"),
     tag_mode: str = Query("any", description="标签匹配模式: any(任一匹配) 或 all(全部匹配)"),
+    sort_by: str = Query("", description="排序字段: relevance(默认) 或 date"),
+    sort_order: str = Query("", description="排序顺序: desc(默认) 或 asc"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     mode: str = Query("hybrid", description="检索模式: keyword/semantic/hybrid"),
@@ -2399,6 +2424,8 @@ async def search(
         has_patch=has_patch,
         tags=tag_list,
         tag_mode=tag_mode,
+        sort_by=sort_by,
+        sort_order=sort_order,
         page=page,
         page_size=page_size,
     )

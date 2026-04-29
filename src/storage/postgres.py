@@ -340,6 +340,8 @@ class PostgresStorage(BaseStorage):
         has_patch: Optional[bool] = None,
         tags: Optional[list[str]] = None,
         tag_mode: str = "any",
+        sort_by: str = "",
+        sort_order: str = "",
         page: int = 1,
         page_size: int = 50,
     ) -> tuple[list[EmailSearchResult], int]:
@@ -416,12 +418,15 @@ class PostgresStorage(BaseStorage):
                     tsquery,
                     text("'StartSel=<<, StopSel=>>, MaxWords=50, MinWords=20'"),
                 )
-                order_col = rank_col.desc()
+                if sort_by == "date":
+                    order_col = EmailORM.date.desc() if sort_order != "asc" else EmailORM.date.asc()
+                else:
+                    order_col = rank_col.desc()
             else:
                 # 无关键词时，使用固定的 rank 值 0，按日期倒序排序
                 rank_col = literal(0.0)
                 snippet_col = func.substring(EmailORM.body, 1, 500)
-                order_col = EmailORM.date.desc()
+                order_col = EmailORM.date.desc() if sort_order != "asc" else EmailORM.date.asc()
 
             search_stmt = (
                 select(

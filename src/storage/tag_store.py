@@ -247,6 +247,57 @@ class TagStore:
             await session.commit()
             return True
 
+    async def merge_tag(self, source_id: int, target_id: int) -> dict:
+        """Merge source tag into target: reassign all assignments, delete source.
+
+        Returns dict with {merged_assignments, deleted_children, source_name, target_name}.
+        """
+        async with self.session_factory() as session:
+            source = await session.get(TagORM, source_id)
+            target = await session.get(TagORM, target_id)
+            if not source or not target:
+                raise ValueError("Source or target tag not found")
+            if source_id == target_id:
+                raise ValueError("Cannot merge a tag into itself")
+
+            merged = 0
+            # Reassign tag_assignments from source to target
+            result = await session.execute(
+                select(TagAssignmentORM).where(TagAssignmentORM.tag_id == source_id)
+            )
+            for assignment in result.scalars().all():
+                # Check if same assignment already exists for target
+                dup = await session.execute(
+                    select(TagAssignmentORM).where(
+                        TagAssignmentORM.tag_id == target_id,
+                        TagAssignmentORM.target_type == assignment.target_type,
+                        TagAssignmentORM.target_ref == assignment.target_ref,
+                        TagAssignmentORM.anchor_hash == assignment.anchor_hash,
+                    )
+                )
+                if dup.scalar_one_or_none():
+                    await session.delete(assignment)  # deduplicate
+                else:
+                    assignment.tag_id = target_id
+                    merged += 1
+
+            # Re-parent children of source to target
+            child_result = await session.execute(
+                select(TagORM).where(TagORM.parent_tag_id == source_id)
+            )
+            for child in child_result.scalars().all():
+                child.parent_tag_id = target_id
+
+            source_name = source.name
+            target_name = target.name
+            await session.delete(source)
+            await session.commit()
+            return {
+                "merged_assignments": merged,
+                "source_name": source_name,
+                "target_name": target_name,
+            }
+
     async def get_all_tags(self, viewer_user_id: Optional[str] = None) -> list[TagORM]:
         async with self.session_factory() as session:
             result = await session.execute(
