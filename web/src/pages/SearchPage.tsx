@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ChevronDown, Search, Sparkles } from 'lucide-react';
-import { searchEmails, listAnnotations, getTagStats, getChannels, summarizeSearchResults, createSummaryDraft, applySummaryDraft, type TagStats } from '../api/client';
+import { searchEmails, listAnnotations, getTagStats, getChannels, summarizeSearchResults, createSummaryDraft, applySummaryDraft, createTagAssignment, type TagStats } from '../api/client';
 import type { SearchResponse, SearchHit, SummarizeResponse, AskDraftResponse, SourceRef, ChannelOption, AnnotationListItem } from '../api/types';
 import ThreadDrawer from '../components/ThreadDrawer';
 import TagFilter from '../components/TagFilter';
@@ -118,6 +118,11 @@ export default function SearchPage() {
   const [annotationResults, setAnnotationResults] = useState<AnnotationListItem[]>([]);
   const [annotationTotal, setAnnotationTotal] = useState(0);
 
+  // 批量标签操作
+  const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set());
+  const [batchTagInput, setBatchTagInput] = useState('');
+  const [batchTagging, setBatchTagging] = useState(false);
+
   // Channel/channel 选择状态
   const [selectedChannel, setSelectedChannel] = useState<string>('');
   const [channelOptions, setChannelOptions] = useState<ChannelOption[]>([{ value: '', label: 'All Channels' }]);
@@ -178,6 +183,45 @@ export default function SearchPage() {
   };
 
   const totalPages = result ? Math.ceil(result.total / result.page_size) : 0;
+
+  const handleToggleSelect = (messageId: string) => {
+    setSelectedMessages(prev => {
+      const next = new Set(prev);
+      if (next.has(messageId)) next.delete(messageId); else next.add(messageId);
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (!result) return;
+    if (selectedMessages.size === result.hits.length) {
+      setSelectedMessages(new Set());
+    } else {
+      setSelectedMessages(new Set(result.hits.map(h => h.message_id)));
+    }
+  };
+
+  const handleBatchTag = async () => {
+    const tagName = batchTagInput.trim();
+    if (!tagName || selectedMessages.size === 0) return;
+    setBatchTagging(true);
+    let done = 0;
+    let failed = 0;
+    for (const messageId of selectedMessages) {
+      try {
+        await createTagAssignment({ tag_name: tagName, target_type: 'email_message', target_ref: messageId });
+        done++;
+      } catch { failed++; }
+    }
+    setBatchTagging(false);
+    setBatchTagInput('');
+    setSelectedMessages(new Set());
+    if (failed > 0) {
+      showToast(`已打标签 ${done} 封，${failed} 封失败`, 'error');
+    } else {
+      showToast(`已为 ${done} 封邮件打上标签 "${tagName}"`, 'success');
+    }
+  };
 
   const resetFilters = () => {
     setSender('');
@@ -592,12 +636,55 @@ export default function SearchPage() {
             </div>
           )}
 
+          {selectedMessages.size > 0 && (
+            <div className="sticky top-0 z-10 mb-4 flex items-center gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-3 shadow-sm">
+              <span className="text-sm font-medium text-indigo-800">
+                已选 {selectedMessages.size} 封邮件
+              </span>
+              <input
+                value={batchTagInput}
+                onChange={(e) => setBatchTagInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleBatchTag(); }}
+                placeholder="输入标签名..."
+                className="flex-1 rounded-lg border border-indigo-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                disabled={batchTagging}
+              />
+              <button
+                onClick={handleBatchTag}
+                disabled={batchTagging || !batchTagInput.trim()}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {batchTagging ? '处理中...' : '批量打标签'}
+              </button>
+              <button
+                onClick={() => { setSelectedMessages(new Set()); setBatchTagInput(''); }}
+                className="text-xs text-indigo-600 hover:text-indigo-800"
+              >
+                取消
+              </button>
+            </div>
+          )}
           <div className="space-y-3">
+            {result.hits.length > 0 && (
+              <div className="flex items-center gap-2 mb-1">
+                <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={selectedMessages.size === result.hits.length}
+                    onChange={handleSelectAll}
+                    className="w-3.5 h-3.5 rounded border-slate-300"
+                  />
+                  全选
+                </label>
+              </div>
+            )}
             {result.hits.map((hit) => (
               <ResultCard
                 key={hit.message_id}
                 hit={hit}
                 onThread={() => setSelectedThread(hit.thread_id)}
+                selected={selectedMessages.has(hit.message_id)}
+                onToggleSelect={handleToggleSelect}
               />
             ))}
           </div>
@@ -681,12 +768,27 @@ export default function SearchPage() {
 function ResultCard({
   hit,
   onThread,
+  selected,
+  onToggleSelect,
 }: {
   hit: SearchHit;
   onThread: () => void;
+  selected?: boolean;
+  onToggleSelect?: (messageId: string) => void;
 }) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow">
+      {onToggleSelect && (
+        <div className="float-right ml-3">
+          <input
+            type="checkbox"
+            checked={selected || false}
+            onChange={() => onToggleSelect(hit.message_id)}
+            className="w-4 h-4 rounded border-slate-300"
+          />
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <h3 className="text-sm font-semibold text-gray-900 truncate">{hit.subject}</h3>
