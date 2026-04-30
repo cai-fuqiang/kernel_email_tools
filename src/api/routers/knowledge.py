@@ -1,9 +1,12 @@
 """knowledge API routes."""
 
+import logging
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 
@@ -309,6 +312,7 @@ async def create_knowledge_entity(
             )
         )
     except Exception as e:
+        logger.exception("Failed to create knowledge entity")
         raise HTTPException(status_code=400, detail=str(e))
 
     similar = await state._knowledge_store.find_similar(

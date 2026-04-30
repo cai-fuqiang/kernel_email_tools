@@ -9,6 +9,7 @@ import DraftReviewPanel from '../components/DraftReviewPanel';
 import type { AskDraftApplyResponse } from '../api/types';
 import { EmptyState, PageHeader, PageShell, PrimaryButton, SecondaryButton, SectionPanel, SkeletonCard, StatusBadge } from '../components/ui';
 import { showToast } from '../components/Toast';
+import { useAuth } from '../auth';
 
 function escapeHtml(text: string): string {
   return text
@@ -86,6 +87,7 @@ function citationLabel(source: SourceRef): string {
 }
 
 export default function SearchPage() {
+  const { isAuthenticated } = useAuth();
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState('semantic');
   const [result, setResult] = useState<SearchResponse | null>(null);
@@ -129,11 +131,12 @@ export default function SearchPage() {
 
   // 加载 channel 列表和标签统计
   useEffect(() => {
+    if (!isAuthenticated) return;
     getChannels().then((channels) => {
       setChannelOptions([{ value: '', label: 'All Channels' }, ...channels]);
     }).catch(() => {});
     getTagStats().then(setTagStats).catch(() => {});
-  }, []);
+  }, [isAuthenticated]);
 
   // 检查是否有任何过滤条件
   const hasFilters = sender || dateFrom || dateTo || hasPatch !== null || selectedTags.length > 0 || selectedChannel;

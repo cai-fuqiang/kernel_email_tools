@@ -20,6 +20,7 @@ import {
   SectionPanel,
   StatusBadge,
 } from '../components/ui';
+import { useAuth } from '../auth';
 
 type ChannelOption = { value: string; label: string };
 
@@ -52,6 +53,7 @@ function actionTitle(action: AgentRunAction) {
 }
 
 export default function AgentResearchPage() {
+  const { isAuthenticated } = useAuth();
   const [channels, setChannels] = useState<ChannelOption[]>([]);
   const [runs, setRuns] = useState<AgentResearchRun[]>([]);
   const [detail, setDetail] = useState<AgentResearchRunDetailResponse | null>(null);
@@ -102,9 +104,10 @@ export default function AgentResearchPage() {
   }, []);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     getChannels().then(setChannels).catch(() => setChannels([]));
     void loadRuns();
-  }, [loadRuns]);
+  }, [isAuthenticated, loadRuns]);
 
   useEffect(() => {
     void loadDetail(selectedRunId);
