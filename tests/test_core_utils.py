@@ -11,7 +11,7 @@ from src.storage.tag_store import (
     normalize_anchor,
     slugify_tag,
 )
-from src.api.server import VALID_ROLES, VALID_VISIBILITY, _normalize_role, _normalize_visibility
+from src.api.deps import VALID_ROLES, VALID_VISIBILITY, _normalize_role, _normalize_visibility
 
 
 class TestResolveApiKey:

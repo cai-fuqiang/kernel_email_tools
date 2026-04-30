@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 import pytest
 from fastapi import HTTPException
 
-from src.api import server
+from src.api import server, state
+from src.api.routers.search import search as search_handler
 from src.retriever.base import SearchQuery
 from src.retriever.semantic import SemanticRetriever
 from src.storage.models import EmailChunkSearchResult
@@ -120,10 +121,10 @@ def test_search_api_rejects_empty_semantic_query(monkeypatch):
 
 
 async def _test_search_api_rejects_empty_semantic_query(monkeypatch):
-    monkeypatch.setattr(server, "_retriever", object())
+    monkeypatch.setattr(state, "_retriever", object())
 
     with pytest.raises(HTTPException) as exc_info:
-        await server.search(
+        await search_handler(
             q="",
             list_name=None,
             sender="author",
