@@ -97,6 +97,6 @@ Agent 是特殊系统用户，默认 `agent:lobster-agent`，role 为 `agent`。
 - Ask 草稿只默认绑定已有 tag，不自动创建新 tag。
 - Knowledge Draft 是 AI 输出进入知识库的审核边界，不允许绕过 review 自动落库。
 - Agent Research 当前是 single-pass MVP，不是完整自主多轮 agent。
-- API key 优先级：环境变量 > `settings.yaml`。
+- API key 优先级：环境变量 > `settings.yaml`（参考 `.env.example` 配置所需环境变量）。
 - Header-based auth 仅适用于可信代理环境。
 - Knowledge 模块是最终产品形态；新功能应优先服务“如何让用户消费、验证和复用知识”。
