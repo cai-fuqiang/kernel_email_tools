@@ -1,5 +1,6 @@
 """translations API routes."""
 
+import logging
 from datetime import datetime
 from typing import Optional
 
@@ -23,6 +24,9 @@ from src.api.deps import (
     _resolve_user_from_session,
 )
 from src.api.schemas import AnnotationResponse, DraftApplyRequest, DraftApplyResponse
+from src.storage.tag_store import TARGET_TYPE_EMAIL_THREAD
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["translations"])
 
