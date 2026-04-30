@@ -96,7 +96,22 @@ kernel_email_tools/
 │   │   ├── base.py              # BaseTranslator
 │   │   └── google_translator.py # Google 翻译实现
 │   └── api/
-│       └── server.py            # FastAPI 服务入口
+│       ├── server.py            # FastAPI 入口 (294行): 生命周期 + CORS + 路由注册
+│       ├── state.py             # 全局服务单例 + _load_config()
+│       ├── deps.py              # Auth 中间件 / 权限控制 / Depends 注入
+│       ├── schemas.py           # 共享 Pydantic 模型
+│       └── routers/             # 11 个 domain router
+│           ├── auth.py          # 注册/登录/用户管理
+│           ├── tags.py          # 标签 CRUD / 赋值 / email-tag
+│           ├── search.py        # 搜索 / 概括 / Ask / Draft
+│           ├── ask.py           # Ask 对话历史
+│           ├── translations.py  # 翻译 / 批量 / 线程 / 缓存
+│           ├── annotations.py   # 批注 CRUD / 发布审核 / 导入导出
+│           ├── knowledge.py     # 知识实体 / 关系 / 证据 / 图谱 / 草稿
+│           ├── agent.py         # AI 研究运行管理
+│           ├── kernel.py        # 内核源码浏览 / 代码批注
+│           ├── manual.py        # 手册搜索 / 问答 / 统计
+│           └── system.py        # 根路由 / 健康检查 / channels
 ├── scripts/                       # 运维脚本
 │   ├── collect.py               # 数据采集入口
 │   ├── index.py                 # 索引构建入口

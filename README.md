@@ -8,7 +8,7 @@
 
 - 邮件导入：支持 `kvm`、`linux-mm`、`lkml` 等 lore git mirror，本地仓库优先。
 - Keyword 搜索：PostgreSQL TSVECTOR + GIN，支持 list、sender、date、patch、tag 过滤。
-- Semantic 搜索：`email_chunks` + `email_chunk_embeddings` + pgvector，默认使用 DashScope `text-embedding-v3`。
+- Semantic 搜索：`email_chunks` + `email_chunk_embeddings` + pgvector，使用 DashScope `text-embedding-v3` 或本地 BAAI/bge-m3。
 - Hybrid 搜索：短关键词偏 keyword，自然语言问题融合 keyword/semantic。
 - Ask Agent：生成检索计划，执行多 query 检索，拉取 thread 上下文，并生成带证据的回答。
 - AI Research Agent：把 AI 作为特殊系统用户，按 topic 创建 research run，自动搜索、Ask synthesis、生成 Knowledge Draft，等待人工 review。
@@ -36,6 +36,13 @@ src/
 ├── symbol_indexer/  # ctags 符号索引
 ├── translator/      # 翻译与缓存
 └── api/             # FastAPI 服务
+    ├── server.py     # 生命周期、CORS、路由注册 (294 行)
+    ├── state.py      # 全局服务单例
+    ├── deps.py       # Auth 中间件、权限控制、依赖注入
+    ├── schemas.py    # 共享 Pydantic 模型
+    └── routers/      # 11 个 domain router (auth, tags, search, ask,
+                      #   translations, annotations, kernel, knowledge,
+                      #   agent, manual, system)
 
 web/src/
 ├── pages/           # Search / Ask / Agent Research / Knowledge / Tags / Annotations / Code / Manuals / Admin
@@ -88,7 +95,7 @@ podman exec -it kernel-pg psql -U kernel -d chip_manual_kb \
 
 ## 配置
 
-主要配置在 [config/settings.yaml](config/settings.yaml)。
+主要配置在 [config/settings.yaml](config/settings.yaml)，环境变量参考 [.env.example](.env.example)。
 
 关键项：
 
