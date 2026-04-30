@@ -1,6 +1,7 @@
 ---
 globs:
   - src/api/server.py
+  - src/api/deps.py
   - src/storage/models.py
   - src/storage/postgres.py
   - src/storage/tag_store.py
@@ -28,7 +29,23 @@ alwaysApply: false
 - `admin`：可管理用户，拥有全部读写权限
 - `editor`：可读写业务对象，不可管理用户
 - `viewer`：只读
+- `agent`：只读 + agent:research / agent:create_draft / agent:create_private_note / agent:suggest_merge
 - 前端按钮显隐不是安全边界，后端必须做最终裁决
+
+## 认证模式规则
+
+- 认证模式由 `auth.mode` 配置决定。`header` 模式检查 `X-Username` 请求头，`local` 模式检查 session cookie
+- **Header 模式优先级**：X-Username 请求头 → session cookie 回退 → 401。仅当请求头不存在时才检查 cookie，确保反向代理和浏览器登录都能工作
+- **角色不可降级**：`_sync_user_record` 更新已有用户时，不得用 Header 认证默认的 `viewer` 角色覆盖数据库中已有的高权限角色（admin/editor）。仅当新角色优先级更高时才更新
+- **用户名去重**：同一用户可能通过不同前缀（`local:` / `header:`）认证。`_sync_user_record` 在 user_id 查找失败时，必须按 username 查找已有记录并合并，避免违反 `uq_users_username` 唯一约束
+- `require_roles()` 返回的 403 错误必须指明所需角色和当前角色（如 `"Requires admin role, current role is viewer"`），不能只返回 `"Permission denied"`
+
+## 前端认证守卫规则
+
+- **所有调用需认证 API 的页面必须添加 `isAuthenticated` 守卫**，防止 401 → `auth:unauthorized` → `/login` 重定向闪退链路
+- 修改方式：`import { useAuth } from '../auth'` → `const { isAuthenticated } = useAuth()` → 在 `useEffect` 中 `if (!isAuthenticated) return;`
+- 已添加守卫的页面：AskPage、AgentResearchPage、SearchPage、AnnotationsPage、TranslationsPage、UsersPage
+- 无需守卫的页面（API 不要求认证）：ManualSearchPage、ManualAskPage、KernelCodePage、KnowledgePage、TagsPage
 
 ## 兼容性规则
 
@@ -40,3 +57,9 @@ alwaysApply: false
 
 - 新测试至少覆盖：未认证、越权、正常写入三类场景
 - 对 public/private 的测试必须覆盖“自己可见、他人不可见、公开可见”
+
+## 代码质量规则
+
+- **路由文件中必须显式定义 `logger`**：`import logging` + `logger = logging.getLogger(__name__)`。不得依赖隐式导入，否则 `except Exception` 中的 `logger.error()` 会引发二次 `NameError`，导致返回 `Internal Server Error` 而非 JSON 错误详情
+- **跨模块常量必须显式导入**：如 `TARGET_TYPE_EMAIL_THREAD` 需 `from src.storage.tag_store import TARGET_TYPE_EMAIL_THREAD`
+- **Python 路径冲突**：`scripts/serve.py` 必须 `sys.path.insert(0, PROJECT_ROOT / "src")` 确保项目自身的包不被同机器上其他同样使用 `src/` 布局的已安装包（如 `chip-manual-kb`）遮挡
