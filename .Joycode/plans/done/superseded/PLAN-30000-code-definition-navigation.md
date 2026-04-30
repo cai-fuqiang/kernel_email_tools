@@ -1,4 +1,12 @@
-# PLAN-30000: Code Browser 代码跳转能力
+> **Status: superseded** — 2026-05-01
+> **Superseded by**: PLAN-30002-external-code-jump.md
+> **Reason**: 决定不自建 ctags/tree-sitter/cscope 符号索引基础设施，改为链接到 Elixir Bootlin 等外部站点实现跳转。本计划保留作为未来若需自建索引时的技术参考。
+> **历史标头（已废弃）**:
+> - Status: planned (not started)
+> - Priority: P0
+> - Supersedes: PLAN-10001
+
+# PLAN-30000: Code Browser 代码跳转能力（已废弃）
 
 ## Summary
 当前 `code browser` 已具备版本选择、目录树浏览、文件内容展示、行级批注等能力，但还缺少“符号索引 + 定义查询”这一层，因此还不能实现真正的代码跳转。

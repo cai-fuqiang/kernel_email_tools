@@ -1,3 +1,9 @@
+> **Status**: future (planned, not started)
+> **Updated**: 2026-05-01
+> **Depends-on**: PLAN-35000 (LLM 调用基础设施)
+> **Priority**: P3 — 范围过大，建议从 Phase 1 P1（本地小模型去噪，零 API 成本）和 Phase 2 按需摘要起步
+> **Cost note**: 100 万邮件全量 LLM 流水线估算 ~$2000，必须先验证质量再放量
+
 # PLAN-35001: AI-Assisted Knowledge Pipeline（邮件采集 → 知识组织）
 
 ## 目标

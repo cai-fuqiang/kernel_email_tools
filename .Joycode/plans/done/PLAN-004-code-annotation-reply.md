@@ -1,3 +1,6 @@
+> **Status: mostly-done** — 2026-05-01
+> **Notes**: 数据模型、in_reply_to、Reply 按钮、统一批注表均已落地（见 PLAN-004-annotation-unification）。仅剩 UI 细节：标注展开/折叠、Goto 按钮独立化、移动端适配。这些细节后续可并入 ThreadDrawer/KernelCodePage 拆分工作。
+
 # PLAN-004: Code Annotation 回复功能
 
 ## 需求背景

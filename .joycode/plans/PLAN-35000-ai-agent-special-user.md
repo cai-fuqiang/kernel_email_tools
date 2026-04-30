@@ -1,3 +1,8 @@
+> **Status**: in-progress (Phase 1~5 MVP done; multi-iteration loop / cooperative cancel / service 重构 / prompt 加固 未做)
+> **Updated**: 2026-05-01
+> **Depends-on**: PLAN-33000 (done), PLAN-34000 Phase 1 (done)
+> **Priority**: P0 — 当前 AI 知识库能力核心方向
+
 # PLAN-35000: AI Research Agent as a Special User
 
 ## Summary

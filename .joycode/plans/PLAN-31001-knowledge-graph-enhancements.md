@@ -1,3 +1,8 @@
+> **Status**: in-progress (Phase 1 partial — entity merge & local graph done; entity delete / graph traversal / kernel version linkage 未做)
+> **Updated**: 2026-05-01
+> **Depends-on**: PLAN-31000 (done), PLAN-30000 (Phase 2 文件/符号链接需要符号索引)
+> **Priority**: P1
+
 # PLAN-31001: 知识图谱功能增强
 
 ## Summary

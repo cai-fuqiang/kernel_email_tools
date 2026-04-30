@@ -1,3 +1,9 @@
+> **Status**: in-progress (Phase 1~5 + G1~G6 大部分已完成；剩 Phase 6 Ask Uses Knowledge 已部分由 PLAN-33000 完成、Phase 7 质量指标未做)
+> **Updated**: 2026-05-01
+> **Depends-on**: PLAN-31000 (done), PLAN-33000 (done)
+> **Priority**: P2 — 长期路线图，建议拆分为独立可交付 PLAN
+> **Note**: 范围过大，后续新工作请新建独立 PLAN 引用本路线图
+
 # Knowledge Workbench 后续计划
 
 ## Summary

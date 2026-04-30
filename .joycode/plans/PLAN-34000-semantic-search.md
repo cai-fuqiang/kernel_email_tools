@@ -1,3 +1,8 @@
+> **Status**: in-progress (Phase 1 done; Phase 3 partial; Phase 4 done; Phase 5 partial; Phase 2 未做)
+> **Updated**: 2026-05-01
+> **Depends-on**: 无
+> **Priority**: P1 — Phase 4/5 的 ThreadDrawer (1997 行) / KnowledgePage (1588 行) 拆分是当前最大工程债
+
 # PLAN-34000: Semantic Search and Product Quality Improvements
 
 ## Summary

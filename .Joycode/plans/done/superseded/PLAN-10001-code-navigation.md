@@ -1,3 +1,7 @@
+> **Status: superseded** — 2026-05-01
+> **Superseded by**: PLAN-30000-code-definition-navigation.md
+> **Reason**: 两份计划目标重叠（代码定义/引用跳转）。PLAN-30000 提供更完整的分阶段方案（ctags MVP → tree-sitter → references），本计划保留作为 ctags vs cscope 对比资料。
+
 # 代码跳转功能规划 (PLAN-10001)
 
 ## 任务概述

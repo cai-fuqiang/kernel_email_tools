@@ -15,7 +15,8 @@
 
 | 文件 | 行数 | 原因 |
 |------|------|------|
-| `src/symbol_indexer/` | 多文件 | 符号索引脚本存在，但 UI 定义跳转仍未完成 |
+| `src/symbol_indexer/` | 仅 .pyc 缓存残留 | 已决定不自建符号索引，改为 PLAN-30002 外链跳转方案；可清理 `src/symbol_indexer/__pycache__/` 与 `scripts/index_symbols.py` |
+| `web/src/pages/KernelCodePage.tsx::elixirUrl` | 5 行 | 已定义但未被引用，PLAN-30002 接入后将激活 |
 
 ## 重复代码模式
 
