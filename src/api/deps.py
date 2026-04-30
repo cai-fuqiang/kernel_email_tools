@@ -207,22 +207,35 @@ async def _sync_user_record(current_user: CurrentUser) -> CurrentUser:
         )
         user = result.scalar_one_or_none()
         if user is None:
-            if not allow_auto_provision:
-                raise HTTPException(status_code=401, detail="User provisioning disabled")
-            user = UserORM(
-                user_id=current_user.user_id,
-                username=current_user.username,
-                display_name=current_user.display_name,
-                email=current_user.email,
-                approval_status=_normalize_approval_status(current_user.approval_status or "approved"),
-                role=_normalize_role(current_user.role or "viewer"),
-                status=current_user.status,
-                auth_source=current_user.auth_source,
-                last_seen_at=now,
-                created_at=now,
-                updated_at=now,
+            # 用户可能已通过不同 user_id 前缀（local: vs header:）存在，
+            # 按 username 查找以避免重复键冲突。
+            existing = await session.execute(
+                select(UserORM).where(UserORM.username == current_user.username)
             )
-            session.add(user)
+            user = existing.scalar_one_or_none()
+            if user is not None:
+                # 更新现有记录的 user_id 和其他字段
+                user.user_id = current_user.user_id
+                user.auth_source = current_user.auth_source or user.auth_source
+                user.last_seen_at = now
+                user.updated_at = now
+            elif not allow_auto_provision:
+                raise HTTPException(status_code=401, detail="User provisioning disabled")
+            else:
+                user = UserORM(
+                    user_id=current_user.user_id,
+                    username=current_user.username,
+                    display_name=current_user.display_name,
+                    email=current_user.email,
+                    approval_status=_normalize_approval_status(current_user.approval_status or "approved"),
+                    role=_normalize_role(current_user.role or "viewer"),
+                    status=current_user.status,
+                    auth_source=current_user.auth_source,
+                    last_seen_at=now,
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(user)
         else:
             user.username = current_user.username or user.username
             user.display_name = current_user.display_name or user.display_name
@@ -413,24 +426,19 @@ async def _resolve_current_user(request: Request, required: bool = True) -> Opti
     auth_mode = state._auth_config.get("mode", "header")
     if auth_mode == "header":
         username = request.headers.get(_header_name("username", "X-Username"), "").strip()
-        if not username:
-            user = _fallback_user()
-            if user:
-                return await _sync_user_record(user)
-            if required:
-                raise HTTPException(status_code=401, detail="Authentication required")
-            return None
-        user = CurrentUser(
-            user_id=request.headers.get(_header_name("user_id", "X-User-Id"), f"header:{username}").strip() or f"header:{username}",
-            username=username,
-            display_name=request.headers.get(_header_name("display_name", "X-Display-Name"), username).strip() or username,
-            email=request.headers.get(_header_name("email", "X-User-Email"), "").strip(),
-            approval_status="approved",
-            role=request.headers.get(_header_name("role", "X-User-Role"), "viewer").strip(),
-            status="active",
-            auth_source="header",
-        )
-        return await _sync_user_record(user)
+        if username:
+            user = CurrentUser(
+                user_id=request.headers.get(_header_name("user_id", "X-User-Id"), f"header:{username}").strip() or f"header:{username}",
+                username=username,
+                display_name=request.headers.get(_header_name("display_name", "X-Display-Name"), username).strip() or username,
+                email=request.headers.get(_header_name("email", "X-User-Email"), "").strip(),
+                approval_status="approved",
+                role=request.headers.get(_header_name("role", "X-User-Role"), "viewer").strip(),
+                status="active",
+                auth_source="header",
+            )
+            return await _sync_user_record(user)
+        # No header — fall through to local session cookie auth below
 
     # Local auth mode
     if _local_auth_config().get("enabled", True):
