@@ -26,6 +26,7 @@ from src.api.deps import (
     _resolve_user_from_session,
 )
 from src.api.schemas import AnnotationResponse, DraftApplyRequest, DraftApplyResponse
+from src.storage.models import AnnotationORM
 
 router = APIRouter(tags=["annotations"])
 
