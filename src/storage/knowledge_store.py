@@ -145,11 +145,14 @@ class KnowledgeStore:
                 for rel in blocking_relations:
                     await session.delete(rel)
 
-            # 删除关联的标签分配
+            # 删除关联的标签分配（同时匹配 entity_id 和 slug，防止残留）
             await session.execute(
                 delete(TagAssignmentORM).where(
                     TagAssignmentORM.target_type == "knowledge_entity",
-                    TagAssignmentORM.target_ref == entity_id,
+                    or_(
+                        TagAssignmentORM.target_ref == entity_id,
+                        TagAssignmentORM.target_ref == entity.slug,
+                    ),
                 )
             )
             await session.execute(
