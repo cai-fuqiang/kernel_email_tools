@@ -60,6 +60,7 @@ alwaysApply: false
 
 ## 代码质量规则
 
-- **路由文件中必须显式定义 `logger`**：`import logging` + `logger = logging.getLogger(__name__)`。不得依赖隐式导入，否则 `except Exception` 中的 `logger.error()` 会引发二次 `NameError`，导致返回 `Internal Server Error` 而非 JSON 错误详情
+- **路由文件必须显式导入标准库**：`import json`、`import logging` 等不得依赖隐式导入。缺失导入导致 `NameError` 时，`except Exception` 处理器再次失败会返回纯文本 `Internal Server Error` 而非 JSON 错误详情
+- **路由文件必须显式定义 `logger`**：`logger = logging.getLogger(__name__)`，否则 `logger.error()` 引发二次 `NameError`
 - **跨模块常量必须显式导入**：如 `TARGET_TYPE_EMAIL_THREAD` 需 `from src.storage.tag_store import TARGET_TYPE_EMAIL_THREAD`
 - **Python 路径冲突**：`scripts/serve.py` 必须 `sys.path.insert(0, PROJECT_ROOT / "src")` 确保项目自身的包不被同机器上其他同样使用 `src/` 布局的已安装包（如 `chip-manual-kb`）遮挡

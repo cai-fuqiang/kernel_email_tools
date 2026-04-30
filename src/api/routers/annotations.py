@@ -1,11 +1,14 @@
 """annotations API routes."""
 
+import logging
 from datetime import datetime
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
+
+logger = logging.getLogger(__name__)
 
 from src.api import state
 from src.api.deps import (
