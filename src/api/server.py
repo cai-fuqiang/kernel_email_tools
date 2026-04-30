@@ -46,8 +46,9 @@ from src.storage.postgres import PostgresStorage
 from src.storage.tag_store import TagStore
 from src.storage.translation_cache import TranslationCacheStore
 from src.storage.annotation_store import AnnotationStore
-from src.kernel_source.git_local import GitLocalSource
+from src.kernel_source.elixir import ElixirSource
 from src.kernel_source.fallback import FallbackKernelSource
+from src.kernel_source.git_local import GitLocalSource
 from src.translator.google_translator import GoogleTranslator, is_available as is_translator_available
 
 logger = logging.getLogger(__name__)
@@ -222,21 +223,10 @@ async def lifespan(app: FastAPI):
                 tree_cache_size=cache_cfg.get("tree_cache_size", 256),
                 file_cache_size=cache_cfg.get("file_cache_size", 128),
             )
-            history_repo_path = kernel_cfg.get("history_repo_path", "")
-            history_source = None
-            if history_repo_path:
-                import os as _os
-                expanded_history = _os.path.expanduser(history_repo_path)
-                if _os.path.isdir(expanded_history):
-                    from src.kernel_source.history import HistorySource
-                    history_source = HistorySource(repo_path=history_repo_path)
-            version_filter = kernel_cfg.get("version_filter", "release")
-            graft_enabled = kernel_cfg.get("graft_enabled", True)
+            fallback_source = ElixirSource()
             state._kernel_source = FallbackKernelSource(
                 primary=git_source,
-                history=history_source,
-                graft_enabled=graft_enabled,
-                version_filter=version_filter,
+                fallback=fallback_source,
             )
             logger.info("Kernel source initialized: %s", kernel_repo_path)
         else:

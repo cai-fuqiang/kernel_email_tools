@@ -3,7 +3,13 @@
 All route modules import state from here rather than maintaining their own globals.
 """
 
+import logging
+from pathlib import Path
 from typing import Optional, TYPE_CHECKING
+
+import yaml
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from src.qa.ask_agent import AskAgent
@@ -56,3 +62,12 @@ _agent_service: Optional["AgentResearchService"] = None
 # Config dictionaries (set in lifespan)
 _auth_config: dict = {}
 _app_config: dict = {}
+
+
+def _load_config() -> dict:
+    """加载配置文件。"""
+    config_path = Path(__file__).resolve().parent.parent.parent / "config" / "settings.yaml"
+    if config_path.exists():
+        with open(config_path, "r") as f:
+            return yaml.safe_load(f) or {}
+    return {}
