@@ -63,4 +63,5 @@ alwaysApply: false
 - **路由文件必须显式导入标准库**：`import json`、`import logging` 等不得依赖隐式导入。缺失导入导致 `NameError` 时，`except Exception` 处理器再次失败会返回纯文本 `Internal Server Error` 而非 JSON 错误详情
 - **路由文件必须显式定义 `logger`**：`logger = logging.getLogger(__name__)`，否则 `logger.error()` 引发二次 `NameError`
 - **跨模块常量必须显式导入**：如 `TARGET_TYPE_EMAIL_THREAD` 需 `from src.storage.tag_store import TARGET_TYPE_EMAIL_THREAD`
+- **禁止函数内局部 import 后跨函数使用**：某函数内的 `from src.storage.models import AnnotationORM` 只在该函数内有效。若其他函数也需此符号，必须提升为模块级导入或在各自函数内独立导入
 - **Python 路径冲突**：`scripts/serve.py` 必须 `sys.path.insert(0, PROJECT_ROOT / "src")` 确保项目自身的包不被同机器上其他同样使用 `src/` 布局的已安装包（如 `chip-manual-kb`）遮挡
