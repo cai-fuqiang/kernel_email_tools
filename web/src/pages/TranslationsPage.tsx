@@ -7,6 +7,7 @@ import {
 } from '../api/client';
 import ThreadDrawer from '../components/ThreadDrawer';
 import { showToast } from '../components/Toast';
+import { useAuth } from '../auth';
 
 function mergeTranslatedThreads(
   previous: TranslatedThreadInfo[],
@@ -86,6 +87,7 @@ function JobProgressCard({
 }
 
 export default function TranslationsPage() {
+  const { isAuthenticated } = useAuth();
   const [threads, setThreads] = useState<TranslatedThreadInfo[]>([]);
   const [activeJobs, setActiveJobs] = useState<TranslationJobResponse[]>([]);
   const [loadingThreads, setLoadingThreads] = useState(true);
@@ -128,9 +130,10 @@ export default function TranslationsPage() {
   }, []);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     fetchJobs();
     fetchThreads();
-  }, [fetchJobs, fetchThreads]);
+  }, [isAuthenticated, fetchJobs, fetchThreads]);
 
   useEffect(() => {
     if (!autoRefresh) return undefined;

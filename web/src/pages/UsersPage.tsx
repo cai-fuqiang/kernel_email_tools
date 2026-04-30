@@ -217,7 +217,7 @@ function UserSection({
 }
 
 export default function UsersPage() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, isAuthenticated } = useAuth();
   const [users, setUsers] = useState<UserRead[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -233,13 +233,14 @@ export default function UsersPage() {
   };
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     if (isAdmin) {
       loadUsers().catch(() => {});
     } else {
       setLoading(false);
       showToast('Permission denied', 'error');
     }
-  }, [isAdmin]);
+  }, [isAuthenticated, isAdmin]);
 
   const pendingUsers = useMemo(() => users.filter((user) => user.approval_status === 'pending'), [users]);
   const approvedUsers = useMemo(() => users.filter((user) => user.approval_status === 'approved' && user.status === 'active'), [users]);

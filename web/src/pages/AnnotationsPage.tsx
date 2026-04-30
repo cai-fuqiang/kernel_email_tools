@@ -10,7 +10,7 @@ type FilterType = 'all' | 'email' | 'code' | 'sdm_spec';
 
 export default function AnnotationsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isAuthenticated } = useAuth();
 
   // 筛选和分页状态
   const [filter, setFilter] = useState<FilterType>('all');
@@ -33,8 +33,9 @@ export default function AnnotationsPage() {
 
   // 加载统计
   useEffect(() => {
+    if (!isAuthenticated) return;
     getAnnotationStats().then(setStats).catch(() => {});
-  }, []);
+  }, [isAuthenticated]);
 
   // 加载数据
   const loadAnnotations = useCallback(async () => {
@@ -60,8 +61,9 @@ export default function AnnotationsPage() {
   }, [filter, q, page, pageSize, publishStatus]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     loadAnnotations();
-  }, [loadAnnotations]);
+  }, [isAuthenticated, loadAnnotations]);
 
   // 搜索
   const handleSearch = () => {
