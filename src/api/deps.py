@@ -243,7 +243,12 @@ async def _sync_user_record(current_user: CurrentUser) -> CurrentUser:
             if current_user.approval_status:
                 user.approval_status = _normalize_approval_status(current_user.approval_status)
             if current_user.role:
-                user.role = _normalize_role(current_user.role)
+                new_role = _normalize_role(current_user.role)
+                # 仅在角色升级或现有角色为默认 viewer 时更新，防止 Header 认证
+                # 的默认 viewer 角色覆盖数据库中的高权限角色
+                role_order = {"admin": 3, "editor": 2, "agent": 1, "viewer": 0}
+                if role_order.get(new_role, 0) > role_order.get(user.role, 0):
+                    user.role = new_role
             user.status = current_user.status or user.status
             user.auth_source = current_user.auth_source or user.auth_source
             user.last_seen_at = now
@@ -481,7 +486,11 @@ async def get_optional_current_user(request: Request) -> Optional[CurrentUser]:
 def require_roles(*roles: str):
     async def dependency(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
         if current_user.role not in roles:
-            raise HTTPException(status_code=403, detail="Permission denied")
+            required = ", ".join(roles)
+            raise HTTPException(
+                status_code=403,
+                detail=f"Requires {required} role, current role is {current_user.role}",
+            )
         return current_user
     return dependency
 
