@@ -4,19 +4,17 @@
 
 | 文件 | 行数 | 状态 | 建议 |
 |------|------|------|------|
-| `src/api/server.py` | 5000+ | 严重超标 | 按领域拆为 routers/services (auth, search, ask, agent, tags, annotations, translations, kernel, manual, knowledge) |
-| `web/src/components/ThreadDrawer.tsx` | 1881 | 严重超标 | 提取 LayeredEmailCard, TreeEmailCard, AnnotationCard 为独立文件 |
-| `web/src/pages/KernelCodePage.tsx` | 1443 | 严重超标 | 提取 VersionSelector, CodeView, AnnotationModal 等为独立文件 |
-| `web/src/pages/KnowledgePage.tsx` | 1400+ | 严重超标 | 提取 DraftInbox、EntityList、EntityDetail、GraphPanel、EvidencePanel |
-| `web/src/pages/SearchPage.tsx` | 653 | 接近警戒 | — |
+| `src/api/server.py` | 4845 | 严重超标 | 按领域拆为 routers/services (auth, search, ask, agent, tags, annotations, translations, kernel, manual, knowledge) |
+| `web/src/components/ThreadDrawer.tsx` | 1997 | 严重超标 | 提取 LayeredEmailCard, TreeEmailCard, AnnotationCard 为独立文件 |
+| `web/src/pages/KnowledgePage.tsx` | 1588 | 严重超标 | 提取 DraftInbox、EntityList、EntityDetail、GraphPanel、EvidencePanel |
+| `web/src/pages/SearchPage.tsx` | 770 | 接近警戒 | — |
+| `web/src/pages/KernelCodePage.tsx` | 579 | 正常 | — |
 | `web/src/pages/AgentResearchPage.tsx` | 450+ | 接近警戒 | 后续多轮 agent UI 需要先拆组件 |
 
 ## 死代码清单
 
 | 文件 | 行数 | 原因 |
 |------|------|------|
-| `src/storage/code_annotation_store.py` | 129 | 需复查是否仍被旧路径依赖，避免误删 |
-| `src/storage/code_annotation_models.py` | 138 | 同上 |
 | `src/symbol_indexer/` | 多文件 | 符号索引脚本存在，但 UI 定义跳转仍未完成 |
 
 ## 重复代码模式
@@ -53,18 +51,15 @@
 - `search_email_chunks_vector` — copy/paste  
 - `_message_ids_for_tag` — 第四个变体
 
-### Agent orchestration——应提取 service
-- 当前 Agent Research MVP 的 orchestration 仍在 `src/api/server.py`
-- 应提取 `AgentResearchService`，负责 capability check、trace、search loop、draft creation
+### Agent orchestration——已提取 service
+- Agent Research orchestration 已提取 `AgentResearchService`，负责 capability check、trace、search loop、draft creation
 - API 层只做 request validation、auth 和 response shaping
 
 ## 前端组件规范
 
 ### 弹窗/确认
-- **统一使用 `ConfirmModal`** 替代 `window.confirm` 和 `window.prompt`
-- **统一使用 `showToast()`** 替代内联 error div 和 `window.alert`
-- 仍残留原生弹窗的文件：`KernelCodePage.tsx`(6 处), `TagManager.tsx`, `ThreadDrawer.tsx`(内部 AnnotationCard 的 approve/reject)
-- 已修复：`KnowledgePage.tsx`, `TranslationsPage.tsx`, `UsersPage.tsx`, `KernelCodePage.tsx`, `AnnotationsPage.tsx` 的内联 error div 已替换为 `showToast()`
+- **统一使用 `ConfirmModal`** 替代 `window.confirm` 和 `window.prompt`（已全部完成，零原生弹窗残留）
+- **统一使用 `showToast()`** 替代内联 error div 和 `window.alert`（已全部完成）
 
 ### API 调用
 - **优先使用 `fetchJSON` 或 `fetchWithBody`**，不直接 `fetch()`
@@ -102,7 +97,7 @@
 
 - 翻译任务需要持久化，不能纯内存
 - 数据库变更需要迁移文件版本跟踪，不在 init_db 中 ad-hoc ALTER TABLE
-- 清理仓库根目录的临时文件 (api.log, kernel_code.db, nohup.out, config.sh 等)
+- 根目录临时文件已通过 .gitignore 管理（api.log, log*.txt, tags, nohup.out, check_*.py, run_import.py, config.sh, *.db）
 - 使用 `logging` 而非 `print`
 - `except Exception: pass` 已修复 5 处静默吞异常，剩余均有 logger.error/warning/debug 记录
 - README 和 `.joycode/rules` 需要随架构变化同步更新，避免误导后续实现

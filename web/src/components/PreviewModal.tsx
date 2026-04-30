@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import type { AnnotationListItem, CodeAnnotation } from '../api/types';
 import { getKernelFile } from '../api/client';
 import AnnotationMarkdown from './AnnotationMarkdown';
+import { showToast } from './Toast';
 
 interface PreviewModalProps {
   isOpen: boolean;
@@ -42,7 +43,7 @@ export default function PreviewModal({ isOpen, onClose, annotation }: PreviewMod
       const file = await getKernelFile(ann.version, ann.file_path);
       setCodeLines(file.content.split('\n'));
     } catch (e) {
-      console.error('Failed to load code:', e);
+      showToast('Failed to load code', 'error');
       setCodeLines([]);
     } finally {
       setLoading(false);

@@ -1613,6 +1613,7 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
     if (thread) {
       setFoldLevel('expanded');
       setExpandedIds(new Set(thread.emails.map(e => e.id)));
+      setLayeredExpandedIds(new Set(thread.emails.map(e => e.id)));
     }
   };
 
@@ -1620,6 +1621,7 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
     if (thread) {
       setFoldLevel('collapsed');
       setExpandedIds(new Set());
+      setLayeredExpandedIds(new Set());
     }
   };
 
@@ -1772,12 +1774,8 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
                 分层
               </button>
             </div>
-            {viewMode === 'tree' && (
-              <>
-                <button onClick={expandAll} className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">全部展开</button>
-                <button onClick={collapseAll} className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">全部收起</button>
-              </>
-            )}
+            <button onClick={expandAll} className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">全部展开</button>
+            <button onClick={collapseAll} className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">全部收起</button>
             <button 
               onClick={onClose} 
               className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-xl"

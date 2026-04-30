@@ -17,3 +17,4 @@ nohup.out
 check_*.py
 run_import.py
 config.sh
+api.log
