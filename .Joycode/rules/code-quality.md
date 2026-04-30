@@ -4,7 +4,7 @@
 
 | 文件 | 行数 | 状态 | 建议 |
 |------|------|------|------|
-| `src/api/server.py` | 4845 | 严重超标 | 按领域拆为 routers/services (auth, search, ask, agent, tags, annotations, translations, kernel, manual, knowledge) |
+| `src/api/server.py` | 294 | 正常 | 已拆分为 11 个 domain router 文件 (src/api/routers/) + deps.py + state.py + schemas.py |
 | `web/src/components/ThreadDrawer.tsx` | 1997 | 严重超标 | 提取 LayeredEmailCard, TreeEmailCard, AnnotationCard 为独立文件 |
 | `web/src/pages/KnowledgePage.tsx` | 1588 | 严重超标 | 提取 DraftInbox、EntityList、EntityDetail、GraphPanel、EvidencePanel |
 | `web/src/pages/SearchPage.tsx` | 770 | 接近警戒 | — |
