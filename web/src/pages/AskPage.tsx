@@ -15,6 +15,7 @@ import AskDraftPanel from '../components/AskDraftPanel';
 import ThreadDrawer from '../components/ThreadDrawer';
 import { EmptyState, PageHeader, PrimaryButton, SecondaryButton, SectionPanel, SkeletonBlock, SkeletonCard, SkeletonLine, StatusBadge } from '../components/ui';
 import { showToast } from '../components/Toast';
+import { useAuth } from '../auth';
 
 type ThreadFocus = {
   threadId: string;
@@ -159,6 +160,7 @@ function turnsFromLoaded(loaded: AskTurn[]): ConversationTurn[] {
 }
 
 export default function AskPage() {
+  const { isAuthenticated } = useAuth();
   const [question, setQuestion] = useState('');
   const [sender, setSender] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -180,11 +182,12 @@ export default function AskPage() {
   const savingRef = useRef(false);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     getChannels().then((channels) => {
       setChannelOptions([{ value: '', label: 'All Channels' }, ...channels]);
     }).catch(() => {});
     getTagStats().then(setTagStats).catch(() => {});
-  }, []);
+  }, [isAuthenticated]);
 
   const loadConversationList = useCallback(async () => {
     try {
@@ -197,12 +200,13 @@ export default function AskPage() {
   }, []);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     loadConversationList().then((convs) => {
       if (convs.length > 0 && !conversationId) {
         loadConversation(convs[0].conversation_id);
       }
     });
-  }, [loadConversationList]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, loadConversationList]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-save after turns change (when a turn completes)
   useEffect(() => {
