@@ -13,12 +13,11 @@
 
 ---
 
-## 活跃计划（6）
+## 活跃计划（5）
 
 | PLAN | 主题 | Status | Priority | 备注 |
 |------|------|--------|----------|------|
-| [PLAN-35000](PLAN-35000-ai-agent-special-user.md) | AI Research Agent | in-progress | **P0** | MVP 已落地；多轮 loop / cooperative cancel 待做 |
-| [PLAN-30002](PLAN-30002-external-code-jump.md) | 外链代码跳转（Elixir/lore） | planned | P1 | 取代符号索引方案；接入 Elixir Bootlin |
+| [PLAN-30002](PLAN-30002-external-code-jump.md) | 外链代码跳转（Elixir/lore） | in-progress | **P1** | 反向闭环已做；正向跳转待做 |
 | [PLAN-31001](PLAN-31001-knowledge-graph-enhancements.md) | 知识图谱功能增强 | in-progress | P1 | 实体删除 / 图谱遍历 / 内核版本关联未做 |
 | [PLAN-34000](PLAN-34000-semantic-search.md) | Semantic Search & Quality | in-progress | P1 | Phase 1 done；Phase 4/5 ThreadDrawer 拆分债务 |
 | [PLAN-31002](PLAN-31002-knowledge-workbench-roadmap.md) | Knowledge Workbench 路线图 | in-progress | P2 | 范围过大，新工作请新建独立 PLAN 引用 |
@@ -28,16 +27,15 @@
 
 ## 推荐执行顺序
 
-1. **P0** PLAN-35000 收尾（multi-iteration loop + cooperative cancel + AgentResearchService 抽离）
-2. **P1** PLAN-30002 Phase 1+2（externalLinks 工具 + Code Browser 接入 Elixir）
-3. **P1** PLAN-34000 Phase 4/5（ThreadDrawer/KnowledgePage 拆分，组件警戒线 1995 / 1588 行）
-4. **P1** PLAN-31001 Phase 1（实体删除 API + 图谱遍历 API + 简单可视化）
-5. **P1** PLAN-30002 Phase 3+5（ThreadDrawer 邮件正文路径识别 + lore 链接）
-6. **P3** PLAN-35001 P1 起步（本地小模型去噪，零 API 成本）
+1. **P1** PLAN-30002 Phase 1+2（externalLinks 工具 + Code Browser 接入 Elixir）
+2. **P1** PLAN-34000 Phase 4/5（ThreadDrawer/KnowledgePage 拆分，组件警戒线 1995 / 1588 行）
+3. **P1** PLAN-31001 Phase 1（实体删除 API + 图谱遍历 API + 简单可视化）
+4. **P1** PLAN-30002 Phase 3+5（ThreadDrawer 邮件正文路径识别 + lore 链接）
+5. **P3** PLAN-35001 P1 起步（本地小模型去噪，零 API 成本）
 
 ---
 
-## 已完成（done/，19）
+## 已完成（done/，20）
 
 按时间顺序从早到晚：
 
@@ -65,6 +63,8 @@
   - PLAN-31003 UI Workbench 第一轮整理
   - PLAN-32000 安全/稳定性修复（API key、密码环境变量化）
   - PLAN-33000 Ask ↔ Knowledge 双向闭环 P0
+- AI Agent
+  - PLAN-35000 AI Research Agent（多轮 loop + cooperative cancel + service 抽离 + prompt 加固，2026-05-01 收尾）
 
 ## 已废弃 / 取代（done/superseded/，2）
 

@@ -1,7 +1,49 @@
-> **Status**: in-progress (Phase 1~5 MVP done; multi-iteration loop / cooperative cancel / service 重构 / prompt 加固 未做)
+> **Status**: done (Phase 1~5 + multi-iteration loop + cooperative cancel + AgentResearchService + prompt hardening 全部落地；Phase 6 auto-accept 按设计保持未启用)
 > **Updated**: 2026-05-01
 > **Depends-on**: PLAN-33000 (done), PLAN-34000 Phase 1 (done)
-> **Priority**: P0 — 当前 AI 知识库能力核心方向
+> **Priority**: P0 (已完成)
+
+## Implementation Status (2026-05-01 收尾)
+
+### 落地
+
+- ✅ `AgentResearchService` 抽离到 `src/agent/research_service.py`，承担全部编排逻辑；`src/api/routers/agent.py` 只做 request validation + auth + service 调用
+- ✅ 真正的多轮 bounded loop（while iteration < max_iterations and search_count < max_searches）：
+  - 每轮 search → relevance judge → optional query refinement → 决定下一轮 query 或 break
+  - 终止条件：sufficient / 预算耗尽 / cancel / 无法 refine / 异常
+- ✅ Cooperative cancellation：每轮起点 + Ask synthesis 前 + draft 创建前 各检查一次 `run.status == "cancelled"`；cancel API 只翻状态，运行任务自动退出
+- ✅ Heartbeat：每轮起点更新 `heartbeat_at`，watchdog 可识别卡住的 run
+- ✅ LLM relevance judge：结构化 JSON 输出（judgments / sufficient / suggested_queries / reasoning）
+- ✅ Query refinement：当 judge 没给 suggested_queries 但还没到 max_iterations 时，调专门的 refinement prompt 生成下一轮查询
+- ✅ Capability check：service 入口检查 `agent:research` + `agent:create_draft`；缺失即标 failed/agent_missing_capability
+- ✅ `AGENT_CAPABILITIES` 设为 frozenset，运行时不能注入 `write` 等危险能力
+- ✅ Prompt 加固：所有 retrieved content 用 `[UNTRUSTED SOURCE EVIDENCE]` 标记包裹；existing knowledge 单独标 `[EXISTING KNOWLEDGE CONTEXT]` 并明确说明"synthesized, not primary evidence"
+- ✅ Draft payload 区分 `source_evidence`（邮件/thread）和 `existing_knowledge_context`（合成知识），符合 DD #12
+- ✅ 每个 action 携带 `model` + `token_usage` + `duration_ms` 字段（`token_usage` 走 `complete_with_usage`）
+- ✅ Service-level authorization：`schedule_run()` 把 asyncio 隔离在 service 内部，路由层不直接 `create_task`
+- ✅ Search 容错：semantic-first，失败/无结果时自动 fallback 到 hybrid，单次 search 不会让整个 run 崩
+- ✅ 异常 handler：用真实的 `iteration` / `action_index` 局部变量记录失败 action，不再有 `dir()` 反模式
+- ✅ Source dedup：累计 `all_sources` 时按 message_id 去重
+- ✅ 单元测试：23 个 test 覆盖 wrap / format / capability / cancel / budget / sufficient_breaks_early / cancel API / retry API
+- ✅ 全量 pytest（97 tests）通过；`compileall` 全项目语法清洁
+
+### 已知技术细节
+
+- `tag_exists` 在 service 内仍返回 True，由 draft apply 阶段的后端严格校验已存在 tag。这是 PLAN-35000 DD #5 决定的边界：service 不静默创建标签。
+- `complete_with_usage` 在 dashscope 部分由 `_complete_openai_compatible_with_usage` 提供 usage；其他 provider 当前返回空 dict。
+- agent role 不在 `_capabilities_for_role()` 直接返回 `["read", "write"]`，避免绕过 draft review。
+
+### 明确不做 / 后续独立 PLAN（不留尾巴）
+
+以下条目当前 PLAN 范围**不再处理**。若未来要做，必须开新 PLAN：
+
+1. **Auto-accept policy** — 设计已写入本文档 §"Auto-Accept Policy"，但 Phase 6 故意未实现；需要先有 confidence 校准 + audit 视图 + 回滚语义后才考虑
+2. **token cost accounting / 预算告警** — `token_usage` 字段已记录，但还没有按 run / agent / 时间窗口的聚合统计 UI；属于运维监控类需求
+3. **Archive 状态过滤** — 30 天自动归档、admin 审计视图：当前 Draft Inbox 已有 reject 状态，archive 视为后续运维优化
+4. **Watchdog 进程** — 通过 heartbeat 探测卡住 run 的独立 worker：当前依赖 server 重启 + `fail_running_runs_after_restart`
+5. **Per-agent read scope 配置** — DD #10 提到 admin 可配置 agent 读取范围；当前固定 `read_scope: public`
+6. **多 agent 实例 / agent identity 切换** — 当前唯一 agent 是 `lobster-agent`
+7. **Prompt 模板版本化** — `prompt_version` 字段未写入 trace；目前 prompt 改动通过 git 追踪
 
 # PLAN-35000: AI Research Agent as a Special User
 
