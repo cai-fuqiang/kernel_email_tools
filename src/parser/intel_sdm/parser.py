@@ -135,7 +135,7 @@ class IntelSDMParser(BaseManualParser):
                                         [c if c else "" for c in r] for r in rows
                                     ])
                         except Exception:
-                            pass
+                            logger.debug("Table extraction failed on page %d of section %s", p + 1, node.title)
                     node.content = "\n".join(text_parts)
                     node.tables = tables
                 # 递归子节点
@@ -156,7 +156,7 @@ class IntelSDMParser(BaseManualParser):
                                     [c if c else "" for c in r] for r in rows
                                 ])
                     except Exception:
-                        pass
+                        logger.debug("Table extraction failed on page %d of section %s", p + 1, node.title)
                 node.content = "\n".join(text_parts)
                 node.tables = tables
 

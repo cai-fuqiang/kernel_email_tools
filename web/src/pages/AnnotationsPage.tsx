@@ -4,6 +4,7 @@ import AnnotationTree from '../components/AnnotationTree';
 import { getAnnotationStats, listAnnotations } from '../api/client';
 import type { AnnotationListItem } from '../api/types';
 import { useAuth } from '../auth';
+import { showToast } from '../components/Toast';
 
 type FilterType = 'all' | 'email' | 'code' | 'sdm_spec';
 
@@ -23,7 +24,6 @@ export default function AnnotationsPage() {
   const [annotations, setAnnotations] = useState<AnnotationListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
 
   // 分页
   const totalPages = Math.ceil(total / pageSize);
@@ -39,7 +39,6 @@ export default function AnnotationsPage() {
   // 加载数据
   const loadAnnotations = useCallback(async () => {
     setLoading(true);
-    setError('');
     try {
       const res = await listAnnotations({ 
         q: q || undefined, 
@@ -52,7 +51,7 @@ export default function AnnotationsPage() {
       setAnnotations(res.annotations);
       setTotal(res.total);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load annotations');
+      showToast(e instanceof Error ? e.message : 'Failed to load annotations', 'error');
       setAnnotations([]);
       setTotal(0);
     } finally {
@@ -211,15 +210,8 @@ export default function AnnotationsPage() {
           </div>
         )}
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-xl mb-4 flex items-center gap-2">
-            <i data-lucide="alert-circle" className="w-5 h-5"></i>
-            {error}
-          </div>
-        )}
-
         {/* Results count */}
-        {!loading && !error && (
+        {!loading && (
           <div className="flex items-center gap-2 text-sm text-slate-500 mb-4">
             <i data-lucide="info" className="w-4 h-4"></i>
             {q ? (
@@ -231,7 +223,7 @@ export default function AnnotationsPage() {
         )}
 
         {/* 列表 */}
-        {!loading && !error && annotations.length === 0 && (
+        {!loading && annotations.length === 0 && (
           <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 flex items-center justify-center">
               <i data-lucide="inbox" className="w-8 h-8 text-slate-400"></i>
@@ -246,7 +238,7 @@ export default function AnnotationsPage() {
         )}
 
         {/* 统一树形组件 */}
-        {!loading && !error && annotations.length > 0 && (
+        {!loading && annotations.length > 0 && (
           <AnnotationTree 
             annotations={annotations} 
             onAnnotationsChange={loadAnnotations}

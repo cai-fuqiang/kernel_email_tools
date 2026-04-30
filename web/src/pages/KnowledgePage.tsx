@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Inbox, Plus, RefreshCw } from 'lucide-react';
+import { showToast } from '../components/Toast';
 import EmailTagEditor from '../components/EmailTagEditor';
 import ThreadDrawer from '../components/ThreadDrawer';
 import KnowledgeGraphView from '../components/KnowledgeGraphView';
@@ -181,7 +182,6 @@ export default function KnowledgePage() {
   const [annotationLoading, setAnnotationLoading] = useState(false);
   const [relationLoading, setRelationLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [newEntity, setNewEntity] = useState({
@@ -217,7 +217,6 @@ export default function KnowledgePage() {
 
   const loadEntities = useCallback(async () => {
     setLoading(true);
-    setError('');
     try {
       const res = await listKnowledgeEntities({ q: query || undefined, page_size: 100 });
       setEntities(res.entities);
@@ -231,7 +230,7 @@ export default function KnowledgePage() {
         }
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load knowledge items');
+      showToast(e instanceof Error ? e.message : 'Failed to load knowledge items', 'error');
     } finally {
       setLoading(false);
     }
@@ -251,7 +250,7 @@ export default function KnowledgePage() {
       const entity = await getKnowledgeEntity(selectedEntityId);
       setSelectedEntity(entity);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load knowledge item');
+      showToast(e instanceof Error ? e.message : 'Failed to load knowledge item', 'error');
     }
   }, [entities, selectedEntityId]);
 
@@ -392,7 +391,6 @@ export default function KnowledgePage() {
   const handleCreateEntity = async () => {
     if (!newEntity.canonical_name.trim()) return;
     setSaving(true);
-    setError('');
     try {
       const result = await createKnowledgeEntity({
         entity_type: newEntity.entity_type.trim() || DEFAULT_ENTITY_TYPE,
@@ -415,12 +413,13 @@ export default function KnowledgePage() {
         const names = result.suggestions.duplicates
           .map((d) => d.canonical_name)
           .join(', ');
-        setError(
-          `Created. Possible duplicates found: ${names}. Consider reviewing to avoid fragmentation.`
+        showToast(
+          `Created. Possible duplicates found: ${names}. Consider reviewing to avoid fragmentation.`,
+          'info',
         );
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to create knowledge item');
+      showToast(e instanceof Error ? e.message : 'Failed to create knowledge item', 'error');
     } finally {
       setSaving(false);
     }
@@ -429,7 +428,6 @@ export default function KnowledgePage() {
   const handleSaveEntity = async () => {
     if (!selectedEntity || !canWrite) return;
     setSaving(true);
-    setError('');
     try {
       const updated = await updateKnowledgeEntity(selectedEntity.entity_id, {
         canonical_name: selectedEntity.canonical_name,
@@ -442,7 +440,7 @@ export default function KnowledgePage() {
       await loadEntities();
       await loadEvidence();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to update knowledge item');
+      showToast(e instanceof Error ? e.message : 'Failed to update knowledge item', 'error');
     } finally {
       setSaving(false);
     }
@@ -496,15 +494,14 @@ export default function KnowledgePage() {
   const handleMergeEntity = async () => {
     if (!selectedEntity || !mergeTargetId || !canWrite) return;
     setSaving(true);
-    setError('');
     try {
       const result = await mergeKnowledgeEntities(selectedEntity.entity_id, mergeTargetId);
       setMergeTargetId('');
       await loadEntities();
       setSearchParams({ entity_id: result.target.entity_id });
-      setError(`Merged into ${result.target.canonical_name}. Moved ${Object.values(result.moved).reduce((sum, value) => sum + value, 0)} linked records.`);
+      showToast(`Merged into ${result.target.canonical_name}. Moved ${Object.values(result.moved).reduce((sum, value) => sum + value, 0)} linked records.`, 'success');
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to merge entity');
+      showToast(e instanceof Error ? e.message : 'Failed to merge entity', 'error');
     } finally {
       setSaving(false);
     }
@@ -513,7 +510,6 @@ export default function KnowledgePage() {
   const handleCreateAnnotation = async () => {
     if (!selectedEntity || !annotationBody.trim()) return;
     setSaving(true);
-    setError('');
     try {
       await createAnnotation({
         annotation_type: 'email',
@@ -527,7 +523,7 @@ export default function KnowledgePage() {
       setAnnotationBody('');
       await loadAnnotations();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to create note');
+      showToast(e instanceof Error ? e.message : 'Failed to create note', 'error');
     } finally {
       setSaving(false);
     }
@@ -536,7 +532,6 @@ export default function KnowledgePage() {
   const handleCreateRelation = async () => {
     if (!selectedEntity || !relationForm.target_entity_id || !canWrite) return;
     setSaving(true);
-    setError('');
     try {
       await createKnowledgeRelation({
         source_entity_id: selectedEntity.entity_id,
@@ -547,7 +542,7 @@ export default function KnowledgePage() {
       setRelationForm({ relation_type: 'related_to', target_entity_id: '', description: '' });
       await loadRelations();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to create relation');
+      showToast(e instanceof Error ? e.message : 'Failed to create relation', 'error');
     } finally {
       setSaving(false);
     }
@@ -556,14 +551,13 @@ export default function KnowledgePage() {
   const handleSaveRelationDescription = async (relation: KnowledgeRelation) => {
     if (!canWrite) return;
     setSaving(true);
-    setError('');
     try {
       await updateKnowledgeRelation(relation.relation_id, {
         description: relationDrafts[relation.relation_id] ?? relation.description,
       });
       await loadRelations();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to update relation');
+      showToast(e instanceof Error ? e.message : 'Failed to update relation', 'error');
     } finally {
       setSaving(false);
     }
@@ -572,12 +566,11 @@ export default function KnowledgePage() {
   const handleDeleteRelation = async (relationId: string) => {
     if (!canWrite) return;
     setSaving(true);
-    setError('');
     try {
       await deleteKnowledgeRelation(relationId);
       await loadRelations();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to delete relation');
+      showToast(e instanceof Error ? e.message : 'Failed to delete relation', 'error');
     } finally {
       setSaving(false);
     }
@@ -586,7 +579,6 @@ export default function KnowledgePage() {
   const handleDeleteEntity = async (forceDelete: boolean) => {
     if (!selectedEntity || !canWrite) return;
     setSaving(true);
-    setError('');
     try {
       await deleteKnowledgeEntity(selectedEntity.entity_id, forceDelete);
       setShowDeleteConfirm(false);
@@ -600,14 +592,15 @@ export default function KnowledgePage() {
         const parsed = JSON.parse(jsonPart);
         const blocked = parsed?.blocked_by || parsed?.detail?.blocked_by;
         if (blocked) {
-          setError(
-            `Cannot delete: ${blocked.length} relation(s) exist. Force delete will also remove them.`
+          showToast(
+            `Cannot delete: ${blocked.length} relation(s) exist. Force delete will also remove them.`,
+            'error',
           );
         } else {
-          setError(msg);
+          showToast(msg, 'error');
         }
       } catch {
-        setError(msg);
+        showToast(msg, 'error');
       }
     } finally {
       setSaving(false);
@@ -913,12 +906,6 @@ export default function KnowledgePage() {
       </aside>
 
       <main className="flex-1 overflow-y-auto">
-        {error && (
-          <div className="m-6 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {error}
-          </div>
-        )}
-
         {activeDraft && activeDraftPayload && (
           <div className="m-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
             <div className="mb-3 flex items-start justify-between gap-4">

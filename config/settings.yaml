@@ -104,7 +104,7 @@ qa:
   email:
     llm_provider: dashscope              # openai | anthropic | dashscope | minimax
     model: qwen3-coder-plus          # 千问模型
-    api_key: "sk-ca0369a956e64f92b275ac1b890d88fe"                          # API Key, set DASHSCOPE_API_KEY env var
+    api_key: ""                                 # Set DASHSCOPE_API_KEY env var
   manual:
     llm_provider: openai
     model: gpt-4

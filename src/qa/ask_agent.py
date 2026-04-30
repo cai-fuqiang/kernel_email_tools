@@ -548,7 +548,8 @@ class AskAgent:
         ))[:5]
         try:
             entities = await self.knowledge_store.search_entities(queries, limit=8)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Knowledge entity search failed: %s", exc)
             return ""
         if not entities:
             return ""

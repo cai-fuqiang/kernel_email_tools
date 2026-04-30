@@ -156,6 +156,7 @@ class VectorIndexer(BaseIndexer):
                     text("SELECT COUNT(*) FROM email_embeddings")
                 )).scalar() or 0
             except Exception:
+                logger.warning("Failed to query email_embeddings count")
                 total = 0
 
         return {

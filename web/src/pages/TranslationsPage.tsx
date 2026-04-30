@@ -6,6 +6,7 @@ import {
   type TranslationJobResponse,
 } from '../api/client';
 import ThreadDrawer from '../components/ThreadDrawer';
+import { showToast } from '../components/Toast';
 
 function mergeTranslatedThreads(
   previous: TranslatedThreadInfo[],
@@ -89,7 +90,6 @@ export default function TranslationsPage() {
   const [activeJobs, setActiveJobs] = useState<TranslationJobResponse[]>([]);
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [loadingJobs, setLoadingJobs] = useState(true);
-  const [error, setError] = useState('');
   const [selectedThread, setSelectedThread] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const threadsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -109,7 +109,7 @@ export default function TranslationsPage() {
         return resp.threads;
       });
     } catch (e) {
-      if (!silent) setError(e instanceof Error ? e.message : 'Failed to load translated threads');
+      if (!silent) showToast(e instanceof Error ? e.message : 'Failed to load translated threads', 'error');
     } finally {
       if (!silent) setLoadingThreads(false);
     }
@@ -121,14 +121,13 @@ export default function TranslationsPage() {
       const resp = await listTranslationJobs('active');
       setActiveJobs(resp.jobs);
     } catch (e) {
-      if (!silent) setError(e instanceof Error ? e.message : 'Failed to load translation jobs');
+      if (!silent) showToast(e instanceof Error ? e.message : 'Failed to load translation jobs', 'error');
     } finally {
       if (!silent) setLoadingJobs(false);
     }
   }, []);
 
   useEffect(() => {
-    setError('');
     fetchJobs();
     fetchThreads();
   }, [fetchJobs, fetchThreads]);
@@ -151,7 +150,6 @@ export default function TranslationsPage() {
   }, [autoRefresh, fetchJobs, fetchThreads]);
 
   const handleRefresh = useCallback(() => {
-    setError('');
     fetchJobs();
     fetchThreads();
   }, [fetchJobs, fetchThreads]);
@@ -188,12 +186,6 @@ export default function TranslationsPage() {
           </button>
         </div>
       </div>
-
-      {error && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-          {error}
-        </div>
-      )}
 
       <section className="mb-8">
         <div className="flex items-center justify-between mb-3">

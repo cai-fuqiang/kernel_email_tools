@@ -268,7 +268,6 @@ export default function KernelCodePage() {
     if (urlLine) s.add(urlLine);
     return s;
   });
-  const [error, setError] = useState<string | null>(null);
   const [scriptCopied, setScriptCopied] = useState(false);
   const [treePath, setTreePath] = useState('');
   const [treeEntries, setTreeEntries] = useState<KernelTreeEntry[]>([]);
@@ -278,7 +277,6 @@ export default function KernelCodePage() {
     if (!selectedVersion || !path) return;
     setFileLoading(true);
     setCurrentPath(path);
-    setError(null);
     try {
       const [fileRes, annotRes] = await Promise.all([
         getKernelFile(selectedVersion, path),
@@ -290,7 +288,7 @@ export default function KernelCodePage() {
       setSelectedLines(line ? new Set([line]) : new Set());
       setSearchParams({ v: selectedVersion, path, ...(line ? { line: String(line) } : {}) }, { replace: true });
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
+      showToast(e instanceof Error ? e.message : String(e), 'error');
       setCurrentFile(null);
     } finally { setFileLoading(false); }
   }, [selectedVersion, urlLine, setSearchParams]);
@@ -320,7 +318,7 @@ export default function KernelCodePage() {
         setVersions(res.versions);
         setSelectedVersion(current => current || res.versions[0]?.tag || '');
       })
-      .catch(e => setError(e.message))
+      .catch(e => showToast(e.message, 'error'))
       .finally(() => setVersionsLoading(false));
   }, []);
 
@@ -529,9 +527,6 @@ export default function KernelCodePage() {
         <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
           {/* Code view */}
           <div className="flex-1 overflow-auto">
-            {error && (
-              <div className="p-4 text-red-600 text-sm">{error}</div>
-            )}
             {fileLoading ? (
               <div className="p-4 text-gray-400 text-sm">加载文件...</div>
             ) : currentFile ? (

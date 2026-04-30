@@ -7,6 +7,7 @@ import {
   updateUser,
 } from '../api/client';
 import { useAuth } from '../auth';
+import { showToast } from '../components/Toast';
 import type { UserRead } from '../api/types';
 import { PageHeader, PageShell, StatusBadge } from '../components/ui';
 
@@ -219,15 +220,13 @@ export default function UsersPage() {
   const { isAdmin } = useAuth();
   const [users, setUsers] = useState<UserRead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
   const loadUsers = async () => {
     setLoading(true);
-    setError('');
     try {
       setUsers(await listUsers());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load users');
+      showToast(err instanceof Error ? err.message : 'Failed to load users', 'error');
     } finally {
       setLoading(false);
     }
@@ -238,7 +237,7 @@ export default function UsersPage() {
       loadUsers().catch(() => {});
     } else {
       setLoading(false);
-      setError('Permission denied');
+      showToast('Permission denied', 'error');
     }
   }, [isAdmin]);
 
@@ -267,8 +266,6 @@ export default function UsersPage() {
           </div>
         ))}
       </section>
-
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       {loading ? (
         <div className="rounded-xl border border-gray-200 bg-white px-6 py-10 text-center text-gray-400">Loading users...</div>

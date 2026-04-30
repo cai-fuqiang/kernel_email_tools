@@ -253,6 +253,8 @@ def _verify_password(password: str, stored: str) -> bool:
         )
         return secrets.compare_digest(actual, expected)
     except Exception:
+        # Password verification failure — don't leak details to caller
+        logger.debug("Password verification failed (bad hash format or encoding)")
         return False
 
 
