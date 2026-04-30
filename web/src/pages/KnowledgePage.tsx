@@ -166,7 +166,7 @@ function relationEntityName(entity: KnowledgeEntity | null | undefined, fallback
 }
 
 export default function KnowledgePage() {
-  const { canWrite, isAdmin, isAuthenticated } = useAuth();
+  const { canWrite, isAdmin } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedEntityId = searchParams.get('entity_id') || '';
 

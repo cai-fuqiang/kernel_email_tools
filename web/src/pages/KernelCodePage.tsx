@@ -50,7 +50,7 @@ function AnnotationPanel({
   filePath: string;
   onAnnotationCreated: () => void;
 }) {
-  const { canWrite, currentUser, isAdmin, isAuthenticated } = useAuth();
+  const { canWrite, currentUser, isAdmin } = useAuth();
   const [body, setBody] = useState('');
   const [saving, setSaving] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
