@@ -28,7 +28,7 @@ alwaysApply: true
 - **驱动**: asyncpg
 - **数据校验**: Pydantic v2
 - **配置**: YAML (config/settings.yaml)
-- **Embedding**: OpenAI text-embedding-3-small
+- **Embedding**: DashScope text-embedding-v3 / Local BAAI/bge-m3
 - **LLM**: OpenAI GPT-4 / Anthropic Claude / 阿里千问 / MiniMax 海螺
 
 ### 前端
@@ -487,7 +487,7 @@ L1 章节分片 ──→ L2 内容类型分片 ──→ L3 滑动窗口分片
 - **禁止长生命周期 session**：不得在应用启动时创建单一 AsyncSession 并全局复用
 - **请求级 session**：存储类应接受 `session_factory`（`async_sessionmaker`），每次操作通过 `async with self.session_factory() as session:` 创建新 session
 - **已踩坑案例**：`TranslationCacheStore` 曾持有固定 session，运行一段时间后 session 过期导致查询静默返回空
-- **TagStore 待重构**：当前仍使用固定 session，后续需同步改为 session_factory 模式
+- **TagStore 已重构**：已改为 `session_factory` 模式，与 PostgresStorage 一致
 - `PostgresStorage.session_factory` 类型为 `async_sessionmaker`，支持 `async with session_factory() as session:` 上下文管理
 
 ### 9. 标签系统
