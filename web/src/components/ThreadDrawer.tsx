@@ -23,6 +23,10 @@ import EmailTagEditor from './EmailTagEditor';
 import ConfirmModal from './ConfirmModal';
 import { showToast } from './Toast';
 import { useAuth } from '../auth';
+import KernelPathLinkedText from './KernelPathLinkedText';
+import { extractPatchVersion, extractPatchHeaderPath } from '../utils/kernelPathRefs';
+import { pickKernelSourceUrl, loreUrl } from '../utils/externalLinks';
+import { ExternalLink } from 'lucide-react';
 
 // 线程节点类型（支持邮件和批注两种）
 interface ThreadNode {
@@ -609,7 +613,7 @@ function AnnotationCard({
 // =============================================================
 // PATCH Diff 折叠组件
 // =============================================================
-function PatchDiffBlock({ content }: { content: string }) {
+function PatchDiffBlock({ content, version }: { content: string; version: string }) {
   const [open, setOpen] = useState(false);
   const lines = content.split('\n');
   const fileCount = lines.filter(l => l.trimStart().startsWith('diff ')).length;
@@ -621,6 +625,70 @@ function PatchDiffBlock({ content }: { content: string }) {
     const t = l.trimStart();
     return t.startsWith('-') && !t.startsWith('---');
   }).length;
+
+  // 把 `--- a/path` / `+++ b/path` / `diff --git a/X b/Y` 渲染为带外链的行
+  const renderDiffLineContent = (line: string) => {
+    const trimmed = line.trimStart();
+    // `--- a/x` or `+++ b/x`
+    if (trimmed.startsWith('--- ') || trimmed.startsWith('+++ ')) {
+      const path = extractPatchHeaderPath(trimmed);
+      if (path) {
+        const prefix = line.slice(0, line.indexOf(trimmed) + 4); // 包含 `--- ` 或 `+++ `
+        const aOrB = trimmed.slice(4).startsWith('a/') ? 'a/' : trimmed.slice(4).startsWith('b/') ? 'b/' : '';
+        const { url } = pickKernelSourceUrl(version, path);
+        return (
+          <>
+            {prefix}
+            {aOrB}
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+       className="underline decoration-dotted hover:text-sky-300"
+              title={`在 Elixir / git.kernel.org 查看 ${path} (${version})`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {path}
+            </a>
+          </>
+        );
+      }
+    }
+    // `diff --git a/X b/Y`
+    if (trimmed.startsWith('diff --git ')) {
+      const m = trimmed.match(/^diff --git\s+a\/(\S+)\s+b\/(\S+)/);
+      if (m) {
+        const prefix = line.slice(0, line.indexOf('diff --git'));
+        const { url: urlA } = pickKernelSourceUrl(version, m[1]);
+        const { url: urlB } = pickKernelSourceUrl(version, m[2]);
+        return (
+          <>
+            {prefix}diff --git a/
+            <a
+              href={urlA}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline decoration-dotted hover:text-sky-300"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {m[1]}
+            </a>
+            {' b/'}
+            <a
+              href={urlB}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline decoration-dotted hover:text-sky-300"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {m[2]}
+            </a>
+          </>
+        );
+      }
+    }
+    return line || ' ';
+  };
 
   return (
     <div className="mt-4 border-t border-gray-200 pt-3 patch-diff">
@@ -646,7 +714,7 @@ function PatchDiffBlock({ content }: { content: string }) {
           {lines.map((line, i) => (
             <div key={i} className={getDiffLineClass(line)}>
               <span className="diff-line-no">{i + 1}</span>
-              <span className="diff-line-text">{line || ' '}</span>
+              <span className="diff-line-text">{renderDiffLineContent(line)}</span>
             </div>
           ))}
         </div>
@@ -762,6 +830,7 @@ function LayeredEmailCard({
   const { canWrite } = useAuth();
   const { email, children, depth } = node;
   const paragraphs = parseParagraphs(getDisplayBody(email));
+  const kernelVersion = extractPatchVersion(email.subject || '') || 'latest';
   const [editingPara, setEditingPara] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
 
@@ -863,6 +932,16 @@ function LayeredEmailCard({
         </span>
       )}
       <span className="text-gray-400 text-lg">{isExpanded ? '▼' : '▶'}</span>
+      <a
+        href={loreUrl(email.message_id)}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="text-gray-300 hover:text-indigo-500 transition-colors flex-shrink-0"
+        title="在 lore.kernel.org 查看原文"
+      >
+        <ExternalLink className="w-4 h-4" />
+      </a>
       <button
         onClick={(e) => { e.stopPropagation(); void (async () => { try { await navigator.clipboard.writeText(`${window.location.origin}/app/?thread=${threadId}&msg=${email.message_id}`); showToast('链接已复制', 'success'); } catch { showToast('复制失败', 'error'); } })(); }}
         className="text-gray-300 hover:text-blue-500 transition-colors flex-shrink-0"
@@ -904,7 +983,7 @@ function LayeredEmailCard({
               compact
             />
           </div>
-          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
+          <KernelPathLinkedText text={para} version={kernelVersion} className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed" />
         </div>
       );
     }
@@ -920,7 +999,7 @@ function LayeredEmailCard({
               compact
             />
           </div>
-          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
+          <KernelPathLinkedText text={para} version={kernelVersion} className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed" />
         </div>
         <div className="bilingual-translation">
           {translation && editingPara !== para && (
@@ -993,7 +1072,7 @@ function LayeredEmailCard({
             {paragraphs.map((block, idx) => renderParagraph(block, idx))}
           </div>
           {email.has_patch && email.patch_content && (
-            <PatchDiffBlock content={email.patch_content} />
+            <PatchDiffBlock content={email.patch_content} version={kernelVersion} />
           )}
           {/* 添加批注按钮 */}
           <div className="mt-3">
@@ -1055,6 +1134,7 @@ function TreeEmailCard({
   const { email, children, depth } = node;
   const isExpanded = expandedIds.has(email.id);
   const paragraphs = parseParagraphs(getDisplayBody(email));
+  const kernelVersion = extractPatchVersion(email.subject || '') || 'latest';
   const [editingPara, setEditingPara] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
 
@@ -1117,6 +1197,16 @@ function TreeEmailCard({
         </span>
       )}
       <span className="text-gray-400 text-lg">{isExpanded ? '▼' : '▶'}</span>
+      <a
+        href={loreUrl(email.message_id)}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="text-gray-300 hover:text-indigo-500 transition-colors flex-shrink-0"
+        title="在 lore.kernel.org 查看原文"
+      >
+        <ExternalLink className="w-4 h-4" />
+      </a>
       <button
         onClick={(e) => { e.stopPropagation(); void (async () => { try { await navigator.clipboard.writeText(`${window.location.origin}/app/?thread=${threadId}&msg=${email.message_id}`); showToast('链接已复制', 'success'); } catch { showToast('复制失败', 'error'); } })(); }}
         className="text-gray-300 hover:text-blue-500 transition-colors flex-shrink-0"
@@ -1149,7 +1239,7 @@ function TreeEmailCard({
     if (!needTrans) {
       return (
         <div key={idx} className="email-paragraph">
-          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
+          <KernelPathLinkedText text={para} version={kernelVersion} className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed" />
         </div>
       );
     }
@@ -1157,7 +1247,7 @@ function TreeEmailCard({
     return (
       <div key={idx} className="bilingual-block">
         <div className="bilingual-original">
-          <pre className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed">{para}</pre>
+          <KernelPathLinkedText text={para} version={kernelVersion} className="text-sm whitespace-pre-wrap break-words text-gray-700 leading-relaxed" />
         </div>
         <div className="bilingual-translation">
           {translation && editingPara !== para && (
@@ -1262,7 +1352,7 @@ function TreeEmailCard({
             {paragraphs.map((block, idx) => renderParagraph(block, idx))}
           </div>
           {email.has_patch && email.patch_content && (
-            <PatchDiffBlock content={email.patch_content} />
+            <PatchDiffBlock content={email.patch_content} version={kernelVersion} />
           )}
           {/* 添加批注按钮 */}
           <div className="mt-3">

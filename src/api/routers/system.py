@@ -56,3 +56,21 @@ async def root():
     return {"status": "ok", "service": "kernel-email-kb", "version": "0.1.0"}
 
 
+@router.get("/api/system/config")
+async def system_config():
+    """暴露前端需要的运行时配置（外链基地址等）。
+
+   前端在启动时读取此端点，允许内网部署把 external_links 指向内网镜像，
+    而无需重新构建前端。参考 PLAN-30002。
+    """
+    external_links_cfg = state._app_config.get("external_links", {}) or {}
+    return {
+        "external_links": {
+            "elixir_base": external_links_cfg.get("elixir_base"),
+            "git_base": external_links_cfg.get("git_base"),
+            "lore_base": external_links_cfg.get("lore_base"),
+        },
+    }
+
+
+

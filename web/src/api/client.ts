@@ -1340,3 +1340,19 @@ export async function deleteCodeAnnotation(annotationId: string): Promise<void> 
     throw new Error(`API error ${res.status}: ${text}`);
   }
 }
+
+// ============================================================
+// System Config (PLAN-30002: external_links)
+// ============================================================
+
+export interface SystemConfigResponse {
+  external_links: {
+    elixir_base?: string | null;
+    git_base?: string | null;
+    lore_base?: string | null;
+  };
+}
+
+export async function getSystemConfig(): Promise<SystemConfigResponse> {
+  return fetchJSON<SystemConfigResponse>(`${API_BASE}/system/config`);
+}

@@ -13,12 +13,13 @@
 
 ---
 
-## 活跃计划（5）
+## 活跃计划（6）
 
 | PLAN | 主题 | Status | Priority | 备注 |
 |------|------|--------|----------|------|
-| [PLAN-30002](PLAN-30002-external-code-jump.md) | 外链代码跳转（Elixir/lore） | in-progress | **P1** | 反向闭环已做；正向跳转待做 |
+| [PLAN-30002](PLAN-30002-external-code-jump.md) | 外链代码跳转（Elixir/lore） | in-progress | **P1** | 反向闭环 + Phase 1+2+3+4+5 已完成；仅剩 external_links 内网镜像验证 |
 | [PLAN-31001](PLAN-31001-knowledge-graph-enhancements.md) | 知识图谱功能增强 | in-progress | P1 | 实体删除 / 图谱遍历 / 内核版本关联未做 |
+| [PLAN-31004](PLAN-31004-ui-information-hierarchy.md) | UI 信息层次与首屏引导（Workbench 第二轮） | planned | **P1** | Dashboard + Sticky 上下文条 + 信息密度 |
 | [PLAN-34000](PLAN-34000-semantic-search.md) | Semantic Search & Quality | in-progress | P1 | Phase 1 done；Phase 4/5 ThreadDrawer 拆分债务 |
 | [PLAN-31002](PLAN-31002-knowledge-workbench-roadmap.md) | Knowledge Workbench 路线图 | in-progress | P2 | 范围过大，新工作请新建独立 PLAN 引用 |
 | [PLAN-35001](PLAN-35001-FUTURE-ai-assisted-knowledge-pipeline.md) | AI 邮件入库流水线 | future | P3 | 100 万邮件 LLM 成本 ~$2000，先验证再放量 |
@@ -27,7 +28,7 @@
 
 ## 推荐执行顺序
 
-1. **P1** PLAN-30002 Phase 1+2（externalLinks 工具 + Code Browser 接入 Elixir）
+1. ~~**P1** PLAN-30002 Phase 1+2（externalLinks 工具 + Code Browser 接入 Elixir）~~ ✅ 2026-05-01
 2. **P1** PLAN-34000 Phase 4/5（ThreadDrawer/KnowledgePage 拆分，组件警戒线 1995 / 1588 行）
 3. **P1** PLAN-31001 Phase 1（实体删除 API + 图谱遍历 API + 简单可视化）
 4. **P1** PLAN-30002 Phase 3+5（ThreadDrawer 邮件正文路径识别 + lore 链接）

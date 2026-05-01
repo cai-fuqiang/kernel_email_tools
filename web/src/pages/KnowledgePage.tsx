@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Inbox, Plus, RefreshCw } from 'lucide-react';
+import { Inbox, Plus, RefreshCw, ExternalLink } from 'lucide-react';
 import { showToast } from '../components/Toast';
 import EmailTagEditor from '../components/EmailTagEditor';
 import ThreadDrawer from '../components/ThreadDrawer';
 import KnowledgeGraphView from '../components/KnowledgeGraphView';
 import DraftReviewPanel from '../components/DraftReviewPanel';
 import KnowledgeEntityMetaPanel from '../components/KnowledgeEntityMetaPanel';
+import { loreUrl } from '../utils/externalLinks';
 import {
   extractKnowledgeMeta,
   mergeKnowledgeMeta,
@@ -1500,6 +1501,18 @@ export default function KnowledgePage() {
                           {String(row.meta?.list_name || '') && <span>{String(row.meta?.list_name || '')}</span>}
                           {row.confidence && <span>{row.confidence}</span>}
                           {row.message_id && <span className="font-mono">{row.message_id}</span>}
+                          {row.message_id && (
+                            <a
+                              href={loreUrl(row.message_id)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-0.5 text-indigo-600 hover:text-indigo-800"
+                              title="在 lore.kernel.org 查看原文"
+                            >
+                              lore <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
                         </div>
                       </button>
                     </div>
@@ -1524,6 +1537,18 @@ export default function KnowledgePage() {
                             {source.list_name && <span>{source.list_name}</span>}
                             {source.source && <span>{source.source}</span>}
                             {source.message_id && <span className="font-mono">{source.message_id}</span>}
+                            {source.message_id && (
+                              <a
+                                href={loreUrl(source.message_id)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center gap-0.5 text-indigo-600 hover:text-indigo-800"
+                                title="在 lore.kernel.org 查看原文"
+                              >
+                                lore <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
                           </div>
                         </div>
                         <span className="shrink-0 rounded-lg bg-white px-2 py-1 text-xs font-medium text-gray-600">
