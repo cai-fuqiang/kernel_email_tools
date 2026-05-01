@@ -1,7 +1,7 @@
 > **Status**: in-progress (Phase 1 done; Phase 3 partial; Phase 4 done; Phase 5 partial; Phase 2 未做)
 > **Updated**: 2026-05-01
 > **Depends-on**: 无
-> **Priority**: P1 — Phase 4/5 的 ThreadDrawer (1997 行) / KnowledgePage (1588 行) 拆分是当前最大工程债
+> **Priority**: P1 — ThreadDrawer 已从 2085 行降到 1611 行（首批组件抽出完成），KnowledgePage 1588 行待拆
 
 # PLAN-34000: Semantic Search and Product Quality Improvements
 
@@ -16,8 +16,9 @@ The implementation is split into phases so the first delivery can be small and s
 - Phase 1 is implemented: `mode=semantic` now uses `email_chunks` / `email_chunk_embeddings`, supports query embeddings, email-level dedupe, pagination, and shared filters including `has_patch`.
 - Phase 3 is partially implemented: the main app navigation, Ask layout, Knowledge layout, and Kernel Code layout are responsive; browser-native alerts in touched paths use toast feedback.
 - Phase 4 is implemented for the current warning set: `npm run lint` is clean with zero warnings and zero errors.
+- Phase 4 ThreadDrawer split (first batch, 2026-05-01): `PatchDiffBlock`, `KnowledgeBackRefs`, `ThreadAnnotationCard` (含 `AnnotationInput`) 抽出为独立组件文件；`ThreadDrawer.tsx` 从 2085 行降到 1611 行（-22%）。剩余 `LayeredEmailCard` (303 行) / `TreeEmailCard` (301 行) 由后续 PR 继续拆分。
 - Phase 5 is partially implemented: route-level code splitting is active, Manual Search has richer previews and an Ask Manuals path, Knowledge shows evidence quality summary, and Code Browser uses the existing kernel tree API for path browsing.
-- Larger follow-ups still intentionally remain: deeper Knowledge duplicate prevention, full ThreadDrawer extraction, full Kernel annotation review UX replacement for confirm/prompt flows, and annotation drift detection across kernel versions.
+- Larger follow-ups still intentionally remain: deeper Knowledge duplicate prevention, full ThreadDrawer extraction (LayeredEmailCard / TreeEmailCard), KnowledgePage 1588 行拆分（PLAN-31004 Phase 3 协同执行），full Kernel annotation review UX replacement for confirm/prompt flows, and annotation drift detection across kernel versions.
 
 ## Phase 1: Make `mode=semantic` Real
 
