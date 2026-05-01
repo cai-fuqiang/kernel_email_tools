@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { ExternalLink } from 'lucide-react';
 import {
   getKernelFile,
   getKernelTree,
@@ -20,18 +21,13 @@ import type { KernelVersionInfo, KernelFileResponse, KernelTreeEntry, CodeAnnota
 import EmailTagEditor from '../components/EmailTagEditor';
 import { useAuth } from '../auth';
 import { showToast } from '../components/Toast';
+import { pickKernelSourceUrl } from '../utils/externalLinks';
 
 // ============================================================
 // Helpers
 // ============================================================
 function isValidFilePath(path: string): boolean {
   return path.trim().length > 0;
-}
-
-function elixirUrl(version: string, filePath: string, line?: number): string {
-  let url = `https://elixir.bootlin.com/linux/${version}/source/${filePath}`;
-  if (line) url += `#L${line}`;
-  return url;
 }
 
 // ============================================================
@@ -453,15 +449,23 @@ export default function KernelCodePage() {
           >
             {fileLoading ? '加载中...' : '打开文件'}
           </button>
-          {currentFile && (
-            <a
-              href={elixirUrl(selectedVersion, currentPath, selectedLines.size === 1 ? Array.from(selectedLines)[0] : undefined)}
-              target="_blank" rel="noopener noreferrer"
-              className="text-xs text-indigo-500 hover:text-indigo-700 whitespace-nowrap"
-            >
-              在 elixir 打开 ↗
-            </a>
-          )}
+          {currentFile && (() => {
+            const focusLine = selectedLines.size === 1 ? Array.from(selectedLines)[0] : undefined;
+            const picked = pickKernelSourceUrl(selectedVersion, currentPath, focusLine);
+            const label = picked.source === 'elixir' ? '在 Elixir 查看' : '在 git.kernel.org 查看';
+            return (
+              <a
+                href={picked.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={picked.url}
+                className="inline-flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700 whitespace-nowrap"
+              >
+                {label}
+                <ExternalLink size={12} />
+              </a>
+            );
+          })()}
           <button
             onClick={handleCopyScript}
             className={`ml-auto px-3 py-1 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap ${
@@ -498,27 +502,48 @@ export default function KernelCodePage() {
             ) : treeEntries.length === 0 ? (
               <span className="text-gray-400">No entries</span>
             ) : (
-              treeEntries.slice(0, 16).map((entry) => (
-                <button
-                  key={entry.path}
-                  type="button"
-                  onClick={() => {
-                    if (entry.type === 'directory') {
-                      setTreePath(entry.path);
-                    } else {
-                      setPathInput(entry.path);
-                      loadFile(entry.path);
-                    }
-                  }}
-                  className={`rounded border px-2 py-1 font-medium ${
-                    entry.type === 'directory'
-                      ? 'border-sky-100 bg-sky-50 text-sky-700 hover:bg-sky-100'
-                      : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  {entry.type === 'directory' ? `${entry.name}/` : entry.name}
-                </button>
-              ))
+              treeEntries.slice(0, 16).map((entry) => {
+                const entryPicked = entry.type === 'file'
+                  ? pickKernelSourceUrl(selectedVersion, entry.path)
+                  : null;
+                return (
+                  <span
+                    key={entry.path}
+                    className={`group inline-flex items-stretch rounded border overflow-hidden font-medium ${
+                      entry.type === 'directory'
+                        ? 'border-sky-100 bg-sky-50 text-sky-700 hover:bg-sky-100'
+                        : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (entry.type === 'directory') {
+                          setTreePath(entry.path);
+                        } else {
+                          setPathInput(entry.path);
+                          loadFile(entry.path);
+                        }
+                      }}
+                      className="px-2 py-1"
+                    >
+                      {entry.type === 'directory' ? `${entry.name}/` : entry.name}
+                    </button>
+                    {entryPicked && (
+                      <a
+                        href={entryPicked.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`在 ${entryPicked.source === 'elixir' ? 'Elixir' : 'git.kernel.org'} 打开 ${entry.path}`}
+                        onClick={e => e.stopPropagation()}
+                        className="hidden group-hover:flex items-center pr-2 text-gray-400 hover:text-indigo-600"
+                      >
+                        <ExternalLink size={11} />
+                      </a>
+                    )}
+                  </span>
+                );
+              })
             )}
           </div>
         </div>
@@ -534,16 +559,27 @@ export default function KernelCodePage() {
                 {codeLines.map((line, i) => {
                   const lineNum = i + 1;
                   const isSelected = selectedLines.has(lineNum);
+                  const linePicked = pickKernelSourceUrl(selectedVersion, currentPath, lineNum);
                   return (
                     <div
                       key={lineNum}
                       onClick={() => handleLineClick(lineNum)}
-                      className={`flex hover:bg-gray-50 cursor-pointer ${isSelected ? 'bg-yellow-100' : ''}`}
+                      className={`group flex hover:bg-gray-50 cursor-pointer ${isSelected ? 'bg-yellow-100' : ''}`}
                     >
                       <span className="w-14 text-right pr-3 text-gray-400 select-none border-r border-gray-200 shrink-0 py-px">
                         {lineNum}
                       </span>
-                      <span className="pl-3 py-px whitespace-pre">{line}</span>
+                      <span className="pl-3 py-px whitespace-pre flex-1">{line}</span>
+                      <a
+                        href={linePicked.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`在 ${linePicked.source === 'elixir' ? 'Elixir' : 'git.kernel.org'} 查看 L${lineNum}`}
+                        onClick={e => e.stopPropagation()}
+                        className="opacity-0 group-hover:opacity-100 px-2 text-gray-400 hover:text-indigo-600 select-none"
+                      >
+                        <ExternalLink size={12} />
+                      </a>
                     </div>
                   );
                 })}

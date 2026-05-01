@@ -1,6 +1,6 @@
 # PLAN-30002: 外链代码跳转与外部站点标注闭环
 
-> **Status**: in-progress (核心闭环已实现，剩余正向跳转和邮件正文路径识别)
+> **Status**: in-progress (Phase 1+2 已完成，剩余 Phase 3-5)
 > **Updated**: 2026-05-01
 > **Depends-on**: 无
 > **Supersedes**: PLAN-30000-code-definition-navigation, PLAN-10001-code-navigation
@@ -41,14 +41,15 @@
 
 ## 待实现：本系统 → 外部站点的正向跳转
 
-### Phase 1: 工具函数集中
+### Phase 1: 工具函数集中 ✅
 
-- [ ] 新增 `web/src/utils/externalLinks.ts`：统一存放各种 URL 构建函数
-  - `elixirSourceUrl(version, path, line?)` ← 替代 `KernelCodePage.tsx` 中已有但未引用的 `elixirUrl()`
+- [x] 新增 `web/src/utils/externalLinks.ts`：统一存放各种 URL 构建函数
+  - `elixirSourceUrl(version, path, line?)` ← 替代 `KernelCodePage.tsx` 中原有的 `elixirUrl()` 私有函数
   - `elixirIdentUrl(version, symbol)` — 符号搜索
-  - `gitKernelOrgUrl(version, path, line?)` — Elixir 不覆盖的版本 fallback
-  - `loreUrl(messageId)`
-  - `pickKernelSourceUrl(version, path, line?)` — 自动选择 Elixir 或 git.kernel.org
+  - `gitKernelOrgUrl(version, path, line?)` — Elixir 不覆盖的版本 fallback（cgit `?h=<tag>#n<line>`）
+  - `loreUrl(messageId)` — 自动剥离尖括号 + URL 编码
+  - `pickKernelSourceUrl(version, path, line?)` — 根据 `elixirSupportsVersion` 启发式自动选择 Elixir / git.kernel.org，返回 `{ url, source }`
+  - `setExternalLinksConfig({ elixir_base, git_base, lore_base })` — 运行时基地址覆盖入口
 - [ ] 后端 `external_links` 配置（可选，仅用于内网镜像）：
   ```yaml
   external_links:
@@ -58,12 +59,12 @@
   ```
   通过现有 `/api/system/config` 暴露
 
-### Phase 2: KernelCodePage 接入正向跳转
+### Phase 2: KernelCodePage 接入正向跳转 ✅（核心已完成）
 
-- [ ] 文件视图工具栏：删除 `elixirUrl()` 死代码，接入 `externalLinks.ts`，显示 "在 Elixir 查看" 按钮（新窗口打开）
-- [ ] 行选中后 mini toolbar 增加 "在 Elixir 查看此行" 链接
-- [ ] 选中文本（标识符）后增加 "在 Elixir 搜索符号" 按钮 → ident URL
-- [ ] 文件树每个文件 hover 时显示外链图标
+- [x] 文件视图工具栏：移除本地 `elixirUrl()` 函数，改用 `pickKernelSourceUrl`，按钮根据版本自动显示 "在 Elixir 查看" / "在 git.kernel.org 查看"，附 `lucide-react` 的 `ExternalLink` 图标 + URL tooltip
+- [x] 代码行 hover 时行尾出现外链图标（`opacity-0 group-hover:opacity-100`），点击直接跳到 Elixir/git.kernel.org 对应行号；`stopPropagation` 避免触发选中
+- [x] 文件树条目（文件类型）hover 时尾部显示 ExternalLink 图标，点击跳转外链
+- [ ] 选中文本（标识符）后增加 "在 Elixir 搜索符号" 按钮 → ident URL（待做，需要文本选中事件接入）
 
 ### Phase 3: ThreadDrawer 邮件正文路径识别
 
