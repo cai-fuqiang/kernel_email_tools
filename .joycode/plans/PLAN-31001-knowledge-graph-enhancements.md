@@ -1,6 +1,6 @@
-> **Status**: in-progress (Phase 1 partial — entity merge & local graph done; entity delete / graph traversal / kernel version linkage 未做)
+> **Status**: in-progress (Phase 1 + Phase 2 完成；Phase 3-5 待做)
 > **Updated**: 2026-05-01
-> **Depends-on**: PLAN-31000 (done), PLAN-30000 (Phase 2 文件/符号链接需要符号索引)
+> **Depends-on**: PLAN-31000 (done), PLAN-30002 (external code links — Phase 1 done)
 > **Priority**: P1
 
 # PLAN-31001: 知识图谱功能增强
@@ -12,63 +12,36 @@
 
 ## 高优先级：核心功能缺口
 
-### 1. 实体删除
-- **现状**: `KnowledgeStore` 无 `delete_entity()`，API 无 `DELETE /api/knowledge/entities/{entity_id}`。关系可删，实体不行。
-- **方案**:
-  - `knowledge_store.py`: 添加 `delete_entity()`，删除前检查是否被关联引用；若被引用则阻止删除并返回引用者列表，或级联删除所有关联关系。
-  - `server.py`: 添加 `DELETE /api/knowledge/entities/{entity_id}` 路由，需 `admin` 或 `editor` 权限。
-  - `KnowledgePage.tsx`: 实体详情面板添加删除按钮，含二次确认对话框。
+### 1. 实体删除 ✅
+- **状态**: 已完成
+- `KnowledgeStore.delete_entity(entity_id, force)` 检查关联关系，`force=false` 阻止删除并返回引用列表；`force=true` 级联清理。
+- `DELETE /api/knowledge/entities/{entity_id}` 路由需 admin/editor。
+- 前端 `KnowledgePage` 详情侧边栏 "Delete entity" 按钮 + 二次确认弹窗，存在关系时提供 "Force delete"。
 
-### 2. 图谱可视化
-- **现状**: 关系以两栏平铺列表展示（outgoing / incoming），不是真正的图。随着关系增多，列表难以理解结构。
-- **方案**:
-  - 新增 `KnowledgeGraphView` 组件，用 D3.js / cytoscape.js 渲染力导向图。
-  - 展示选中实体及其邻域（1-2 跳），节点按 `entity_type` 着色，边按 `relation_type` 标注。
-  - 节点可点击导航、悬停预览 summary。
-  - 在关系区域顶部添加"列表视图 / 图谱视图"切换按钮。
+### 2. 图谱可视化 ✅
+- **状态**: 已完成
+- [`KnowledgeGraphView`](web/src/components/KnowledgeGraphView.tsx:1) 使用 d3-force 渲染力导向图。
+- 节点按 `entity_type` 着色，边标注 `relation_type`，点击节点导航，中心节点高亮。
+- 详情页右上角 "List / Graph" 视图切换按钮，Graph 视图带邻域深度选择（1/2/3 跳）。
 
-### 3. 图谱遍历 API
-- **现状**: `/api/knowledge/entities/{entity_id}/relations` 仅返回直连关系，无多跳查询。
-- **方案**:
-  - 添加 `GET /api/knowledge/entities/{entity_id}/graph?depth=2`，返回 BFS 遍历的邻域子图：
-    ```json
-    {
-      "nodes": [/* KnowledgeEntityRead 列表 */],
-      "edges": [/* KnowledgeRelationRead 列表 */],
-      "center": "<entity_id>",
-      "depth": 2
-    }
-    ```
-  - `depth` 参数控制遍历深度（默认 2，最大 3）。
-  - 可选 `relation_type` 过滤参数，只遍历指定类型的关系。
+### 3. 图谱遍历 API ✅
+- **状态**: 已完成
+- `GET /api/knowledge/entities/{entity_id}/graph?depth=N&relation_type=...` 返回 `{ nodes, edges, center, depth }`。
+- 前端 `getKnowledgeGraph(entityId, depth, relationType?)` 对应调用。
 
-### 4. 内核版本关联
-- **现状**: 实体与内核版本无关联。不知道一个概念在哪个版本引入、一个 bug 影响哪些版本。
-- **方案**:
-  - 在实体的 `meta` 中标准化 `kernel_versions` 字段：
-    ```json
-    {
-      "kernel_versions": [
-        { "version": "v2.6.23", "relationship": "introduced" },
-        { "version": "v2.6.35", "relationship": "last_seen" }
-      ]
-    }
-    ```
-  - 新增关系类型 `introduced_in` / `removed_in` / `affects_version`，target 为版本号字符串（可链接到代码预览）。
-  - 实体详情面板展示版本时间线。
+### 4. 内核版本关联 ✅
+- **状态**: 已完成 (Phase 2)
+- 标准化 `meta.kernel_versions: Array<{ version, relationship, note? }>`，不需要 schema 迁移。
+- 新关系类型：`introduced_in` / `removed_in` / `affects_version` 加入 `RELATION_TYPES`。
+- 详情页 "Kernel references" 区展示版本时间线，支持增删条目；关系标签：`introduced / last_seen / removed / affected / fixed / note`。
 
-### 5. 文件/符号链接
-- **现状**: 实体未与内核源码文件或符号关联。
-- **方案**:
-  - 在实体的 `meta` 中标准化 `source_files` 和 `symbols` 字段：
-    ```json
-    {
-      "source_files": ["kernel/sched/core.c", "include/linux/sched.h"],
-      "symbols": ["schedule()", "struct task_struct"]
-    }
-    ```
-  - 文件和符号渲染为可点击链接，直接打开代码预览页面。
-  - 支持通过代码浏览页反向发现关联的知识实体（"哪些实体引用了这个文件？"）。
+### 5. 文件/符号链接 ✅
+- **状态**: 已完成 (Phase 2)
+- 标准化 `meta.source_files: string[]` 与 `meta.symbols: string[]`。
+- 文件条目通过 `pickKernelSourceUrl` 自动选择 Elixir / git.kernel.org；符号走 `elixirIdentUrl`，一键跳外链。
+- "Primary version" 取第一个 `introduced` 条目或首条版本，fallback `latest`。
+- 组件：[`KnowledgeEntityMetaPanel.tsx`](web/src/components/KnowledgeEntityMetaPanel.tsx:1)，工具：[`knowledgeMeta.ts`](web/src/utils/knowledgeMeta.ts:1)。
+- 反向发现（"哪些实体引用了这个文件？"）未做，留待后续。
 
 ---
 
@@ -140,13 +113,13 @@
 
 ## 实施顺序建议
 
-| 阶段 | 功能 | 理由 |
-|------|------|------|
-| Phase 1 | 实体删除 + 图谱遍历 API + 图谱可视化 | CRUD 完整性 + 让知识图谱名副其实 |
-| Phase 2 | 内核版本关联 + 文件/符号链接 | 领域核心需求，连接知识与代码 |
-| Phase 3 | 概览仪表板 + 关联建议 + 全文搜索 | 规模化使用体验 |
-| Phase 4 | 导入/导出 + 实体合并 + 变更历史 | 数据治理与长期维护 |
-| Phase 5 | 反向引用 + 关系方向切换 + 分页 | 细节打磨 |
+| 阶段 | 功能 | 理由 | 状态 |
+|------|------|------|------|
+| Phase 1 | 实体删除 + 图谱遍历 API + 图谱可视化 | CRUD 完整性 + 让知识图谱名副其实 | ✅ 完成 |
+| Phase 2 | 内核版本关联 + 文件/符号链接 | 领域核心需求，连接知识与代码 | ✅ 完成 |
+| Phase 3 | 概览仪表板 + 关联建议 + 全文搜索 | 规模化使用体验 | 部分：stats / dedup 已做；fulltext 未做 |
+| Phase 4 | 导入/导出 + 实体合并 + 变更历史 | 数据治理与长期维护 | 部分：实体合并已做；import/export/history 未做 |
+| Phase 5 | 反向引用 + 关系方向切换 + 分页 | 细节打磨 | 未做 |
 
 ---
 

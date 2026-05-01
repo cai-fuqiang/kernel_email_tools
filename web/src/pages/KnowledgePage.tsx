@@ -6,6 +6,12 @@ import EmailTagEditor from '../components/EmailTagEditor';
 import ThreadDrawer from '../components/ThreadDrawer';
 import KnowledgeGraphView from '../components/KnowledgeGraphView';
 import DraftReviewPanel from '../components/DraftReviewPanel';
+import KnowledgeEntityMetaPanel from '../components/KnowledgeEntityMetaPanel';
+import {
+  extractKnowledgeMeta,
+  mergeKnowledgeMeta,
+  type KnowledgeEntityMetaSchema,
+} from '../utils/knowledgeMeta';
 import {
   acceptKnowledgeDraft,
   createAnnotation,
@@ -43,7 +49,17 @@ import { PageHeader, PrimaryButton, SecondaryButton, StatusBadge } from '../comp
 
 const DEFAULT_ENTITY_TYPE = 'concept';
 const ENTITY_TYPES = ['concept', 'subsystem', 'mechanism', 'issue', 'symbol', 'patch_discussion'];
-const RELATION_TYPES = ['related_to', 'part_of', 'explains', 'caused_by', 'fixed_by', 'supersedes'];
+const RELATION_TYPES = [
+  'related_to',
+  'part_of',
+  'explains',
+  'caused_by',
+  'fixed_by',
+  'supersedes',
+  'introduced_in',
+  'removed_in',
+  'affects_version',
+];
 
 type ThreadFocus = {
   threadId: string;
@@ -370,6 +386,10 @@ export default function KnowledgePage() {
     () => (selectedEntity?.aliases || []).join(', '),
     [selectedEntity]
   );
+  const selectedMetaSchema = useMemo<KnowledgeEntityMetaSchema>(
+    () => extractKnowledgeMeta(selectedEntity?.meta),
+    [selectedEntity],
+  );
   const evidence = useMemo(() => extractKnowledgeEvidence(selectedEntity), [selectedEntity]);
   const selectedEvidenceCount = selectedEntity ? evidenceRows.length || evidence.sources.length || evidence.threadIds.length : 0;
   const directEvidenceCount = evidenceRows.filter((row) => row.source_type !== 'generated').length;
@@ -435,6 +455,7 @@ export default function KnowledgePage() {
         summary: selectedEntity.summary,
         description: selectedEntity.description,
         status: selectedEntity.status,
+        meta: selectedEntity.meta,
       });
       setSelectedEntity(updated);
       await loadEntities();
@@ -1158,6 +1179,16 @@ export default function KnowledgePage() {
                 />
               </div>
             </section>
+
+            <KnowledgeEntityMetaPanel
+              meta={selectedMetaSchema}
+              canEdit={canWrite}
+              onChange={(next) =>
+                setSelectedEntity((prev) =>
+                  prev ? { ...prev, meta: mergeKnowledgeMeta(prev.meta, next) } : prev,
+                )
+              }
+            />
 
             <section className="rounded-xl border border-gray-200 bg-white p-5">
               <div className="flex items-start justify-between gap-4">
