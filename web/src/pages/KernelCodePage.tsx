@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -21,7 +22,7 @@ import type { KernelVersionInfo, KernelFileResponse, KernelTreeEntry, CodeAnnota
 import EmailTagEditor from '../components/EmailTagEditor';
 import { useAuth } from '../auth';
 import { showToast } from '../components/Toast';
-import { pickKernelSourceUrl } from '../utils/externalLinks';
+import { pickKernelSourceUrl, elixirIdentUrl, isLikelyCIdentifier } from '../utils/externalLinks';
 
 // ============================================================
 // Helpers
@@ -269,6 +270,12 @@ export default function KernelCodePage() {
   const [treeEntries, setTreeEntries] = useState<KernelTreeEntry[]>([]);
   const [treeLoading, setTreeLoading] = useState(false);
 
+  // 选中标识符浮动符号搜索按钮（PLAN-30002 Phase 2）
+  const codeViewRef = useRef<HTMLDivElement | null>(null);
+  const [symbolPopover, setSymbolPopover] = useState<
+    { symbol: string; x: number; y: number } | null
+  >(null);
+
   const loadFile = useCallback(async (path: string, targetLine?: number | null) => {
     if (!selectedVersion || !path) return;
     setFileLoading(true);
@@ -359,6 +366,51 @@ export default function KernelCodePage() {
     });
     setSearchParams({ v: selectedVersion, path: currentPath, line: String(line) }, { replace: true });
   };
+
+  // 当用户在代码视图内完成一次文本选择（mouseup）时，若选中为合法 C 标识符，
+  // 在鼠标位置附近显示 “在 Elixir 搜索符号” 浮动按钮。
+  const handleCodeMouseUp = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+      setSymbolPopover(null);
+      return;
+    }
+    const text = sel.toString().trim();
+    if (!isLikelyCIdentifier(text)) {
+      setSymbolPopover(null);
+      return;
+    }
+    // 确认选区仍在代码视图容器内
+    const container = codeViewRef.current;
+    if (!container) return;
+    const anchorNode = sel.anchorNode;
+    if (!anchorNode || !container.contains(anchorNode)) {
+      setSymbolPopover(null);
+      return;
+    }
+    setSymbolPopover({ symbol: text, x: e.clientX, y: e.clientY });
+  };
+
+  // 点击其他区域或按 Esc 关闭 popover
+  useEffect(() => {
+    if (!symbolPopover) return;
+    const onDocDown = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (target && (target as HTMLElement).closest?.('[data-symbol-popover]')) {
+        return;
+      }
+      setSymbolPopover(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSymbolPopover(null);
+    };
+    document.addEventListener('mousedown', onDocDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [symbolPopover]);
 
   const handleCopyScript = async () => {
     try {
@@ -551,7 +603,11 @@ export default function KernelCodePage() {
         {/* Content */}
         <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
           {/* Code view */}
-          <div className="flex-1 overflow-auto">
+          <div
+            ref={codeViewRef}
+            onMouseUp={handleCodeMouseUp}
+            className="flex-1 overflow-auto relative"
+          >
             {fileLoading ? (
               <div className="p-4 text-gray-400 text-sm">加载文件...</div>
             ) : currentFile ? (
@@ -610,6 +666,43 @@ export default function KernelCodePage() {
           )}
         </div>
       </div>
+
+      {/* 浮动符号搜索按钮（PLAN-30002 Phase 2） */}
+      {symbolPopover && (
+        <div
+          data-symbol-popover
+          style={{
+            position: 'fixed',
+            left: Math.min(symbolPopover.x + 8, window.innerWidth - 240),
+            top: Math.min(symbolPopover.y + 12, window.innerHeight - 60),
+            zIndex: 50,
+          }}
+          className="rounded-lg border border-gray-200 bg-white shadow-lg px-2 py-1.5 flex items-center gap-2"
+        >
+          <span className="text-xs text-gray-500">符号</span>
+          <code className="text-xs font-mono text-indigo-600 max-w-[140px] truncate">
+            {symbolPopover.symbol}
+          </code>
+          <a
+            href={elixirIdentUrl(selectedVersion || 'latest', symbolPopover.symbol)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setSymbolPopover(null)}
+            className="inline-flex items-center gap-1 rounded bg-indigo-500 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-600 whitespace-nowrap"
+          >
+            在 Elixir 搜索
+            <ExternalLink size={11} />
+          </a>
+          <button
+            type="button"
+            onClick={() => setSymbolPopover(null)}
+            className="text-xs text-gray-400 hover:text-gray-600 px-1"
+            aria-label="关闭"
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   );
 }

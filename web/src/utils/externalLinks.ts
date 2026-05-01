@@ -121,6 +121,19 @@ export function elixirIdentUrl(version: string, symbol: string): string {
   return `${elixirBase()}/${v}/ident/${s}`;
 }
 
+/**
+ * 判断字符串是否为合法的 C 标识符（可作为 Elixir ident 搜索关键词）。
+ *
+ * 规则：首字符必须是字母或下划线，后续可以是字母/数字/下划线，长度 2~128。
+ * 单字符标识符和过长文本一律排除（降低误触发率）。
+ */
+export function isLikelyCIdentifier(text: string): boolean {
+  if (!text) return false;
+  const s = text.trim();
+  if (s.length < 2 || s.length > 128) return false;
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(s);
+}
+
 // ============================================================================
 // git.kernel.org fallback
 // ============================================================================
