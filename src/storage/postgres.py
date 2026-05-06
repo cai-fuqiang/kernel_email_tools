@@ -127,7 +127,7 @@ class PostgresStorage(BaseStorage):
             """))
 
             await conn.execute(text("""
-                DO $
+                DO $$
                 BEGIN
                     IF EXISTS (
                         SELECT 1 FROM pg_extension WHERE extname = 'vector'
@@ -142,7 +142,7 @@ class PostgresStorage(BaseStorage):
                 EXCEPTION WHEN others THEN
                     RAISE NOTICE 'Skipping email chunk vector index: %', SQLERRM;
                 END
-                $;
+                $$;
             """))
 
             await self._ensure_knowledge_search_vector(conn)
@@ -157,7 +157,7 @@ class PostgresStorage(BaseStorage):
              但老部署也需要 ADD COLUMN IF NOT EXISTS 兜底）。
           2. 创建 GIN 索引 ix_knowledge_entities_search_vector（IF NOT EXISTS）。
           3. 创建/替换 trigger function knowledge_entities_search_vector_update。
-          4. 用 DO $ ... $ 安装 trigger（IF NOT EXISTS 等价）。
+          4. 用 DO $$ ... $$ 安装 trigger（IF NOT EXISTS 等价）。
           5. 一次性回填存量记录（仅当 search_vector 全为 NULL 时）。
 
         失败均不抛错，只记录警告，避免阻塞主流程。
@@ -173,7 +173,7 @@ class PostgresStorage(BaseStorage):
             ))
 
             await conn.execute(text("""
-                CREATE OR REPLACE FUNCTION knowledge_entities_search_vector_update() RETURNS trigger AS $
+                CREATE OR REPLACE FUNCTION knowledge_entities_search_vector_update() RETURNS trigger AS $$
                 BEGIN
                     NEW.search_vector :=
                         setweight(to_tsvector('english', COALESCE(NEW.canonical_name, '')), 'A') ||
@@ -188,11 +188,11 @@ class PostgresStorage(BaseStorage):
                         setweight(to_tsvector('english', COALESCE(NEW.description, '')), 'D');
                     RETURN NEW;
                 END
-                $ LANGUAGE plpgsql;
+                $$ LANGUAGE plpgsql;
             """))
 
             await conn.execute(text("""
-                DO $
+                DO $$
                 BEGIN
                     IF NOT EXISTS (
                         SELECT 1 FROM pg_trigger WHERE tgname = 'knowledge_entities_search_vector_trigger'
@@ -202,7 +202,7 @@ class PostgresStorage(BaseStorage):
                         FOR EACH ROW EXECUTE FUNCTION knowledge_entities_search_vector_update();
                     END IF;
                 END
-                $;
+                $$;
             """))
 
             # 回填：只有当全表都没有 search_vector 时才跑全量 UPDATE，避免反复扫描
