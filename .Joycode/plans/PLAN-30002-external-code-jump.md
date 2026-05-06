@@ -1,7 +1,7 @@
 # PLAN-30002: 外链代码跳转与外部站点标注闭环
 
-> **Status**: in-progress (Phase 1-5 核心已完成，仅剩 external_links 真实内网镜像验证)
-> **Updated**: 2026-05-01
+> **Status**: in-progress (Phase 1-5 外链闭环已完成；后续转向 local-first code resolver)
+> **Updated**: 2026-05-06
 > **Depends-on**: 无
 > **Supersedes**: PLAN-30000-code-definition-navigation, PLAN-10001-code-navigation
 > **Priority**: P1
@@ -14,6 +14,23 @@
 - 单版本 ctags 50~80MB，全版本数 GB；多版本独立索引随版本数线性膨胀
 - 项目核心是邮件知识库，代码跳转是辅助阅读功能而非主路径
 - 已有更轻量的方案：油猴脚本把本系统的标注/标签能力注入到 Elixir 页面
+
+### 2026-05-06 决策修正：外链保留，但不再作为主路径
+
+当前代码跳转极度依赖 `elixir.bootlin.com`。这对早期验证很高效，但不适合作为后续 AI-assisted code understanding / Contextual Ask 的地基：
+
+- 外部站点可用性、速度、URL 结构和版本覆盖不可控。
+- AI 解释代码时需要稳定拿到本地文件、版本、行号、邻近函数、patch hunk 和邮件 evidence；外链页面只能作为展示入口。
+- 本项目的核心价值是可引用、可审核、可沉淀的 kernel knowledge base，代码证据也应优先来自本系统可控数据源。
+- 如果直接在 Elixir 依赖上叠加 GILT-like 功能，只会变成“外链阅读增强器”，无法成为知识库闭环的一部分。
+
+因此本计划后续方向调整为：
+
+1. **本地代码导航优先**：`/api/kernel/file/{version}/{path}` 和本地 kernel git repo 是主事实源。
+2. **Elixir / git.kernel.org 作为 fallback 外链**：保留外链按钮和油猴脚本反向标注闭环，但不再把 Elixir 当成唯一代码导航能力。
+3. **新增统一 Code Resolver**：前端不直接拼 Elixir URL，而是先解析到本地 code target；本地不可用时再退回外部站点。
+4. **先做最小符号索引，不做完整 LSP**：优先支持路径、行号、函数/宏/struct 定义和 patch header 到文件的跳转；暂不追求完整跨版本引用分析。
+5. **Contextual Ask 依赖本地 resolver**：只有当本地代码上下文稳定后，再做“解释选中代码 / 找相关邮件 / 关联手册 / 生成 Knowledge Draft”。
 
 ## 当前已实现的能力
 
@@ -86,6 +103,62 @@
 - [x] ThreadDrawer LayeredEmailCard 和 TreeEmailCard 头部在"复制消息链接"按钮旁增加 "在 lore 查看原文" 按钮（ExternalLink 图标）
 - [x] Knowledge evidence 列表（直接证据 `evidenceRows` + 生成证据 `evidence.sources`）中每条邮件 message_id 旁加 lore 链接
 
+### Phase 6: Local-first Code Resolver（新增，P1）
+
+目标：把 Elixir 从主路径降级为 fallback，让本系统自己拥有稳定的代码上下文解析能力，为后续 Contextual Ask / AI code understanding 做地基。
+
+- [ ] 后端新增统一 resolver service：
+  - 输入：`version`, `path`, optional `line`, optional `symbol`
+  - 输出：`source=local|elixir|git_kernel_org`, `url`, `local_file_available`, `resolved_version`, `path`, `line`, optional `symbol_kind`
+  - 优先级：本地 kernel git repo -> Elixir -> git.kernel.org
+- [ ] 新增 API：
+  - `GET /api/kernel/resolve?version=...&path=...&line=...`
+  - `GET /api/kernel/resolve-symbol?version=...&symbol=...&path_hint=...`
+- [ ] 前端 `pickKernelSourceUrl` 升级为 resolver client：
+  - Code Browser、ThreadDrawer、PatchDiffBlock、Knowledge meta 都走同一 resolver
+  - UI 明确区分本地跳转和外部跳转，但交互保持轻量
+- [ ] 本地文件路径跳转：
+  - 邮件正文路径识别优先打开本系统 Code Browser
+  - Patch header `diff --git` / `--- a/` / `+++ b/` 优先打开本地对应文件和行号
+  - 本地缺失时显示外链 fallback
+- [ ] 最小符号索引：
+  - 复用已有 `scripts/index_symbols.py`，先覆盖函数、宏、struct/enum 定义
+  - 不做完整 Find References，不做跨配置条件编译解析
+  - 记录索引版本、kernel tag、生成时间，避免旧索引误导跳转
+- [ ] Contextual Ask 前置接口：
+  - resolver 能返回选中代码片段、邻近函数范围、文件路径、版本和行号
+  - Ask Agent 后续可把这些内容作为 trusted local context，并继续把邮件/手册检索结果标记为 untrusted evidence
+
+#### Phase 6 验收标准
+
+- 用户点击邮件正文或 patch hunk 中的 `mm/foo.c:123`，默认进入本系统 Code Browser 对应版本和行号。
+- 本地 repo 没有该版本/文件时，才退回 Elixir 或 git.kernel.org。
+- 代码跳转不依赖 `elixir.bootlin.com` 可用性；断网时本地已索引版本仍可浏览。
+- 至少覆盖 50 个真实邮件路径引用、20 个 patch header、20 个符号定义跳转样本。
+- 所有 fallback 都在 trace/debug 信息中可见，便于定位本地索引缺口。
+
+### Phase 7: GILT-like Contextual Ask（新增，P2，依赖 Phase 6）
+
+目标：借鉴 ICSE 2024 GILT 论文的核心思想，但只做适合本项目的 Web 工作台版本：上下文自动注入 + 低 prompt 成本 + evidence-first 输出。
+
+- [ ] 在邮件段落、patch hunk、代码选区上提供固定动作：
+  - `解释这段`
+  - `找相关邮件`
+  - `关联代码/手册`
+  - `总结争议点`
+  - `生成 Knowledge Draft`
+- [ ] 复用现有 `/api/ask`、search、thread、knowledge draft 机制，不新增独立聊天系统。
+- [ ] 回答必须带 sources / threads / executed_queries / retrieval_stats。
+- [ ] AI 结果只进入 draft/review，不直接写入正式知识库。
+- [ ] UI 不做自动弹出式提示，避免打扰阅读流。
+
+#### Phase 7 非目标
+
+- 不优先做 VS Code 插件。
+- 不优先接 OpenClaw。
+- 不做无证据的纯 LLM 代码解释。
+- 不把 Elixir 页面内容作为唯一 evidence。
+
 ---
 
 ## UI 规范
@@ -97,8 +170,9 @@
 
 ## 不做
 
-- ❌ 不自建 symbol index、ctags、tree-sitter、cscope
-- ❌ 不做 hover 预览定义内容（依赖外部站点）
+- ❌ 不自建完整 LSP / 全量跨版本引用分析 / 条件编译精确解析
+- ❌ 不把 Elixir 作为唯一代码事实源
+- ❌ 不做 hover 预览定义内容（Phase 6 前依赖外部站点；Phase 6 后由本地 resolver 另行评估）
 - ❌ 不做 Find References，外部站点已支持
 - ❌ 不缓存外部页面
 - ❌ 不为 lore 邮件正文做镜像
@@ -122,6 +196,9 @@
 | 内网部署无外网 | `external_links` 配置允许指向内网镜像 |
 | 油猴脚本兼容性 | 已限制 `@match https://elixir.bootlin.com/linux/*`；URL 结构变更需同步修复 |
 | 油猴脚本认证过期 | 用户重新打开 KernelCodePage "Copy Script" 重新生成即可 |
+| 本地符号索引不完整导致误跳 | Phase 6 只承诺定义跳转最小集；resolver 返回 fallback 和 debug 信息 |
+| 本地版本缺失 | resolver 自动 fallback 到 Elixir / git.kernel.org，UI 提示来源 |
+| Contextual Ask 过早依赖外链 | Phase 7 明确依赖 Phase 6，本地代码上下文稳定后再做 |
 
 ## 验收标准
 
@@ -131,3 +208,5 @@
 - [x] Knowledge 详情页关联文件可一键跳到 Elixir
 - [x] 切换内核版本时所有外链 URL 正确反映当前版本（邮件主题里的 `[PATCH vX.Y]` 驱动；fallback 到 `latest`）
 - [x] 配置 `external_links` 镜像后所有外链改用镜像（通过 `/api/system/config` 运行时注入）
+- [ ] 本地 resolver 成为代码跳转主路径，Elixir/git.kernel.org 仅作为 fallback
+- [ ] Contextual Ask 只在本地代码上下文可解析后进入实现

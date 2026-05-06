@@ -1,6 +1,6 @@
 # Plans Index
 
-> Last reorganized: **2026-05-06** (PLAN-31001 closed → done/)
+> Last reorganized: **2026-05-06** (PLAN-30002 updated with local-first code resolver)
 
 本目录维护项目的规约文档（PLAN-xxx）。已完成的计划归档到 `done/`，被取代的计划归档到 `done/superseded/`。每个活跃 PLAN 顶部应当带元数据头：
 
@@ -17,7 +17,7 @@
 
 | PLAN | 主题 | Status | Priority | 备注 |
 |------|------|--------|----------|------|
-| [PLAN-30002](PLAN-30002-external-code-jump.md) | 外链代码跳转（Elixir/lore） | in-progress | **P1** | 反向闭环 + Phase 1+2+3+4+5 已完成；仅剩 external_links 内网镜像验证 |
+| [PLAN-30002](PLAN-30002-external-code-jump.md) | 代码跳转与 local-first resolver | in-progress | **P1** | 外链闭环已完成；下一步把 Elixir 降级为 fallback，建立本地代码 resolver |
 | [PLAN-31004](PLAN-31004-ui-information-hierarchy.md) | UI 信息层次与首屏引导（Workbench 第二轮） | planned | **P1** | Dashboard + Sticky 上下文条 + 信息密度 |
 | [PLAN-31002](PLAN-31002-knowledge-workbench-roadmap.md) | Knowledge Workbench 路线图 | in-progress | P2 | 范围过大，新工作请新建独立 PLAN 引用 |
 | [PLAN-36000](PLAN-36000-survey-style-batch-tagging.md) | Survey-Style 批量打标签（YAML 问卷） | planned | P2 | 借鉴 eunomia-bpf/code-survey；先 Phase 1 PoC 验证质量 |
@@ -32,8 +32,9 @@
 3. ~~**P1** PLAN-34000 Phase 1/3/5 收尾（SemanticRetriever 测试 2→6、confirm/prompt → ConfirmModal、KnowledgePage chunk 500→54 KB）~~ ✅ 2026-05-06
 4. ~~**P1** PLAN-34001 贡献度标记（后端 `/api/contributions/lookup` + 前端 chip）~~ ✅ 2026-05-06
 5. ~~**P1** PLAN-31001 Phase 3+4+5 收尾（fulltext search / import-export / history / direction switch / load more）~~ ✅ 2026-05-06
-6. **P1** PLAN-30002 Phase 3+5（ThreadDrawer 邮件正文路径识别 + lore 链接）
-7. **P3** PLAN-35001 P1 起步（本地小模型去噪，零 API 成本）
+6. **P1** PLAN-30002 Phase 6（Local-first Code Resolver：本地 repo 主路径，Elixir/git.kernel.org fallback）
+7. **P2** PLAN-30002 Phase 7（GILT-like Contextual Ask，依赖 Phase 6）
+8. **P3** PLAN-35001 P1 起步（本地小模型去噪，零 API 成本）
 
 ---
 
