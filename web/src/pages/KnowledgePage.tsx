@@ -196,7 +196,7 @@ export default function KnowledgePage() {
         const summary = await importKnowledge(data, 'upsert');
         showToast(
           `Import done: ${summary.entities_created} created, ${summary.entities_updated} updated, ${summary.entities_skipped} skipped, ${summary.relations_created} relations.`,
-          summary.errors.length > 0 ? 'warning' : 'success',
+          summary.errors.length > 0 ? 'info' : 'success',
         );
         if (summary.errors.length > 0) {
           // eslint-disable-next-line no-console
