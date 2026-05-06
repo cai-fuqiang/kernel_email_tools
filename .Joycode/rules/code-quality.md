@@ -7,7 +7,7 @@
 | `src/api/server.py` | 294 | 正常 | 已拆分为 11 个 domain router 文件 (src/api/routers/) + deps.py + state.py + schemas.py |
 | `web/src/components/ThreadDrawer.tsx` | 719 | 正常 | 拆分完成（PatchDiffBlock / KnowledgeBackRefs / ThreadAnnotationCard / LayeredEmailCard / TreeEmailCard 已抽出 + utils/threadTree + utils/emailBody，2085→719，-65%） |
 | `web/src/pages/KnowledgePage.tsx` | 810 | 正常 | 拆分完成（DraftInboxPanel / EntityListPanel / EntityDetailHeader + DeleteConfirmModal / EntityMetricsCards / EntityExplanationEditor / EntityRelationsPanel / EvidencePanel / HumanNotesPanel 已抽出 + knowledgeUtils，1644→810，-51%） |
-| `web/src/pages/SearchPage.tsx` | 770 | 接近警戒 | — |
+| `web/src/pages/SearchPage.tsx` | 547 | 正常 | 拆分完成（SearchBar / AdvancedFilters / SummaryPanel / BatchTagBar / AnnotationResults / ResultCard + searchUtils，841→547，-35%） |
 | `web/src/pages/KernelCodePage.tsx` | 579 | 正常 | — |
 
 ## 死代码清单

@@ -42,7 +42,7 @@ export default function PreviewModal({ isOpen, onClose, annotation }: PreviewMod
     try {
       const file = await getKernelFile(ann.version, ann.file_path);
       setCodeLines(file.content.split('\n'));
-    } catch (e) {
+    } catch {
       showToast('Failed to load code', 'error');
       setCodeLines([]);
     } finally {

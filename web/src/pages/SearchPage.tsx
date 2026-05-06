@@ -1,90 +1,44 @@
 import { useState, useEffect } from 'react';
-import { ChevronDown, Search, Sparkles } from 'lucide-react';
-import { searchEmails, listAnnotations, getTagStats, getChannels, summarizeSearchResults, createSummaryDraft, applySummaryDraft, createTagAssignment, type TagStats } from '../api/client';
-import type { SearchResponse, SearchHit, SummarizeResponse, AskDraftResponse, SourceRef, ChannelOption, AnnotationListItem } from '../api/types';
+import { ChevronDown, Sparkles } from 'lucide-react';
+import {
+  searchEmails,
+  listAnnotations,
+  getTagStats,
+  getChannels,
+  summarizeSearchResults,
+  createSummaryDraft,
+  applySummaryDraft,
+  createTagAssignment,
+  type TagStats,
+} from '../api/client';
+import type {
+  SearchResponse,
+  SummarizeResponse,
+  AskDraftResponse,
+  AskDraftApplyResponse,
+  SourceRef,
+  ChannelOption,
+  AnnotationListItem,
+} from '../api/types';
 import ThreadDrawer from '../components/ThreadDrawer';
-import TagFilter from '../components/TagFilter';
-import EmailTagEditor from '../components/EmailTagEditor';
-import DraftReviewPanel from '../components/DraftReviewPanel';
-import type { AskDraftApplyResponse } from '../api/types';
-import { EmptyState, PageHeader, PageShell, PrimaryButton, SecondaryButton, SectionPanel, SkeletonCard, StatusBadge } from '../components/ui';
+import {
+  EmptyState,
+  PageHeader,
+  PageShell,
+  PrimaryButton,
+  SectionPanel,
+  SkeletonCard,
+  StatusBadge,
+} from '../components/ui';
 import { showToast } from '../components/Toast';
 import { useAuth } from '../auth';
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function highlightSnippet(snippet: string): string {
-  return escapeHtml(snippet).replace(
-    /&lt;&lt;(.*?)&gt;&gt;/g,
-    '<mark class="bg-yellow-100 px-0.5 rounded">$1</mark>'
-  );
-}
-
-function normalizeMessageId(value: string): string {
-  return value
-    .trim()
-    .replace(/^<|>$/g, '')
-    .replace(/\u2026/g, '...')
-    .replace(/\s+/g, '')
-    .toLowerCase();
-}
-
-function resolveCitationSource(
-  citation: string,
-  sources: SourceRef[],
-) {
-  const normalized = normalizeMessageId(citation);
-  const exact = sources.find((source) => normalizeMessageId(source.message_id || '') === normalized);
-  if (exact) return exact;
-
-  const candidates = sources.filter((source) => {
-    const id = normalizeMessageId(source.message_id || '');
-    if (!id) return false;
-    if (normalized.includes('...')) {
-      const [prefix, suffix] = normalized.split('...', 2);
-      return (!prefix || id.startsWith(prefix)) && (!suffix || id.endsWith(suffix));
-    }
-    return normalized.length >= 8 && (id.includes(normalized) || normalized.includes(id));
-  });
-
-  return candidates.length === 1 ? candidates[0] : undefined;
-}
-
-function compactSender(sender: string): string {
-  return (sender.split('<')[0] || sender).replace(/^"|"$/g, '').trim() || 'unknown';
-}
-
-function compactDate(date: string): string {
-  if (!date) return '';
-  const parsed = new Date(date);
-  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
-  return date.slice(0, 10);
-}
-
-function truncateText(text: string, max = 54): string {
-  const clean = text.replace(/\s+/g, ' ').trim();
-  return clean.length > max ? `${clean.slice(0, max - 1)}...` : clean;
-}
-
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
-}
-
-function citationLabel(source: SourceRef): string {
-  const parts = [
-    compactSender(source.sender || ''),
-    compactDate(source.date || ''),
-    truncateText(source.subject || source.message_id || 'email'),
-  ].filter(Boolean);
-  return `[${parts.join(' · ')}]`;
-}
+import SearchBar from '../components/search/SearchBar';
+import AdvancedFilters from '../components/search/AdvancedFilters';
+import SummaryPanel from '../components/search/SummaryPanel';
+import BatchTagBar from '../components/search/BatchTagBar';
+import AnnotationResults from '../components/search/AnnotationResults';
+import ResultCard from '../components/search/ResultCard';
+import { errorMessage } from '../components/search/searchUtils';
 
 export default function SearchPage() {
   const { isAuthenticated } = useAuth();
@@ -125,21 +79,31 @@ export default function SearchPage() {
   const [batchTagInput, setBatchTagInput] = useState('');
   const [batchTagging, setBatchTagging] = useState(false);
 
-  // Channel/channel 选择状态
+  // Channel 选择状态
   const [selectedChannel, setSelectedChannel] = useState<string>('');
-  const [channelOptions, setChannelOptions] = useState<ChannelOption[]>([{ value: '', label: 'All Channels' }]);
+  const [channelOptions, setChannelOptions] = useState<ChannelOption[]>([
+    { value: '', label: 'All Channels' },
+  ]);
 
   // 加载 channel 列表和标签统计
   useEffect(() => {
     if (!isAuthenticated) return;
-    getChannels().then((channels) => {
-      setChannelOptions([{ value: '', label: 'All Channels' }, ...channels]);
-    }).catch(() => {});
+    getChannels()
+      .then((channels) => {
+        setChannelOptions([{ value: '', label: 'All Channels' }, ...channels]);
+      })
+      .catch(() => {});
     getTagStats().then(setTagStats).catch(() => {});
   }, [isAuthenticated]);
 
   // 检查是否有任何过滤条件
-  const hasFilters = sender || dateFrom || dateTo || hasPatch !== null || selectedTags.length > 0 || selectedChannel;
+  const hasFilters =
+    !!sender ||
+    !!dateFrom ||
+    !!dateTo ||
+    hasPatch !== null ||
+    selectedTags.length > 0 ||
+    !!selectedChannel;
   const semanticNeedsQuery = mode === 'semantic' && !query.trim();
 
   const handleSearch = async (p = 1) => {
@@ -188,9 +152,10 @@ export default function SearchPage() {
   const totalPages = result ? Math.ceil(result.total / result.page_size) : 0;
 
   const handleToggleSelect = (messageId: string) => {
-    setSelectedMessages(prev => {
+    setSelectedMessages((prev) => {
       const next = new Set(prev);
-      if (next.has(messageId)) next.delete(messageId); else next.add(messageId);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
       return next;
     });
   };
@@ -200,7 +165,7 @@ export default function SearchPage() {
     if (selectedMessages.size === result.hits.length) {
       setSelectedMessages(new Set());
     } else {
-      setSelectedMessages(new Set(result.hits.map(h => h.message_id)));
+      setSelectedMessages(new Set(result.hits.map((h) => h.message_id)));
     }
   };
 
@@ -212,9 +177,15 @@ export default function SearchPage() {
     let failed = 0;
     for (const messageId of selectedMessages) {
       try {
-        await createTagAssignment({ tag_name: tagName, target_type: 'email_message', target_ref: messageId });
+        await createTagAssignment({
+          tag_name: tagName,
+          target_type: 'email_message',
+          target_ref: messageId,
+        });
         done++;
-      } catch { failed++; }
+      } catch {
+        failed++;
+      }
     }
     setBatchTagging(false);
     setBatchTagInput('');
@@ -236,10 +207,8 @@ export default function SearchPage() {
   };
 
   const handleTagToggle = (tag: string) => {
-    setSelectedTags(prev =>
-      prev.includes(tag)
-        ? prev.filter(t => t !== tag)
-        : [...prev, tag]
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
     );
   };
 
@@ -269,7 +238,7 @@ export default function SearchPage() {
     setDraftBundle(null);
     setDraftSaved(null);
     try {
-      const sources: SourceRef[] = summary.sources.map(s => ({
+      const sources: SourceRef[] = summary.sources.map((s) => ({
         message_id: s.message_id,
         subject: s.subject,
         sender: s.sender,
@@ -278,7 +247,11 @@ export default function SearchPage() {
         thread_id: s.thread_id,
         list_name: s.list_name,
       }));
-      const bundle = await createSummaryDraft(query || 'kernel discussion', summary.answer, sources);
+      const bundle = await createSummaryDraft(
+        query || 'kernel discussion',
+        summary.answer,
+        sources,
+      );
       setDraftBundle(bundle);
       setShowDraftPanel(true);
     } catch (e: unknown) {
@@ -295,7 +268,12 @@ export default function SearchPage() {
       const resp = await applySummaryDraft(draftBundle);
       setDraftSaved(resp);
       if (resp.errors.length > 0) {
-        showToast(`Draft saved with ${resp.errors.length} error(s): ${resp.errors.map(e => e.message).join(', ')}`, 'error');
+        showToast(
+          `Draft saved with ${resp.errors.length} error(s): ${resp.errors
+            .map((e) => e.message)
+            .join(', ')}`,
+          'error',
+        );
       }
     } catch (e: unknown) {
       showToast(errorMessage(e, 'Apply draft failed'), 'error');
@@ -319,207 +297,75 @@ export default function SearchPage() {
         }
       />
 
-      {/* 主要搜索栏 */}
-      <SectionPanel title="Find discussions" description="Start broad, then tighten with channel, tags, author, date, or patch filters.">
-      <div className="flex flex-col gap-3 lg:flex-row">
-        <div className="flex-1 relative">
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            placeholder="Search emails... e.g. shmem mount"
-            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 pl-11 text-sm shadow-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-100"
-          />
-          <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
-        </div>
-        <select
-          value={mode}
-          onChange={(e) => setMode(e.target.value)}
-          className="rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
-        >
-          <option value="hybrid">Hybrid</option>
-          <option value="keyword">Keyword</option>
-          <option value="semantic">Semantic</option>
-        </select>
-        {/* Channel/channel 选择器 */}
-        <select
-          value={selectedChannel}
-          onChange={(e) => setSelectedChannel(e.target.value)}
-          className="rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
-        >
-          {channelOptions.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-        <select
-          value={`${sortBy}:${sortOrder}`}
-          onChange={(e) => {
-            const [by, order] = e.target.value.split(':');
+      <SectionPanel
+        title="Find discussions"
+        description="Start broad, then tighten with channel, tags, author, date, or patch filters."
+      >
+        <SearchBar
+          query={query}
+          onQueryChange={setQuery}
+          mode={mode}
+          onModeChange={setMode}
+          selectedChannel={selectedChannel}
+          onChannelChange={setSelectedChannel}
+          channelOptions={channelOptions}
+          sortBy={sortBy}
+          sortOrder={sortOrder}
+          onSortChange={(by, order) => {
             setSortBy(by);
             setSortOrder(order);
           }}
-          className="rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
+          loading={loading}
+          semanticNeedsQuery={semanticNeedsQuery}
+          onSearch={() => handleSearch()}
+          tagStats={tagStats}
+          selectedTags={selectedTags}
+          onTagToggle={handleTagToggle}
+        />
+
+        <button
+          onClick={() => {
+            setShowAdvanced(!showAdvanced);
+            if (showAdvanced) resetFilters();
+          }}
+          className="mt-4 flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
         >
-          <option value=":">Relevance (default)</option>
-          <option value="date:desc">Newest first</option>
-          <option value="date:asc">Oldest first</option>
-        </select>
-        <PrimaryButton
-          onClick={() => handleSearch()}
-          disabled={loading || semanticNeedsQuery}
-        >
-          {loading ? 'Searching...' : 'Search'}
-        </PrimaryButton>
-      </div>
-      {semanticNeedsQuery && (
-        <p className="mt-2 text-xs text-amber-700">
-          Semantic search needs query text. Use Keyword or Hybrid for filter-only searches.
-        </p>
-      )}
-
-      {/* 标签筛选快捷入口 */}
-      {tagStats.length > 0 && (
-        <div className="mt-4">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-gray-500">Popular tags:</span>
-            {tagStats.slice(0, 8).map(tag => (
-              <button
-                key={tag.name}
-                onClick={() => handleTagToggle(tag.name)}
-                className={`px-2 py-1 text-xs rounded-full transition-colors ${
-                  selectedTags.includes(tag.name)
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                {tag.name} ({tag.count})
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 高级搜索切换 */}
-      <button
-        onClick={() => {
-          setShowAdvanced(!showAdvanced);
-          if (showAdvanced) resetFilters();
-        }}
-        className="mt-4 flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
-      >
-        <ChevronDown className={`h-4 w-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
-        Advanced Filters
-        {hasFilters && <StatusBadge tone="info" className="ml-1 py-0.5">Active</StatusBadge>}
-      </button>
-
-      {/* 高级搜索面板 */}
-      {showAdvanced && (
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* 发件人过滤 */}
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Sender</label>
-              <input
-                type="text"
-                value={sender}
-                onChange={(e) => setSender(e.target.value)}
-                placeholder="e.g. torvalds"
-                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-
-            {/* 起始日期 */}
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">From Date</label>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-
-            {/* 结束日期 */}
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">To Date</label>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-
-            {/* 是否包含补丁 */}
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Has Patch</label>
-              <div className="flex gap-2 mt-1">
-                <button
-                  onClick={() => setHasPatch(hasPatch === true ? null : true)}
-                  className={`flex-1 px-3 py-2 text-xs rounded-lg border ${
-                    hasPatch === true
-                      ? 'bg-green-50 border-green-300 text-green-700'
-                      : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  Yes
-                </button>
-                <button
-                  onClick={() => setHasPatch(hasPatch === false ? null : false)}
-                  className={`flex-1 px-3 py-2 text-xs rounded-lg border ${
-                    hasPatch === false
-                      ? 'bg-red-50 border-red-300 text-red-700'
-                      : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  No
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* 标签筛选 */}
-          {tagStats.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <TagFilter
-                tags={tagStats}
-                selectedTags={selectedTags}
-                tagMode={tagMode}
-                onTagToggle={handleTagToggle}
-                onTagModeChange={setTagMode}
-              />
-            </div>
+          <ChevronDown
+            className={`h-4 w-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
+          />
+          Advanced Filters
+          {hasFilters && (
+            <StatusBadge tone="info" className="ml-1 py-0.5">
+              Active
+            </StatusBadge>
           )}
+        </button>
 
-          {/* 搜索按钮 */}
-          <div className="mt-4 flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <SecondaryButton
-                onClick={resetFilters}
-                className="px-3 py-1.5 text-xs"
-              >
-                Reset filters
-              </SecondaryButton>
-              <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={includeAnnotations}
-                  onChange={(e) => setIncludeAnnotations(e.target.checked)}
-                  className="w-3.5 h-3.5 rounded border-slate-300"
-                />
-                搜索批注
-              </label>
-            </div>
-            <PrimaryButton
-              onClick={() => handleSearch()}
-              disabled={loading || (!query.trim() && !hasFilters) || semanticNeedsQuery}
-            >
-              {loading ? 'Searching...' : 'Search'}
-            </PrimaryButton>
-          </div>
-        </div>
-      )}
+        {showAdvanced && (
+          <AdvancedFilters
+            sender={sender}
+            onSenderChange={setSender}
+            dateFrom={dateFrom}
+            onDateFromChange={setDateFrom}
+            dateTo={dateTo}
+            onDateToChange={setDateTo}
+            hasPatch={hasPatch}
+            onHasPatchChange={setHasPatch}
+            tagStats={tagStats}
+            selectedTags={selectedTags}
+            tagMode={tagMode}
+            onTagToggle={handleTagToggle}
+            onTagModeChange={setTagMode}
+            includeAnnotations={includeAnnotations}
+            onIncludeAnnotationsChange={setIncludeAnnotations}
+            onResetFilters={resetFilters}
+            loading={loading}
+            hasFilters={hasFilters}
+            query={query}
+            semanticNeedsQuery={semanticNeedsQuery}
+            onSearch={() => handleSearch()}
+          />
+        )}
       </SectionPanel>
 
       {result && (
@@ -529,18 +375,27 @@ export default function SearchPage() {
             {selectedChannel && (
               <span className="ml-2">
                 <span className="text-gray-400">in channel:</span>
-                <span className="ml-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-xs font-medium">{selectedChannel}</span>
+                <span className="ml-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-xs font-medium">
+                  {selectedChannel}
+                </span>
               </span>
             )}
             {selectedTags.length > 0 && (
               <span className="ml-2">
                 <span className="text-gray-400">in tags:</span>
-                {selectedTags.map(t => (
-                  <span key={t} className="ml-1 px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-xs">{t}</span>
+                {selectedTags.map((t) => (
+                  <span
+                    key={t}
+                    className="ml-1 px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-xs"
+                  >
+                    {t}
+                  </span>
                 ))}
               </span>
             )}
-            <span className="ml-2 px-2 py-0.5 bg-gray-100 rounded-full text-xs">{result.mode}</span>
+            <span className="ml-2 px-2 py-0.5 bg-gray-100 rounded-full text-xs">
+              {result.mode}
+            </span>
           </p>
 
           {/* AI 概括按钮 */}
@@ -552,8 +407,19 @@ export default function SearchPage() {
               {summarizing ? (
                 <>
                   <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
                   </svg>
                   概括中...
                 </>
@@ -566,107 +432,42 @@ export default function SearchPage() {
             </PrimaryButton>
           </div>
 
-          {/* AI 概括结果面板 */}
           {summary && (
-            <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 p-5">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-                  <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  AI 概括
-                  <span className="text-xs font-normal text-gray-400">by {summary.model}</span>
-                </h3>
-                <div className="flex items-center gap-2">
-                  {!showDraftPanel && (
-                    <button
-                      onClick={handleCreateDraft}
-                      disabled={draftLoading}
-                      className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      {draftLoading ? '生成草稿中...' : '创建草稿'}
-                    </button>
-                  )}
-                  {draftSaved && (
-                    <span className="text-xs text-green-600">
-                      已保存: {draftSaved.created_entities.length} 实体, {draftSaved.created_annotations.length} 批注, {draftSaved.created_tag_assignments.length} 标签
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
-                {summary.answer.split(/(\[[^\]]+\])/g).map((part, i) => {
-                  const m = part.match(/^\[([^\]]+)\]$/);
-                  if (!m) return <span key={i}>{part}</span>;
-                  const src = resolveCitationSource(m[1], summary.sources);
-                  if (!src || !src.thread_id) return <span key={i}>{part}</span>;
-                  return (
-	                    <button
-	                      key={i}
-	                      type="button"
-	                      onClick={() => setSelectedThread(src.thread_id!)}
-	                      className="mx-0.5 rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
-	                      title={`Open cited email: ${src.message_id}`}
-	                    >
-	                      {citationLabel(src)}
-	                    </button>
-                  );
-                })}
-              </div>
-
-              {/* 草稿面板 */}
-              {showDraftPanel && draftBundle && (
-                <div className="mt-4 pt-4 border-t border-indigo-200">
-                  <DraftReviewPanel
-                    draft={draftBundle}
-                    onChange={(nextDraft) => {
-                      setDraftBundle(nextDraft);
-                      setDraftSaved(null);
-                    }}
-                    onSave={handleApplyDraft}
-                    saving={draftLoading}
-                    saved={draftSaved}
-                    compact
-                  />
-                  <button
-                    onClick={() => { setShowDraftPanel(false); setDraftBundle(null); setDraftSaved(null); }}
-                    className="mt-3 rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
-                  >
-                    关闭草稿
-                  </button>
-                </div>
-              )}
-            </div>
+            <SummaryPanel
+              summary={summary}
+              draftBundle={draftBundle}
+              draftSaved={draftSaved}
+              draftLoading={draftLoading}
+              showDraftPanel={showDraftPanel}
+              onCreateDraft={handleCreateDraft}
+              onDraftChange={(next) => {
+                setDraftBundle(next);
+                setDraftSaved(null);
+              }}
+              onApplyDraft={handleApplyDraft}
+              onCloseDraft={() => {
+                setShowDraftPanel(false);
+                setDraftBundle(null);
+                setDraftSaved(null);
+              }}
+              onOpenThread={setSelectedThread}
+            />
           )}
 
           {selectedMessages.size > 0 && (
-            <div className="sticky top-0 z-10 mb-4 flex items-center gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-3 shadow-sm">
-              <span className="text-sm font-medium text-indigo-800">
-                已选 {selectedMessages.size} 封邮件
-              </span>
-              <input
-                value={batchTagInput}
-                onChange={(e) => setBatchTagInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleBatchTag(); }}
-                placeholder="输入标签名..."
-                className="flex-1 rounded-lg border border-indigo-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                disabled={batchTagging}
-              />
-              <button
-                onClick={handleBatchTag}
-                disabled={batchTagging || !batchTagInput.trim()}
-                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-              >
-                {batchTagging ? '处理中...' : '批量打标签'}
-              </button>
-              <button
-                onClick={() => { setSelectedMessages(new Set()); setBatchTagInput(''); }}
-                className="text-xs text-indigo-600 hover:text-indigo-800"
-              >
-                取消
-              </button>
-            </div>
+            <BatchTagBar
+              selectedCount={selectedMessages.size}
+              batchTagInput={batchTagInput}
+              onBatchTagInputChange={setBatchTagInput}
+              batchTagging={batchTagging}
+              onBatchTag={handleBatchTag}
+              onCancel={() => {
+                setSelectedMessages(new Set());
+                setBatchTagInput('');
+              }}
+            />
           )}
+
           <div className="space-y-3">
             {result.hits.length > 0 && (
               <div className="flex items-center gap-2 mb-1">
@@ -691,35 +492,13 @@ export default function SearchPage() {
               />
             ))}
           </div>
-          {annotationResults.length > 0 && (
-            <div className="mt-6 pt-4 border-t border-slate-200">
-              <p className="text-sm text-slate-500 mb-3">
-                批注匹配 <span className="font-semibold text-slate-900">{annotationTotal}</span> 条
-              </p>
-              <div className="space-y-2">
-                {annotationResults.map((ann) => (
-                  <button
-                    key={ann.annotation_id}
-                    type="button"
-                    onClick={() => ann.thread_id && setSelectedThread(ann.thread_id)}
-                    className="block w-full rounded-lg border border-purple-200 bg-purple-50/50 p-4 text-left hover:bg-purple-50 transition"
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px] font-medium">批注</span>
-                      <span className="text-xs text-slate-500">{ann.author}</span>
-                      <span className="text-xs text-slate-400">{ann.created_at ? new Date(ann.created_at).toLocaleDateString() : ''}</span>
-                    </div>
-                    <div className="text-sm text-slate-700 line-clamp-3">{ann.body}</div>
-                    {ann.email_subject && (
-                      <div className="mt-1 text-[11px] text-slate-400 truncate">
-                        在: {ann.email_subject}
-                      </div>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+
+          <AnnotationResults
+            annotationResults={annotationResults}
+            annotationTotal={annotationTotal}
+            onOpenThread={setSelectedThread}
+          />
+
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-2 mt-6">
               <button
@@ -765,77 +544,5 @@ export default function SearchPage() {
         <ThreadDrawer threadId={selectedThread} onClose={() => setSelectedThread(null)} />
       )}
     </PageShell>
-  );
-}
-
-function ResultCard({
-  hit,
-  onThread,
-  selected,
-  onToggleSelect,
-}: {
-  hit: SearchHit;
-  onThread: () => void;
-  selected?: boolean;
-  onToggleSelect?: (messageId: string) => void;
-}) {
-  return (
-    <div className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow">
-      {onToggleSelect && (
-        <div className="float-right ml-3">
-          <input
-            type="checkbox"
-            checked={selected || false}
-            onChange={() => onToggleSelect(hit.message_id)}
-            className="w-4 h-4 rounded border-slate-300"
-          />
-        </div>
-      )}
-
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold text-gray-900 truncate">{hit.subject}</h3>
-          <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500 flex-wrap">
-            <span className="font-medium text-gray-700">
-              {hit.sender.split('<')[0].trim()}
-            </span>
-            <span>{hit.date ? new Date(hit.date).toLocaleDateString() : ''}</span>
-            {hit.has_patch && (
-              <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-xs font-medium">
-                patch
-              </span>
-            )}
-            {hit.source && (
-              <span className="px-1.5 py-0.5 bg-sky-50 text-sky-700 rounded text-xs font-medium">
-                {hit.source}
-              </span>
-            )}
-          </div>
-          {/* 可编辑标签 */}
-          <div className="mt-2">
-            <EmailTagEditor messageId={hit.message_id} initialTags={hit.tags || []} />
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs px-2 py-1 bg-indigo-50 text-indigo-600 rounded-full font-medium">
-            {hit.score.toFixed(3)}
-          </span>
-          <button
-            onClick={onThread}
-            className="text-xs px-2.5 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
-          >
-            Thread
-          </button>
-        </div>
-      </div>
-      {hit.snippet && (
-        <p
-          className="mt-3 text-xs text-gray-600 leading-relaxed line-clamp-2"
-          dangerouslySetInnerHTML={{
-            __html: highlightSnippet(hit.snippet),
-          }}
-        />
-      )}
-    </div>
   );
 }
