@@ -1,4 +1,4 @@
-> **Status**: planned
+> **Status**: done
 > **Updated**: 2026-05-06
 > **Depends-on**: PLAN-34000（Phase 2 派生）
 > **Priority**: P1
@@ -139,3 +139,30 @@ SearchPage 拿到 hits[]
 - 计数是「轻提示」，不要阻塞 search 渲染。即使 lookup 失败也要保留主流程
 - 计数是 stale 的，不实时反映用户刚保存的 draft；首次进入页面时刷新即可
 - 不引入 WebSocket，不做 realtime 推送
+
+## 实现摘要 (2026-05-06)
+
+### Backend
+- 新增 `src/api/routers/contributions.py`，注册到 `server.py`
+- `POST /api/contributions/lookup` 单次 SQL 聚合查询 evidence / annotation / draft
+- 沿用 `UnifiedAnnotationStore._visibility_filters` 的 visibility 规则
+- 上限：message_ids ≤ 200, thread_ids ≤ 100
+- 计数失败返回 500 但前端容错降级，主流程不阻塞
+
+### Frontend
+- `web/src/api/contributions.ts`：lookup 客户端，失败静默返回空
+- `web/src/hooks/useContributions.ts`：60s 进程内缓存的批量 hook
+- `web/src/components/ContributionChips.tsx`：K/A/D 三色 chip（compact / 文字两种模式）
+- 接入点：
+  - `ResultCard`：标题旁 compact chip（消费 messageStats / threadStats）
+  - `ConversationCard` Source 列表：每个 source 行 compact chip
+  - `ThreadDrawer` 头部统计栏：完整文字 chip（"3 知识引用 · 2 批注 · 1 待审 draft"）
+
+### Tests
+- `tests/test_contributions.py` (12 cases)：
+  - request schema 默认 / 显式列表
+  - response schema 默认空字典
+  - ContributionStats default 全 0
+  - 匿名 vs 已登录 visibility filter 表达式区分
+  - `MAX_MESSAGE_IDS` / `MAX_THREAD_IDS` 上限常量
+  - `AnnotationORM` 字段烟雾测试

@@ -17,6 +17,7 @@ import { EmptyState, PageHeader, PrimaryButton, SecondaryButton, SectionPanel, S
 import { showToast } from '../components/Toast';
 import { useAuth } from '../auth';
 import ConversationCard, { type ConversationTurn } from '../components/ask/ConversationCard';
+import { useContributions } from '../hooks/useContributions';
 
 type ThreadFocus = {
   threadId: string;
@@ -177,6 +178,20 @@ export default function AskPage() {
 
   const hasFilters = sender || dateFrom || dateTo || selectedTags.length > 0 || selectedChannel;
   const latestAnswer = [...turns].reverse().find((turn) => turn.response)?.response || null;
+
+  // PLAN-34001: 一次性查询所有 turn.sources 的贡献度
+  const askMessageIds: string[] = [];
+  const askThreadIds: string[] = [];
+  for (const turn of turns) {
+    for (const src of turn.response?.sources || []) {
+      if (src.message_id) askMessageIds.push(src.message_id);
+      if (src.thread_id) askThreadIds.push(src.thread_id);
+    }
+  }
+  const { byMessageId: contribByMessage, byThreadId: contribByThread } = useContributions(
+    askMessageIds,
+    askThreadIds,
+  );
 
   const handleAsk = async () => {
     const text = question.trim();
@@ -444,6 +459,8 @@ export default function AskPage() {
                 key={turn.id}
                 turn={turn}
                 onOpenThread={openThread}
+                contribByMessageId={contribByMessage}
+                contribByThreadId={contribByThread}
               />
             ))}
           </div>

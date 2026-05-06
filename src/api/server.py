@@ -20,6 +20,7 @@ from src.api.deps import _maybe_bootstrap_admin, _maybe_bootstrap_agent
 from src.api.routers.agent import router as agent_router
 from src.api.routers.annotations import router as annotations_router
 from src.api.routers.ask import router as ask_router
+from src.api.routers.contributions import router as contributions_router
 from src.api.routers.auth import router as auth_router
 from src.api.routers.kernel import router as kernel_router
 from src.api.routers.knowledge import router as knowledge_router
@@ -269,6 +270,7 @@ app.include_router(annotations_router)
 app.include_router(manual_router)
 app.include_router(kernel_router)
 app.include_router(knowledge_router)
+app.include_router(contributions_router)
 app.include_router(agent_router)
 app.include_router(system_router)
 

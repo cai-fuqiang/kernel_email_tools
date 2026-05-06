@@ -1,4 +1,6 @@
 import type { SearchHit } from '../../api/types';
+import type { ContributionStats } from '../../api/contributions';
+import ContributionChips from '../ContributionChips';
 import EmailTagEditor from '../EmailTagEditor';
 import { highlightSnippet } from './searchUtils';
 
@@ -7,6 +9,8 @@ interface ResultCardProps {
   onThread: () => void;
   selected?: boolean;
   onToggleSelect?: (messageId: string) => void;
+  messageStats?: ContributionStats | null;
+  threadStats?: ContributionStats | null;
 }
 
 export default function ResultCard({
@@ -14,6 +18,8 @@ export default function ResultCard({
   onThread,
   selected,
   onToggleSelect,
+  messageStats,
+  threadStats,
 }: ResultCardProps) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow">
@@ -30,7 +36,10 @@ export default function ResultCard({
 
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold text-gray-900 truncate">{hit.subject}</h3>
+          <div className="flex items-center gap-2 min-w-0">
+            <h3 className="text-sm font-semibold text-gray-900 truncate">{hit.subject}</h3>
+            <ContributionChips stats={messageStats || threadStats} />
+          </div>
           <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500 flex-wrap">
             <span className="font-medium text-gray-700">
               {hit.sender.split('<')[0].trim()}

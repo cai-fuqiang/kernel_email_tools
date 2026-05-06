@@ -359,8 +359,8 @@ Web 入口：`/app/agent-research`（左侧导航 `Research` -> `Agent Research`
 
 ## Web 功能
 
-- **Search Emails**：keyword/semantic/hybrid 邮件搜索，支持 channel、sender、date、patch、tag 过滤，搜索结果可 AI 概括并生成草稿。
-- **Ask Agent**：agentic RAG 问答，展示检索计划、执行 query、来源、相关 thread，并可生成知识草稿。
+- **Search Emails**：keyword/semantic/hybrid 邮件搜索，支持 channel、sender、date、patch、tag 过滤，搜索结果可 AI 概括并生成草稿。结果卡片显示贡献度 chip（K=知识引用、A=批注、D=待审 draft）。
+- **Ask Agent**：agentic RAG 问答，展示检索计划、执行 query、来源、相关 thread，并可生成知识草稿。Sources 列表展示贡献度 chip。
 - **Agent Research**：按 topic 创建 AI research run，查看 trace，生成 Knowledge Draft。
 - **Knowledge**：知识实体、关系、evidence、graph、Draft Inbox。
 - **Tags**：层级标签管理、tag target 浏览、邮件/知识实体绑定。
@@ -459,6 +459,10 @@ Web 入口：`/app/agent-research`（左侧导航 `Research` -> `Agent Research`
 - `GET /api/manual/search`
 - `GET /api/manual/ask`
 - `GET /api/manual/stats`
+
+### Contributions (PLAN-34001)
+
+- `POST /api/contributions/lookup` — 批量查询 message_id / thread_id 在知识库中的贡献度（knowledge evidence、annotation、pending draft 计数）
 
 ### Kernel Code
 

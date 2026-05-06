@@ -17,6 +17,8 @@ import ConfirmModal from './ConfirmModal';
 import { showToast } from './Toast';
 import LayeredEmailCard from './LayeredEmailCard';
 import TreeEmailCard from './TreeEmailCard';
+import ContributionChips from './ContributionChips';
+import { useContributions } from '../hooks/useContributions';
 import {
   buildThreadTree,
   buildNodeMap,
@@ -90,6 +92,10 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
   }, []);
 
   const nodeMap = useMemo(() => buildNodeMap(threadTree), [threadTree]);
+
+  // PLAN-34001: 当前 thread 的贡献度统计
+  const { byThreadId: contribByThread } = useContributions([], threadId ? [threadId] : []);
+  const threadContribStats = contribByThread[threadId];
 
   const visibleNodes = useMemo(() => {
     if (viewMode !== 'layered') return [];
@@ -551,6 +557,9 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
                 )}
                 {translationStats.total > 0 && (
                   <span><strong className="text-gray-900">{translationStats.total}</strong> 段落可翻译</span>
+                )}
+                {threadContribStats && (
+                  <ContributionChips stats={threadContribStats} compact={false} />
                 )}
                 <div className="ml-auto">
                   <EmailTagEditor targetType="email_thread" targetRef={threadId} />

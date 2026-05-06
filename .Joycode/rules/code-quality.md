@@ -58,6 +58,15 @@
 
 ## 前端组件规范
 
+### 贡献度 chip（PLAN-34001）
+- 共享组件 `web/src/components/ContributionChips.tsx`，统一渲染 message/thread 的知识库贡献度
+- chip 字母与颜色约定（不要随意改动）：
+  - **K** 蓝色 (`bg-blue-50 text-blue-700`)：knowledge evidence 引用计数
+  - **A** 紫色 (`bg-purple-50 text-purple-700`)：annotation 计数
+  - **D** 灰色 (`bg-gray-100 text-gray-700`)：pending knowledge draft 计数（仅 thread 级）
+- 0 计数不渲染，保持安静；compact 模式显示 `K3 A2 D1`，完整模式显示「3 知识引用 · 2 批注 · 1 待审 draft」
+- 数据通过 `web/src/hooks/useContributions.ts` 拉取，hook 内置 60s 缓存，失败静默返回空
+
 ### 弹窗/确认
 - **统一使用 `ConfirmModal`** 替代 `window.confirm` 和 `window.prompt`（已全部完成，零原生弹窗残留）
 - **统一使用 `showToast()`** 替代内联 error div 和 `window.alert`（已全部完成）

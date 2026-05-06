@@ -1,5 +1,7 @@
 import { CheckCircle2 } from 'lucide-react';
 import type { AskResponse, SourceRef } from '../../api/types';
+import type { ContributionStats } from '../../api/contributions';
+import ContributionChips from '../ContributionChips';
 import {
   citationLabel,
   normalizeMessageId,
@@ -62,9 +64,16 @@ function renderAnswerWithLinks(
 interface ConversationCardProps {
   turn: ConversationTurn;
   onOpenThread: (threadId: string, focusMessageId?: string) => void;
+  contribByMessageId?: Record<string, ContributionStats>;
+  contribByThreadId?: Record<string, ContributionStats>;
 }
 
-export default function ConversationCard({ turn, onOpenThread }: ConversationCardProps) {
+export default function ConversationCard({
+  turn,
+  onOpenThread,
+  contribByMessageId = {},
+  contribByThreadId = {},
+}: ConversationCardProps) {
   const sourceByMessageId = buildSourceMap(turn.response);
   const standalone = turn.response?.retrieval_stats?.standalone_question;
   return (
@@ -107,7 +116,15 @@ export default function ConversationCard({ turn, onOpenThread }: ConversationCar
                     disabled={!source.thread_id}
                     className="block w-full rounded-lg border border-gray-100 bg-white p-3 text-left hover:border-indigo-200 hover:bg-indigo-50/30 disabled:cursor-default"
                   >
-                    <p className="truncate text-sm font-medium text-gray-900">{source.subject}</p>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <p className="truncate text-sm font-medium text-gray-900">{source.subject}</p>
+                      <ContributionChips
+                        stats={
+                          contribByMessageId[source.message_id || ''] ||
+                          contribByThreadId[source.thread_id || '']
+                        }
+                      />
+                    </div>
                     <p className="mt-1 text-xs text-gray-500">
                       {source.sender} · {source.date}
                       {source.source && <span> · {source.source}</span>}

@@ -39,6 +39,7 @@ import BatchTagBar from '../components/search/BatchTagBar';
 import AnnotationResults from '../components/search/AnnotationResults';
 import ResultCard from '../components/search/ResultCard';
 import { errorMessage } from '../components/search/searchUtils';
+import { useContributions } from '../hooks/useContributions';
 
 export default function SearchPage() {
   const { isAuthenticated } = useAuth();
@@ -150,6 +151,14 @@ export default function SearchPage() {
   };
 
   const totalPages = result ? Math.ceil(result.total / result.page_size) : 0;
+
+  // PLAN-34001: 批量查询命中邮件/线程的知识库贡献度
+  const hitMessageIds = result?.hits.map((h) => h.message_id) || [];
+  const hitThreadIds = result?.hits.map((h) => h.thread_id).filter(Boolean) || [];
+  const { byMessageId: contribByMessage, byThreadId: contribByThread } = useContributions(
+    hitMessageIds,
+    hitThreadIds,
+  );
 
   const handleToggleSelect = (messageId: string) => {
     setSelectedMessages((prev) => {
@@ -489,6 +498,8 @@ export default function SearchPage() {
                 onThread={() => setSelectedThread(hit.thread_id)}
                 selected={selectedMessages.has(hit.message_id)}
                 onToggleSelect={handleToggleSelect}
+                messageStats={contribByMessage[hit.message_id]}
+                threadStats={contribByThread[hit.thread_id]}
               />
             ))}
           </div>
