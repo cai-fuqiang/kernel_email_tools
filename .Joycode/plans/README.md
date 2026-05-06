@@ -1,6 +1,6 @@
 # Plans Index
 
-> Last reorganized: **2026-05-06**
+> Last reorganized: **2026-05-06** (PLAN-34001 closed → done/)
 
 本目录维护项目的规约文档（PLAN-xxx）。已完成的计划归档到 `done/`，被取代的计划归档到 `done/superseded/`。每个活跃 PLAN 顶部应当带元数据头：
 
@@ -20,8 +20,8 @@
 | [PLAN-30002](PLAN-30002-external-code-jump.md) | 外链代码跳转（Elixir/lore） | in-progress | **P1** | 反向闭环 + Phase 1+2+3+4+5 已完成；仅剩 external_links 内网镜像验证 |
 | [PLAN-31001](PLAN-31001-knowledge-graph-enhancements.md) | 知识图谱功能增强 | in-progress | P1 | 实体删除 / 图谱遍历 / 内核版本关联未做 |
 | [PLAN-31004](PLAN-31004-ui-information-hierarchy.md) | UI 信息层次与首屏引导（Workbench 第二轮） | planned | **P1** | Dashboard + Sticky 上下文条 + 信息密度 |
-| [PLAN-34001](PLAN-34001-evidence-contribution-badges.md) | Search/Ask 结果贡献度标记 | planned | **P1** | 从 PLAN-34000 Phase 2 派生，后端 lookup + 前端 chip |
 | [PLAN-31002](PLAN-31002-knowledge-workbench-roadmap.md) | Knowledge Workbench 路线图 | in-progress | P2 | 范围过大，新工作请新建独立 PLAN 引用 |
+| [PLAN-36000](PLAN-36000-survey-style-batch-tagging.md) | Survey-Style 批量打标签（YAML 问卷） | planned | P2 | 借鉴 eunomia-bpf/code-survey；先 Phase 1 PoC 验证质量 |
 | [PLAN-35001](PLAN-35001-FUTURE-ai-assisted-knowledge-pipeline.md) | AI 邮件入库流水线 | future | P3 | 100 万邮件 LLM 成本 ~$2000，先验证再放量 |
 
 ---
@@ -31,14 +31,14 @@
 1. ~~**P1** PLAN-30002 Phase 1+2（externalLinks 工具 + Code Browser 接入 Elixir）~~ ✅ 2026-05-01
 2. ~~**P1** PLAN-34000 Phase 4 组件拆分（ThreadDrawer / KnowledgePage / SearchPage / KernelCodePage / AskPage）~~ ✅ 2026-05-06
 3. ~~**P1** PLAN-34000 Phase 1/3/5 收尾（SemanticRetriever 测试 2→6、confirm/prompt → ConfirmModal、KnowledgePage chunk 500→54 KB）~~ ✅ 2026-05-06
-4. **P1** PLAN-34001 贡献度标记（后端 `/api/contributions/lookup` + 前端 chip）
+4. ~~**P1** PLAN-34001 贡献度标记（后端 `/api/contributions/lookup` + 前端 chip）~~ ✅ 2026-05-06
 5. **P1** PLAN-31001 Phase 1（实体删除 API + 图谱遍历 API + 简单可视化）
 6. **P1** PLAN-30002 Phase 3+5（ThreadDrawer 邮件正文路径识别 + lore 链接）
 7. **P3** PLAN-35001 P1 起步（本地小模型去噪，零 API 成本）
 
 ---
 
-## 已完成（done/，21）
+## 已完成（done/，22）
 
 按时间顺序从早到晚：
 
@@ -70,6 +70,7 @@
   - PLAN-35000 AI Research Agent（多轮 loop + cooperative cancel + service 抽离 + prompt 加固，2026-05-01 收尾）
 - Semantic Search & Product Quality
   - PLAN-34000 Semantic Search & Quality（Phase 1 真实 pgvector semantic；Phase 3 confirm/prompt → ConfirmModal 清零；Phase 4 组件拆分 5 个主页面合计 -25%~-65%；Phase 5 KnowledgePage chunk 500→54 KB cytoscape 延迟加载；Phase 2 派生为 PLAN-34001；SemanticRetriever 测试 2→6，pagination / date forwarding / missing provider / disabled 均覆盖，2026-05-06 收尾）
+  - PLAN-34001 Search/Ask 结果贡献度标记（后端 `/api/contributions/lookup` 单 SQL 聚合 + visibility 过滤；前端 `useContributions` hook 60s 缓存 + `ContributionChips` K/A/D 三色 chip；接入 ResultCard / ConversationCard / ThreadDrawer；12 项后端测试，2026-05-06 收尾）
 
 ## 已废弃 / 取代（done/superseded/，2）
 
