@@ -1,4 +1,5 @@
 import { Plus } from 'lucide-react';
+import { useRef } from 'react';
 import type { KnowledgeEntity, KnowledgeStats } from '../../api/types';
 import { PrimaryButton, SecondaryButton } from '../ui';
 import {
@@ -27,6 +28,13 @@ interface EntityListPanelProps {
   showCreate: boolean;
   newEntity: NewEntityForm;
   saving: boolean;
+  total?: number;
+  searchMode?: 'simple' | 'fulltext';
+  onSearchModeChange?: (mode: 'simple' | 'fulltext') => void;
+  onLoadMore?: () => void;
+  isAdmin?: boolean;
+  onExport?: () => void;
+  onImport?: (file: File) => void;
   onQueryChange: (value: string) => void;
   onSearch: () => void;
   onToggleCreate: () => void;
@@ -45,6 +53,13 @@ export default function EntityListPanel({
   showCreate,
   newEntity,
   saving,
+  total,
+  searchMode,
+  onSearchModeChange,
+  onLoadMore,
+  isAdmin,
+  onExport,
+  onImport,
   onQueryChange,
   onSearch,
   onToggleCreate,
@@ -52,6 +67,7 @@ export default function EntityListPanel({
   onCreateEntity,
   onSelectEntity,
 }: EntityListPanelProps) {
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   return (
     <aside className="flex max-h-[50vh] w-full shrink-0 flex-col border-b border-slate-200 bg-white xl:max-h-none xl:w-[390px] xl:border-b-0 xl:border-r">
       <div className="border-b border-slate-200 p-5">
@@ -62,8 +78,47 @@ export default function EntityListPanel({
               Reviewed ideas with evidence, notes, and relations.
             </p>
           </div>
-          <div className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
-            {entities.length}
+          <div className="flex flex-col items-end gap-2">
+            <div className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
+              {entities.length}
+            </div>
+            {isAdmin && (onExport || onImport) && (
+              <div className="flex items-center gap-1 text-[10px]">
+                {onExport && (
+                  <button
+                    type="button"
+                    onClick={onExport}
+                    title="Export knowledge to JSON"
+                    className="rounded border border-slate-300 px-2 py-0.5 text-slate-600 hover:bg-slate-100"
+                  >
+                    Export
+                  </button>
+                )}
+                {onImport && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => importInputRef.current?.click()}
+                      title="Import knowledge from JSON"
+                      className="rounded border border-slate-300 px-2 py-0.5 text-slate-600 hover:bg-slate-100"
+                    >
+                      Import
+                    </button>
+                    <input
+                      ref={importInputRef}
+                      type="file"
+                      accept=".json,application/json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file && onImport) onImport(file);
+                        if (importInputRef.current) importInputRef.current.value = '';
+                      }}
+                    />
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -79,6 +134,39 @@ export default function EntityListPanel({
             Search
           </PrimaryButton>
         </div>
+
+        {onSearchModeChange && (
+          <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
+            <span>Mode:</span>
+            <button
+              type="button"
+              onClick={() => onSearchModeChange('simple')}
+              className={`rounded-full border px-2 py-0.5 ${
+                searchMode !== 'fulltext'
+                  ? 'border-slate-400 bg-slate-100 text-slate-800'
+                  : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              Simple
+            </button>
+            <button
+              type="button"
+              onClick={() => onSearchModeChange('fulltext')}
+              className={`rounded-full border px-2 py-0.5 ${
+                searchMode === 'fulltext'
+                  ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
+                  : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              Full-text
+            </button>
+            {typeof total === 'number' && (
+              <span className="ml-auto text-[10px] text-slate-400">
+                {entities.length} / {total}
+              </span>
+            )}
+          </div>
+        )}
 
         {stats && (
           <div className="mt-3 grid grid-cols-4 gap-1.5">
@@ -218,6 +306,18 @@ export default function EntityListPanel({
               </button>
             );
           })
+        )}
+        {onLoadMore && typeof total === 'number' && entities.length < total && (
+          <div className="border-t border-slate-100 p-3 text-center">
+            <button
+              type="button"
+              onClick={onLoadMore}
+              disabled={loading}
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {loading ? 'Loading...' : `Load more (${total - entities.length} remaining)`}
+            </button>
+          </div>
         )}
       </div>
     </aside>

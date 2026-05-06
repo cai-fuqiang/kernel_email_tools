@@ -1,5 +1,5 @@
-> **Status**: in-progress (Phase 1 + Phase 2 完成；Phase 3-5 待做)
-> **Updated**: 2026-05-01
+> **Status**: done (Phase 1 + 2 + 3 + 4 + 5 全部落地，2026-05-06)
+> **Updated**: 2026-05-06
 > **Depends-on**: PLAN-31000 (done), PLAN-30002 (external code links — Phase 1 done)
 > **Priority**: P1
 
@@ -117,11 +117,69 @@
 |------|------|------|------|
 | Phase 1 | 实体删除 + 图谱遍历 API + 图谱可视化 | CRUD 完整性 + 让知识图谱名副其实 | ✅ 完成 |
 | Phase 2 | 内核版本关联 + 文件/符号链接 | 领域核心需求，连接知识与代码 | ✅ 完成 |
-| Phase 3 | 概览仪表板 + 关联建议 + 全文搜索 | 规模化使用体验 | 部分：stats / dedup 已做；fulltext 未做 |
-| Phase 4 | 导入/导出 + 实体合并 + 变更历史 | 数据治理与长期维护 | 部分：实体合并已做；import/export/history 未做 |
-| Phase 5 | 反向引用 + 关系方向切换 + 分页 | 细节打磨 | 未做 |
+| Phase 3 | 概览仪表板 + 关联建议 + 全文搜索 | 规模化使用体验 | ✅ 完成 |
+| Phase 4 | 导入/导出 + 实体合并 + 变更历史 | 数据治理与长期维护 | ✅ 完成 |
+| Phase 5 | 反向引用 + 关系方向切换 + 分页 + 关系类型过滤 | 细节打磨 | ✅ 完成 |
 
 ---
+
+## 实现摘要（2026-05-06 补齐 Phase 3/4/5 剩余项）
+
+### 后端
+
+- **全文搜索 (Phase 3)**
+  - [`KnowledgeEntityORM`](src/storage/models.py:354) 新增 `search_vector TSVECTOR` 列 + `ix_knowledge_entities_search_vector` GIN 索引
+  - [`PostgresStorage._ensure_knowledge_search_vector()`](src/storage/postgres.py:150) 在 `init_db` 幂等地补齐列、索引、触发器、首次回填
+  - 触发器把 `canonical_name`(A) / aliases(B) / summary(C) / description(D) 四档权重合并
+  - [`KnowledgeStore.list_entities(search_mode=)`](src/storage/knowledge_store.py:201) 支持 `simple` (ILIKE) 和 `fulltext` (pgvector tsquery + ts_rank) 两种模式
+  - `GET /api/knowledge/entities?search_mode=fulltext` 新增参数
+- **变更历史 (Phase 4)**
+  - 新增表 [`KnowledgeEntityVersionORM`](src/storage/models.py:389) (`knowledge_entity_versions`)，`(entity_id, version)` 唯一约束
+  - [`KnowledgeStore.update()`](src/storage/knowledge_store.py:167) 在实际内容变更时先写入旧值快照，`version` 单调递增
+  - 新增 [`list_entity_versions()`](src/storage/knowledge_store.py:955) + `GET /api/knowledge/entities/{id}/versions`
+- **导入 / 导出 (Phase 4)**
+  - [`export_all()`](src/storage/knowledge_store.py:975) 导出可序列化 dict，包含 schema_version / entities / relations，只导出两端都在选中集内的关系以保持一致性
+  - [`import_bulk()`](src/storage/knowledge_store.py:1040) 支持 `upsert` / `skip` 两种策略，完整 summary（created / updated / skipped / errors）
+  - `GET /api/knowledge/export` (admin/editor), `POST /api/knowledge/import` (admin)
+- **关系改进 (Phase 5)**
+  - [`list_relations(relation_types=)`](src/storage/knowledge_store.py:823) 支持类型白名单
+  - `GET /api/knowledge/entities/{id}/relations?relation_type=foo,bar` 透传过滤
+
+### 前端
+
+- **列表分页 + 全文模式切换 (Phase 3 + Phase 5)**
+  - [`EntityListPanel`](web/src/components/knowledge/EntityListPanel.tsx) 新增 `total` / `searchMode` / `onLoadMore` / `onSearchModeChange` props
+  - Simple / Full-text 模式切换 chip；分页按钮 "Load more (N remaining)"
+  - [`KnowledgePage.loadEntities({ append, page })`](web/src/pages/KnowledgePage.tsx:125) 支持累加，默认 `page_size=50` 从原来硬编码的 100 改为动态
+- **变更历史面板 (Phase 4)**
+  - 新增 [`EntityHistoryPanel`](web/src/components/knowledge/EntityHistoryPanel.tsx)，按 version 降序展示快照，可展开对比
+  - 集成到详情页底部，跟随 `selectedEntityId` 自动刷新
+- **反向引用 (Phase 5)**
+  - [`KnowledgeBackRefs`](web/src/components/KnowledgeBackRefs.tsx) 已在 `TreeEmailCard` / `LayeredEmailCard` 集成
+  - 修复跳转链接从 `?entity=` → `?entity_id=`（与 KnowledgePage 的 searchParams 对齐）
+- **关系方向切换 (Phase 5)**
+  - [`RelationForm.direction`](web/src/components/knowledge/EntityRelationsPanel.tsx:13) 新增 `outgoing` / `incoming` 选项
+  - [`handleCreateRelation`](web/src/pages/KnowledgePage.tsx:495) 按 direction 动态决定 source / target
+- **导入 / 导出按钮 (Phase 4, admin only)**
+  - EntityListPanel header 右上角新增 Export / Import 小按钮，仅 `isAdmin` 可见
+  - Export 下载 `knowledge-export-<timestamp>.json`
+  - Import 打开文件选择器 → `importKnowledge()` → 展示 summary toast
+
+### 测试
+
+- [`tests/test_knowledge_enhancements.py`](tests/test_knowledge_enhancements.py) — 15 cases：
+  - `KnowledgeEntityVersionORM` 表名/列名/唯一约束
+  - `KnowledgeEntityVersionRead` Pydantic 默认值
+  - `KnowledgeEntityORM.search_vector` 列 + GIN 索引存在
+  - `KnowledgeImportRequest` strategy 校验（upsert / skip / 非法）
+  - `normalize_slug` 5 个边界用例
+- 完整套件：`pytest tests/` — **128 passed**（原 113 + 新增 15）
+- 前端：`tsc --noEmit` — 0 errors
+
+### 未做（保持技术债挂起）
+
+- 反向发现（"哪些实体引用了这个文件？"）—— 需对 meta.source_files 做反向索引，PLAN-30002 Phase 3+5 可能会涉及
+- 导入时 evidence / drafts / versions 不随 entity/relation 一起导出，需要时可按 entity_id 二次拉取
 
 ## 风险与约束
 - 图谱可视化（D3.js/cytoscape.js）引入新前端依赖，需评估包大小和性能。

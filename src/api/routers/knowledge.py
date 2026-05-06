@@ -16,6 +16,7 @@ from src.storage.models import (
     KnowledgeDraftRead, KnowledgeDraftCreate, KnowledgeDraftUpdate,
     KnowledgeEntityCreate, KnowledgeEntityUpdate, KnowledgeRelationCreate,
     KnowledgeRelationUpdate, KnowledgeEvidenceCreate, KnowledgeEvidenceUpdate,
+    KnowledgeEntityVersionRead,
 )
 
 from src.api.deps import (
@@ -111,21 +112,31 @@ async def list_knowledge_entities(
     entity_type: str = Query("", description="实体类型过滤"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    search_mode: str = Query(
+        "simple",
+        description="搜索模式：simple=ILIKE 模糊匹配，fulltext=PostgreSQL tsvector 全文检索",
+    ),
 ):
     if not state._knowledge_store:
         raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+
+    mode = (search_mode or "simple").strip().lower()
+    if mode not in ("simple", "fulltext"):
+        raise HTTPException(status_code=400, detail="search_mode must be 'simple' or 'fulltext'")
 
     items, total = await state._knowledge_store.list_entities(
         q=q,
         entity_type=entity_type,
         page=page,
         page_size=page_size,
+        search_mode=mode,
     )
     return {
         "entities": [item.model_dump(mode="json") for item in items],
         "total": total,
         "page": page,
         "page_size": page_size,
+        "search_mode": mode,
     }
 
 
@@ -329,14 +340,21 @@ async def create_knowledge_entity(
 
 
 @router.get("/api/knowledge/entities/{entity_id}/relations", response_model=KnowledgeRelationListResponse)
-async def list_knowledge_relations(entity_id: str):
+async def list_knowledge_relations(
+    entity_id: str,
+    relation_type: str = Query("", description="关系类型过滤，逗号分隔的多值"),
+):
     if not state._knowledge_store:
         raise HTTPException(status_code=503, detail="Knowledge store not initialized")
 
     entity = await state._knowledge_store.get(entity_id)
     if entity is None:
         raise HTTPException(status_code=404, detail="Knowledge entity not found")
-    outgoing, incoming = await state._knowledge_store.list_relations(entity_id)
+
+    relation_types = [t.strip() for t in relation_type.split(",") if t.strip()] if relation_type else None
+    outgoing, incoming = await state._knowledge_store.list_relations(
+        entity_id, relation_types=relation_types
+    )
     return KnowledgeRelationListResponse(outgoing=outgoing, incoming=incoming)
 
 
@@ -592,5 +610,72 @@ class KnowledgeEntityUpdateRequest(BaseModel):
     description: Optional[str] = Field(None, max_length=20000)
     status: Optional[str] = Field(None, max_length=32)
     meta: Optional[dict] = None
+
+
+# ----------------------------------------------------------------------
+# PLAN-31001 Phase 4：变更历史 + 导入导出
+# ----------------------------------------------------------------------
+
+class KnowledgeImportRequest(BaseModel):
+    """JSON 导入请求体。"""
+
+    entities: list[dict] = Field(default_factory=list)
+    relations: list[dict] = Field(default_factory=list)
+    schema_version: int = 1
+    strategy: str = Field("upsert", pattern="^(upsert|skip)$")
+
+
+@router.get(
+    "/api/knowledge/entities/{entity_id}/versions",
+    response_model=list[KnowledgeEntityVersionRead],
+)
+async def list_knowledge_entity_versions(
+    entity_id: str,
+    limit: int = Query(50, ge=1, le=500),
+):
+    """获取实体的变更历史快照（按 version 降序）。"""
+    if not state._knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    entity = await state._knowledge_store.get(entity_id.strip())
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Knowledge entity not found")
+    return await state._knowledge_store.list_entity_versions(entity_id.strip(), limit=limit)
+
+
+@router.get("/api/knowledge/export")
+async def export_knowledge(
+    entity_type: str = Query("", description="可选实体类型过滤"),
+    status: str = Query("", description="可选状态过滤"),
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    """导出全部知识库为 JSON（实体 + 实体间关系）。"""
+    if not state._knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    payload = await state._knowledge_store.export_all(entity_type=entity_type, status=status)
+    return payload
+
+
+@router.post("/api/knowledge/import")
+async def import_knowledge(
+    request: KnowledgeImportRequest,
+    current_user: CurrentUser = Depends(require_roles("admin")),
+):
+    """从 JSON 批量导入知识实体和关系。"""
+    if not state._knowledge_store:
+        raise HTTPException(status_code=503, detail="Knowledge store not initialized")
+    try:
+        summary = await state._knowledge_store.import_bulk(
+            payload={
+                "entities": request.entities,
+                "relations": request.relations,
+                "schema_version": request.schema_version,
+            },
+            actor=current_user.display_name,
+            actor_user_id=current_user.user_id,
+            strategy=request.strategy,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return summary
 
 

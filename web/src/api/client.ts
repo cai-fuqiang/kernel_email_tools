@@ -1030,12 +1030,14 @@ export async function listKnowledgeEntities(opts?: {
   entity_type?: string;
   page?: number;
   page_size?: number;
+  search_mode?: 'simple' | 'fulltext';
 }): Promise<KnowledgeEntityListResponse> {
   const params = new URLSearchParams();
   if (opts?.q) params.set('q', opts.q);
   if (opts?.entity_type) params.set('entity_type', opts.entity_type);
   if (opts?.page) params.set('page', String(opts.page));
   if (opts?.page_size) params.set('page_size', String(opts.page_size));
+  if (opts?.search_mode) params.set('search_mode', opts.search_mode);
   return fetchJSON<KnowledgeEntityListResponse>(`${API_BASE}/knowledge/entities?${params}`);
 }
 
@@ -1087,9 +1089,15 @@ export async function updateKnowledgeEntity(
   });
 }
 
-export async function listKnowledgeRelations(entityId: string): Promise<KnowledgeRelationListResponse> {
+export async function listKnowledgeRelations(
+  entityId: string,
+  relationType?: string,
+): Promise<KnowledgeRelationListResponse> {
+  const params = new URLSearchParams();
+  if (relationType) params.set('relation_type', relationType);
+  const qs = params.toString();
   return fetchJSON<KnowledgeRelationListResponse>(
-    `${API_BASE}/knowledge/entities/${encodeURIComponent(entityId)}/relations`
+    `${API_BASE}/knowledge/entities/${encodeURIComponent(entityId)}/relations${qs ? `?${qs}` : ''}`
   );
 }
 
@@ -1239,6 +1247,52 @@ export async function deleteKnowledgeRelation(relationId: string): Promise<{ del
   return fetchWithBody<{ deleted: boolean }>(`${API_BASE}/knowledge/relations/${encodeURIComponent(relationId)}`, {
     method: 'DELETE',
   });
+}
+
+// ============================================================
+// PLAN-31001 Phase 4：变更历史 + 导入导出
+// ============================================================
+
+export async function listKnowledgeEntityVersions(
+  entityId: string,
+  limit = 50,
+): Promise<import('./types').KnowledgeEntityVersion[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  return fetchJSON<import('./types').KnowledgeEntityVersion[]>(
+    `${API_BASE}/knowledge/entities/${encodeURIComponent(entityId)}/versions?${params}`
+  );
+}
+
+export async function exportKnowledge(opts?: {
+  entity_type?: string;
+  status?: string;
+}): Promise<import('./types').KnowledgeExportPayload> {
+  const params = new URLSearchParams();
+  if (opts?.entity_type) params.set('entity_type', opts.entity_type);
+  if (opts?.status) params.set('status', opts.status);
+  const qs = params.toString();
+  return fetchJSON<import('./types').KnowledgeExportPayload>(
+    `${API_BASE}/knowledge/export${qs ? `?${qs}` : ''}`
+  );
+}
+
+export async function importKnowledge(
+  payload: import('./types').KnowledgeExportPayload,
+  strategy: 'upsert' | 'skip' = 'upsert',
+): Promise<import('./types').KnowledgeImportSummary> {
+  return fetchWithBody<import('./types').KnowledgeImportSummary>(
+    `${API_BASE}/knowledge/import`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entities: payload.entities ?? [],
+        relations: payload.relations ?? [],
+        schema_version: payload.schema_version ?? 1,
+        strategy,
+      }),
+    },
+  );
 }
 
 // ============================================================

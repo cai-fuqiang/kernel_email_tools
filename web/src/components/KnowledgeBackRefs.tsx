@@ -54,7 +54,7 @@ export default function KnowledgeBackRefs({ messageId }: KnowledgeBackRefsProps)
             {entities.map((e) => (
               <a
                 key={e.entity_id}
-                href={`/knowledge?entity=${encodeURIComponent(e.entity_id)}`}
+                href={`/knowledge?entity_id=${encodeURIComponent(e.entity_id)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block p-2 rounded-lg hover:bg-purple-50 transition-colors"

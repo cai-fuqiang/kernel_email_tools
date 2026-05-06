@@ -17,6 +17,8 @@ from src.storage.models import (
     KnowledgeEntityORM,
     KnowledgeEntityRead,
     KnowledgeEntityUpdate,
+    KnowledgeEntityVersionORM,
+    KnowledgeEntityVersionRead,
     KnowledgeDraftCreate,
     KnowledgeDraftORM,
     KnowledgeDraftRead,
@@ -169,6 +171,7 @@ class KnowledgeStore:
         data: KnowledgeEntityUpdate,
         updated_by: str,
         updated_by_user_id: Optional[str] = None,
+        change_note: str = "",
     ) -> Optional[KnowledgeEntityRead]:
         async with self._session_factory() as session:
             result = await session.execute(
@@ -177,6 +180,47 @@ class KnowledgeStore:
             entity = result.scalar_one_or_none()
             if entity is None:
                 return None
+
+            # 检查是否真的有内容变更（避免空 PATCH 写无意义快照）
+            mutated = False
+            if data.canonical_name is not None and data.canonical_name.strip() != entity.canonical_name:
+                mutated = True
+            if data.aliases is not None:
+                new_aliases = [a.strip() for a in data.aliases if a.strip()]
+                if list(entity.aliases or []) != new_aliases:
+                    mutated = True
+            if data.summary is not None and data.summary.strip() != entity.summary:
+                mutated = True
+            if data.description is not None and data.description.strip() != entity.description:
+                mutated = True
+            if data.status is not None and data.status.strip() != entity.status:
+                mutated = True
+            if data.meta is not None and (entity.meta or {}) != data.meta:
+                mutated = True
+
+            if mutated:
+                # PLAN-31001 Phase 4：写入旧值快照，version 单调递增
+                next_version_result = await session.execute(
+                    select(func.coalesce(func.max(KnowledgeEntityVersionORM.version), 0) + 1)
+                    .where(KnowledgeEntityVersionORM.entity_id == entity_id)
+                )
+                next_version = int(next_version_result.scalar() or 1)
+
+                snapshot = KnowledgeEntityVersionORM(
+                    entity_id=entity_id,
+                    version=next_version,
+                    canonical_name=entity.canonical_name,
+                    aliases=list(entity.aliases or []),
+                    summary=entity.summary,
+                    description=entity.description,
+                    status=entity.status,
+                    meta=dict(entity.meta or {}),
+                    change_note=change_note or "",
+                    changed_by=updated_by or entity.updated_by or "me",
+                    changed_by_user_id=updated_by_user_id,
+                    changed_at=datetime.utcnow(),
+                )
+                session.add(snapshot)
 
             if data.canonical_name is not None:
                 entity.canonical_name = data.canonical_name.strip()
@@ -204,13 +248,25 @@ class KnowledgeStore:
         entity_type: str = "",
         page: int = 1,
         page_size: int = 20,
+        search_mode: str = "simple",
     ) -> tuple[list[KnowledgeEntityRead], int]:
+        """列出知识实体。
+
+        Args:
+            search_mode: "simple" 走 ILIKE 多列模糊匹配（默认，不需要索引）；
+                         "fulltext" 走 search_vector tsvector GIN 索引，
+                         按 ts_rank 降序返回。
+        """
         async with self._session_factory() as session:
             stmt = select(KnowledgeEntityORM)
             if entity_type.strip():
                 stmt = stmt.where(KnowledgeEntityORM.entity_type == entity_type.strip())
-            if q.strip():
-                query_text = q.strip()
+
+            query_text = q.strip()
+            use_fulltext = search_mode == "fulltext" and bool(query_text)
+            rank_col = None
+
+            if query_text and not use_fulltext:
                 like = f"%{query_text}%"
                 stmt = stmt.where(
                     or_(
@@ -221,18 +277,39 @@ class KnowledgeStore:
                         cast(KnowledgeEntityORM.aliases, Text).ilike(like),
                     )
                 )
+            elif use_fulltext:
+                from sqlalchemy import literal_column
+                tsquery = func.plainto_tsquery("english", query_text)
+                stmt = stmt.where(
+                    literal_column("search_vector").op("@@")(tsquery)
+                )
+                rank_col = func.ts_rank(
+                    literal_column("search_vector"),
+                    tsquery,
+                ).label("rank")
 
             count_stmt = select(func.count()).select_from(stmt.subquery())
             total = (await session.execute(count_stmt)).scalar() or 0
 
-            stmt = stmt.order_by(
-                KnowledgeEntityORM.updated_at.desc(), KnowledgeEntityORM.entity_id.asc()
-            )
+            if rank_col is not None:
+                stmt = stmt.add_columns(rank_col).order_by(
+                    rank_col.desc(), KnowledgeEntityORM.updated_at.desc()
+                )
+            else:
+                stmt = stmt.order_by(
+                    KnowledgeEntityORM.updated_at.desc(), KnowledgeEntityORM.entity_id.asc()
+                )
 
             result = await session.execute(
                 stmt.offset((page - 1) * page_size).limit(page_size)
             )
-            return [KnowledgeEntityRead.model_validate(row) for row in result.scalars().all()], total
+            if rank_col is not None:
+                # add_columns 导致返回 Row 对象，取第一列 entity
+                rows = result.all()
+                entities = [row[0] for row in rows]
+            else:
+                entities = list(result.scalars().all())
+            return [KnowledgeEntityRead.model_validate(row) for row in entities], total
 
     async def get_many(self, entity_ids: list[str]) -> dict[str, KnowledgeEntityRead]:
         if not entity_ids:
@@ -720,18 +797,30 @@ class KnowledgeStore:
                 "moved": counts,
             }
 
-    async def list_relations(self, entity_id: str) -> tuple[list[KnowledgeRelationRead], list[KnowledgeRelationRead]]:
+    async def list_relations(
+        self,
+        entity_id: str,
+        relation_types: Optional[list[str]] = None,
+    ) -> tuple[list[KnowledgeRelationRead], list[KnowledgeRelationRead]]:
+        """列出实体的所有关系（区分出向 / 入向）。
+
+        Args:
+            relation_types: 可选的关系类型白名单（None 表示不过滤）。
+        """
         async with self._session_factory() as session:
-            result = await session.execute(
-                select(KnowledgeRelationORM)
-                .where(
-                    or_(
-                        KnowledgeRelationORM.source_entity_id == entity_id,
-                        KnowledgeRelationORM.target_entity_id == entity_id,
-                    )
+            stmt = select(KnowledgeRelationORM).where(
+                or_(
+                    KnowledgeRelationORM.source_entity_id == entity_id,
+                    KnowledgeRelationORM.target_entity_id == entity_id,
                 )
-                .order_by(KnowledgeRelationORM.relation_type.asc(), KnowledgeRelationORM.updated_at.desc())
             )
+            if relation_types:
+                stmt = stmt.where(KnowledgeRelationORM.relation_type.in_(relation_types))
+            stmt = stmt.order_by(
+                KnowledgeRelationORM.relation_type.asc(),
+                KnowledgeRelationORM.updated_at.desc(),
+            )
+            result = await session.execute(stmt)
             relations = result.scalars().all()
             reads = [await self._relation_read(session, relation) for relation in relations]
             outgoing = [relation for relation in reads if relation.source_entity_id == entity_id]
@@ -909,3 +998,285 @@ class KnowledgeStore:
             entity.entity_id: KnowledgeEntityRead.model_validate(entity)
             for entity in result.scalars().all()
         }
+
+    # ------------------------------------------------------------------
+    # PLAN-31001 Phase 4：变更历史 + 导入导出
+    # ------------------------------------------------------------------
+
+    async def list_entity_versions(
+        self,
+        entity_id: str,
+        limit: int = 50,
+    ) -> list[KnowledgeEntityVersionRead]:
+        """获取实体的历史快照列表，按 version 降序。"""
+        async with self._session_factory() as session:
+            stmt = (
+                select(KnowledgeEntityVersionORM)
+                .where(KnowledgeEntityVersionORM.entity_id == entity_id)
+                .order_by(KnowledgeEntityVersionORM.version.desc())
+                .limit(max(1, min(limit, 500)))
+            )
+            result = await session.execute(stmt)
+            return [
+                KnowledgeEntityVersionRead.model_validate(row)
+                for row in result.scalars().all()
+            ]
+
+    async def export_all(
+        self,
+        entity_type: str = "",
+        status: str = "",
+    ) -> dict:
+        """导出所有知识实体和关系为可序列化字典。
+
+        Args:
+            entity_type: 可选实体类型过滤。
+            status: 可选状态过滤。
+
+        Returns:
+            dict with schema_version, exported_at, entities, relations。
+            不包含 evidence/drafts/versions（减小体积；若需可按 entity_id 再次拉取）。
+        """
+        async with self._session_factory() as session:
+            ent_stmt = select(KnowledgeEntityORM)
+            if entity_type.strip():
+                ent_stmt = ent_stmt.where(KnowledgeEntityORM.entity_type == entity_type.strip())
+            if status.strip():
+                ent_stmt = ent_stmt.where(KnowledgeEntityORM.status == status.strip())
+            ent_stmt = ent_stmt.order_by(KnowledgeEntityORM.entity_id.asc())
+            entities = (await session.execute(ent_stmt)).scalars().all()
+            entity_ids = [e.entity_id for e in entities]
+
+            # 只导出两端都在选中集中的关系，保持一致性
+            rel_rows: list[KnowledgeRelationORM] = []
+            if entity_ids:
+                rel_stmt = select(KnowledgeRelationORM).where(
+                    KnowledgeRelationORM.source_entity_id.in_(entity_ids),
+                    KnowledgeRelationORM.target_entity_id.in_(entity_ids),
+                )
+                rel_rows = list((await session.execute(rel_stmt)).scalars().all())
+
+        return {
+            "schema_version": 1,
+            "exported_at": datetime.utcnow().isoformat(),
+            "entity_count": len(entities),
+            "relation_count": len(rel_rows),
+            "entities": [
+                {
+                    "entity_id": e.entity_id,
+                    "entity_type": e.entity_type,
+                    "canonical_name": e.canonical_name,
+                    "slug": e.slug,
+                    "aliases": list(e.aliases or []),
+                    "summary": e.summary,
+                    "description": e.description,
+                    "status": e.status,
+                    "meta": dict(e.meta or {}),
+                    "created_by": e.created_by,
+                    "updated_by": e.updated_by,
+                    "created_at": e.created_at.isoformat() if e.created_at else None,
+                    "updated_at": e.updated_at.isoformat() if e.updated_at else None,
+                }
+                for e in entities
+            ],
+            "relations": [
+                {
+                    "relation_id": r.relation_id,
+                    "source_entity_id": r.source_entity_id,
+                    "target_entity_id": r.target_entity_id,
+                    "relation_type": r.relation_type,
+                    "description": r.description,
+                    "evidence_id": r.evidence_id,
+                    "meta": dict(r.meta or {}),
+                    "created_by": r.created_by,
+                    "updated_by": r.updated_by,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                    "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+                }
+                for r in rel_rows
+            ],
+        }
+
+    async def import_bulk(
+        self,
+        payload: dict,
+        actor: str = "me",
+        actor_user_id: Optional[str] = None,
+        strategy: str = "upsert",
+    ) -> dict:
+        """从 export_all 产出的字典批量导入实体和关系。
+
+        Args:
+            payload: 来自 export_all 的字典，必须包含 `entities` 列表。
+            strategy: "upsert" → 已存在则更新；"skip" → 已存在则跳过。
+
+        Returns:
+            dict with entities_created / entities_updated / entities_skipped /
+            relations_created / relations_skipped / errors。
+        """
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be a dict")
+        strategy = strategy.strip().lower()
+        if strategy not in ("upsert", "skip"):
+            raise ValueError("strategy must be 'upsert' or 'skip'")
+
+        entities_in = payload.get("entities") or []
+        relations_in = payload.get("relations") or []
+        if not isinstance(entities_in, list) or not isinstance(relations_in, list):
+            raise ValueError("entities and relations must be lists")
+
+        summary = {
+            "entities_created": 0,
+            "entities_updated": 0,
+            "entities_skipped": 0,
+            "relations_created": 0,
+            "relations_skipped": 0,
+            "errors": [],
+        }
+
+        now = datetime.utcnow()
+
+        async with self._session_factory() as session:
+            # 实体
+            existing_ids: set[str] = set()
+            if entities_in:
+                ids = [str(item.get("entity_id") or "").strip() for item in entities_in if item.get("entity_id")]
+                if ids:
+                    existing_result = await session.execute(
+                        select(KnowledgeEntityORM.entity_id).where(
+                            KnowledgeEntityORM.entity_id.in_(ids)
+                        )
+                    )
+                    existing_ids = {row[0] for row in existing_result.all()}
+
+            for item in entities_in:
+                try:
+                    entity_id = str(item.get("entity_id") or "").strip()
+                    entity_type = str(item.get("entity_type") or "").strip()
+                    canonical_name = str(item.get("canonical_name") or "").strip()
+                    if not entity_id or not entity_type or not canonical_name:
+                        summary["errors"].append(
+                            f"skip entity: missing required field (entity_id/entity_type/canonical_name)"
+                        )
+                        summary["entities_skipped"] += 1
+                        continue
+
+                    if entity_id in existing_ids:
+                        if strategy == "skip":
+                            summary["entities_skipped"] += 1
+                            continue
+                        # upsert
+                        result = await session.execute(
+                            select(KnowledgeEntityORM).where(
+                                KnowledgeEntityORM.entity_id == entity_id
+                            )
+                        )
+                        orm = result.scalar_one_or_none()
+                        if orm is None:
+                            summary["entities_skipped"] += 1
+                            continue
+                        orm.canonical_name = canonical_name
+                        orm.aliases = list(item.get("aliases") or [])
+                        orm.summary = str(item.get("summary") or "")
+                        orm.description = str(item.get("description") or "")
+                        orm.status = str(item.get("status") or "active")
+                        orm.meta = dict(item.get("meta") or {})
+                        orm.updated_by = actor
+                        orm.updated_by_user_id = actor_user_id
+                        orm.updated_at = now
+                        summary["entities_updated"] += 1
+                    else:
+                        slug = str(item.get("slug") or "").strip() or normalize_slug(canonical_name)
+                        orm = KnowledgeEntityORM(
+                            entity_id=entity_id,
+                            entity_type=entity_type,
+                            canonical_name=canonical_name,
+                            slug=slug,
+                            aliases=list(item.get("aliases") or []),
+                            summary=str(item.get("summary") or ""),
+                            description=str(item.get("description") or ""),
+                            status=str(item.get("status") or "active"),
+                            meta=dict(item.get("meta") or {}),
+                            created_by=actor,
+                            updated_by=actor,
+                            created_by_user_id=actor_user_id,
+                            updated_by_user_id=actor_user_id,
+                            created_at=now,
+                            updated_at=now,
+                        )
+                        session.add(orm)
+                        summary["entities_created"] += 1
+                except Exception as exc:
+                    summary["errors"].append(f"entity {item.get('entity_id')}: {exc}")
+                    summary["entities_skipped"] += 1
+
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                summary["errors"].append(f"entity commit integrity error: {exc}")
+
+            # 关系
+            existing_rel_keys: set[tuple[str, str, str]] = set()
+            if relations_in:
+                keys = [
+                    (
+                        str(r.get("source_entity_id") or "").strip(),
+                        str(r.get("target_entity_id") or "").strip(),
+                        str(r.get("relation_type") or "").strip(),
+                    )
+                    for r in relations_in
+                ]
+                keys = [k for k in keys if all(k)]
+                if keys:
+                    existing_rel_result = await session.execute(
+                        select(
+                            KnowledgeRelationORM.source_entity_id,
+                            KnowledgeRelationORM.target_entity_id,
+                            KnowledgeRelationORM.relation_type,
+                        )
+                    )
+                    existing_rel_keys = {tuple(row) for row in existing_rel_result.all()}
+
+            for r in relations_in:
+                try:
+                    src = str(r.get("source_entity_id") or "").strip()
+                    tgt = str(r.get("target_entity_id") or "").strip()
+                    rtype = str(r.get("relation_type") or "").strip()
+                    if not src or not tgt or not rtype:
+                        summary["relations_skipped"] += 1
+                        continue
+                    key = (src, tgt, rtype)
+                    if key in existing_rel_keys:
+                        summary["relations_skipped"] += 1
+                        continue
+                    relation_id = str(r.get("relation_id") or "").strip() or f"rel-{uuid.uuid4().hex[:12]}"
+                    orm = KnowledgeRelationORM(
+                        relation_id=relation_id,
+                        source_entity_id=src,
+                        target_entity_id=tgt,
+                        relation_type=rtype,
+                        description=str(r.get("description") or ""),
+                        evidence_id=str(r.get("evidence_id") or ""),
+                        meta=dict(r.get("meta") or {}),
+                        created_by=actor,
+                        updated_by=actor,
+                        created_by_user_id=actor_user_id,
+                        updated_by_user_id=actor_user_id,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    session.add(orm)
+                    existing_rel_keys.add(key)
+                    summary["relations_created"] += 1
+                except Exception as exc:
+                    summary["errors"].append(f"relation {r.get('relation_id')}: {exc}")
+                    summary["relations_skipped"] += 1
+
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                summary["errors"].append(f"relation commit integrity error: {exc}")
+
+        return summary

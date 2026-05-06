@@ -19,6 +19,7 @@ import EntityRelationsPanel, {
 } from '../components/knowledge/EntityRelationsPanel';
 import EvidencePanel from '../components/knowledge/EvidencePanel';
 import HumanNotesPanel from '../components/knowledge/HumanNotesPanel';
+import EntityHistoryPanel from '../components/knowledge/EntityHistoryPanel';
 import {
   DEFAULT_ENTITY_TYPE,
   extractKnowledgeEvidence,
@@ -38,9 +39,11 @@ import {
   createKnowledgeRelation,
   deleteKnowledgeEntity,
   deleteKnowledgeRelation,
+  exportKnowledge,
   getKnowledgeEntity,
   getKnowledgeGraph,
   getKnowledgeStats,
+  importKnowledge,
   listKnowledgeDrafts,
   listKnowledgeEvidence,
   listAnnotations,
@@ -113,18 +116,31 @@ export default function KnowledgePage() {
   const [activeDraftPayload, setActiveDraftPayload] = useState<AskDraftResponse | null>(null);
   const [draftSaved, setDraftSaved] = useState<AskDraftApplyResponse | null>(null);
   const [draftError, setDraftError] = useState('');
+  // PLAN-31001 Phase 5：实体列表分页 + fulltext 模式
+  const [entityTotal, setEntityTotal] = useState(0);
+  const [entityPage, setEntityPage] = useState(1);
+  const [entitySearchMode, setEntitySearchMode] = useState<'simple' | 'fulltext'>('simple');
+  const ENTITY_PAGE_SIZE = 50;
   const [draftSaving, setDraftSaving] = useState(false);
   const [relationDrafts, setRelationDrafts] = useState<Record<string, string>>({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedThread, setSelectedThread] = useState<ThreadFocus | null>(null);
   const [mergeTargetId, setMergeTargetId] = useState('');
 
-  const loadEntities = useCallback(async () => {
+  const loadEntities = useCallback(async (opts?: { append?: boolean; page?: number }) => {
+    const targetPage = opts?.page ?? 1;
     setLoading(true);
     try {
-      const res = await listKnowledgeEntities({ q: query || undefined, page_size: 100 });
-      setEntities(res.entities);
-      if (!selectedEntityId && res.entities.length > 0) {
+      const res = await listKnowledgeEntities({
+        q: query || undefined,
+        page: targetPage,
+        page_size: ENTITY_PAGE_SIZE,
+        search_mode: entitySearchMode,
+      });
+      setEntities((prev) => (opts?.append ? [...prev, ...res.entities] : res.entities));
+      setEntityTotal(res.total);
+      setEntityPage(targetPage);
+      if (!opts?.append && !selectedEntityId && res.entities.length > 0) {
         setSearchParams({ entity_id: res.entities[0].entity_id }, { replace: true });
       }
       if (selectedEntityId) {
@@ -138,7 +154,61 @@ export default function KnowledgePage() {
     } finally {
       setLoading(false);
     }
-  }, [query, selectedEntityId, setSearchParams]);
+  }, [query, selectedEntityId, setSearchParams, entitySearchMode]);
+
+  const loadMoreEntities = useCallback(async () => {
+    if (loading) return;
+    if (entities.length >= entityTotal) return;
+    await loadEntities({ append: true, page: entityPage + 1 });
+  }, [loading, entities.length, entityTotal, entityPage, loadEntities]);
+
+  const handleExportKnowledge = useCallback(async () => {
+    try {
+      const payload = await exportKnowledge();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      link.href = url;
+      link.download = `knowledge-export-${ts}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast(
+        `Exported ${payload.entity_count ?? 0} entities and ${
+          payload.relation_count ?? 0
+        } relations.`,
+        'success',
+      );
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : 'Failed to export knowledge', 'error');
+    }
+  }, []);
+
+  const handleImportKnowledge = useCallback(
+    async (file: File) => {
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        const summary = await importKnowledge(data, 'upsert');
+        showToast(
+          `Import done: ${summary.entities_created} created, ${summary.entities_updated} updated, ${summary.entities_skipped} skipped, ${summary.relations_created} relations.`,
+          summary.errors.length > 0 ? 'warning' : 'success',
+        );
+        if (summary.errors.length > 0) {
+          // eslint-disable-next-line no-console
+          console.warn('Knowledge import errors:', summary.errors);
+        }
+        await loadEntities();
+      } catch (e: unknown) {
+        showToast(e instanceof Error ? e.message : 'Failed to import knowledge', 'error');
+      }
+    },
+    [loadEntities],
+  );
 
   const loadSelectedEntity = useCallback(async () => {
     if (!selectedEntityId) {
@@ -476,13 +546,23 @@ export default function KnowledgePage() {
     if (!selectedEntity || !relationForm.target_entity_id || !canWrite) return;
     setSaving(true);
     try {
+      const direction = relationForm.direction ?? 'outgoing';
+      const sourceId =
+        direction === 'incoming' ? relationForm.target_entity_id : selectedEntity.entity_id;
+      const targetId =
+        direction === 'incoming' ? selectedEntity.entity_id : relationForm.target_entity_id;
       await createKnowledgeRelation({
-        source_entity_id: selectedEntity.entity_id,
-        target_entity_id: relationForm.target_entity_id,
+        source_entity_id: sourceId,
+        target_entity_id: targetId,
         relation_type: relationForm.relation_type,
         description: relationForm.description.trim(),
       });
-      setRelationForm({ relation_type: 'related_to', target_entity_id: '', description: '' });
+      setRelationForm({
+        relation_type: 'related_to',
+        target_entity_id: '',
+        description: '',
+        direction: 'outgoing',
+      });
       await loadRelations();
     } catch (e: unknown) {
       showToast(e instanceof Error ? e.message : 'Failed to create relation', 'error');
@@ -570,8 +650,20 @@ export default function KnowledgePage() {
         showCreate={showCreate}
         newEntity={newEntity}
         saving={saving}
+        total={entityTotal}
+        searchMode={entitySearchMode}
+        isAdmin={isAdmin}
+        onExport={isAdmin ? handleExportKnowledge : undefined}
+        onImport={isAdmin ? handleImportKnowledge : undefined}
+        onSearchModeChange={(mode) => {
+          setEntitySearchMode(mode);
+          setEntityPage(1);
+          // 用 setTimeout 延后到 state 更新后再触发，否则 loadEntities 拿到的还是旧值
+          setTimeout(() => loadEntities(), 0);
+        }}
+        onLoadMore={loadMoreEntities}
         onQueryChange={setQuery}
-        onSearch={loadEntities}
+        onSearch={() => loadEntities()}
         onToggleCreate={() => setShowCreate((value) => !value)}
         onNewEntityChange={setNewEntity}
         onCreateEntity={handleCreateEntity}
@@ -795,6 +887,8 @@ export default function KnowledgePage() {
               onAnnotationBodyChange={setAnnotationBody}
               onCreateAnnotation={handleCreateAnnotation}
             />
+
+            <EntityHistoryPanel entityId={selectedEntityId} />
           </div>
         )}
       </main>

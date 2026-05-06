@@ -376,15 +376,52 @@ class KnowledgeEntityORM(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+    # 全文搜索向量（PLAN-31001 Phase 3），由 init_db 阶段的触发器维护
+    search_vector: Mapped[Optional[str]] = mapped_column(TSVECTOR, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("entity_id", name="uq_knowledge_entities_entity_id"),
         UniqueConstraint("entity_type", "slug", name="uq_knowledge_entities_type_slug"),
         Index("ix_knowledge_entities_type_name", "entity_type", "canonical_name"),
+        Index("ix_knowledge_entities_search_vector", "search_vector", postgresql_using="gin"),
     )
 
     def __repr__(self) -> str:
         return f"<KnowledgeEntityORM entity_id={self.entity_id!r} canonical_name={self.canonical_name!r}>"
+
+
+class KnowledgeEntityVersionORM(Base):
+    """知识实体的变更快照（PLAN-31001 Phase 4）。
+
+    每次 `KnowledgeStore.update` 在写入新内容前先把旧值快照写入此表，
+    用于审计与历史回溯。删除实体时不级联删除快照（保留审计痕迹）。
+    """
+
+    __tablename__ = "knowledge_entity_versions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entity_id: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    canonical_name: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    aliases: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    meta: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    change_note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    changed_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
+    changed_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, index=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("entity_id", "version", name="uq_knowledge_entity_versions_entity_version"),
+        Index("ix_knowledge_entity_versions_entity_changed", "entity_id", "changed_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<KnowledgeEntityVersionORM entity_id={self.entity_id!r} version={self.version}>"
 
 
 class KnowledgeRelationORM(Base):
@@ -953,6 +990,25 @@ class KnowledgeEntityRead(BaseModel):
     updated_by_user_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeEntityVersionRead(BaseModel):
+    """KnowledgeEntityVersion 的 API 投影（PLAN-31001 Phase 4）。"""
+
+    entity_id: str
+    version: int
+    canonical_name: str = ""
+    aliases: list[str] = Field(default_factory=list)
+    summary: str = ""
+    description: str = ""
+    status: str = "active"
+    meta: dict = Field(default_factory=dict)
+    change_note: str = ""
+    changed_by: str = "me"
+    changed_by_user_id: Optional[str] = None
+    changed_at: datetime
 
     model_config = {"from_attributes": True}
 

@@ -127,7 +127,7 @@ class PostgresStorage(BaseStorage):
             """))
 
             await conn.execute(text("""
-                DO $$
+                DO $
                 BEGIN
                     IF EXISTS (
                         SELECT 1 FROM pg_extension WHERE extname = 'vector'
@@ -142,10 +142,87 @@ class PostgresStorage(BaseStorage):
                 EXCEPTION WHEN others THEN
                     RAISE NOTICE 'Skipping email chunk vector index: %', SQLERRM;
                 END
-                $$;
+                $;
             """))
 
+            await self._ensure_knowledge_search_vector(conn)
+
         logger.info("Database initialized: tables, indexes, and triggers created")
+
+    async def _ensure_knowledge_search_vector(self, conn) -> None:
+        """PLAN-31001 Phase 3：为 knowledge_entities 维护 search_vector 列与触发器。
+
+        在表已存在的部署上幂等地补齐：
+          1. 如果表中没有 search_vector 列则添加（通过 SQLAlchemy create_all 已尝试创建，
+             但老部署也需要 ADD COLUMN IF NOT EXISTS 兜底）。
+          2. 创建 GIN 索引 ix_knowledge_entities_search_vector（IF NOT EXISTS）。
+          3. 创建/替换 trigger function knowledge_entities_search_vector_update。
+          4. 用 DO $ ... $ 安装 trigger（IF NOT EXISTS 等价）。
+          5. 一次性回填存量记录（仅当 search_vector 全为 NULL 时）。
+
+        失败均不抛错，只记录警告，避免阻塞主流程。
+        """
+        try:
+            await conn.execute(text(
+                "ALTER TABLE knowledge_entities "
+                "ADD COLUMN IF NOT EXISTS search_vector tsvector"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_knowledge_entities_search_vector "
+                "ON knowledge_entities USING gin (search_vector)"
+            ))
+
+            await conn.execute(text("""
+                CREATE OR REPLACE FUNCTION knowledge_entities_search_vector_update() RETURNS trigger AS $
+                BEGIN
+                    NEW.search_vector :=
+                        setweight(to_tsvector('english', COALESCE(NEW.canonical_name, '')), 'A') ||
+                        setweight(to_tsvector('english', COALESCE(
+                            CASE
+                                WHEN jsonb_typeof(NEW.aliases) = 'array'
+                                THEN array_to_string(ARRAY(SELECT jsonb_array_elements_text(NEW.aliases)), ' ')
+                                ELSE ''
+                            END
+                        , '')), 'B') ||
+                        setweight(to_tsvector('english', COALESCE(NEW.summary, '')), 'C') ||
+                        setweight(to_tsvector('english', COALESCE(NEW.description, '')), 'D');
+                    RETURN NEW;
+                END
+                $ LANGUAGE plpgsql;
+            """))
+
+            await conn.execute(text("""
+                DO $
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_trigger WHERE tgname = 'knowledge_entities_search_vector_trigger'
+                    ) THEN
+                        CREATE TRIGGER knowledge_entities_search_vector_trigger
+                        BEFORE INSERT OR UPDATE ON knowledge_entities
+                        FOR EACH ROW EXECUTE FUNCTION knowledge_entities_search_vector_update();
+                    END IF;
+                END
+                $;
+            """))
+
+            # 回填：只有当全表都没有 search_vector 时才跑全量 UPDATE，避免反复扫描
+            null_count = (await conn.execute(text(
+                "SELECT COUNT(*) FROM knowledge_entities WHERE search_vector IS NULL LIMIT 1"
+            ))).scalar() or 0
+            if null_count:
+                await conn.execute(text(
+                    "UPDATE knowledge_entities SET search_vector = "
+                    "setweight(to_tsvector('english', COALESCE(canonical_name, '')), 'A') || "
+                    "setweight(to_tsvector('english', COALESCE("
+                    "CASE WHEN jsonb_typeof(aliases) = 'array' "
+                    "THEN array_to_string(ARRAY(SELECT jsonb_array_elements_text(aliases)), ' ') "
+                    "ELSE '' END, '')), 'B') || "
+                    "setweight(to_tsvector('english', COALESCE(summary, '')), 'C') || "
+                    "setweight(to_tsvector('english', COALESCE(description, '')), 'D') "
+                    "WHERE search_vector IS NULL"
+                ))
+        except Exception as exc:
+            logger.warning("Failed to ensure knowledge_entities search_vector: %s", exc)
 
     async def _ensure_multi_user_columns(self, conn) -> None:
         """为已有部署补充多用户相关列。"""

@@ -526,6 +526,7 @@ export interface KnowledgeEntityListResponse {
   total: number;
   page: number;
   page_size: number;
+  search_mode?: 'simple' | 'fulltext';
 }
 
 export interface KnowledgeRelation {
@@ -618,6 +619,73 @@ export interface KnowledgeEntityMergeResponse {
   source: KnowledgeEntity;
   target: KnowledgeEntity;
   moved: Record<string, number>;
+}
+
+// ============================================================
+// PLAN-31001 Phase 4：变更历史 + 导入导出
+// ============================================================
+
+export interface KnowledgeEntityVersion {
+  entity_id: string;
+  version: number;
+  canonical_name: string;
+  aliases: string[];
+  summary: string;
+  description: string;
+  status: string;
+  meta: Record<string, unknown>;
+  change_note: string;
+  changed_by: string;
+  changed_by_user_id?: string | null;
+  changed_at: string;
+}
+
+export interface KnowledgeExportEntity {
+  entity_id: string;
+  entity_type: string;
+  canonical_name: string;
+  slug?: string;
+  aliases?: string[];
+  summary?: string;
+  description?: string;
+  status?: string;
+  meta?: Record<string, unknown>;
+  created_by?: string;
+  updated_by?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface KnowledgeExportRelation {
+  relation_id?: string;
+  source_entity_id: string;
+  target_entity_id: string;
+  relation_type: string;
+  description?: string;
+  evidence_id?: string;
+  meta?: Record<string, unknown>;
+  created_by?: string;
+  updated_by?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface KnowledgeExportPayload {
+  schema_version?: number;
+  exported_at?: string;
+  entity_count?: number;
+  relation_count?: number;
+  entities: KnowledgeExportEntity[];
+  relations: KnowledgeExportRelation[];
+}
+
+export interface KnowledgeImportSummary {
+  entities_created: number;
+  entities_updated: number;
+  entities_skipped: number;
+  relations_created: number;
+  relations_skipped: number;
+  errors: string[];
 }
 
 // ============================================================

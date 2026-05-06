@@ -1,6 +1,6 @@
 # Plans Index
 
-> Last reorganized: **2026-05-06** (PLAN-34001 closed → done/)
+> Last reorganized: **2026-05-06** (PLAN-31001 closed → done/)
 
 本目录维护项目的规约文档（PLAN-xxx）。已完成的计划归档到 `done/`，被取代的计划归档到 `done/superseded/`。每个活跃 PLAN 顶部应当带元数据头：
 
@@ -13,12 +13,11 @@
 
 ---
 
-## 活跃计划（6）
+## 活跃计划（5）
 
 | PLAN | 主题 | Status | Priority | 备注 |
 |------|------|--------|----------|------|
 | [PLAN-30002](PLAN-30002-external-code-jump.md) | 外链代码跳转（Elixir/lore） | in-progress | **P1** | 反向闭环 + Phase 1+2+3+4+5 已完成；仅剩 external_links 内网镜像验证 |
-| [PLAN-31001](PLAN-31001-knowledge-graph-enhancements.md) | 知识图谱功能增强 | in-progress | P1 | 实体删除 / 图谱遍历 / 内核版本关联未做 |
 | [PLAN-31004](PLAN-31004-ui-information-hierarchy.md) | UI 信息层次与首屏引导（Workbench 第二轮） | planned | **P1** | Dashboard + Sticky 上下文条 + 信息密度 |
 | [PLAN-31002](PLAN-31002-knowledge-workbench-roadmap.md) | Knowledge Workbench 路线图 | in-progress | P2 | 范围过大，新工作请新建独立 PLAN 引用 |
 | [PLAN-36000](PLAN-36000-survey-style-batch-tagging.md) | Survey-Style 批量打标签（YAML 问卷） | planned | P2 | 借鉴 eunomia-bpf/code-survey；先 Phase 1 PoC 验证质量 |
@@ -32,13 +31,13 @@
 2. ~~**P1** PLAN-34000 Phase 4 组件拆分（ThreadDrawer / KnowledgePage / SearchPage / KernelCodePage / AskPage）~~ ✅ 2026-05-06
 3. ~~**P1** PLAN-34000 Phase 1/3/5 收尾（SemanticRetriever 测试 2→6、confirm/prompt → ConfirmModal、KnowledgePage chunk 500→54 KB）~~ ✅ 2026-05-06
 4. ~~**P1** PLAN-34001 贡献度标记（后端 `/api/contributions/lookup` + 前端 chip）~~ ✅ 2026-05-06
-5. **P1** PLAN-31001 Phase 1（实体删除 API + 图谱遍历 API + 简单可视化）
+5. ~~**P1** PLAN-31001 Phase 3+4+5 收尾（fulltext search / import-export / history / direction switch / load more）~~ ✅ 2026-05-06
 6. **P1** PLAN-30002 Phase 3+5（ThreadDrawer 邮件正文路径识别 + lore 链接）
 7. **P3** PLAN-35001 P1 起步（本地小模型去噪，零 API 成本）
 
 ---
 
-## 已完成（done/，22）
+## 已完成（done/，23）
 
 按时间顺序从早到晚：
 
@@ -63,6 +62,7 @@
 - 知识图谱与标签底座
   - PLAN-20000 通用知识标签系统
   - PLAN-31000 统一知识图谱 Phase 1~Graph projection
+  - PLAN-31001 知识图谱功能增强（Phase 1 实体删除/图谱可视化/遍历 API；Phase 2 内核版本+文件/符号链接；Phase 3 fulltext search GIN+tsvector；Phase 4 import/export + 变更历史 knowledge_entity_versions；Phase 5 反向引用 KnowledgeBackRefs + 关系方向切换 + relation_type 过滤 + load-more 分页；新增 15 项后端测试，2026-05-06 收尾）
   - PLAN-31003 UI Workbench 第一轮整理
   - PLAN-32000 安全/稳定性修复（API key、密码环境变量化）
   - PLAN-33000 Ask ↔ Knowledge 双向闭环 P0

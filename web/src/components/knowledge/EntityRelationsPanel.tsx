@@ -14,6 +14,11 @@ export interface RelationForm {
   relation_type: string;
   target_entity_id: string;
   description: string;
+  /**
+   * outgoing: 当前实体作为 source → 目标实体作为 target。
+   * incoming: 目标实体作为 source → 当前实体作为 target（反向）。
+   */
+  direction?: 'outgoing' | 'incoming';
 }
 
 export type ViewMode = 'list' | 'graph';
@@ -221,6 +226,42 @@ export default function EntityRelationsPanel({
         <>
           {canWrite && (
             <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <div className="mb-3 flex items-center gap-2 text-xs text-gray-600">
+                <span className="font-semibold uppercase tracking-wide text-[10px] text-gray-500">
+                  Direction
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onRelationFormChange({ ...relationForm, direction: 'outgoing' })
+                  }
+                  className={`rounded-full border px-2 py-0.5 ${
+                    (relationForm.direction ?? 'outgoing') === 'outgoing'
+                      ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
+                      : 'border-gray-300 text-gray-500 hover:bg-gray-100'
+                  }`}
+                >
+                  This → Target
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onRelationFormChange({ ...relationForm, direction: 'incoming' })
+                  }
+                  className={`rounded-full border px-2 py-0.5 ${
+                    relationForm.direction === 'incoming'
+                      ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
+                      : 'border-gray-300 text-gray-500 hover:bg-gray-100'
+                  }`}
+                >
+                  Target → This
+                </button>
+                <span className="ml-auto text-[10px] text-gray-400">
+                  {(relationForm.direction ?? 'outgoing') === 'outgoing'
+                    ? 'Add an outgoing relation'
+                    : 'Add an incoming relation'}
+                </span>
+              </div>
               <div className="grid gap-3 md:grid-cols-[160px_1fr]">
                 <select
                   value={relationForm.relation_type}
