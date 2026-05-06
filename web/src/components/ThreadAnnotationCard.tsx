@@ -11,6 +11,7 @@ import type { Annotation } from '../api/types';
 import EmailTagEditor from './EmailTagEditor';
 import { showToast } from './Toast';
 import { useAuth } from '../auth';
+import ConfirmModal from './ConfirmModal';
 
 // =============================================================
 // 批注输入组件（Thread 抽屉内嵌版）
@@ -108,6 +109,7 @@ export default function ThreadAnnotationCard({
 }) {
   const { canWrite, currentUser, isAdmin } = useAuth();
   const [editing, setEditing] = useState(false);
+  const [reviewAction, setReviewAction] = useState<'approve' | 'reject' | null>(null);
   const canManage =
     !!currentUser &&
     (isAdmin ||
@@ -135,7 +137,24 @@ export default function ThreadAnnotationCard({
           ? 'bg-rose-100 text-rose-800'
           : 'bg-slate-100 text-slate-700';
 
+  const handleReviewConfirm = async (inputValue: string) => {
+    if (!reviewAction) return;
+    const action = reviewAction;
+    setReviewAction(null);
+    try {
+      if (action === 'approve') {
+        await approveAnnotationPublication(annotation.annotation_id, inputValue);
+      } else {
+        await rejectAnnotationPublication(annotation.annotation_id, inputValue);
+      }
+      onRefresh();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : (action === 'approve' ? '审核通过失败' : '驳回失败'), 'error');
+    }
+  };
+
   return (
+    <>
     <div
       data-annotation-id={annotation.annotation_id}
       className={`annotation-node border-l-4 rounded-lg p-4 my-2 transition-all ${
@@ -222,29 +241,13 @@ export default function ThreadAnnotationCard({
               {canReviewPublish && (
                 <>
                   <button
-                    onClick={async () => {
-                      try {
-                        const reviewComment = window.prompt('审核备注（可选）', '') || '';
-                        await approveAnnotationPublication(annotation.annotation_id, reviewComment);
-                        onRefresh();
-                      } catch (e) {
-                        showToast(e instanceof Error ? e.message : '审核通过失败', 'error');
-                      }
-                    }}
+                    onClick={() => setReviewAction('approve')}
                     className="text-xs px-2 py-1 text-emerald-700 bg-emerald-100 hover:bg-emerald-200 rounded transition-colors"
                   >
                     通过公开
                   </button>
                   <button
-                    onClick={async () => {
-                      try {
-                        const reviewComment = window.prompt('驳回原因（可选）', '') || '';
-                        await rejectAnnotationPublication(annotation.annotation_id, reviewComment);
-                        onRefresh();
-                      } catch (e) {
-                        showToast(e instanceof Error ? e.message : '驳回失败', 'error');
-                      }
-                    }}
+                    onClick={() => setReviewAction('reject')}
                     className="text-xs px-2 py-1 text-rose-700 bg-rose-100 hover:bg-rose-200 rounded transition-colors"
                   >
                     驳回
@@ -284,5 +287,22 @@ export default function ThreadAnnotationCard({
         </>
       )}
     </div>
+    <ConfirmModal
+      isOpen={reviewAction !== null}
+      title={reviewAction === 'approve' ? '审核通过' : '驳回发布'}
+      message={
+        reviewAction === 'approve'
+          ? '确认通过此批注的公开申请？可以留下审核备注。'
+          : '确认驳回此批注的公开申请？可以填写驳回原因。'
+      }
+      confirmLabel={reviewAction === 'approve' ? '通过' : '驳回'}
+      variant={reviewAction === 'approve' ? 'primary' : 'warning'}
+      showInput
+      inputLabel={reviewAction === 'approve' ? '审核备注（可选）' : '驳回原因（可选）'}
+      inputPlaceholder={reviewAction === 'approve' ? '例如：内容清晰，通过' : '例如：内容需要补充证据'}
+      onConfirm={handleReviewConfirm}
+      onCancel={() => setReviewAction(null)}
+    />
+    </>
   );
 }

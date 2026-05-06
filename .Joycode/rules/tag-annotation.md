@@ -56,7 +56,7 @@
 - 批注的 `in_reply_to` 可能是 `annotation_id` 也可能是 `message_id`，查询时需注意
 - `_resolve_tag` 找不到 tag 时返回 None（不静默创建），调用方需显式处理
 - Tag tree 每次 API 调用完整拉取，在前端解析为树结构；`get_targets_by_tag` 使用批量查询
-- 前端 ConfirmModal + Toast 替代原生弹窗，但 ThreadDrawer 内部 AnnotationCard 暂保留 `window.prompt`
+- 前端 ConfirmModal + Toast 已全面替代原生弹窗（ThreadAnnotationCard / KernelCodePage AnnotationPanel / TagManager / UsersPage 的 window.prompt/confirm/alert 2026-05-06 全部清零）
 - `TagBundle.inherited_tags` 字段已移除（从未实现，死代码）
 
 ## 存储层

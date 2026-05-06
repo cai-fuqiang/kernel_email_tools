@@ -16,6 +16,12 @@ import {
 } from '../api/client';
 import ThreadDrawer from './ThreadDrawer';
 import { useAuth } from '../auth';
+import ConfirmModal from './ConfirmModal';
+
+type TagAction =
+  | { kind: 'delete'; tagId: number; tagName: string }
+  | { kind: 'merge'; sourceId: number; sourceName: string }
+  | { kind: 'move'; assignment: TagTargetItem; sourceTagName: string };
 
 interface TagManagerProps {
   onTagsChanged?: () => void;
@@ -41,6 +47,7 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
     focusMessageId?: string;
     focusAnnotationId?: string;
   } | null>(null);
+  const [pendingAction, setPendingAction] = useState<TagAction | null>(null);
 
   const loadTags = async () => {
     try {
@@ -84,17 +91,8 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
     }
   };
 
-  const handleDelete = async (tagId: number, tagName: string) => {
-    if (!confirm(`Delete tag "${tagName}" and all its children?`)) return;
-    setError('');
-    try {
-      await deleteTag(tagId);
-      if (expandedTag === tagName) setExpandedTag(null);
-      await loadTags();
-      onTagsChanged?.();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to delete tag');
-    }
+  const handleDelete = (tagId: number, tagName: string) => {
+    setPendingAction({ kind: 'delete', tagId, tagName });
   };
 
   const handleStartRename = (tagId: number, name: string) => {
@@ -102,12 +100,29 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
     setEditTagName(name);
   };
 
-  const handleMerge = async (sourceId: number, sourceName: string) => {
-    const targetName = window.prompt(`将 "${sourceName}" 合并到哪个标签？（输入目标标签名）`);
-    if (!targetName?.trim()) return;
+  const handleMerge = (sourceId: number, sourceName: string) => {
+    setPendingAction({ kind: 'merge', sourceId, sourceName });
+  };
+
+  const performDelete = async (action: { tagId: number; tagName: string }) => {
     setError('');
     try {
-      // Look up the target tag ID by name from the tree
+      await deleteTag(action.tagId);
+      if (expandedTag === action.tagName) setExpandedTag(null);
+      await loadTags();
+      onTagsChanged?.();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to delete tag');
+    }
+  };
+
+  const performMerge = async (action: { sourceId: number; sourceName: string }, targetName: string) => {
+    if (!targetName.trim()) {
+      setError('Target tag name is required');
+      return;
+    }
+    setError('');
+    try {
       const findTag = (nodes: TagTree[]): number | null => {
         for (const n of nodes) {
           if (n.name === targetName.trim()) return n.id;
@@ -118,7 +133,7 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
       };
       const targetId = findTag(tags);
       if (!targetId) throw new Error(`Tag "${targetName}" not found`);
-      const result = await mergeTags(sourceId, targetId);
+      const result = await mergeTags(action.sourceId, targetId);
       if (result.status === 'ok') {
         await loadTags();
         onTagsChanged?.();
@@ -144,39 +159,88 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
     }
   };
 
-  const handleMoveAssignment = async (assignment: TagTargetItem, sourceTagName: string) => {
-    const targetTagName = window.prompt(`将此项从 "${sourceTagName}" 移动到哪个标签？（输入目标标签名）`, '');
-    if (!targetTagName?.trim() || targetTagName.trim() === sourceTagName) return;
+  const handleMoveAssignment = (assignment: TagTargetItem, sourceTagName: string) => {
+    setPendingAction({ kind: 'move', assignment, sourceTagName });
+  };
+
+  const performMoveAssignment = async (
+    action: { assignment: TagTargetItem; sourceTagName: string },
+    targetTagName: string,
+  ) => {
+    if (!targetTagName.trim() || targetTagName.trim() === action.sourceTagName) return;
     setError('');
     try {
-      await deleteTagAssignment(assignment.assignment_id);
+      await deleteTagAssignment(action.assignment.assignment_id);
       try {
         await createTagAssignment({
           tag_name: targetTagName.trim(),
-          target_type: assignment.target_type,
-          target_ref: assignment.target_ref,
-          anchor: assignment.target_meta || undefined,
+          target_type: action.assignment.target_type,
+          target_ref: action.assignment.target_ref,
+          anchor: action.assignment.target_meta || undefined,
         });
       } catch {
         // Rollback: re-create original assignment
         await createTagAssignment({
-          tag_name: sourceTagName,
-          target_type: assignment.target_type,
-          target_ref: assignment.target_ref,
-          anchor: assignment.target_meta || undefined,
+          tag_name: action.sourceTagName,
+          target_type: action.assignment.target_type,
+          target_ref: action.assignment.target_ref,
+          anchor: action.assignment.target_meta || undefined,
         });
         throw new Error(`Failed to assign to "${targetTagName}", rolled back`);
       }
       await loadTags();
-      if (expandedTag === sourceTagName) {
+      if (expandedTag === action.sourceTagName) {
         // Refresh the target list
         setExpandedTag(null);
-        setTimeout(() => setExpandedTag(sourceTagName), 50);
+        setTimeout(() => setExpandedTag(action.sourceTagName), 50);
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to move assignment');
     }
   };
+
+  const handleConfirmPendingAction = async (inputValue: string) => {
+    if (!pendingAction) return;
+    const action = pendingAction;
+    setPendingAction(null);
+    if (action.kind === 'delete') {
+      await performDelete({ tagId: action.tagId, tagName: action.tagName });
+    } else if (action.kind === 'merge') {
+      await performMerge({ sourceId: action.sourceId, sourceName: action.sourceName }, inputValue);
+    } else if (action.kind === 'move') {
+      await performMoveAssignment({ assignment: action.assignment, sourceTagName: action.sourceTagName }, inputValue);
+    }
+  };
+
+  const pendingModalConfig = pendingAction ? (
+    pendingAction.kind === 'delete'
+      ? {
+          title: `删除标签 "${pendingAction.tagName}"`,
+          message: '这会同时删除所有子标签。此操作不可恢复。',
+          confirmLabel: '删除',
+          variant: 'danger' as const,
+          showInput: false,
+        }
+      : pendingAction.kind === 'merge'
+      ? {
+          title: `合并标签 "${pendingAction.sourceName}"`,
+          message: '输入目标标签名，当前标签的绑定和子标签将并入目标。',
+          confirmLabel: '合并',
+          variant: 'primary' as const,
+          showInput: true,
+          inputLabel: '目标标签名',
+          inputPlaceholder: '例如：kernel',
+        }
+      : {
+          title: `移动此项到其它标签`,
+          message: `当前来源标签：${pendingAction.sourceTagName}`,
+          confirmLabel: '移动',
+          variant: 'primary' as const,
+          showInput: true,
+          inputLabel: '目标标签名',
+          inputPlaceholder: '输入目标标签名',
+        }
+  ) : null;
 
   const handleToggleExpand = (tagName: string) => {
     setExpandedTag((prev) => (prev === tagName ? null : tagName));
@@ -346,6 +410,18 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
           onClose={() => setSelectedThread(null)}
         />
       )}
+      <ConfirmModal
+        isOpen={!!pendingAction}
+        title={pendingModalConfig?.title || ''}
+        message={pendingModalConfig?.message || ''}
+        confirmLabel={pendingModalConfig?.confirmLabel}
+        variant={pendingModalConfig?.variant}
+        showInput={pendingModalConfig?.showInput}
+        inputLabel={pendingModalConfig?.inputLabel}
+        inputPlaceholder={pendingModalConfig?.inputPlaceholder}
+        onConfirm={handleConfirmPendingAction}
+        onCancel={() => setPendingAction(null)}
+      />
     </div>
   );
 }

@@ -1,10 +1,14 @@
+import { lazy, Suspense } from 'react';
 import type {
   KnowledgeEntity,
   KnowledgeGraphResponse,
   KnowledgeRelation,
 } from '../../api/types';
-import KnowledgeGraphView from '../KnowledgeGraphView';
 import { RELATION_TYPES, relationEntityName, relationLabel } from './knowledgeUtils';
+
+// Lazy-load the graph view because cytoscape (~6 MB) is the heaviest dep on this page.
+// Users only need it when they switch to graph mode.
+const KnowledgeGraphView = lazy(() => import('../KnowledgeGraphView'));
 
 export interface RelationForm {
   relation_type: string;
@@ -193,12 +197,20 @@ export default function EntityRelationsPanel({
               Loading graph...
             </div>
           ) : graphData && graphData.edges.length > 0 ? (
-            <KnowledgeGraphView
-              nodes={graphData.nodes}
-              edges={graphData.edges}
-              centerEntityId={selectedEntity.entity_id}
-              onNodeClick={(entityId) => onSelectEntity(entityId)}
-            />
+            <Suspense
+              fallback={
+                <div className="flex h-[520px] items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-500">
+                  Loading graph view...
+                </div>
+              }
+            >
+              <KnowledgeGraphView
+                nodes={graphData.nodes}
+                edges={graphData.edges}
+                centerEntityId={selectedEntity.entity_id}
+                onNodeClick={(entityId) => onSelectEntity(entityId)}
+              />
+            </Suspense>
           ) : (
             <div className="flex h-[200px] items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-500">
               No graph data available for the selected depth.

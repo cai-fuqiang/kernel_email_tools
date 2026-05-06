@@ -1,7 +1,7 @@
-> **Status**: in-progress (Phase 1 done; Phase 3 partial; Phase 4 done; Phase 5 partial; Phase 2 未做)
+> **Status**: done (Phase 1 done; Phase 3 done except language unification; Phase 4 done; Phase 5 done except symbol search / Knowledge dedup; Phase 2 派生为 PLAN-34001)
 > **Updated**: 2026-05-06
 > **Depends-on**: 无
-> **Priority**: P1 — ThreadDrawer 2085→719 行（-65%），KnowledgePage 1644→810 行（-51%），SearchPage 841→547 行（-35%）
+> **Priority**: P1 — ThreadDrawer 2085→719 行（-65%），KnowledgePage 1644→810 行（-51%），SearchPage 841→547 行（-35%），KernelCodePage 708→486 行（-31%），AskPage 656→465 行（-29%）；KnowledgePage 构建 chunk 500→54 KB（-89%）；SemanticRetriever 测试 2→6 项
 
 # PLAN-34000: Semantic Search and Product Quality Improvements
 
@@ -20,8 +20,22 @@ The implementation is split into phases so the first delivery can be small and s
 - Phase 4 ThreadDrawer split (second batch, 2026-05-01): `LayeredEmailCard` 和 `TreeEmailCard` 抽出为独立文件；同时把共享工具拆出 `utils/threadTree.ts`（ThreadNode + buildThreadTree / buildNodeMap / getVisibleNodes / countDescendants / collectDescendantIds + FoldLevel / ViewMode / TranslationMap 类型）和 `utils/emailBody.ts`（parseParagraphs / getDisplayBody / shouldTranslate / getAuthorName / stripDiffAndSignature 等）。`ThreadDrawer.tsx` 从 1611 行进一步降到 719 行，累计减重 -65%（2085→719）。
 - Phase 4 KnowledgePage split (2026-05-06): 抽出 `components/knowledge/` 目录下 8 个独立子组件（DraftInboxPanel / EntityListPanel / EntityDetailHeader + DeleteConfirmModal / EntityMetricsCards / EntityExplanationEditor / EntityRelationsPanel / EvidencePanel / HumanNotesPanel）以及共享工具文件 `knowledgeUtils.ts`（常量 / type / formatDate / statusTone / extractKnowledgeEvidence / normalizeDraftPayload / agentDraftMeta 等）。`KnowledgePage.tsx` 从 1644 行降到 810 行，-51%。主页面只保留 state / hooks / handlers，最大子组件 293 行。`npm run build` + `npm run lint` 对本次改动全部通过。
 - Phase 4 SearchPage split (2026-05-06): 抽出 `components/search/` 目录下 6 个独立子组件（SearchBar / AdvancedFilters / SummaryPanel / BatchTagBar / AnnotationResults / ResultCard）和共享工具 `searchUtils.ts`（escapeHtml / highlightSnippet / normalizeMessageId / resolveCitationSource / compactSender / compactDate / truncateText / errorMessage / citationLabel）。`SearchPage.tsx` 从 841 行降到 547 行，-35%。子组件最大 154 行（AdvancedFilters）。同时修复 `PreviewModal.tsx` 的 `@typescript-eslint/no-unused-vars` 错误，`npm run lint` 全绿（零错误零警告），`npm run build` 成功。
-- Phase 5 is partially implemented: route-level code splitting is active, Manual Search has richer previews and an Ask Manuals path, Knowledge shows evidence quality summary, and Code Browser uses the existing kernel tree API for path browsing.
-- Larger follow-ups still intentionally remain: deeper Knowledge duplicate prevention, full Kernel annotation review UX replacement for confirm/prompt flows, and annotation drift detection across kernel versions.
+- Phase 4 AskPage split (2026-05-06): 抽出 `components/ask/ConversationCard.tsx`（158 行，含 `ConversationTurn` type 导出 + `buildSourceMap` / `renderAnswerWithLinks` 内部辅助），同时删除本地重复的 `normalizeMessageId` / `compactSender` / `compactDate` / `truncateText` / `citationLabel`，改为从 `components/search/searchUtils.ts` 导入复用。`AskPage.tsx` 从 656 行降到 465 行，-29%。`npm run lint` 全绿，`npm run build` 成功。
+- Phase 4 KernelCodePage split (2026-05-06): 抽出 `components/kernelCode/AnnotationPanel.tsx`（225 行，含 `PublishButton` 内部子组件、批注 CRUD / 发布审核交互、Markdown 渲染、Tag 编辑器联动）。同时清理 KernelCodePage 中已不再使用的 import（ReactMarkdown / remarkGfm / createCodeAnnotation / deleteCodeAnnotation / 4 个 publication API / EmailTagEditor / useAuth）。`KernelCodePage.tsx` 从 708 行降到 486 行，-31%。`npm run lint` 全绿，`npm run build` 成功。
+- Phase 1 test plan completion (2026-05-06): `tests/test_semantic_retriever.py` 从 2 个测试扩充到 6 个，新增 `test_semantic_retriever_pagination`（page 1/2/3 切片 + 总数）、`test_semantic_retriever_forwards_date_filters`（date_from/date_to 透传）、`test_semantic_retriever_missing_embedding_provider_returns_empty`（缺失 provider 时返回空 + 警告日志 + 不调用 storage）、`test_semantic_retriever_disabled_returns_empty`（disabled 短路）。同时 `tests/test_search.py` 中 9 个 `_is_semantic_query` routing 测试保持。`pytest tests/test_semantic_retriever.py tests/test_search.py -v` 共 15 个测试全过。
+- Phase 3 confirm/prompt → ConfirmModal 替换 (2026-05-06): 替换 9 处原生 `window.prompt` / `window.alert` / 全局 `confirm()` 为 `ConfirmModal` + `showToast()`：
+  - `components/kernelCode/AnnotationPanel.tsx`: 4 处（审核备注/驳回原因 prompt + 删除注解/回复 confirm）→ 单一 `pendingAction` state + 4-action modal config map
+  - `components/ThreadAnnotationCard.tsx`: 2 处（审核通过/驳回 prompt）→ `reviewAction` state + ConfirmModal
+  - `components/TagManager.tsx`: 3 处（删除标签 confirm + 合并 prompt + 移动 prompt）→ `pendingAction` state + 3-kind action handler
+  - `pages/UsersPage.tsx`: 3 处（reject reason + reset password prompt + reset password alert）→ `pendingAction` state + ConfirmModal + showToast
+  - 验证：`grep -rnE 'window\.(confirm|prompt|alert)|confirm\(|prompt\(|alert\(' web/src` 返回零结果，`npm run lint` 全绿，`npm run build` 成功
+- Phase 5 KnowledgePage chunk lazy-load (2026-05-06): `components/knowledge/EntityRelationsPanel.tsx` 把 `KnowledgeGraphView` 改为 `lazy(() => import('../KnowledgeGraphView'))`，套上 `<Suspense fallback="Loading graph view..." />`。`KnowledgeGraphView` 的 cytoscape (~5.9 MB node_modules) 现在只在用户切到 graph 模式时才下载。构建产物：`KnowledgePage-*.js` 从 500 KB → **54 KB（-89%）**，`KnowledgeGraphView-*.js` 单独 chunk 446 KB（按需）。**Vite 大 chunk 警告已消除**（`built in 2.12s`，无 "chunks larger than 500 kB"）。
+- Phase 2 派生为 PLAN-34001（贡献度标记）: Phase 2 提到的 "Surface whether an email/thread already contributed to saved Knowledge / annotation / draft" 是端到端特性（后端 `/api/contributions/lookup` + 前端 hook + 多页面 chip），范围与主 PLAN 风险拆分独立处理。详见 `PLAN-34001-evidence-contribution-badges.md`。
+- Larger follow-ups still intentionally remain in separate PLANs:
+  - PLAN-34001（贡献度标记）— planned
+  - PLAN-31001 / PLAN-31002（Knowledge 去重合并、graph/list 切换体验）— in-progress
+  - PLAN-30002 Phase 3+5（ThreadDrawer 邮件正文路径识别、lore 链接）— in-progress
+  - 跨内核版本 annotation drift detection — 未开始
 
 ## Phase 1: Make `mode=semantic` Real
 

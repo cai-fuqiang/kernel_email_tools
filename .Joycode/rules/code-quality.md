@@ -8,7 +8,8 @@
 | `web/src/components/ThreadDrawer.tsx` | 719 | 正常 | 拆分完成（PatchDiffBlock / KnowledgeBackRefs / ThreadAnnotationCard / LayeredEmailCard / TreeEmailCard 已抽出 + utils/threadTree + utils/emailBody，2085→719，-65%） |
 | `web/src/pages/KnowledgePage.tsx` | 810 | 正常 | 拆分完成（DraftInboxPanel / EntityListPanel / EntityDetailHeader + DeleteConfirmModal / EntityMetricsCards / EntityExplanationEditor / EntityRelationsPanel / EvidencePanel / HumanNotesPanel 已抽出 + knowledgeUtils，1644→810，-51%） |
 | `web/src/pages/SearchPage.tsx` | 547 | 正常 | 拆分完成（SearchBar / AdvancedFilters / SummaryPanel / BatchTagBar / AnnotationResults / ResultCard + searchUtils，841→547，-35%） |
-| `web/src/pages/KernelCodePage.tsx` | 579 | 正常 | — |
+| `web/src/pages/KernelCodePage.tsx` | 486 | 正常 | 拆分完成（AnnotationPanel 抽出到 components/kernelCode/，708→486，-31%） |
+| `web/src/pages/AskPage.tsx` | 465 | 正常 | 拆分完成（ConversationCard 抽出到 components/ask/，复用 searchUtils 去重，656→465，-29%） |
 
 ## 死代码清单
 
@@ -22,7 +23,7 @@
 ### 权限检查——应提取为 `canManageAnnotation(user, annotation): boolean`
 出现在以下位置：
 - `web/src/components/ThreadDrawer.tsx:428` (AnnotationCard)
-- `web/src/pages/KernelCodePage.tsx:522` (AnnotationModal)
+- `web/src/components/kernelCode/AnnotationPanel.tsx:46` (canManage)
 - `web/src/components/AnnotationTree.tsx:268`
 - `web/src/components/AnnotationCard.tsx:83`
 - `web/src/components/EmailTagEditor.tsx:138` (canManageTag)

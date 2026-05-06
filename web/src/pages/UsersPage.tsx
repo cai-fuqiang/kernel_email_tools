@@ -10,6 +10,11 @@ import { useAuth } from '../auth';
 import { showToast } from '../components/Toast';
 import type { UserRead } from '../api/types';
 import { PageHeader, PageShell, StatusBadge } from '../components/ui';
+import ConfirmModal from '../components/ConfirmModal';
+
+type UserAction =
+  | { kind: 'reject'; userId: string }
+  | { kind: 'reset'; userId: string };
 
 const ROLE_GUIDE: Array<{
   role: 'admin' | 'editor' | 'viewer' | 'agent';
@@ -50,6 +55,7 @@ function UserSection({
   onRefresh: () => Promise<void>;
 }) {
   const [working, setWorking] = useState('');
+  const [pendingAction, setPendingAction] = useState<UserAction | null>(null);
 
   const handleApprove = async (userId: string) => {
     setWorking(userId);
@@ -61,29 +67,62 @@ function UserSection({
     }
   };
 
-  const handleReject = async (userId: string) => {
-    const reason = window.prompt('Reject reason (optional):', '') || '';
-    setWorking(userId);
+  const handleReject = (userId: string) => {
+    setPendingAction({ kind: 'reject', userId });
+  };
+
+  const handleResetPassword = (userId: string) => {
+    setPendingAction({ kind: 'reset', userId });
+  };
+
+  const handleConfirmAction = async (inputValue: string) => {
+    if (!pendingAction) return;
+    const action = pendingAction;
+    setPendingAction(null);
+
+    if (action.kind === 'reset' && (!inputValue || inputValue.length < 8)) {
+      showToast('Password must be at least 8 characters.', 'error');
+      return;
+    }
+
+    setWorking(action.userId);
     try {
-      await rejectUser(userId, reason);
-      await onRefresh();
+      if (action.kind === 'reject') {
+        await rejectUser(action.userId, inputValue);
+        await onRefresh();
+      } else if (action.kind === 'reset') {
+        await resetUserPassword(action.userId, inputValue);
+        await onRefresh();
+        showToast('Password reset completed.', 'success');
+      }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Action failed', 'error');
     } finally {
       setWorking('');
     }
   };
 
-  const handleResetPassword = async (userId: string) => {
-    const newPassword = window.prompt('New password (min 8 chars):', '');
-    if (!newPassword) return;
-    setWorking(userId);
-    try {
-      await resetUserPassword(userId, newPassword);
-      await onRefresh();
-      window.alert('Password reset completed.');
-    } finally {
-      setWorking('');
-    }
-  };
+  const modalConfig = pendingAction && (
+    pendingAction.kind === 'reject'
+      ? {
+          title: 'Reject user registration',
+          message: 'You can leave a reason for the applicant.',
+          confirmLabel: 'Reject',
+          variant: 'warning' as const,
+          showInput: true,
+          inputLabel: 'Reason (optional)',
+          inputPlaceholder: 'e.g. Account does not match company policy',
+        }
+      : {
+          title: 'Reset password',
+          message: 'Set a new password for this user. Minimum 8 characters.',
+          confirmLabel: 'Reset password',
+          variant: 'primary' as const,
+          showInput: true,
+          inputLabel: 'New password',
+          inputPlaceholder: 'At least 8 characters',
+        }
+  );
 
   const handleStatusToggle = async (user: UserRead) => {
     setWorking(user.user_id);
@@ -109,6 +148,7 @@ function UserSection({
   };
 
   return (
+    <>
     <section className="rounded-xl border border-gray-200 bg-white overflow-hidden">
       <div className="border-b border-gray-200 px-5 py-4">
         <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
@@ -213,6 +253,19 @@ function UserSection({
         </table>
       </div>
     </section>
+    <ConfirmModal
+      isOpen={!!pendingAction}
+      title={modalConfig?.title || ''}
+      message={modalConfig?.message || ''}
+      confirmLabel={modalConfig?.confirmLabel}
+      variant={modalConfig?.variant}
+      showInput={modalConfig?.showInput}
+      inputLabel={modalConfig?.inputLabel}
+      inputPlaceholder={modalConfig?.inputPlaceholder}
+      onConfirm={handleConfirmAction}
+      onCancel={() => setPendingAction(null)}
+    />
+    </>
   );
 }
 
