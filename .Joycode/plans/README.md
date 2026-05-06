@@ -20,7 +20,7 @@
 | [PLAN-30002](PLAN-30002-external-code-jump.md) | 外链代码跳转（Elixir/lore） | in-progress | **P1** | 反向闭环 + Phase 1+2+3+4+5 已完成；仅剩 external_links 内网镜像验证 |
 | [PLAN-31001](PLAN-31001-knowledge-graph-enhancements.md) | 知识图谱功能增强 | in-progress | P1 | 实体删除 / 图谱遍历 / 内核版本关联未做 |
 | [PLAN-31004](PLAN-31004-ui-information-hierarchy.md) | UI 信息层次与首屏引导（Workbench 第二轮） | planned | **P1** | Dashboard + Sticky 上下文条 + 信息密度 |
-| [PLAN-34000](PLAN-34000-semantic-search.md) | Semantic Search & Quality | in-progress | P1 | Phase 1 done；Phase 4 ThreadDrawer 拆分完成（2085→719 行，-65%，抽出 PatchDiffBlock / KnowledgeBackRefs / ThreadAnnotationCard / LayeredEmailCard / TreeEmailCard + utils/threadTree + utils/emailBody）；KnowledgePage 1588 行待拆 |
+| [PLAN-34000](PLAN-34000-semantic-search.md) | Semantic Search & Quality | in-progress | P1 | Phase 1 done；Phase 4 ThreadDrawer 拆分完成（2085→719 行，-65%）；KnowledgePage 拆分完成（1644→810 行，-51%，抽出 DraftInbox / EntityList / EntityDetailHeader / EntityMetricsCards / EntityExplanationEditor / EntityRelationsPanel / EvidencePanel / HumanNotesPanel + knowledgeUtils） |
 | [PLAN-31002](PLAN-31002-knowledge-workbench-roadmap.md) | Knowledge Workbench 路线图 | in-progress | P2 | 范围过大，新工作请新建独立 PLAN 引用 |
 | [PLAN-35001](PLAN-35001-FUTURE-ai-assisted-knowledge-pipeline.md) | AI 邮件入库流水线 | future | P3 | 100 万邮件 LLM 成本 ~$2000，先验证再放量 |
 

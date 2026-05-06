@@ -1,7 +1,7 @@
 > **Status**: in-progress (Phase 1 done; Phase 3 partial; Phase 4 done; Phase 5 partial; Phase 2 未做)
-> **Updated**: 2026-05-01
+> **Updated**: 2026-05-06
 > **Depends-on**: 无
-> **Priority**: P1 — ThreadDrawer 已从 2085 行降到 719 行（拆分完成），KnowledgePage 1588 行待拆
+> **Priority**: P1 — ThreadDrawer 已从 2085 行降到 719 行（拆分完成），KnowledgePage 已从 1644 行降到 810 行（拆分完成）
 
 # PLAN-34000: Semantic Search and Product Quality Improvements
 
@@ -18,8 +18,9 @@ The implementation is split into phases so the first delivery can be small and s
 - Phase 4 is implemented for the current warning set: `npm run lint` is clean with zero warnings and zero errors.
 - Phase 4 ThreadDrawer split (first batch, 2026-05-01): `PatchDiffBlock`, `KnowledgeBackRefs`, `ThreadAnnotationCard` (含 `AnnotationInput`) 抽出为独立组件文件；`ThreadDrawer.tsx` 从 2085 行降到 1611 行（-22%）。剩余 `LayeredEmailCard` (303 行) / `TreeEmailCard` (301 行) 由后续 PR 继续拆分。
 - Phase 4 ThreadDrawer split (second batch, 2026-05-01): `LayeredEmailCard` 和 `TreeEmailCard` 抽出为独立文件；同时把共享工具拆出 `utils/threadTree.ts`（ThreadNode + buildThreadTree / buildNodeMap / getVisibleNodes / countDescendants / collectDescendantIds + FoldLevel / ViewMode / TranslationMap 类型）和 `utils/emailBody.ts`（parseParagraphs / getDisplayBody / shouldTranslate / getAuthorName / stripDiffAndSignature 等）。`ThreadDrawer.tsx` 从 1611 行进一步降到 719 行，累计减重 -65%（2085→719）。
+- Phase 4 KnowledgePage split (2026-05-06): 抽出 `components/knowledge/` 目录下 8 个独立子组件（DraftInboxPanel / EntityListPanel / EntityDetailHeader + DeleteConfirmModal / EntityMetricsCards / EntityExplanationEditor / EntityRelationsPanel / EvidencePanel / HumanNotesPanel）以及共享工具文件 `knowledgeUtils.ts`（常量 / type / formatDate / statusTone / extractKnowledgeEvidence / normalizeDraftPayload / agentDraftMeta 等）。`KnowledgePage.tsx` 从 1644 行降到 810 行，-51%。主页面只保留 state / hooks / handlers，最大子组件 293 行。`npm run build` + `npm run lint` 对本次改动全部通过。
 - Phase 5 is partially implemented: route-level code splitting is active, Manual Search has richer previews and an Ask Manuals path, Knowledge shows evidence quality summary, and Code Browser uses the existing kernel tree API for path browsing.
-- Larger follow-ups still intentionally remain: deeper Knowledge duplicate prevention, full ThreadDrawer extraction (LayeredEmailCard / TreeEmailCard), KnowledgePage 1588 行拆分（PLAN-31004 Phase 3 协同执行），full Kernel annotation review UX replacement for confirm/prompt flows, and annotation drift detection across kernel versions.
+- Larger follow-ups still intentionally remain: deeper Knowledge duplicate prevention, full Kernel annotation review UX replacement for confirm/prompt flows, and annotation drift detection across kernel versions.
 
 ## Phase 1: Make `mode=semantic` Real
 
