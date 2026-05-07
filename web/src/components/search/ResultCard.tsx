@@ -1,14 +1,12 @@
 import type { SearchHit } from '../../api/types';
 import type { ContributionStats } from '../../api/contributions';
 import { highlightSnippet } from './searchUtils';
-import { Info } from 'lucide-react';
 
 interface ResultCardProps {
   hit: SearchHit;
   onThread: () => void;
   selected?: boolean;
   onToggleSelect?: (messageId: string) => void;
-  onInspect?: (hit: SearchHit) => void;
   messageStats?: ContributionStats | null;
   threadStats?: ContributionStats | null;
 }
@@ -18,7 +16,6 @@ export default function ResultCard({
   onThread,
   selected,
   onToggleSelect,
-  onInspect,
   messageStats,
   threadStats,
 }: ResultCardProps) {
@@ -29,15 +26,9 @@ export default function ResultCard({
   const knowledgeCount = stats?.knowledge_evidence_count || 0;
   const annotationCount = stats?.annotation_count || 0;
   const draftCount = stats?.draft_count || 0;
-  const hasInspector = tagCount > 0 || knowledgeCount > 0 || annotationCount > 0 || draftCount > 0 || hit.source;
-  const inspectCount = tagCount + annotationCount + knowledgeCount + draftCount;
 
   return (
-    <div
-      className="group rounded-lg border border-gray-200 bg-white px-3 py-2 transition hover:border-slate-300 hover:bg-slate-50"
-      onMouseEnter={() => onInspect?.(hit)}
-      onFocus={() => onInspect?.(hit)}
-    >
+    <div className="group rounded-lg border border-gray-200 bg-white px-3 py-2 transition hover:border-slate-300 hover:bg-slate-50">
       <div className="flex items-start gap-2">
         {onToggleSelect && (
           <input
@@ -82,16 +73,25 @@ export default function ResultCard({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {hasInspector && (
-            <button
-              type="button"
-              onClick={() => onInspect?.(hit)}
-              className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-slate-500 hover:border-slate-300 hover:text-slate-950"
-              aria-label="Inspect tags and contributions"
-            >
-              <Info size={13} />
-              {inspectCount}
-            </button>
+          {tagCount > 0 && (
+            <span className="rounded-lg border border-indigo-100 bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700" title={hit.tags.join(', ')}>
+              {tagCount} tag{tagCount > 1 ? 's' : ''}
+            </span>
+          )}
+          {knowledgeCount > 0 && (
+            <span className="rounded-lg bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700" title={`${knowledgeCount} knowledge evidence`}>
+              K{knowledgeCount}
+            </span>
+          )}
+          {annotationCount > 0 && (
+            <span className="rounded-lg bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700" title={`${annotationCount} annotations`}>
+              A{annotationCount}
+            </span>
+          )}
+          {draftCount > 0 && (
+            <span className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700" title={`${draftCount} pending drafts`}>
+              D{draftCount}
+            </span>
           )}
           <button
             type="button"
