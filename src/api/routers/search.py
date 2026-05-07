@@ -23,6 +23,7 @@ from src.api.deps import (
     _resolve_user_from_session,
 )
 from src.api.schemas import AnnotationResponse, DraftApplyRequest, DraftApplyResponse
+from src.retriever.base import SearchQuery
 
 router = APIRouter(tags=["search"])
 
@@ -388,5 +389,4 @@ async def apply_ask_draft(
 ):
     """保存用户确认后的 Ask 草稿。"""
     return await _apply_draft_request(request, current_user)
-
 
