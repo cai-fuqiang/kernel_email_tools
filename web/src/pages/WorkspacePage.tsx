@@ -5,13 +5,15 @@ import { useAuth } from '../auth';
 import ThreadDrawer from '../components/ThreadDrawer';
 import EntityList from '../workspace/components/EntityList';
 import EntityDetailPanel from '../workspace/components/EntityDetailPanel';
+import EmailFilterBar from '../workspace/components/EmailFilterBar';
 import {
   useWorkspaceData,
   type WorkspaceFilters,
   type WorkspaceView,
 } from '../workspace/hooks/useWorkspaceData';
 import type { WorkspaceEntity } from '../workspace/types';
-import type { AnnotationListItem, SearchHit } from '../api/types';
+import type { AnnotationListItem, ChannelOption, SearchHit } from '../api/types';
+import { getChannels, getTagStats, type TagStats } from '../api/client';
 
 const VALID_VIEWS: WorkspaceView[] = ['email', 'tag', 'annotation'];
 const PAGE_SIZE = 20;
@@ -22,12 +24,26 @@ const VIEW_LABEL: Record<WorkspaceView, { label: string; icon: React.ComponentTy
   annotation: { label: 'Annotations', icon: NotebookText },
 };
 
+const DEFAULT_FILTERS: Omit<WorkspaceFilters, 'q'> = {
+  mode: 'hybrid',
+  list_name: undefined,
+  sender: undefined,
+  date_from: undefined,
+  date_to: undefined,
+  has_patch: undefined,
+  tags: undefined,
+  tag_mode: 'any',
+  sort_by: '',
+  sort_order: '',
+  annotation_type: 'all',
+  publish_status: 'all',
+};
+
 export default function WorkspacePage() {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // URL 同步：view + q
   const urlView = searchParams.get('view') as WorkspaceView | null;
   const view: WorkspaceView = VALID_VIEWS.includes(urlView as WorkspaceView) ? (urlView as WorkspaceView) : 'email';
   const urlQ = searchParams.get('q') || '';
@@ -36,15 +52,24 @@ export default function WorkspacePage() {
   const [q, setQ] = useState(urlQ);
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [filters, setFilters] = useState<Omit<WorkspaceFilters, 'q'>>({
-    list_name: undefined,
-    has_patch: undefined,
-    annotation_type: 'all',
-    publish_status: 'all',
-  });
+  const [filters, setFilters] = useState<Omit<WorkspaceFilters, 'q'>>(DEFAULT_FILTERS);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
-  // ThreadDrawer 状态
+  const [channelOptions, setChannelOptions] = useState<ChannelOption[]>([{ value: '', label: 'All channels' }]);
+  const [tagStats, setTagStats] = useState<TagStats[]>([]);
+
   const [threadOpen, setThreadOpen] = useState<{ threadId: string; focusMessageId?: string } | null>(null);
+
+  // 加载元数据
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    getChannels()
+      .then((data) => setChannelOptions([{ value: '', label: 'All channels' }, ...data]))
+      .catch(() => {});
+    getTagStats()
+      .then(setTagStats)
+      .catch(() => {});
+  }, [isAuthenticated]);
 
   useEffect(() => {
     setQInput(urlQ);
@@ -54,7 +79,7 @@ export default function WorkspacePage() {
   useEffect(() => {
     setPage(1);
     setSelectedId(null);
-  }, [view, q]);
+  }, [view, q, filters]);
 
   const effectiveFilters: WorkspaceFilters = useMemo(() => ({ q, ...filters }), [q, filters]);
   const data = useWorkspaceData(isAuthenticated ? view : 'email', effectiveFilters, page, PAGE_SIZE);
@@ -65,6 +90,18 @@ export default function WorkspacePage() {
   );
 
   const totalPages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
+  const semanticNeedsQuery = view === 'email' && filters.mode === 'semantic' && !q.trim();
+
+  // email view 无任何条件时的引导提示
+  const showEmailEmptyHint =
+    view === 'email' &&
+    !q.trim() &&
+    !filters.sender &&
+    !filters.date_from &&
+    !filters.date_to &&
+    filters.has_patch === undefined &&
+    !filters.list_name &&
+    !(filters.tags && filters.tags.length > 0);
 
   function handleSwitchView(next: WorkspaceView) {
     const params = new URLSearchParams(searchParams);
@@ -104,7 +141,6 @@ export default function WorkspacePage() {
       }
     }
     if (target.type === 'tag') {
-      // 点击 tag 实体时，切到 tag view 并过滤到该 tag（简化：仅 q 匹配）
       const params = new URLSearchParams(searchParams);
       params.set('view', 'tag');
       params.set('q', target.ref);
@@ -112,7 +148,6 @@ export default function WorkspacePage() {
     }
   }
 
-  // 选中项行内短展开（只给 email 做 preview，其余 kind 返回 null）
   function renderInlineExpansion(entity: WorkspaceEntity): React.ReactNode {
     if (entity.kind !== 'email_thread') return null;
     const hit = entity.raw as SearchHit;
@@ -147,7 +182,6 @@ export default function WorkspacePage() {
 
   return (
     <div className="flex min-h-[calc(100vh-3rem)] flex-col">
-      {/* Sticky Context Bar */}
       <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-6 py-3 backdrop-blur">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm">
@@ -191,57 +225,64 @@ export default function WorkspacePage() {
             <button
               type="button"
               onClick={handleSubmitQuery}
-              className="rounded-lg bg-slate-900 px-3 py-1.5 text-white hover:bg-slate-800"
+              disabled={semanticNeedsQuery}
+              className="rounded-lg bg-slate-900 px-3 py-1.5 text-white hover:bg-slate-800 disabled:opacity-50"
             >
               搜索
             </button>
           </div>
         </div>
 
-        {/* View-specific quick filters */}
-        {view === 'email' && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-            <label className="flex items-center gap-1.5 text-slate-600">
-              <input
-                type="checkbox"
-                checked={filters.has_patch || false}
-                onChange={(e) => setFilters((f) => ({ ...f, has_patch: e.target.checked ? true : undefined }))}
-                className="rounded border-slate-300"
-              />
-              has patch
-            </label>
-          </div>
-        )}
-        {view === 'annotation' && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-            <select
-              value={filters.annotation_type}
-              onChange={(e) => setFilters((f) => ({ ...f, annotation_type: e.target.value as WorkspaceFilters['annotation_type'] }))}
-              className="rounded border-slate-300 px-2 py-1 text-xs"
-            >
-              <option value="all">所有类型</option>
-              <option value="email">email</option>
-              <option value="code">code</option>
-              <option value="sdm_spec">sdm_spec</option>
-            </select>
-            <select
-              value={filters.publish_status}
-              onChange={(e) => setFilters((f) => ({ ...f, publish_status: e.target.value as WorkspaceFilters['publish_status'] }))}
-              className="rounded border-slate-300 px-2 py-1 text-xs"
-            >
-              <option value="all">所有状态</option>
-              <option value="pending">pending review</option>
-              <option value="approved">approved</option>
-              <option value="rejected">rejected</option>
-            </select>
-          </div>
-        )}
+        {/* View-specific filter row */}
+        <div className="mt-2">
+          {view === 'email' && (
+            <EmailFilterBar
+              filters={effectiveFilters}
+              onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
+              channelOptions={channelOptions}
+              tagStats={tagStats}
+              expanded={advancedOpen}
+              onToggleExpanded={() => setAdvancedOpen((o) => !o)}
+              semanticNeedsQuery={semanticNeedsQuery}
+            />
+          )}
+          {view === 'annotation' && (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <select
+                value={filters.annotation_type}
+                onChange={(e) => setFilters((f) => ({ ...f, annotation_type: e.target.value as WorkspaceFilters['annotation_type'] }))}
+                className="rounded border-slate-300 px-2 py-1 text-xs"
+              >
+                <option value="all">所有类型</option>
+                <option value="email">email</option>
+                <option value="code">code</option>
+                <option value="sdm_spec">sdm_spec</option>
+              </select>
+              <select
+                value={filters.publish_status}
+                onChange={(e) => setFilters((f) => ({ ...f, publish_status: e.target.value as WorkspaceFilters['publish_status'] }))}
+                className="rounded border-slate-300 px-2 py-1 text-xs"
+              >
+                <option value="all">所有状态</option>
+                <option value="pending">pending review</option>
+                <option value="approved">approved</option>
+                <option value="rejected">rejected</option>
+              </select>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* 两栏主体：EntityList + EntityDetailPanel */}
       <div className="flex min-h-0 flex-1">
         <section className="min-w-0 flex-1 border-r border-slate-200 bg-white">
-          {data.loading ? (
+          {showEmailEmptyHint ? (
+            <div className="px-6 py-16 text-center text-sm text-slate-500">
+              <div className="mb-2 text-slate-700 font-medium">请输入关键词或选择过滤条件</div>
+              <div className="text-xs">
+                可按 sender / date / has patch / tag 过滤，或切换到 <b>Tags</b> / <b>Annotations</b> 视图。
+              </div>
+            </div>
+          ) : data.loading ? (
             <div className="px-6 py-12 text-center text-sm text-slate-500">Loading…</div>
           ) : data.error ? (
             <div className="px-6 py-12 text-center text-sm text-rose-600">Error: {data.error}</div>
@@ -294,11 +335,6 @@ export default function WorkspacePage() {
           onClose={() => setThreadOpen(null)}
         />
       )}
-
-      {/* 未使用变量提示：避免 noUnusedLocals 报错（tag 相关 data 字段保留给未来 detail panel 使用） */}
-      <span className="hidden" aria-hidden>
-        {data.rawTags.length}
-      </span>
     </div>
   );
 }

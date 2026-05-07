@@ -10,8 +10,18 @@ export type WorkspaceView = 'email' | 'tag' | 'annotation';
 
 export interface WorkspaceFilters {
   q: string;
+  // Email view filters
+  mode?: 'hybrid' | 'keyword' | 'semantic';
   list_name?: string;
+  sender?: string;
+  date_from?: string; // yyyy-MM-dd
+  date_to?: string;
   has_patch?: boolean;
+  tags?: string[];
+  tag_mode?: 'any' | 'all';
+  sort_by?: '' | 'date';
+  sort_order?: '' | 'asc' | 'desc';
+  // Annotation view filters
   annotation_type?: 'all' | 'email' | 'code' | 'sdm_spec';
   publish_status?: 'all' | 'pending' | 'approved' | 'rejected';
 }
@@ -26,6 +36,28 @@ export interface WorkspaceDataState {
   error: string | null;
 }
 
+const EMPTY_STATE: WorkspaceDataState = {
+  entities: [],
+  rawEmailHits: [],
+  rawAnnotations: [],
+  rawTags: [],
+  total: 0,
+  loading: false,
+  error: null,
+};
+
+function hasEmailSearchCondition(f: WorkspaceFilters): boolean {
+  return Boolean(
+    (f.q && f.q.trim()) ||
+      f.sender ||
+      f.date_from ||
+      f.date_to ||
+      f.has_patch !== undefined ||
+      (f.tags && f.tags.length > 0) ||
+      (f.list_name && f.list_name.trim()),
+  );
+}
+
 /**
  * 按 view + filters 拉取数据并通过 adapter 转为 WorkspaceEntity。
  *
@@ -37,25 +69,49 @@ export function useWorkspaceData(
   page: number,
   pageSize: number,
 ): WorkspaceDataState {
-  const [state, setState] = useState<WorkspaceDataState>({
-    entities: [],
-    rawEmailHits: [],
-    rawAnnotations: [],
-    rawTags: [],
-    total: 0,
-    loading: false,
-    error: null,
-  });
+  const [state, setState] = useState<WorkspaceDataState>(EMPTY_STATE);
+
+  // 把非基本类型和易变字段拍平到基本类型，给 effect 做稳定依赖
+  const tagsKey = JSON.stringify(filters.tags || []);
+  const {
+    q,
+    mode,
+    list_name,
+    sender,
+    date_from,
+    date_to,
+    has_patch,
+    tag_mode,
+    sort_by,
+    sort_order,
+    annotation_type,
+    publish_status,
+  } = filters;
 
   useEffect(() => {
     let cancelled = false;
+
+    // email view：无任何搜索条件时不发请求（后端要求至少一个条件）
+    if (view === 'email' && !hasEmailSearchCondition(filters)) {
+      setState({ ...EMPTY_STATE });
+      return;
+    }
+
     setState((s) => ({ ...s, loading: true, error: null }));
 
     const task = async (): Promise<WorkspaceDataState> => {
       if (view === 'email') {
-        const res = await searchEmails(filters.q || '', {
-          list_name: filters.list_name || undefined,
-          has_patch: filters.has_patch,
+        const res = await searchEmails(q || '', {
+          mode,
+          list_name: list_name || undefined,
+          sender: sender || undefined,
+          date_from: date_from || undefined,
+          date_to: date_to || undefined,
+          has_patch,
+          tags: filters.tags && filters.tags.length > 0 ? filters.tags : undefined,
+          tag_mode,
+          sort_by: sort_by || undefined,
+          sort_order: sort_order || undefined,
           page,
           page_size: pageSize,
         });
@@ -72,10 +128,10 @@ export function useWorkspaceData(
 
       if (view === 'annotation') {
         const res = await listAnnotations({
-          q: filters.q || undefined,
-          type: filters.annotation_type && filters.annotation_type !== 'all' ? filters.annotation_type : undefined,
+          q: q || undefined,
+          type: annotation_type && annotation_type !== 'all' ? annotation_type : undefined,
           publish_status:
-            filters.publish_status && filters.publish_status !== 'all' ? filters.publish_status : undefined,
+            publish_status && publish_status !== 'all' ? publish_status : undefined,
           page,
           page_size: pageSize,
         });
@@ -93,9 +149,9 @@ export function useWorkspaceData(
       // view === 'tag'
       const tree = await getTagTree(false);
       const flat = flattenTagTreeToEntities(tree);
-      const q = (filters.q || '').toLowerCase().trim();
-      const filtered = q
-        ? flat.filter((e) => e.title.toLowerCase().includes(q) || (e.excerpt || '').toLowerCase().includes(q))
+      const qq = (q || '').toLowerCase().trim();
+      const filtered = qq
+        ? flat.filter((e) => e.title.toLowerCase().includes(qq) || (e.excerpt || '').toLowerCase().includes(qq))
         : flat;
       return {
         entities: filtered,
@@ -115,7 +171,25 @@ export function useWorkspaceData(
     return () => {
       cancelled = true;
     };
-  }, [view, filters.q, filters.list_name, filters.has_patch, filters.annotation_type, filters.publish_status, page, pageSize]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    view,
+    q,
+    mode,
+    list_name,
+    sender,
+    date_from,
+    date_to,
+    has_patch,
+    tagsKey,
+    tag_mode,
+    sort_by,
+    sort_order,
+    annotation_type,
+    publish_status,
+    page,
+    pageSize,
+  ]);
 
   return state;
 }
