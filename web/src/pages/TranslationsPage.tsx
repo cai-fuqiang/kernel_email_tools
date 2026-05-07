@@ -8,6 +8,7 @@ import {
 import ThreadDrawer from '../components/ThreadDrawer';
 import { showToast } from '../components/Toast';
 import { useAuth } from '../auth';
+import { Info, Tags } from 'lucide-react';
 
 function mergeTranslatedThreads(
   previous: TranslatedThreadInfo[],
@@ -97,7 +98,7 @@ function TranslatedThreadCard({
     <button
       type="button"
       onClick={() => onOpen(thread.thread_id)}
-      className="block min-h-32 rounded-lg border border-gray-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50/30"
+      className="group relative block min-h-24 rounded-lg border border-gray-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50/30"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -105,33 +106,73 @@ function TranslatedThreadCard({
             {thread.subject || '(no subject)'}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
-            <span>{formatSender(thread.sender)}</span>
-            <span>{formatDate(thread.date)}</span>
             <span>{thread.email_count} email{thread.email_count > 1 ? 's' : ''}</span>
             <span>{thread.cached_paragraphs} cached paragraph{thread.cached_paragraphs > 1 ? 's' : ''}</span>
           </div>
         </div>
-        <span className="shrink-0 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-600">
-          Open
-        </span>
-      </div>
-      {thread.tags.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1">
-          {thread.tags.slice(0, 5).map((tag) => (
-            <span
-              key={tag}
-              className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700"
-            >
-              {tag}
-            </span>
-          ))}
-          {thread.tags.length > 5 && (
-            <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
-              +{thread.tags.length - 5}
-            </span>
-          )}
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500">
+            <Info size={14} />
+          </span>
+          <span className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-600">
+            Open
+          </span>
         </div>
-      )}
+      </div>
+
+      <div className="pointer-events-none absolute right-3 top-12 z-20 hidden w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-xl shadow-slate-900/10 group-hover:block group-focus-within:block">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div className="text-xs font-semibold text-slate-950">Translation details</div>
+          <div className="text-[11px] text-slate-500">{formatDate(thread.last_translated_at)}</div>
+        </div>
+
+        <div className="space-y-2 text-xs text-slate-600">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+              <div className="text-[11px] text-slate-400">Sender</div>
+              <div className="truncate font-medium text-slate-700">{formatSender(thread.sender)}</div>
+            </div>
+            <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+              <div className="text-[11px] text-slate-400">Date</div>
+              <div className="font-medium text-slate-700">{formatDate(thread.date)}</div>
+            </div>
+            <div className="rounded-lg bg-indigo-50 px-2 py-1.5 text-indigo-700">
+              <div className="text-[11px]">Emails</div>
+              <div className="text-sm font-semibold">{thread.email_count}</div>
+            </div>
+            <div className="rounded-lg bg-emerald-50 px-2 py-1.5 text-emerald-700">
+              <div className="text-[11px]">Cached</div>
+              <div className="text-sm font-semibold">{thread.cached_paragraphs}</div>
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              <Tags size={12} />
+              Tags
+            </div>
+            {thread.tags.length > 0 ? (
+              <div className="flex flex-wrap gap-1">
+                {thread.tags.slice(0, 8).map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700"
+                  >
+                    {tag}
+                  </span>
+                ))}
+                {thread.tags.length > 8 && (
+                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                    +{thread.tags.length - 8}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="text-xs text-slate-500">No tags</div>
+            )}
+          </div>
+        </div>
+      </div>
     </button>
   );
 }
