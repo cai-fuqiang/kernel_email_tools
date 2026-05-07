@@ -1,5 +1,7 @@
 import { useMemo } from 'react';
 import { X, ExternalLink } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { AnnotationListItem, CodeAnnotation, SearchHit, TagRead, TagTargetItem, TagTree } from '../../api/types';
 import type { WorkspaceEntity, WorkspaceEntityKind } from '../types';
 import TagSummaryCard from './TagSummaryCard';
@@ -173,9 +175,9 @@ function renderAnnotation(a: AnnotationListItem | CodeAnnotation) {
 
       <div>
         <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Body</div>
-        <pre className="whitespace-pre-wrap rounded-lg bg-slate-50 p-3 font-sans text-xs leading-relaxed text-slate-700">
-          {a.body}
-        </pre>
+        <div className="markdown-content rounded-lg bg-slate-50 p-3 text-xs leading-relaxed text-slate-700">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{a.body || ''}</ReactMarkdown>
+        </div>
       </div>
     </div>
   );
