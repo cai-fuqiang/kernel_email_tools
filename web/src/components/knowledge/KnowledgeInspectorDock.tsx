@@ -68,13 +68,13 @@ export default function KnowledgeInspectorDock({
 
   return (
     <div
-      className="pointer-events-none absolute right-3 top-28 z-20 hidden md:block"
+      className="pointer-events-none fixed inset-x-3 bottom-3 z-20 md:absolute md:bottom-auto md:left-auto md:right-3 md:top-28"
       onMouseLeave={() => {
         if (!pinnedPanel) setHoveredPanel(null);
       }}
     >
       {activePanel && (
-        <div className="pointer-events-auto absolute right-14 top-0 w-80 rounded-lg border border-slate-200 bg-white p-4 shadow-2xl shadow-slate-900/12">
+        <div className="pointer-events-auto fixed inset-x-3 bottom-16 max-h-[72vh] overflow-y-auto rounded-lg border border-slate-200 bg-white p-4 shadow-2xl shadow-slate-900/12 md:absolute md:bottom-auto md:left-auto md:right-14 md:top-0 md:max-h-[calc(100vh-8rem)] md:w-80">
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
               <div className="text-sm font-semibold text-slate-950">{title}</div>
@@ -179,7 +179,7 @@ export default function KnowledgeInspectorDock({
         </div>
       )}
 
-      <div className="pointer-events-auto flex flex-col gap-2">
+      <div className="pointer-events-auto flex justify-end gap-2 md:flex-col">
         {items.map((item) => {
           const Icon = item.icon;
           const active = activePanel === item.id;

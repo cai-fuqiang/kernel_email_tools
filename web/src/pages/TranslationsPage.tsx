@@ -95,32 +95,41 @@ function TranslatedThreadCard({
   onOpen: (threadId: string) => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(thread.thread_id)}
-      className="group relative block min-h-24 rounded-lg border border-gray-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50/30"
-    >
+    <div className="group relative min-h-24 rounded-lg border border-gray-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50/30">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-gray-950" title={thread.subject}>
+          <button
+            type="button"
+            onClick={() => onOpen(thread.thread_id)}
+            className="block max-w-full truncate text-left text-sm font-semibold text-gray-950 hover:text-indigo-700"
+            title={thread.subject}
+          >
             {thread.subject || '(no subject)'}
-          </div>
+          </button>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
             <span>{thread.email_count} email{thread.email_count > 1 ? 's' : ''}</span>
             <span>{thread.cached_paragraphs} cached paragraph{thread.cached_paragraphs > 1 ? 's' : ''}</span>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500">
+          <button
+            type="button"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-950"
+            aria-label="Translation details"
+          >
             <Info size={14} />
-          </span>
-          <span className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-600">
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpen(thread.thread_id)}
+            className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100"
+          >
             Open
-          </span>
+          </button>
         </div>
       </div>
 
-      <div className="pointer-events-none absolute right-3 top-12 z-20 hidden w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-xl shadow-slate-900/10 group-hover:block group-focus-within:block">
+      <div className="pointer-events-auto absolute right-3 top-12 z-20 hidden w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-xl shadow-slate-900/10 group-hover:block group-focus-within:block">
         <div className="mb-2 flex items-center justify-between gap-3">
           <div className="text-xs font-semibold text-slate-950">Translation details</div>
           <div className="text-[11px] text-slate-500">{formatDate(thread.last_translated_at)}</div>
@@ -173,7 +182,7 @@ function TranslatedThreadCard({
           </div>
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 

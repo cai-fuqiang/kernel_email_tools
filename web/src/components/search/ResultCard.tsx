@@ -86,7 +86,7 @@ export default function ResultCard({
                 <Tags size={13} />
                 {tagCount + annotationCount + knowledgeCount + draftCount}
               </button>
-              <div className="pointer-events-none absolute right-0 top-full z-20 mt-2 hidden w-72 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-xl shadow-slate-900/10 group-hover:block group-focus-within:block">
+              <div className="pointer-events-auto absolute right-0 top-full z-20 mt-2 hidden w-72 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-xl shadow-slate-900/10 group-hover:block group-focus-within:block">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <div className="text-xs font-semibold text-slate-950">Result inspector</div>
                   <div className="text-[11px] text-slate-500">score {hit.score.toFixed(3)}</div>
