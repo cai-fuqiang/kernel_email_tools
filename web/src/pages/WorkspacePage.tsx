@@ -133,9 +133,19 @@ export default function WorkspacePage() {
     }
     if (target.type === 'code_line') {
       const anchor = target.anchor as { version?: string; file_path?: string; start_line?: number } | undefined;
-      if (anchor?.version && anchor.file_path) {
-        const params = new URLSearchParams({ v: anchor.version, path: anchor.file_path });
-        if (anchor.start_line) params.set('line', String(anchor.start_line));
+      let version = anchor?.version || '';
+      let filePath = anchor?.file_path || '';
+      // 兜底：target.ref 形如 "<version>:<file_path>"
+      if ((!version || !filePath) && target.ref) {
+        const idx = target.ref.indexOf(':');
+        if (idx > 0) {
+          version = version || target.ref.slice(0, idx);
+          filePath = filePath || target.ref.slice(idx + 1);
+        }
+      }
+      if (version && filePath) {
+        const params = new URLSearchParams({ v: version, path: filePath });
+        if (anchor?.start_line) params.set('line', String(anchor.start_line));
         navigate(`/kernel-code?${params.toString()}`);
         return;
       }

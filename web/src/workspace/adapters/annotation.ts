@@ -23,6 +23,7 @@ function targetTypeFromAnnotation(targetType: string | undefined): WorkspaceTarg
       return 'email_message';
     case 'code_line':
     case 'kernel_code':
+    case 'kernel_file':
       return 'code_line';
     case 'sdm_section':
     case 'sdm_spec':
@@ -30,6 +31,39 @@ function targetTypeFromAnnotation(targetType: string | undefined): WorkspaceTarg
     default:
       return 'email_message';
   }
+}
+
+/**
+ * 解析 kernel_file / code_line 类批注的 anchor。
+ *
+ * AnnotationORM 行内字段（version/file_path/start_line/end_line）和 anchor JSON
+ * 都可能存在；优先用显式字段，缺失时回退到 anchor，再回退到 `ref` 形如
+ * `<version>:<file_path>` 的拆分（kernel_file 类批注的常见落库形态）。
+ */
+function buildCodeAnchor(a: AnnotationListItem): Record<string, unknown> {
+  const raw = (a.anchor || {}) as Record<string, unknown>;
+  const anyA = a as unknown as {
+    version?: string;
+    file_path?: string;
+    start_line?: number;
+    end_line?: number;
+  };
+  let version = (anyA.version as string) || (raw.version as string) || '';
+  let filePath = (anyA.file_path as string) || (raw.file_path as string) || '';
+  if ((!version || !filePath) && a.target_ref) {
+    const idx = a.target_ref.indexOf(':');
+    if (idx > 0) {
+      version = version || a.target_ref.slice(0, idx);
+      filePath = filePath || a.target_ref.slice(idx + 1);
+    }
+  }
+  return {
+    ...raw,
+    version,
+    file_path: filePath,
+    start_line: (anyA.start_line as number | undefined) ?? (raw.start_line as number | undefined),
+    end_line: (anyA.end_line as number | undefined) ?? (raw.end_line as number | undefined),
+  };
 }
 
 /**
@@ -52,10 +86,11 @@ export function annotationToEntity(a: AnnotationListItem): WorkspaceEntity {
     badges.push({ label: a.annotation_type, tone: 'muted' });
   }
 
+  const mappedType = targetTypeFromAnnotation(a.target_type);
   const target: WorkspaceTarget = {
-    type: targetTypeFromAnnotation(a.target_type),
+    type: mappedType,
     ref: a.target_ref || a.thread_id || '',
-    anchor: a.anchor || undefined,
+    anchor: mappedType === 'code_line' ? buildCodeAnchor(a) : a.anchor || undefined,
   };
 
   return {
