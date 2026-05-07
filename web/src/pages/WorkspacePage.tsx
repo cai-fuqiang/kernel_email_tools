@@ -260,6 +260,7 @@ export default function WorkspacePage() {
                 entities={data.entities}
                 selectedId={selectedId}
                 onSelect={(entity) => setSelectedId(entity.id)}
+                onActivate={handleOpenTarget}
               />
               {data.total > 0 && view !== 'tag' && (
                 <div className="flex items-center justify-center gap-2 p-4 text-xs text-slate-500">

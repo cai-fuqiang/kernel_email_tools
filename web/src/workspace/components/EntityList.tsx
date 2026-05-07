@@ -20,6 +20,8 @@ interface EntityListProps {
   entities: WorkspaceEntity[];
   selectedId?: string | null;
   onSelect: (entity: WorkspaceEntity) => void;
+  /** 在已选中的行上再次点击时触发（用于打开 thread / 跳转 code 等） */
+  onActivate?: (entity: WorkspaceEntity) => void;
   emptyMessage?: string;
 }
 
@@ -30,12 +32,16 @@ interface EntityListProps {
  * 所有 kind 差异都收敛在 adapter（数据形状）和 detail renderer（详情态）中。
  * KIND_ICON 通过 map 索引而非 if/switch，未来扩展只需扩 map。
  *
- * 选中项仅通过高亮（bg-indigo-50 + border-l-2）提示，完整详情交给右侧 EntityDetailPanel。
+ * 交互：
+ * - 单击未选中的行 → 仅选中（右侧详情面板更新）
+ * - 单击已选中的行 → 调用 onActivate 打开目标
+ * - 选中态仅通过高亮（bg-indigo-50 + border-l-2）提示
  */
 export default function EntityList({
   entities,
   selectedId,
   onSelect,
+  onActivate,
   emptyMessage = '没有匹配的实体',
 }: EntityListProps) {
   if (entities.length === 0) {
@@ -58,7 +64,14 @@ export default function EntityList({
                 ? 'cursor-pointer border-l-2 border-indigo-500 bg-indigo-50/40 px-4 py-2.5'
                 : 'cursor-pointer px-4 py-2.5 hover:bg-slate-50'
             }
-            onClick={() => onSelect(entity)}
+            title={isSelected ? '再次点击以打开' : undefined}
+            onClick={() => {
+              if (isSelected && onActivate) {
+                onActivate(entity);
+              } else {
+                onSelect(entity);
+              }
+            }}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
