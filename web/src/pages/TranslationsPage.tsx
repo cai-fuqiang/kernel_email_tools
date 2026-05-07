@@ -86,6 +86,56 @@ function JobProgressCard({
   );
 }
 
+function TranslatedThreadCard({
+  thread,
+  onOpen,
+}: {
+  thread: TranslatedThreadInfo;
+  onOpen: (threadId: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(thread.thread_id)}
+      className="block min-h-32 rounded-lg border border-gray-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50/30"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-gray-950" title={thread.subject}>
+            {thread.subject || '(no subject)'}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+            <span>{formatSender(thread.sender)}</span>
+            <span>{formatDate(thread.date)}</span>
+            <span>{thread.email_count} email{thread.email_count > 1 ? 's' : ''}</span>
+            <span>{thread.cached_paragraphs} cached paragraph{thread.cached_paragraphs > 1 ? 's' : ''}</span>
+          </div>
+        </div>
+        <span className="shrink-0 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-600">
+          Open
+        </span>
+      </div>
+      {thread.tags.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1">
+          {thread.tags.slice(0, 5).map((tag) => (
+            <span
+              key={tag}
+              className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700"
+            >
+              {tag}
+            </span>
+          ))}
+          {thread.tags.length > 5 && (
+            <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+              +{thread.tags.length - 5}
+            </span>
+          )}
+        </div>
+      )}
+    </button>
+  );
+}
+
 export default function TranslationsPage() {
   const { isAuthenticated } = useAuth();
   const [threads, setThreads] = useState<TranslatedThreadInfo[]>([]);
@@ -239,72 +289,14 @@ export default function TranslationsPage() {
             <p className="text-sm">Translate emails from the Search page by opening a thread and clicking the translate button.</p>
           </div>
         ) : (
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Subject</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Sender</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Tags</th>
-                  <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Cached</th>
-                  <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {completedThreads.map((t) => (
-                  <tr key={t.thread_id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-5 py-3.5">
-                      <div className="text-sm font-medium text-gray-900 truncate max-w-xs" title={t.subject}>
-                        {t.subject || '(no subject)'}
-                      </div>
-                      <div className="text-xs text-gray-400 mt-0.5">
-                        {t.email_count} email{t.email_count > 1 ? 's' : ''} in thread
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className="text-sm text-gray-700">{formatSender(t.sender)}</span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className="text-sm text-gray-500">{formatDate(t.date)}</span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex flex-wrap gap-1">
-                        {t.tags.length > 0 ? (
-                          t.tags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200"
-                            >
-                              {tag}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-xs text-gray-300">-</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5 text-center">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
-                        {t.cached_paragraphs} para{t.cached_paragraphs > 1 ? 's' : ''}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-center">
-                      <button
-                        onClick={() => setSelectedThread(t.thread_id)}
-                        className="px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors"
-                      >
-                        Open
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div className="px-5 py-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-500">
-              {completedThreads.length} translated thread{completedThreads.length > 1 ? 's' : ''}
-            </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {completedThreads.map((thread) => (
+              <TranslatedThreadCard
+                key={thread.thread_id}
+                thread={thread}
+                onOpen={(threadId) => setSelectedThread(threadId)}
+              />
+            ))}
           </div>
         )}
       </section>

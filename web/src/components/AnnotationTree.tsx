@@ -21,6 +21,7 @@ import type { AnnotationListItem } from '../api/types';
 interface AnnotationTreeProps {
   annotations: AnnotationListItem[];
   onAnnotationsChange?: () => void;
+  layout?: 'stack' | 'grid';
 }
 
 interface TreeNode {
@@ -76,7 +77,7 @@ function getAnchorLabel(annotation: AnnotationListItem): string {
   return messageId ? '邮件节点' : '';
 }
 
-export default function AnnotationTree({ annotations, onAnnotationsChange }: AnnotationTreeProps) {
+export default function AnnotationTree({ annotations, onAnnotationsChange, layout = 'stack' }: AnnotationTreeProps) {
   const navigate = useNavigate();
   const { canWrite, currentUser, isAdmin } = useAuth();
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -395,7 +396,9 @@ export default function AnnotationTree({ annotations, onAnnotationsChange }: Ann
 
   return (
     <>
-      <div className="space-y-4">{tree.map((node) => renderNode(node))}</div>
+      <div className={layout === 'grid' ? 'grid gap-4 xl:grid-cols-2' : 'space-y-4'}>
+        {tree.map((node) => renderNode(node))}
+      </div>
       <PreviewModal isOpen={!!previewAnnotation} onClose={() => setPreviewAnnotation(null)} annotation={previewAnnotation} />
       {drawerThreadId && <ThreadDrawer threadId={drawerThreadId} onClose={() => setDrawerThreadId(null)} />}
       <ConfirmModal
