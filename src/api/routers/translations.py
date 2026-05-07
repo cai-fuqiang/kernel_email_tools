@@ -1,6 +1,8 @@
 """translations API routes."""
 
+import asyncio
 import logging
+import uuid
 from datetime import datetime
 from typing import Optional
 
@@ -25,6 +27,8 @@ from src.api.deps import (
 )
 from src.api.schemas import AnnotationResponse, DraftApplyRequest, DraftApplyResponse
 from src.storage.tag_store import TARGET_TYPE_EMAIL_THREAD
+from src.translator.base import TranslationError
+from src.translator.google_translator import is_available as is_translator_available
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +101,189 @@ class TranslationJobListResponse(BaseModel):
     """运行中的线程翻译任务列表。"""
     jobs: list[TranslationJobResponse]
     total: int
+
+
+def _is_quoted_line(line: str) -> bool:
+    return line.lstrip().startswith(">")
+
+
+def _strip_diff_and_signature(body_raw: str) -> str:
+    """Match the frontend thread reader: hide diff/signature before paragraph translation."""
+    if not body_raw:
+        return ""
+    lines = body_raw.split("\n")
+    result: list[str] = []
+    in_diff = False
+
+    for i, line in enumerate(lines):
+        trimmed = line.strip()
+        if trimmed in {"--", "-- "} and not in_diff:
+            break
+        if (
+            trimmed.startswith("diff --git ")
+            or trimmed.startswith("diff --cc ")
+            or (
+                trimmed.startswith("--- a/")
+                and i + 1 < len(lines)
+                and lines[i + 1].strip().startswith("+++ b/")
+            )
+        ):
+            in_diff = True
+        if (
+            not in_diff
+            and trimmed.startswith("--- ")
+            and i + 1 < len(lines)
+            and lines[i + 1].strip().startswith("+++ ")
+        ):
+            in_diff = True
+        if in_diff:
+            continue
+        result.append(line)
+    return "\n".join(result)
+
+
+def _parse_translatable_paragraphs(body: str) -> list[str]:
+    paragraphs: list[str] = []
+    for raw in [p for p in body.split("\n\n") if p.strip()]:
+        lines = raw.split("\n")
+        if all(_is_quoted_line(line) or not line.strip() for line in lines):
+            continue
+        if any(_is_quoted_line(line) for line in lines):
+            current: list[str] = []
+            current_quoted = False
+            for line in lines:
+                quoted = _is_quoted_line(line)
+                if current and quoted != current_quoted:
+                    text = "\n".join(current).strip()
+                    if text and not current_quoted:
+                        paragraphs.append(text)
+                    current = []
+                current_quoted = quoted
+                current.append(line)
+            text = "\n".join(current).strip()
+            if text and not current_quoted:
+                paragraphs.append(text)
+            continue
+        paragraphs.append(raw.strip())
+    return [text for text in paragraphs if _should_translate_text(text)]
+
+
+def _should_translate_text(text: str) -> bool:
+    if not text or any("\u4e00" <= ch <= "\u9fff" for ch in text):
+        return False
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    if not lines:
+        return False
+    skip_prefixes = (
+        "Signed-off-by:",
+        "Reviewed-by:",
+        "Acked-by:",
+        "Tested-by:",
+        "Cc:",
+        "Link:",
+    )
+    skip_count = sum(1 for line in lines if line.startswith(skip_prefixes))
+    return skip_count < len(lines) * 0.8
+
+
+def _translation_job_to_response(job: dict) -> TranslationJobResponse:
+    total = int(job.get("total") or 0)
+    completed = int(job.get("completed") or 0)
+    return TranslationJobResponse(
+        job_id=str(job.get("job_id") or ""),
+        thread_id=str(job.get("thread_id") or ""),
+        subject=str(job.get("subject") or ""),
+        sender=str(job.get("sender") or ""),
+        date=job.get("date"),
+        email_count=int(job.get("email_count") or 0),
+        status=str(job.get("status") or "pending"),
+        total=total,
+        completed=completed,
+        cached_count=int(job.get("cached_count") or 0),
+        failed_count=int(job.get("failed_count") or 0),
+        progress_percent=round((completed / total) * 100, 2) if total else 0.0,
+        items=[TranslationJobItem(**item) for item in job.get("items", [])],
+        error=str(job.get("error") or ""),
+        created_at=str(job.get("created_at") or datetime.utcnow().isoformat()),
+        updated_at=str(job.get("updated_at") or datetime.utcnow().isoformat()),
+    )
+
+
+async def _run_thread_translation_job(job_id: str) -> None:
+    job = state._translation_jobs.get(job_id)
+    if not job:
+        return
+    try:
+        job["status"] = "running"
+        job["updated_at"] = datetime.utcnow().isoformat()
+        thread = await state._storage.get_thread(job["thread_id"]) if state._storage else []
+        if not thread:
+            raise RuntimeError(f"Thread not found: {job['thread_id']}")
+
+        first = thread[0]
+        job["subject"] = first.subject
+        job["sender"] = first.sender
+        job["date"] = first.date.isoformat() if first.date else None
+        job["email_count"] = len(thread)
+
+        work_items: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for email in thread:
+            body = _strip_diff_and_signature(email.body_raw or email.body or "")
+            for paragraph in _parse_translatable_paragraphs(body):
+                if paragraph in seen:
+                    continue
+                seen.add(paragraph)
+                work_items.append((email.message_id, paragraph))
+
+        job["total"] = len(work_items)
+        job["items"] = [
+            {"source_text": paragraph, "translated_text": "", "message_id": message_id, "cached": False, "error": ""}
+            for message_id, paragraph in work_items
+        ]
+        job["updated_at"] = datetime.utcnow().isoformat()
+
+        source_lang = str(job.get("source_lang") or "auto")
+        target_lang = str(job.get("target_lang") or "zh-CN")
+        for idx, (message_id, paragraph) in enumerate(work_items):
+            item = job["items"][idx]
+            try:
+                cached = None
+                if state._translation_cache:
+                    cached = await state._translation_cache.get(paragraph, source_lang, target_lang)
+                if cached is not None:
+                    item["translated_text"] = cached
+                    item["cached"] = True
+                    job["cached_count"] = int(job.get("cached_count") or 0) + 1
+                else:
+                    translated = await state._translator.translate(paragraph, source_lang, target_lang)
+                    item["translated_text"] = translated
+                    if state._translation_cache:
+                        await state._translation_cache.set(
+                            paragraph,
+                            translated,
+                            source_lang,
+                            target_lang,
+                            message_id=message_id,
+                        )
+                job["completed"] = int(job.get("completed") or 0) + 1
+            except Exception as exc:
+                item["error"] = str(exc)
+                job["failed_count"] = int(job.get("failed_count") or 0) + 1
+                logger.warning("Thread translation item failed: %s", exc)
+            finally:
+                job["updated_at"] = datetime.utcnow().isoformat()
+
+        job["status"] = "failed" if job.get("failed_count") and not job.get("completed") else "completed"
+        job["updated_at"] = datetime.utcnow().isoformat()
+    except Exception as exc:
+        job["status"] = "failed"
+        job["error"] = str(exc)
+        job["updated_at"] = datetime.utcnow().isoformat()
+        logger.exception("Thread translation job failed: %s", exc)
+    finally:
+        if job.get("status") not in {"pending", "running"}:
+            state._translation_jobs_by_thread.pop(str(job.get("thread_id") or ""), None)
 
 
 @router.post("/api/translate", response_model=TranslateResponse)
@@ -507,5 +694,4 @@ async def manual_translate(request: ManualTranslateRequest = Body(...)):
             success=False,
             message=f"Failed to save: {str(e)}",
         )
-
 
