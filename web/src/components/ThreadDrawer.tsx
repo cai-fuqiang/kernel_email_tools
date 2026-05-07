@@ -12,13 +12,13 @@ import {
   type TranslationJobResponse,
 } from '../api/client';
 import type { ThreadResponse } from '../api/types';
-import EmailTagEditor from './EmailTagEditor';
 import ConfirmModal from './ConfirmModal';
 import { showToast } from './Toast';
 import LayeredEmailCard from './LayeredEmailCard';
 import TreeEmailCard from './TreeEmailCard';
 import ContributionChips from './ContributionChips';
 import StickyContextBar from './StickyContextBar';
+import ThreadInspectorDock from './ThreadInspectorDock';
 import { StatusBadge } from './ui';
 import { useContributions } from '../hooks/useContributions';
 import {
@@ -419,6 +419,21 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative ml-auto bg-gray-50 flex flex-col"
            style={{ width: '90vw', height: '100vh' }}>
+        {thread && (
+          <ThreadInspectorDock
+            threadId={threadId}
+            annotations={thread.annotations || []}
+            translationStats={translationStats}
+            translationProgress={translationProgress}
+            translationJob={translationJob}
+            translating={translating}
+            cacheMessage={cacheMessage}
+            onTranslate={handleTranslate}
+            onClearAllCache={handleClearAllCache}
+            onImportAnnotations={handleImportAnnotations}
+            onExportAnnotations={handleExportAnnotations}
+          />
+        )}
         {/* 顶部工具栏 */}
         <StickyContextBar
           className="mx-0 md:mx-0"
@@ -432,60 +447,6 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
           }
           actions={
             <>
-              <button
-                onClick={handleTranslate}
-                disabled={translating || translationStats.total === 0}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                  translating
-                    ? 'cursor-not-allowed bg-blue-300 text-white'
-                    : translationStats.translated > 0
-                      ? 'bg-green-500 text-white hover:bg-green-600'
-                      : 'bg-blue-500 text-white hover:bg-blue-600'
-                }`}
-              >
-                {translating ? (
-                  <>
-                    <span className="mr-2 inline-block animate-spin">&#x27F3;</span>
-                    翻译中 ({translationStats.translated}/{translationStats.total})
-                  </>
-                ) : translationStats.translated > 0 ? (
-                  <>已翻译 ({translationStats.translated}/{translationStats.total})</>
-                ) : (
-                  <>中英对照</>
-                )}
-              </button>
-              <div className="relative">
-                <button
-                  onClick={handleClearAllCache}
-                  className="rounded-lg border border-orange-200 px-3 py-2 text-sm text-orange-600 transition-colors hover:bg-orange-50"
-                  title="清除全部翻译缓存"
-                >
-                  清除缓存
-                </button>
-                {cacheMessage && (
-                  <div className={`absolute right-0 top-full z-10 mt-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm ${
-                    cacheMessage.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                  }`}>
-                    {cacheMessage.text}
-                  </div>
-                )}
-              </div>
-              {thread?.annotations && thread.annotations.length > 0 && (
-                <button
-                  onClick={handleExportAnnotations}
-                  className="rounded-lg border border-blue-200 px-3 py-2 text-sm text-blue-600 transition-colors hover:bg-blue-50"
-                  title="导出批注为 JSON"
-                >
-                  导出批注
-                </button>
-              )}
-              <button
-                onClick={handleImportAnnotations}
-                className="rounded-lg border border-blue-200 px-3 py-2 text-sm text-blue-600 transition-colors hover:bg-blue-50"
-                title="从 JSON 文件导入批注"
-              >
-                导入批注
-              </button>
               <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
                 <button
                   onClick={enterTreeMode}
@@ -517,27 +478,6 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
             </>
           }
         />
-        {(translating || (translationJob && translationJob.total > 0)) && (
-          <div className="bg-white border-b border-gray-100 px-6 py-3">
-            <div className="flex items-center justify-between text-xs text-gray-500 mb-1.5">
-              <span>
-                翻译进度 {translationJob?.completed ?? translationStats.translated}/{translationJob?.total ?? translationStats.total}
-                {translationJob?.cached_count ? `，缓存命中 ${translationJob.cached_count}` : ''}
-                {translationJob?.failed_count ? `，失败 ${translationJob.failed_count}` : ''}
-              </span>
-              <span>{translationJob ? `${translationProgress}%` : ''}</span>
-            </div>
-            <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-              <div
-                className={`h-full transition-all duration-500 ${translationJob?.status === 'failed' ? 'bg-red-400' : 'bg-blue-500'}`}
-                style={{ width: `${translationProgress}%` }}
-              />
-            </div>
-            {translationJob?.error && (
-              <div className="mt-2 text-xs text-red-600">{translationJob.error}</div>
-            )}
-          </div>
-        )}
         {/* 内容区域 */}
         <div className="flex-1 overflow-y-auto p-6">
           {loading && (
@@ -564,9 +504,6 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
                 {threadContribStats && (
                   <ContributionChips stats={threadContribStats} compact={false} />
                 )}
-                <div className="ml-auto">
-                  <EmailTagEditor targetType="email_thread" targetRef={threadId} />
-                </div>
               </div>
               <div className="space-y-3">
                 {viewMode === 'tree' ? (
