@@ -207,6 +207,7 @@ export default function WorkspacePage() {
   function canDeleteTag(entity: WorkspaceEntity): boolean {
     if (!isAuthenticated) return false;
     if (isAdmin) return true;
+    if (!canWrite) return false;
     // editor 只能删自己的 private tag（后端规则）
     const tag = entity.raw as TagTree | { visibility?: string; owner_user_id?: string | null; created_by_user_id?: string | null };
     if (tag.visibility === 'public') return false;
@@ -247,6 +248,7 @@ export default function WorkspacePage() {
     confirmLabel: string;
     action: () => Promise<void>;
   } | null>(null);
+  const [annotationConfirmPending, setAnnotationConfirmPending] = useState(false);
 
   const annotationActions: AnnotationActionCallbacks = {
     onEdit: async (a, body) => {
@@ -274,6 +276,7 @@ export default function WorkspacePage() {
           data.refresh();
         },
       });
+      setAnnotationConfirmPending(false);
     },
     onRequestPublish: (a) => {
       requestAnnotationPublication(a.annotation_id)
@@ -463,14 +466,20 @@ export default function WorkspacePage() {
           isOpen
           title={annotationConfirm.title}
           message={annotationConfirm.message}
-          confirmLabel={annotationConfirm.confirmLabel}
+          confirmLabel={annotationConfirmPending ? '删除中…' : annotationConfirm.confirmLabel}
           cancelLabel="取消"
           variant="danger"
           onConfirm={() => {
-            void annotationConfirm.action();
-            setAnnotationConfirm(null);
+            if (annotationConfirmPending) return;
+            setAnnotationConfirmPending(true);
+            annotationConfirm.action()
+              .then(() => setAnnotationConfirm(null))
+              .catch((e) => showToast(e instanceof Error ? e.message : String(e), 'error'))
+              .finally(() => setAnnotationConfirmPending(false));
           }}
-          onCancel={() => setAnnotationConfirm(null)}
+          onCancel={() => {
+            if (!annotationConfirmPending) setAnnotationConfirm(null);
+          }}
         />
       )}
     </div>

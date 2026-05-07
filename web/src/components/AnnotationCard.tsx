@@ -28,6 +28,7 @@ interface AnnotationCardProps {
   onRejectPublish?: () => void;
   onPreview?: () => void;
   onJump?: () => void;
+  showDetailsPopover?: boolean;
   canManage?: boolean;
   canReply?: boolean;
   canRequestPublish?: boolean;
@@ -72,6 +73,7 @@ export default function AnnotationCard({
   onRejectPublish,
   onPreview,
   onJump,
+  showDetailsPopover = true,
   canManage,
   canReply,
   canRequestPublish,
@@ -120,73 +122,75 @@ export default function AnnotationCard({
           </div>
         </div>
 
-        <div className="relative shrink-0">
-          <button
-            type="button"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-950"
-            aria-label="Annotation details"
-          >
-            <Info size={14} />
-          </button>
-          <div className="fixed inset-x-3 bottom-3 z-50 mt-2 hidden max-h-[72vh] overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 text-left shadow-xl shadow-slate-900/10 group-hover/annotation-card:block group-focus-within/annotation-card:block md:absolute md:bottom-auto md:left-auto md:right-0 md:top-full md:max-h-[calc(100vh-8rem)] md:w-72">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <div className="text-xs font-semibold text-slate-950">Annotation details</div>
-              <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${statusTone}`}>
-                {publishStatus}
-              </span>
-            </div>
-
-            <div className="space-y-2 text-xs text-slate-600">
-              {targetSubtitle && (
-                <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-                  <div className="text-[11px] text-slate-400">Target</div>
-                  <div className="truncate font-medium text-slate-700">{targetSubtitle}</div>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-                  <div className="flex items-center gap-1 text-[11px] text-slate-400">
-                    <UserRound size={12} />
-                    Author
-                  </div>
-                  <div className="truncate font-medium text-slate-700">{author}</div>
-                </div>
-                <div className={`rounded-lg px-2 py-1.5 ${visibility === 'private' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                  <div className="flex items-center gap-1 text-[11px]">
-                    <Shield size={12} />
-                    Visibility
-                  </div>
-                  <div className="font-semibold">{visibility}</div>
-                </div>
+        {showDetailsPopover && (
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-950"
+              aria-label="Annotation details"
+            >
+              <Info size={14} />
+            </button>
+            <div className="fixed inset-x-3 bottom-3 z-50 mt-2 hidden max-h-[72vh] overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 text-left shadow-xl shadow-slate-900/10 group-hover/annotation-card:block group-focus-within/annotation-card:block md:absolute md:bottom-auto md:left-auto md:right-0 md:top-full md:max-h-[calc(100vh-8rem)] md:w-72">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="text-xs font-semibold text-slate-950">Annotation details</div>
+                <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${statusTone}`}>
+                  {publishStatus}
+                </span>
               </div>
-              <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-                <div className="flex items-center gap-1 text-[11px] text-slate-400">
-                  <Clock3 size={12} />
-                  Timeline
-                </div>
-                <div className="mt-0.5 text-slate-700">
-                  Created {new Date(createdAt).toLocaleString('zh-CN')}
-                </div>
-                {updatedAt !== createdAt && (
-                  <div className="mt-0.5 text-slate-500">
-                    Edited {new Date(updatedAt).toLocaleString('zh-CN')}
+
+              <div className="space-y-2 text-xs text-slate-600">
+                {targetSubtitle && (
+                  <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+                    <div className="text-[11px] text-slate-400">Target</div>
+                    <div className="truncate font-medium text-slate-700">{targetSubtitle}</div>
                   </div>
                 )}
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-white p-2">
-                <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                  <Tags size={12} />
-                  Tags
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+                    <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                      <UserRound size={12} />
+                      Author
+                    </div>
+                    <div className="truncate font-medium text-slate-700">{author}</div>
+                  </div>
+                  <div className={`rounded-lg px-2 py-1.5 ${visibility === 'private' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                    <div className="flex items-center gap-1 text-[11px]">
+                      <Shield size={12} />
+                      Visibility
+                    </div>
+                    <div className="font-semibold">{visibility}</div>
+                  </div>
                 </div>
-                <EmailTagEditor
-                  targetType="annotation"
-                  targetRef={annotationId}
-                  compact
-                />
+                <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+                  <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                    <Clock3 size={12} />
+                    Timeline
+                  </div>
+                  <div className="mt-0.5 text-slate-700">
+                    Created {new Date(createdAt).toLocaleString('zh-CN')}
+                  </div>
+                  {updatedAt !== createdAt && (
+                    <div className="mt-0.5 text-slate-500">
+                      Edited {new Date(updatedAt).toLocaleString('zh-CN')}
+                    </div>
+                  )}
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-2">
+                  <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    <Tags size={12} />
+                    Tags
+                  </div>
+                  <EmailTagEditor
+                    targetType="annotation"
+                    targetRef={annotationId}
+                    compact
+                  />
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {editing ? (
