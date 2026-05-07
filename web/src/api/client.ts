@@ -1327,16 +1327,27 @@ export async function getKernelTree(
   );
 }
 
+const kernelResolveCache = new Map<string, Promise<KernelResolveResponse>>();
+
 export async function resolveKernelSource(
   version: string,
   path: string,
   line?: number | null,
 ): Promise<KernelResolveResponse> {
+  const cacheKey = `${version}\n${path}\n${line || ''}`;
+  const cached = kernelResolveCache.get(cacheKey);
+  if (cached) return cached;
+
   const params = new URLSearchParams();
   params.set('version', version);
   params.set('path', path);
   if (line && line > 0) params.set('line', String(line));
-  return fetchJSON<KernelResolveResponse>(`${API_BASE}/kernel/resolve?${params}`);
+  const request = fetchJSON<KernelResolveResponse>(`${API_BASE}/kernel/resolve?${params}`).catch((err) => {
+    kernelResolveCache.delete(cacheKey);
+    throw err;
+  });
+  kernelResolveCache.set(cacheKey, request);
+  return request;
 }
 
 export async function getCodeAnnotations(

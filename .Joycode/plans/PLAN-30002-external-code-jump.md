@@ -117,6 +117,7 @@
 - [x] 前端 `pickKernelSourceUrl` 升级为 resolver client：
   - Code Browser、ThreadDrawer、PatchDiffBlock、Knowledge meta 都走同一 resolver
   - UI 明确区分本地跳转和外部跳转，但交互保持轻量
+  - `KernelSourceLink` 共享 `resolveKernelSource` 缓存，避免同一页面重复请求相同 path/line
 - [x] 本地文件路径跳转：
   - 邮件正文路径识别优先打开本系统 Code Browser
   - Patch header `diff --git` / `--- a/` / `+++ b/` 优先打开本地对应文件和行号
@@ -134,6 +135,7 @@
 - 用户点击邮件正文或 patch hunk 中的 `mm/foo.c:123`，默认进入本系统 Code Browser 对应版本和行号。
 - 本地 repo 没有该版本/文件时，才退回 Elixir 或 git.kernel.org。
 - 代码跳转不依赖 `elixir.bootlin.com` 可用性；断网时本地已索引版本仍可浏览。
+- resolver 后端覆盖本地命中、外链 fallback、旧版本 git.kernel.org fallback、非法路径拒绝测试。
 - 至少覆盖 50 个真实邮件路径引用、20 个 patch header、20 个符号定义跳转样本。
 - 所有 fallback 都在 trace/debug 信息中可见，便于定位本地索引缺口。
 

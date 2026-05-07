@@ -32,6 +32,7 @@ export default function KernelSourceLink({
 
   useEffect(() => {
     let cancelled = false;
+    setResolved(null);
     resolveKernelSource(version, path, line)
       .then((res) => {
         if (!cancelled) setResolved(res);
@@ -57,7 +58,9 @@ export default function KernelSourceLink({
   const linkTitle =
     title ||
     `${sourceLabel}: ${version}:${path}${line ? `:${line}` : ''}${
-      resolved?.fallback_reason ? ` (${resolved.fallback_reason})` : ''
+      resolved?.source !== 'local' && resolved?.fallback_reason
+        ? ` (本地缺失，fallback: ${resolved.fallback_reason})`
+        : ''
     }`;
 
   return (
@@ -67,6 +70,7 @@ export default function KernelSourceLink({
       rel={isExternal ? 'noopener noreferrer' : undefined}
       className={className}
       title={linkTitle}
+      aria-label={linkTitle}
       onClick={onClick}
     >
       {children}
