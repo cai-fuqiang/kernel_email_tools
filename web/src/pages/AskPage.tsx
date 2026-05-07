@@ -13,6 +13,7 @@ import {
 import type { AskConversationListItem, AskMessage, AskResponse, AskTurn, SourceRef, ChannelOption } from '../api/types';
 import AskDraftPanel from '../components/AskDraftPanel';
 import ThreadDrawer from '../components/ThreadDrawer';
+import StickyContextBar from '../components/StickyContextBar';
 import { EmptyState, PageHeader, PrimaryButton, SecondaryButton, SectionPanel, SkeletonBlock, SkeletonCard, SkeletonLine, StatusBadge } from '../components/ui';
 import { showToast } from '../components/Toast';
 import { useAuth } from '../auth';
@@ -178,6 +179,14 @@ export default function AskPage() {
 
   const hasFilters = sender || dateFrom || dateTo || selectedTags.length > 0 || selectedChannel;
   const latestAnswer = [...turns].reverse().find((turn) => turn.response)?.response || null;
+  const latestQuestion = [...turns].reverse().find((turn) => turn.question)?.question || question || 'New question';
+  const activeFilterLabels = [
+    selectedChannel ? `channel:${selectedChannel}` : '',
+    sender ? `sender:${sender}` : '',
+    dateFrom ? `from:${dateFrom}` : '',
+    dateTo ? `to:${dateTo}` : '',
+    selectedTags.length > 0 ? `tags:${selectedTags.join(', ')}` : '',
+  ].filter(Boolean);
 
   // PLAN-34001: 一次性查询所有 turn.sources 的贡献度
   const askMessageIds: string[] = [];
@@ -328,6 +337,41 @@ export default function AskPage() {
             </div>
           )}
 
+          {(turns.length > 0 || loading) && (
+            <StickyContextBar
+              title={latestQuestion}
+              subtitle={
+                latestAnswer
+                  ? `${latestAnswer.sources.length} source${latestAnswer.sources.length === 1 ? '' : 's'} · ${latestAnswer.model || 'model pending'}`
+                  : loading
+                    ? 'Thinking over mailing-list evidence'
+                    : 'Conversation context'
+              }
+              meta={
+                <>
+                  {conversationId && <StatusBadge tone="success">Saved</StatusBadge>}
+                  {activeFilterLabels.slice(0, 2).map((label) => (
+                    <StatusBadge key={label} tone="muted">
+                      {label}
+                    </StatusBadge>
+                  ))}
+                  {activeFilterLabels.length > 2 && (
+                    <StatusBadge tone="muted">+{activeFilterLabels.length - 2} filters</StatusBadge>
+                  )}
+                </>
+              }
+              actions={
+                latestAnswer ? (
+                  <SecondaryButton
+                    onClick={() => document.getElementById('ask-draft-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                  >
+                    Turn into draft
+                  </SecondaryButton>
+                ) : undefined
+              }
+            />
+          )}
+
           <SectionPanel title="Question" description="Use English or Chinese. The agent can expand query terms and cite source emails.">
           <div className="flex flex-col gap-3 lg:flex-row">
             <input
@@ -465,7 +509,11 @@ export default function AskPage() {
             ))}
           </div>
 
-          {latestAnswer && <AskDraftPanel answer={latestAnswer} />}
+          {latestAnswer && (
+            <div id="ask-draft-panel">
+              <AskDraftPanel answer={latestAnswer} />
+            </div>
+          )}
 
           {selectedThread && (
             <ThreadDrawer
@@ -479,4 +527,3 @@ export default function AskPage() {
     </div>
   );
 }
-

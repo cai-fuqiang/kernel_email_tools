@@ -7,6 +7,7 @@ import {
   FileCheck2,
   Languages,
   Library,
+  LayoutDashboard,
   LogOut,
   MailSearch,
   Menu,
@@ -78,7 +79,8 @@ export default function MainLayout() {
   }, [location.pathname]);
 
   const researchItems: NavItem[] = [
-    { to: '/', label: 'Search Emails', icon: Search, end: true },
+    { to: '/', label: 'Home', icon: LayoutDashboard, end: true },
+    { to: '/search', label: 'Search Emails', icon: Search },
     { to: '/ask', label: 'Ask Agent', icon: Bot },
     { to: '/agent-research', label: 'Agent Research', icon: Bot },
   ];

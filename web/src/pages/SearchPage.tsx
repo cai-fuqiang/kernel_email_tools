@@ -21,6 +21,7 @@ import type {
   AnnotationListItem,
 } from '../api/types';
 import ThreadDrawer from '../components/ThreadDrawer';
+import StickyContextBar from '../components/StickyContextBar';
 import {
   EmptyState,
   PageHeader,
@@ -151,6 +152,14 @@ export default function SearchPage() {
   };
 
   const totalPages = result ? Math.ceil(result.total / result.page_size) : 0;
+  const activeFilterLabels = [
+    selectedChannel ? `channel:${selectedChannel}` : '',
+    sender ? `sender:${sender}` : '',
+    dateFrom ? `from:${dateFrom}` : '',
+    dateTo ? `to:${dateTo}` : '',
+    hasPatch !== null ? (hasPatch ? 'patches' : 'no patches') : '',
+    selectedTags.length > 0 ? `tags:${selectedTags.join(', ')}` : '',
+  ].filter(Boolean);
 
   // PLAN-34001: 批量查询命中邮件/线程的知识库贡献度
   const hitMessageIds = result?.hits.map((h) => h.message_id) || [];
@@ -379,6 +388,38 @@ export default function SearchPage() {
 
       {result && (
         <SectionPanel>
+          <StickyContextBar
+            title={query.trim() || 'Filtered email search'}
+            subtitle={`${result.total.toLocaleString()} result${result.total === 1 ? '' : 's'} · ${result.mode}`}
+            meta={
+              <>
+                {activeFilterLabels.slice(0, 3).map((label) => (
+                  <StatusBadge key={label} tone="muted">
+                    {label}
+                  </StatusBadge>
+                ))}
+                {activeFilterLabels.length > 3 && (
+                  <StatusBadge tone="muted">+{activeFilterLabels.length - 3} filters</StatusBadge>
+                )}
+              </>
+            }
+            actions={
+              summary ? (
+                <PrimaryButton onClick={handleCreateDraft} disabled={draftLoading}>
+                  <Sparkles className="h-4 w-4" />
+                  Save draft
+                </PrimaryButton>
+              ) : (
+                <PrimaryButton
+                  onClick={handleSummarize}
+                  disabled={summarizing || result.hits.length === 0}
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Summarize
+                </PrimaryButton>
+              )
+            }
+          />
           <p className="text-sm text-gray-500 mb-4">
             Found <span className="font-semibold text-gray-900">{result.total}</span> results
             {selectedChannel && (

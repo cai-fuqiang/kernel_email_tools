@@ -67,7 +67,8 @@ import type {
   KnowledgeStats,
 } from '../api/types';
 import { useAuth } from '../auth';
-import { PageHeader, StatusBadge } from '../components/ui';
+import StickyContextBar from '../components/StickyContextBar';
+import { PageHeader, PrimaryButton, SecondaryButton, StatusBadge } from '../components/ui';
 
 export default function KnowledgePage() {
   const { canWrite, isAdmin } = useAuth();
@@ -199,7 +200,6 @@ export default function KnowledgePage() {
           summary.errors.length > 0 ? 'info' : 'success',
         );
         if (summary.errors.length > 0) {
-          // eslint-disable-next-line no-console
           console.warn('Knowledge import errors:', summary.errors);
         }
         await loadEntities();
@@ -746,6 +746,48 @@ export default function KnowledgePage() {
           </div>
         ) : (
           <div className="mx-auto max-w-6xl space-y-5 p-4 md:p-6">
+            <StickyContextBar
+              title={selectedEntity.canonical_name}
+              subtitle={`${readableType(selectedEntity.entity_type)} · ${selectedEvidenceCount} evidence · ${relationCount} relations`}
+              meta={
+                <>
+                  <StatusBadge
+                    tone={
+                      selectedEntity.status === 'active'
+                        ? 'success'
+                        : selectedEntity.status === 'deprecated'
+                        ? 'warning'
+                        : 'muted'
+                    }
+                  >
+                    {selectedEntity.status}
+                  </StatusBadge>
+                  {saving && <StatusBadge tone="info">Saving</StatusBadge>}
+                </>
+              }
+              actions={
+                <>
+                  <SecondaryButton
+                    onClick={() => {
+                      setViewMode('graph');
+                      document.getElementById('knowledge-relations-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
+                  >
+                    View graph
+                  </SecondaryButton>
+                  {canWrite && (
+                    <>
+                      <SecondaryButton onClick={() => setShowDeleteConfirm(true)} disabled={saving}>
+                        Delete
+                      </SecondaryButton>
+                      <PrimaryButton onClick={handleSaveEntity} disabled={saving}>
+                        Save
+                      </PrimaryButton>
+                    </>
+                  )}
+                </>
+              }
+            />
             <PageHeader
               eyebrow="Knowledge Workbench"
               title={selectedEntity.canonical_name}
@@ -842,31 +884,33 @@ export default function KnowledgePage() {
               }
             />
 
-            <EntityRelationsPanel
-              selectedEntity={selectedEntity}
-              relations={relations}
-              relationLoading={relationLoading}
-              relationCount={relationCount}
-              relationTargets={relationTargets}
-              relationDrafts={relationDrafts}
-              relationForm={relationForm}
-              viewMode={viewMode}
-              graphDepth={graphDepth}
-              graphData={graphData}
-              graphLoading={graphLoading}
-              canWrite={canWrite}
-              saving={saving}
-              onSetViewMode={setViewMode}
-              onSetGraphDepth={setGraphDepth}
-              onSelectEntity={handleSelectEntity}
-              onRelationFormChange={setRelationForm}
-              onCreateRelation={handleCreateRelation}
-              onRelationDraftChange={(relationId, value) =>
-                setRelationDrafts((prev) => ({ ...prev, [relationId]: value }))
-              }
-              onSaveRelationDescription={handleSaveRelationDescription}
-              onDeleteRelation={handleDeleteRelation}
-            />
+            <div id="knowledge-relations-panel">
+              <EntityRelationsPanel
+                selectedEntity={selectedEntity}
+                relations={relations}
+                relationLoading={relationLoading}
+                relationCount={relationCount}
+                relationTargets={relationTargets}
+                relationDrafts={relationDrafts}
+                relationForm={relationForm}
+                viewMode={viewMode}
+                graphDepth={graphDepth}
+                graphData={graphData}
+                graphLoading={graphLoading}
+                canWrite={canWrite}
+                saving={saving}
+                onSetViewMode={setViewMode}
+                onSetGraphDepth={setGraphDepth}
+                onSelectEntity={handleSelectEntity}
+                onRelationFormChange={setRelationForm}
+                onCreateRelation={handleCreateRelation}
+                onRelationDraftChange={(relationId, value) =>
+                  setRelationDrafts((prev) => ({ ...prev, [relationId]: value }))
+                }
+                onSaveRelationDescription={handleSaveRelationDescription}
+                onDeleteRelation={handleDeleteRelation}
+              />
+            </div>
 
             <EvidencePanel
               selectedEntity={selectedEntity}

@@ -1,0 +1,341 @@
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  Bot,
+  BookOpen,
+  Code2,
+  FileText,
+  Library,
+  Search,
+} from 'lucide-react';
+import {
+  getKnowledgeStats,
+  getStats,
+  listAgentResearchRuns,
+  listAnnotations,
+  listKnowledgeDrafts,
+  listUsers,
+} from '../api/client';
+import type {
+  AgentResearchRun,
+  AnnotationListItem,
+  KnowledgeDraft,
+  KnowledgeStats,
+  StatsResponse,
+} from '../api/types';
+import { useAuth } from '../auth';
+import {
+  EmptyState,
+  MetricCard,
+  PageHeader,
+  PageShell,
+  SectionPanel,
+  SkeletonLine,
+  StatusBadge,
+} from '../components/ui';
+
+type LoadState<T> = {
+  loading: boolean;
+  error: string;
+  data: T | null;
+};
+
+function initialState<T>(): LoadState<T> {
+  return { loading: true, error: '', data: null };
+}
+
+function roleTone(role: string) {
+  if (role === 'admin') return 'success';
+  if (role === 'editor') return 'info';
+  if (role === 'agent') return 'warning';
+  return 'muted';
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
+
+function countActiveRuns(runs: AgentResearchRun[]) {
+  return runs.filter((run) => ['queued', 'running', 'needs_review'].includes(run.status)).length;
+}
+
+function SectionError({ message }: { message: string }) {
+  return (
+    <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+      {message}
+    </div>
+  );
+}
+
+function MiniSkeleton() {
+  return (
+    <div className="space-y-3">
+      <SkeletonLine className="w-2/3" />
+      <SkeletonLine className="w-full" />
+      <SkeletonLine className="w-5/6" />
+    </div>
+  );
+}
+
+function ActionTile({
+  to,
+  icon: Icon,
+  title,
+  description,
+}: {
+  to: string;
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className="group flex min-h-28 items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:bg-slate-50"
+    >
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white">
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-slate-950 group-hover:text-slate-700">{title}</div>
+        <p className="mt-1 text-sm leading-5 text-slate-500">{description}</p>
+      </div>
+    </Link>
+  );
+}
+
+function InboxItem({
+  label,
+  value,
+  to,
+  hint,
+}: {
+  label: string;
+  value: ReactNode;
+  to: string;
+  hint: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white px-4 py-3 transition hover:bg-slate-50"
+    >
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-slate-900">{label}</div>
+        <div className="mt-0.5 text-xs text-slate-500">{hint}</div>
+      </div>
+      <div className="text-2xl font-semibold text-slate-950">{value}</div>
+    </Link>
+  );
+}
+
+function ActivityRow({
+  title,
+  subtitle,
+  to,
+  badge,
+}: {
+  title: string;
+  subtitle: string;
+  to: string;
+  badge: string;
+}) {
+  return (
+    <Link to={to} className="block rounded-lg px-3 py-2 transition hover:bg-slate-50">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium text-slate-900">{title}</div>
+          <div className="mt-0.5 truncate text-xs text-slate-500">{subtitle}</div>
+        </div>
+        <StatusBadge tone="muted" className="shrink-0">
+          {badge}
+        </StatusBadge>
+      </div>
+    </Link>
+  );
+}
+
+export default function DashboardPage() {
+  const { currentUser, isAdmin } = useAuth();
+  const [mailStats, setMailStats] = useState<LoadState<StatsResponse>>(initialState);
+  const [knowledgeStats, setKnowledgeStats] = useState<LoadState<KnowledgeStats>>(initialState);
+  const [drafts, setDrafts] = useState<LoadState<KnowledgeDraft[]>>(initialState);
+  const [annotations, setAnnotations] = useState<LoadState<AnnotationListItem[]>>(initialState);
+  const [runs, setRuns] = useState<LoadState<AgentResearchRun[]>>(initialState);
+  const [pendingUsers, setPendingUsers] = useState<LoadState<number>>(initialState);
+
+  useEffect(() => {
+    getStats()
+      .then((data) => setMailStats({ loading: false, error: '', data }))
+      .catch((error: unknown) =>
+        setMailStats({ loading: false, error: error instanceof Error ? error.message : 'Failed to load mail stats', data: null }),
+      );
+    getKnowledgeStats()
+      .then((data) => setKnowledgeStats({ loading: false, error: '', data }))
+      .catch((error: unknown) =>
+        setKnowledgeStats({ loading: false, error: error instanceof Error ? error.message : 'Failed to load knowledge stats', data: null }),
+      );
+    listKnowledgeDrafts({ status: 'new', page_size: 20 })
+      .then((data) => setDrafts({ loading: false, error: '', data: data.drafts }))
+      .catch((error: unknown) =>
+        setDrafts({ loading: false, error: error instanceof Error ? error.message : 'Failed to load drafts', data: null }),
+      );
+    listAnnotations({ page_size: 30 })
+      .then((data) => setAnnotations({ loading: false, error: '', data: data.annotations }))
+      .catch((error: unknown) =>
+        setAnnotations({ loading: false, error: error instanceof Error ? error.message : 'Failed to load annotations', data: null }),
+      );
+    listAgentResearchRuns('', 1, 20)
+      .then((data) => setRuns({ loading: false, error: '', data: data.runs }))
+      .catch((error: unknown) =>
+        setRuns({ loading: false, error: error instanceof Error ? error.message : 'Failed to load agent runs', data: null }),
+      );
+    if (isAdmin) {
+      listUsers()
+        .then((users) =>
+          setPendingUsers({
+            loading: false,
+            error: '',
+            data: users.filter((user) => user.approval_status === 'pending').length,
+          }),
+        )
+        .catch((error: unknown) =>
+          setPendingUsers({ loading: false, error: error instanceof Error ? error.message : 'Failed to load users', data: null }),
+        );
+    } else {
+      setPendingUsers({ loading: false, error: '', data: 0 });
+    }
+  }, [isAdmin]);
+
+  const channelCount = Object.keys(mailStats.data?.lists || {}).length;
+  const privateAnnotations = useMemo(
+    () => (annotations.data || []).filter((item) => item.visibility === 'private' && item.publish_status !== 'approved'),
+    [annotations.data],
+  );
+  const pendingAnnotations = useMemo(
+    () => (annotations.data || []).filter((item) => item.publish_status === 'pending'),
+    [annotations.data],
+  );
+  const activeRuns = runs.data ? countActiveRuns(runs.data) : 0;
+  const recentActivities = [
+    ...(knowledgeStats.data?.recent || []).map((entity) => ({
+      title: entity.canonical_name,
+      subtitle: `${entity.entity_type} updated ${formatDate(entity.updated_at)}`,
+      to: `/knowledge?entity_id=${encodeURIComponent(entity.entity_id)}`,
+      badge: 'Knowledge',
+      date: entity.updated_at,
+    })),
+    ...(runs.data || []).slice(0, 5).map((run) => ({
+      title: run.topic,
+      subtitle: `${run.status.replace(/_/g, ' ')} by ${run.requested_by} ${formatDate(run.updated_at)}`,
+      to: '/agent-research',
+      badge: 'Agent',
+      date: run.updated_at,
+    })),
+    ...(annotations.data || []).slice(0, 5).map((annotation) => ({
+      title: annotation.target_label || annotation.email_subject || annotation.annotation_id,
+      subtitle: `${annotation.visibility} annotation ${formatDate(annotation.updated_at)}`,
+      to: '/annotations',
+      badge: 'Note',
+      date: annotation.updated_at,
+    })),
+  ]
+    .sort((a, b) => new Date(b.date || '').getTime() - new Date(a.date || '').getTime())
+    .slice(0, 10);
+
+  return (
+    <PageShell wide>
+      <PageHeader
+        eyebrow="Dashboard"
+        title={`Hello, ${currentUser?.display_name || 'researcher'}`}
+        description="Start from the active queues, then jump into search, agent research, knowledge review, code, or manuals."
+        meta={currentUser && <StatusBadge tone={roleTone(currentUser.role)}>{currentUser.role}</StatusBadge>}
+      />
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <MetricCard label="Channels" value={mailStats.loading ? '...' : channelCount.toLocaleString()} hint="Indexed mailing lists" />
+        <MetricCard label="Emails" value={mailStats.loading ? '...' : (mailStats.data?.total_emails || 0).toLocaleString()} hint="Searchable messages" />
+        <MetricCard label="Knowledge" value={knowledgeStats.loading ? '...' : (knowledgeStats.data?.by_status.active || knowledgeStats.data?.total_entities || 0).toLocaleString()} hint="Accepted active entities" />
+      </div>
+
+      <SectionPanel title="My Inbox" description="Review queues and unfinished research surfaced in one place.">
+        {drafts.loading || annotations.loading || runs.loading ? (
+          <MiniSkeleton />
+        ) : drafts.error || annotations.error || runs.error ? (
+          <SectionError message={drafts.error || annotations.error || runs.error} />
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <InboxItem label="Knowledge drafts" value={drafts.data?.length || 0} hint="New drafts waiting for review" to="/knowledge" />
+            <InboxItem label="Private annotations" value={privateAnnotations.length} hint="Unpublished notes in your working set" to="/annotations" />
+            <InboxItem label="Agent runs" value={activeRuns} hint="Queued, running, or ready for review" to="/agent-research" />
+            {isAdmin && (
+              <InboxItem
+                label="Admin approvals"
+                value={(pendingAnnotations.length || 0) + (pendingUsers.data || 0)}
+                hint="Pending annotations and user registrations"
+                to="/admin/annotation-review"
+              />
+            )}
+          </div>
+        )}
+      </SectionPanel>
+
+      <SectionPanel title="Quick Actions">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <ActionTile to="/search" icon={Search} title="New search" description="Find threads by subsystem, symptom, patch, or tag." />
+          <ActionTile to="/ask" icon={Bot} title="Ask agent" description="Ask follow-up questions over mailing-list evidence." />
+          <ActionTile to="/agent-research" icon={FileText} title="New agent research" description="Run a topic-driven investigation and review its draft." />
+          <ActionTile to="/knowledge" icon={Library} title="Browse knowledge" description="Edit entities, evidence, relations, and review drafts." />
+          <ActionTile to="/kernel-code" icon={Code2} title="Open code" description="Inspect local kernel source and linked annotations." />
+          <ActionTile to="/manual/search" icon={BookOpen} title="Manuals" description="Search Intel SDM and related technical references." />
+        </div>
+      </SectionPanel>
+
+      <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+        <SectionPanel title="Recent Activity">
+          {knowledgeStats.loading || annotations.loading || runs.loading ? (
+            <MiniSkeleton />
+          ) : recentActivities.length === 0 ? (
+            <EmptyState title="No recent activity yet" description="Search results, accepted knowledge, annotations, and agent runs will appear here." />
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {recentActivities.map((item) => (
+                <ActivityRow key={`${item.badge}:${item.title}:${item.date}`} {...item} />
+              ))}
+            </div>
+          )}
+        </SectionPanel>
+
+        <SectionPanel title="Index Health" description="A compact readout of the search corpus available right now.">
+          {mailStats.loading || knowledgeStats.loading ? (
+            <MiniSkeleton />
+          ) : mailStats.error || knowledgeStats.error ? (
+            <SectionError message={mailStats.error || knowledgeStats.error} />
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                <span className="text-sm text-slate-500">Mail corpus</span>
+                <span className="text-sm font-semibold text-slate-950">{(mailStats.data?.total_emails || 0).toLocaleString()} emails</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                <span className="text-sm text-slate-500">Knowledge graph</span>
+                <span className="text-sm font-semibold text-slate-950">{(knowledgeStats.data?.total_entities || 0).toLocaleString()} entities</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                <span className="text-sm text-slate-500">Relations</span>
+                <span className="text-sm font-semibold text-slate-950">{(knowledgeStats.data?.total_relations || 0).toLocaleString()}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                <span className="text-sm text-slate-500">Semantic search</span>
+                <StatusBadge tone="info">Available when vectors are indexed</StatusBadge>
+              </div>
+            </div>
+          )}
+        </SectionPanel>
+      </div>
+    </PageShell>
+  );
+}

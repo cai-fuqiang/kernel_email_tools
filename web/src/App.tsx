@@ -6,6 +6,7 @@ import { ToastProvider } from './components/Toast';
 import { SkeletonCard } from './components/ui';
 
 const SearchPage = lazy(() => import('./pages/SearchPage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const AskPage = lazy(() => import('./pages/AskPage'));
 const AgentResearchPage = lazy(() => import('./pages/AgentResearchPage'));
 const TagsPage = lazy(() => import('./pages/TagsPage'));
@@ -66,7 +67,8 @@ export default function App() {
             </Route>
             <Route element={<ProtectedRoute />}>
               <Route element={<MainLayout />}>
-                <Route path="/" element={<SearchPage />} />
+                <Route path="/" element={<DashboardPage />} />
+                <Route path="/search" element={<SearchPage />} />
                 <Route path="/ask" element={<AskPage />} />
                 <Route path="/agent-research" element={<AgentResearchPage />} />
 

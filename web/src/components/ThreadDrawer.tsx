@@ -18,6 +18,8 @@ import { showToast } from './Toast';
 import LayeredEmailCard from './LayeredEmailCard';
 import TreeEmailCard from './TreeEmailCard';
 import ContributionChips from './ContributionChips';
+import StickyContextBar from './StickyContextBar';
+import { StatusBadge } from './ui';
 import { useContributions } from '../hooks/useContributions';
 import {
   buildThreadTree,
@@ -418,102 +420,103 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
       <div className="relative ml-auto bg-gray-50 flex flex-col"
            style={{ width: '90vw', height: '100vh' }}>
         {/* 顶部工具栏 */}
-        <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4 min-w-0">
-            <h3 className="text-lg font-bold text-gray-900">
-              Thread ({thread?.total ?? '...'})
-            </h3>
-            {thread?.emails[0] && (
-              <span className="text-sm text-gray-500 truncate max-w-md">
-                {thread.emails[0].subject}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleTranslate}
-              disabled={translating || translationStats.total === 0}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                translating 
-                  ? 'bg-blue-300 text-white cursor-not-allowed' 
-                  : translationStats.translated > 0
-                    ? 'bg-green-500 text-white hover:bg-green-600'
-                    : 'bg-blue-500 text-white hover:bg-blue-600'
-              }`}
-            >
-              {translating ? (
-                <>
-                  <span className="inline-block animate-spin mr-2">&#x27F3;</span>
-                  翻译中 ({translationStats.translated}/{translationStats.total})
-                </>
-              ) : translationStats.translated > 0 ? (
-                <>已翻译 ({translationStats.translated}/{translationStats.total})</>
-              ) : (
-                <>中英对照</>
-              )}
-            </button>
-            <div className="relative">
+        <StickyContextBar
+          className="mx-0 md:mx-0"
+          title={thread?.emails[0]?.subject || 'Thread'}
+          subtitle={`${thread?.emails.length ?? 0} emails · ${thread?.annotations?.length ?? 0} annotations · ${threadTree.length} roots`}
+          meta={
+            <>
+              <StatusBadge tone={viewMode === 'tree' ? 'info' : 'muted'}>Tree</StatusBadge>
+              <StatusBadge tone={viewMode === 'layered' ? 'info' : 'muted'}>Layered</StatusBadge>
+            </>
+          }
+          actions={
+            <>
               <button
-                onClick={handleClearAllCache}
-                className="px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 rounded-lg transition-colors border border-orange-200"
-                title="清除全部翻译缓存"
-              >
-                清除缓存
-              </button>
-              {cacheMessage && (
-                <div className={`absolute top-full mt-1 right-0 px-3 py-1.5 rounded-lg text-sm whitespace-nowrap z-10 ${
-                  cacheMessage.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                }`}>
-                  {cacheMessage.text}
-                </div>
-              )}
-            </div>
-            {thread?.annotations && thread.annotations.length > 0 && (
-              <button
-                onClick={handleExportAnnotations}
-                className="px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-200"
-                title="导出批注为 JSON"
-              >
-                导出批注
-              </button>
-            )}
-            <button
-              onClick={handleImportAnnotations}
-              className="px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-200"
-              title="从 JSON 文件导入批注"
-            >
-              导入批注
-            </button>
-            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-              <button
-                onClick={enterTreeMode}
-                className={`px-2 py-1.5 text-xs rounded transition-colors ${
-                  viewMode === 'tree' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:bg-gray-200'
+                onClick={handleTranslate}
+                disabled={translating || translationStats.total === 0}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                  translating
+                    ? 'cursor-not-allowed bg-blue-300 text-white'
+                    : translationStats.translated > 0
+                      ? 'bg-green-500 text-white hover:bg-green-600'
+                      : 'bg-blue-500 text-white hover:bg-blue-600'
                 }`}
-                title="树形模式"
               >
-                树形
+                {translating ? (
+                  <>
+                    <span className="mr-2 inline-block animate-spin">&#x27F3;</span>
+                    翻译中 ({translationStats.translated}/{translationStats.total})
+                  </>
+                ) : translationStats.translated > 0 ? (
+                  <>已翻译 ({translationStats.translated}/{translationStats.total})</>
+                ) : (
+                  <>中英对照</>
+                )}
               </button>
+              <div className="relative">
+                <button
+                  onClick={handleClearAllCache}
+                  className="rounded-lg border border-orange-200 px-3 py-2 text-sm text-orange-600 transition-colors hover:bg-orange-50"
+                  title="清除全部翻译缓存"
+                >
+                  清除缓存
+                </button>
+                {cacheMessage && (
+                  <div className={`absolute right-0 top-full z-10 mt-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm ${
+                    cacheMessage.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                  }`}>
+                    {cacheMessage.text}
+                  </div>
+                )}
+              </div>
+              {thread?.annotations && thread.annotations.length > 0 && (
+                <button
+                  onClick={handleExportAnnotations}
+                  className="rounded-lg border border-blue-200 px-3 py-2 text-sm text-blue-600 transition-colors hover:bg-blue-50"
+                  title="导出批注为 JSON"
+                >
+                  导出批注
+                </button>
+              )}
               <button
-                onClick={enterLayeredMode}
-                className={`px-2 py-1.5 text-xs rounded transition-colors ${
-                  viewMode === 'layered' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:bg-gray-200'
-                }`}
-                title="分层展开"
+                onClick={handleImportAnnotations}
+                className="rounded-lg border border-blue-200 px-3 py-2 text-sm text-blue-600 transition-colors hover:bg-blue-50"
+                title="从 JSON 文件导入批注"
               >
-                分层
+                导入批注
               </button>
-            </div>
-            <button onClick={expandAll} className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">全部展开</button>
-            <button onClick={collapseAll} className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">全部收起</button>
-            <button 
-              onClick={onClose} 
-              className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-xl"
-            >
-              &#x2715;
-            </button>
-          </div>
-        </div>
+              <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
+                <button
+                  onClick={enterTreeMode}
+                  className={`rounded px-2 py-1.5 text-xs transition-colors ${
+                    viewMode === 'tree' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:bg-gray-200'
+                  }`}
+                  title="树形模式"
+                >
+                  树形
+                </button>
+                <button
+                  onClick={enterLayeredMode}
+                  className={`rounded px-2 py-1.5 text-xs transition-colors ${
+                    viewMode === 'layered' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:bg-gray-200'
+                  }`}
+                  title="分层展开"
+                >
+                  分层
+                </button>
+              </div>
+              <button onClick={expandAll} className="rounded-lg px-3 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-100">全部展开</button>
+              <button onClick={collapseAll} className="rounded-lg px-3 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-100">全部收起</button>
+              <button
+                onClick={onClose}
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-xl text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+              >
+                &#x2715;
+              </button>
+            </>
+          }
+        />
         {(translating || (translationJob && translationJob.total > 0)) && (
           <div className="bg-white border-b border-gray-100 px-6 py-3">
             <div className="flex items-center justify-between text-xs text-gray-500 mb-1.5">

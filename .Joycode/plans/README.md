@@ -18,7 +18,7 @@
 | PLAN | 主题 | Status | Priority | 备注 |
 |------|------|--------|----------|------|
 | [PLAN-30002](PLAN-30002-external-code-jump.md) | 代码跳转与 local-first resolver | in-progress | **P1** | 外链闭环已完成；下一步把 Elixir 降级为 fallback，建立本地代码 resolver |
-| [PLAN-31004](PLAN-31004-ui-information-hierarchy.md) | UI 信息层次与首屏引导（Workbench 第二轮） | planned | **P1** | Dashboard + Sticky 上下文条 + 信息密度 |
+| [PLAN-31004](PLAN-31004-ui-information-hierarchy.md) | UI 信息层次与首屏引导（Workbench 第二轮） | in-progress | **P1** | Dashboard 首屏已接入；下一步 Sticky 上下文条 + 信息密度 |
 | [PLAN-31002](PLAN-31002-knowledge-workbench-roadmap.md) | Knowledge Workbench 路线图 | in-progress | P2 | 范围过大，新工作请新建独立 PLAN 引用 |
 | [PLAN-36000](PLAN-36000-survey-style-batch-tagging.md) | Survey-Style 批量打标签（YAML 问卷） | planned | P2 | 借鉴 eunomia-bpf/code-survey；先 Phase 1 PoC 验证质量 |
 | [PLAN-35001](PLAN-35001-FUTURE-ai-assisted-knowledge-pipeline.md) | AI 邮件入库流水线 | future | P3 | 100 万邮件 LLM 成本 ~$2000，先验证再放量 |
