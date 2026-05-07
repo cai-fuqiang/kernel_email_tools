@@ -79,7 +79,7 @@ export default function MainLayout() {
   }, [location.pathname]);
 
   const researchItems: NavItem[] = [
-    { to: '/', label: 'Home', icon: LayoutDashboard, end: true },
+    { to: '/dashboard', label: 'Home', icon: LayoutDashboard },
     { to: '/search', label: 'Search Emails', icon: Search },
     { to: '/ask', label: 'Ask Agent', icon: Bot },
     { to: '/agent-research', label: 'Agent Research', icon: Bot },

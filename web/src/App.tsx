@@ -49,7 +49,7 @@ function PublicOnlyRoute() {
     return <div className="min-h-screen flex items-center justify-center text-slate-500">Loading session...</div>;
   }
   if (isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
   return <Outlet />;
 }
@@ -67,7 +67,8 @@ export default function App() {
             </Route>
             <Route element={<ProtectedRoute />}>
               <Route element={<MainLayout />}>
-                <Route path="/" element={<DashboardPage />} />
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/search" element={<SearchPage />} />
                 <Route path="/ask" element={<AskPage />} />
                 <Route path="/agent-research" element={<AgentResearchPage />} />
