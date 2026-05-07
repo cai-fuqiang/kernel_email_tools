@@ -5,15 +5,13 @@ import {
   Bot,
   Code2,
   FileCheck2,
+  Inbox,
   Languages,
   Library,
   LayoutDashboard,
   LogOut,
   MailSearch,
   Menu,
-  NotebookText,
-  Search,
-  Tags,
   Users,
   X,
 } from 'lucide-react';
@@ -80,14 +78,12 @@ export default function MainLayout() {
 
   const researchItems: NavItem[] = [
     { to: '/dashboard', label: 'Home', icon: LayoutDashboard },
-    { to: '/search', label: 'Search Emails', icon: Search },
+    { to: '/workspace', label: 'Workspace', icon: Inbox },
     { to: '/ask', label: 'Ask Agent', icon: Bot },
     { to: '/agent-research', label: 'Agent Research', icon: Bot },
   ];
   const workbenchItems: NavItem[] = [
     { to: '/knowledge', label: 'Knowledge', icon: Library },
-    { to: '/tags', label: 'Tags', icon: Tags },
-    { to: '/annotations', label: 'Annotations', icon: NotebookText },
     { to: '/translations', label: 'Translations', icon: Languages },
   ];
   const manualItems: NavItem[] = [

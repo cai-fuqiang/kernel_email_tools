@@ -238,7 +238,7 @@ export default function DashboardPage() {
     ...(annotations.data || []).slice(0, 5).map((annotation) => ({
       title: annotation.target_label || annotation.email_subject || annotation.annotation_id,
       subtitle: `${annotation.visibility} annotation ${formatDate(annotation.updated_at)}`,
-      to: '/annotations',
+      to: '/workspace?view=annotation',
       badge: 'Note',
       date: annotation.updated_at,
     })),
@@ -269,7 +269,7 @@ export default function DashboardPage() {
         ) : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <InboxItem label="Knowledge drafts" value={drafts.data?.length || 0} hint="New drafts waiting for review" to="/knowledge" />
-            <InboxItem label="Private annotations" value={privateAnnotations.length} hint="Unpublished notes in your working set" to="/annotations" />
+            <InboxItem label="Private annotations" value={privateAnnotations.length} hint="Unpublished notes in your working set" to="/workspace?view=annotation" />
             <InboxItem label="Agent runs" value={activeRuns} hint="Queued, running, or ready for review" to="/agent-research" />
             {isAdmin && (
               <InboxItem
@@ -285,7 +285,7 @@ export default function DashboardPage() {
 
       <SectionPanel title="Quick Actions">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <ActionTile to="/search" icon={Search} title="New search" description="Find threads by subsystem, symptom, patch, or tag." />
+          <ActionTile to="/workspace" icon={Search} title="New search" description="Find threads by subsystem, symptom, patch, or tag." />
           <ActionTile to="/ask" icon={Bot} title="Ask agent" description="Ask follow-up questions over mailing-list evidence." />
           <ActionTile to="/agent-research" icon={FileText} title="New agent research" description="Run a topic-driven investigation and review its draft." />
           <ActionTile to="/knowledge" icon={Library} title="Browse knowledge" description="Edit entities, evidence, relations, and review drafts." />

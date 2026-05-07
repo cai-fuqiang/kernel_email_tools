@@ -20,6 +20,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const KnowledgePage = lazy(() => import('./pages/KnowledgePage'));
 const AnnotationReviewPage = lazy(() => import('./pages/AnnotationReviewPage'));
+const WorkspacePage = lazy(() => import('./pages/WorkspacePage'));
 
 function RouteFallback() {
   return (
@@ -70,6 +71,7 @@ export default function App() {
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/search" element={<SearchPage />} />
+                <Route path="/workspace" element={<WorkspacePage />} />
                 <Route path="/ask" element={<AskPage />} />
                 <Route path="/agent-research" element={<AgentResearchPage />} />
 
