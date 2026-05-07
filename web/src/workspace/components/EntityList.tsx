@@ -20,8 +20,6 @@ interface EntityListProps {
   entities: WorkspaceEntity[];
   selectedId?: string | null;
   onSelect: (entity: WorkspaceEntity) => void;
-  /** 选中项额外的行内短展开内容（高度封顶 ~140px，调用方自行收敛） */
-  renderInlineExpansion?: (entity: WorkspaceEntity) => React.ReactNode;
   emptyMessage?: string;
 }
 
@@ -31,12 +29,13 @@ interface EntityListProps {
  * 严格约束：本文件内禁止出现 `entity.kind === 'xxx'` 的差异化分支。
  * 所有 kind 差异都收敛在 adapter（数据形状）和 detail renderer（详情态）中。
  * KIND_ICON 通过 map 索引而非 if/switch，未来扩展只需扩 map。
+ *
+ * 选中项仅通过高亮（bg-indigo-50 + border-l-2）提示，完整详情交给右侧 EntityDetailPanel。
  */
 export default function EntityList({
   entities,
   selectedId,
   onSelect,
-  renderInlineExpansion,
   emptyMessage = '没有匹配的实体',
 }: EntityListProps) {
   if (entities.length === 0) {
@@ -96,12 +95,6 @@ export default function EntityList({
                 </div>
               )}
             </div>
-
-            {isSelected && renderInlineExpansion && (
-              <div className="mt-3 max-h-36 overflow-hidden rounded-lg border border-indigo-100 bg-white p-3 text-xs">
-                {renderInlineExpansion(entity)}
-              </div>
-            )}
           </li>
         );
       })}

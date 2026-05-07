@@ -12,7 +12,7 @@ import {
   type WorkspaceView,
 } from '../workspace/hooks/useWorkspaceData';
 import type { WorkspaceEntity } from '../workspace/types';
-import type { AnnotationListItem, ChannelOption, SearchHit } from '../api/types';
+import type { AnnotationListItem, ChannelOption } from '../api/types';
 import { getChannels, getTagStats, type TagStats } from '../api/client';
 
 const VALID_VIEWS: WorkspaceView[] = ['email', 'tag', 'annotation'];
@@ -148,38 +148,6 @@ export default function WorkspacePage() {
     }
   }
 
-  function renderInlineExpansion(entity: WorkspaceEntity): React.ReactNode {
-    if (entity.kind !== 'email_thread') return null;
-    const hit = entity.raw as SearchHit;
-    return (
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="mb-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
-            {hit.list_name && <span className="rounded bg-slate-100 px-1.5 py-0.5">{hit.list_name}</span>}
-            {hit.has_patch && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">patch</span>}
-            {hit.source && <span className="rounded bg-slate-100 px-1.5 py-0.5">{hit.source}</span>}
-          </div>
-          {hit.snippet && (
-            <div
-              className="line-clamp-3 text-xs leading-relaxed text-slate-700"
-              dangerouslySetInnerHTML={{ __html: hit.snippet }}
-            />
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={(ev) => {
-            ev.stopPropagation();
-            handleOpenTarget(entity);
-          }}
-          className="shrink-0 rounded bg-slate-900 px-2 py-1 text-[11px] font-medium text-white hover:bg-slate-800"
-        >
-          → 打开线程
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div className="flex min-h-[calc(100vh-3rem)] flex-col">
       <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-6 py-3 backdrop-blur">
@@ -292,7 +260,6 @@ export default function WorkspacePage() {
                 entities={data.entities}
                 selectedId={selectedId}
                 onSelect={(entity) => setSelectedId(entity.id)}
-                renderInlineExpansion={renderInlineExpansion}
               />
               {data.total > 0 && view !== 'tag' && (
                 <div className="flex items-center justify-center gap-2 p-4 text-xs text-slate-500">
