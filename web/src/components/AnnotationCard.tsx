@@ -128,7 +128,7 @@ export default function AnnotationCard({
           >
             <Info size={14} />
           </button>
-          <div className="absolute right-0 top-full z-20 mt-2 hidden w-72 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-xl shadow-slate-900/10 group-hover/annotation-card:block group-focus-within/annotation-card:block">
+          <div className="fixed inset-x-3 bottom-3 z-50 mt-2 hidden max-h-[72vh] overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 text-left shadow-xl shadow-slate-900/10 group-hover/annotation-card:block group-focus-within/annotation-card:block md:absolute md:bottom-auto md:left-auto md:right-0 md:top-full md:max-h-[calc(100vh-8rem)] md:w-72">
             <div className="mb-2 flex items-center justify-between gap-3">
               <div className="text-xs font-semibold text-slate-950">Annotation details</div>
               <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${statusTone}`}>

@@ -129,7 +129,7 @@ function TranslatedThreadCard({
         </div>
       </div>
 
-      <div className="pointer-events-auto absolute right-3 top-12 z-20 hidden w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-xl shadow-slate-900/10 group-hover:block group-focus-within:block">
+      <div className="pointer-events-auto fixed inset-x-3 bottom-3 z-50 hidden max-h-[72vh] overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 shadow-xl shadow-slate-900/10 group-hover:block group-focus-within:block md:absolute md:bottom-auto md:left-auto md:right-3 md:top-12 md:max-h-[calc(100vh-8rem)] md:w-72">
         <div className="mb-2 flex items-center justify-between gap-3">
           <div className="text-xs font-semibold text-slate-950">Translation details</div>
           <div className="text-[11px] text-slate-500">{formatDate(thread.last_translated_at)}</div>

@@ -31,8 +31,8 @@ export default function ResultCard({
   const hasInspector = tagCount > 0 || knowledgeCount > 0 || annotationCount > 0 || draftCount > 0 || hit.source;
 
   return (
-    <div className="group rounded-lg border border-gray-200 bg-white px-4 py-3 transition hover:border-slate-300 hover:bg-slate-50">
-      <div className="flex items-start gap-3">
+    <div className="group rounded-lg border border-gray-200 bg-white px-3 py-2 transition hover:border-slate-300 hover:bg-slate-50">
+      <div className="flex items-start gap-2">
         {onToggleSelect && (
           <input
             type="checkbox"
@@ -48,13 +48,13 @@ export default function ResultCard({
             <button
               type="button"
               onClick={onThread}
-              className="min-w-0 truncate text-left text-base font-semibold text-gray-950 hover:text-indigo-700"
+              className="min-w-0 truncate text-left text-sm font-semibold leading-5 text-gray-950 hover:text-indigo-700"
             >
               {hit.subject}
             </button>
           </div>
 
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
             <span className="truncate font-medium text-gray-700">{senderName}</span>
             {dateLabel && <span>{dateLabel}</span>}
             {hit.list_name && <span>{hit.list_name}</span>}
@@ -67,7 +67,7 @@ export default function ResultCard({
 
           {hit.snippet && (
             <p
-              className="mt-1.5 line-clamp-2 text-xs leading-5 text-gray-600"
+              className="mt-1 line-clamp-1 text-xs leading-5 text-gray-600"
               dangerouslySetInnerHTML={{
                 __html: highlightSnippet(hit.snippet),
               }}
@@ -86,7 +86,7 @@ export default function ResultCard({
                 <Tags size={13} />
                 {tagCount + annotationCount + knowledgeCount + draftCount}
               </button>
-              <div className="pointer-events-auto absolute right-0 top-full z-20 mt-2 hidden w-72 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-xl shadow-slate-900/10 group-hover:block group-focus-within:block">
+              <div className="pointer-events-auto fixed inset-x-3 bottom-3 z-50 hidden max-h-[72vh] overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 text-left shadow-xl shadow-slate-900/10 group-hover:block group-focus-within:block md:absolute md:bottom-auto md:left-auto md:right-0 md:top-full md:mt-2 md:max-h-[calc(100vh-8rem)] md:w-72">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <div className="text-xs font-semibold text-slate-950">Result inspector</div>
                   <div className="text-[11px] text-slate-500">score {hit.score.toFixed(3)}</div>
