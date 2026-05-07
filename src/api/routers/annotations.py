@@ -26,7 +26,7 @@ from src.api.deps import (
     _resolve_user_from_session,
 )
 from src.api.schemas import AnnotationResponse, DraftApplyRequest, DraftApplyResponse
-from src.storage.models import AnnotationORM
+from src.storage.models import AnnotationCreate, AnnotationORM
 
 router = APIRouter(tags=["annotations"])
 
@@ -146,7 +146,7 @@ async def get_annotation_stats(current_user: Optional[CurrentUser] = Depends(get
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
 
     from sqlalchemy import func, select
-    from src.storage.models import AnnotationORM
+    from src.storage.models import AnnotationCreate, AnnotationORM
 
     async with state._annotation_store.session_factory() as session:
         stmt = (
