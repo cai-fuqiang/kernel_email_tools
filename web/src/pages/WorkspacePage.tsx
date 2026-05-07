@@ -4,7 +4,10 @@ import { Mail, NotebookText, Search, Tag as TagIcon } from 'lucide-react';
 import { useAuth } from '../auth';
 import ThreadDrawer from '../components/ThreadDrawer';
 import EntityList from '../workspace/components/EntityList';
-import EntityDetailPanel from '../workspace/components/EntityDetailPanel';
+import EntityDetailPanel, {
+  type AnnotationActionCallbacks,
+} from '../workspace/components/EntityDetailPanel';
+import ConfirmModal from '../components/ConfirmModal';
 import EmailFilterBar from '../workspace/components/EmailFilterBar';
 import {
   useWorkspaceData,
@@ -12,8 +15,21 @@ import {
   type WorkspaceView,
 } from '../workspace/hooks/useWorkspaceData';
 import type { WorkspaceEntity } from '../workspace/types';
-import type { AnnotationListItem, ChannelOption, TagTargetItem } from '../api/types';
-import { getChannels, getTagStats, type TagStats } from '../api/client';
+import type { AnnotationListItem, ChannelOption, CodeAnnotation, TagTargetItem, TagTree } from '../api/types';
+import {
+  deleteAnnotation,
+  deleteCodeAnnotation,
+  deleteTag,
+  getChannels,
+  getTagStats,
+  requestAnnotationPublication,
+  withdrawAnnotationPublication,
+  approveAnnotationPublication,
+  rejectAnnotationPublication,
+  updateAnnotation,
+  type TagStats,
+} from '../api/client';
+import { showToast } from '../components/Toast';
 
 const VALID_VIEWS: WorkspaceView[] = ['email', 'tag', 'annotation'];
 const PAGE_SIZE = 20;
@@ -40,7 +56,7 @@ const DEFAULT_FILTERS: Omit<WorkspaceFilters, 'q'> = {
 };
 
 export default function WorkspacePage() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isAdmin, canWrite, currentUser } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -186,6 +202,101 @@ export default function WorkspacePage() {
     console.warn('[Workspace] no handler for tag target type', t.target_type, t.target_ref);
   }
 
+  // ── Tag 视图 ────────────────────────────────────────────────────────────
+
+  function canDeleteTag(entity: WorkspaceEntity): boolean {
+    if (!isAuthenticated) return false;
+    if (isAdmin) return true;
+    // editor 只能删自己的 private tag（后端规则）
+    const tag = entity.raw as TagTree | { visibility?: string; owner_user_id?: string | null; created_by_user_id?: string | null };
+    if (tag.visibility === 'public') return false;
+    return Boolean(currentUser && (
+      (tag as { owner_user_id?: string | null }).owner_user_id === currentUser.user_id ||
+      (tag as { created_by_user_id?: string | null }).created_by_user_id === currentUser.user_id
+    ));
+  }
+
+  async function handleDeleteTag(entity: WorkspaceEntity) {
+    const t = entity.raw as TagTree | { id: number; name: string };
+    await deleteTag(t.id);
+    showToast('标签已删除', 'success');
+    setSelectedId(null);
+    data.refresh();
+  }
+
+  // ── Annotation 视图 ────────────────────────────────────────────────────
+
+  /** 按后端 RBAC 规则计算各 publish 动作的可见性。 */
+  function annotationPermissions(a: AnnotationListItem | CodeAnnotation) {
+    const authorMatch = Boolean(currentUser && a.author_user_id && a.author_user_id === currentUser.user_id);
+    const isOwnPrivate = authorMatch && a.visibility === 'private' && a.publish_status !== 'pending';
+    return {
+      canManage: Boolean(currentUser && (isAdmin || (canWrite && isOwnPrivate))),
+      canRequestPublish: Boolean(
+        currentUser && !isAdmin && authorMatch && a.visibility === 'private' && a.publish_status !== 'pending',
+      ),
+      canWithdrawPublish: Boolean(currentUser && a.publish_status === 'pending' && (isAdmin || authorMatch)),
+      canApprovePublish: Boolean(currentUser && isAdmin && a.publish_status === 'pending'),
+      canRejectPublish: Boolean(currentUser && isAdmin && a.publish_status === 'pending'),
+    };
+  }
+
+  const [annotationConfirm, setAnnotationConfirm] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    action: () => Promise<void>;
+  } | null>(null);
+
+  const annotationActions: AnnotationActionCallbacks = {
+    onEdit: async (a, body) => {
+      try {
+        await updateAnnotation(a.annotation_id, body);
+        showToast('已保存', 'success');
+        data.refresh();
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : String(e), 'error');
+      }
+    },
+    onDelete: (a) => {
+      setAnnotationConfirm({
+        title: '删除批注',
+        message: '确定删除这个批注？此操作不可撤销。',
+        confirmLabel: '删除',
+        action: async () => {
+          if (a.annotation_type === 'code') {
+            await deleteCodeAnnotation(a.annotation_id);
+          } else {
+            await deleteAnnotation(a.annotation_id);
+          }
+          showToast('批注已删除', 'success');
+          setSelectedId(null);
+          data.refresh();
+        },
+      });
+    },
+    onRequestPublish: (a) => {
+      requestAnnotationPublication(a.annotation_id)
+        .then(() => { showToast('已提交公开申请', 'success'); data.refresh(); })
+        .catch((e) => showToast(e instanceof Error ? e.message : String(e), 'error'));
+    },
+    onWithdrawPublish: (a) => {
+      withdrawAnnotationPublication(a.annotation_id)
+        .then(() => { showToast('已撤回申请', 'success'); data.refresh(); })
+        .catch((e) => showToast(e instanceof Error ? e.message : String(e), 'error'));
+    },
+    onApprovePublish: (a, comment) => {
+      approveAnnotationPublication(a.annotation_id, comment)
+        .then(() => { showToast('已通过公开申请', 'success'); data.refresh(); })
+        .catch((e) => showToast(e instanceof Error ? e.message : String(e), 'error'));
+    },
+    onRejectPublish: (a, comment) => {
+      rejectAnnotationPublication(a.annotation_id, comment)
+        .then(() => { showToast('已驳回', 'success'); data.refresh(); })
+        .catch((e) => showToast(e instanceof Error ? e.message : String(e), 'error'));
+    },
+  };
+
   return (
     <div className="flex min-h-[calc(100vh-3rem)] flex-col">
       <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-6 py-3 backdrop-blur">
@@ -330,6 +441,10 @@ export default function WorkspacePage() {
             entity={selectedEntity}
             onOpenTarget={handleOpenTarget}
             onOpenTagTarget={handleOpenTagTarget}
+            onDeleteTag={handleDeleteTag}
+            canDeleteTag={canDeleteTag}
+            annotationActions={annotationActions}
+            annotationPermissions={annotationPermissions}
             onClose={() => setSelectedId(null)}
           />
         </aside>
@@ -340,6 +455,22 @@ export default function WorkspacePage() {
           threadId={threadOpen.threadId}
           focusMessageId={threadOpen.focusMessageId}
           onClose={() => setThreadOpen(null)}
+        />
+      )}
+
+      {annotationConfirm && (
+        <ConfirmModal
+          isOpen
+          title={annotationConfirm.title}
+          message={annotationConfirm.message}
+          confirmLabel={annotationConfirm.confirmLabel}
+          cancelLabel="取消"
+          variant="danger"
+          onConfirm={() => {
+            void annotationConfirm.action();
+            setAnnotationConfirm(null);
+          }}
+          onCancel={() => setAnnotationConfirm(null)}
         />
       )}
     </div>

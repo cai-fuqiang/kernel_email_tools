@@ -1,10 +1,25 @@
 import { useMemo, useState } from 'react';
-import { X, ExternalLink, Maximize2 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { X, ExternalLink, Trash2 } from 'lucide-react';
 import type { AnnotationListItem, CodeAnnotation, SearchHit, TagRead, TagTargetItem, TagTree } from '../../api/types';
 import type { WorkspaceEntity, WorkspaceEntityKind } from '../types';
+import AnnotationCard from '../../components/AnnotationCard';
+import ConfirmModal from '../../components/ConfirmModal';
 import TagSummaryCard from './TagSummaryCard';
+
+/**
+ * Annotation action handlers exposed by the parent page. These map 1:1 to the
+ * shared AnnotationCard callbacks so that delete / edit / publish workflows
+ * reuse the exact same logic as ThreadDrawer / AnnotationTree /
+ * kernelCode AnnotationPanel.
+ */
+export interface AnnotationActionCallbacks {
+  onEdit?: (a: AnnotationListItem | CodeAnnotation, body: string) => Promise<void> | void;
+  onDelete?: (a: AnnotationListItem | CodeAnnotation) => Promise<void> | void;
+  onRequestPublish?: (a: AnnotationListItem | CodeAnnotation) => Promise<void> | void;
+  onWithdrawPublish?: (a: AnnotationListItem | CodeAnnotation) => Promise<void> | void;
+  onApprovePublish?: (a: AnnotationListItem | CodeAnnotation, comment: string) => Promise<void> | void;
+  onRejectPublish?: (a: AnnotationListItem | CodeAnnotation, comment: string) => Promise<void> | void;
+}
 
 interface EntityDetailPanelProps {
   entity: WorkspaceEntity | null;
@@ -12,6 +27,24 @@ interface EntityDetailPanelProps {
   onOpenTarget?: (entity: WorkspaceEntity) => void;
   /** 点击 tag 详情面板里的某个 target item（用于 tag 视图下的跳转） */
   onOpenTagTarget?: (target: TagTargetItem) => void;
+  /** Tag 删除回调（annotation 的删除由 AnnotationCard 内部按钮触发）。 */
+  onDeleteTag?: (entity: WorkspaceEntity) => Promise<void> | void;
+  /** 是否允许当前用户删除 tag；annotation 的权限由 annotationPermissions 控制。 */
+  canDeleteTag?: (entity: WorkspaceEntity) => boolean;
+  /** Annotation card 的动作回调（edit / delete / publish-*）。 */
+  annotationActions?: AnnotationActionCallbacks;
+  /**
+   * 为当前批注计算各动作的可见性。字段语义与 AnnotationCard 的 `can*` 完全一致，
+   * 父层可复用后端 RBAC 规则（admin 全权；author 仅可操作自己的 private 且非
+   * pending；public 批注仅 admin 可改/删等）。
+   */
+  annotationPermissions?: (a: AnnotationListItem | CodeAnnotation) => {
+    canManage: boolean;
+    canRequestPublish: boolean;
+    canWithdrawPublish: boolean;
+    canApprovePublish: boolean;
+    canRejectPublish: boolean;
+  };
   onClose?: () => void;
 }
 
@@ -25,12 +58,26 @@ interface EntityDetailPanelProps {
 
 interface RendererCtx {
   onOpenTagTarget?: (target: TagTargetItem) => void;
+  annotationActions?: AnnotationActionCallbacks;
+  annotationPermissions?: (a: AnnotationListItem | CodeAnnotation) => {
+    canManage: boolean;
+    canRequestPublish: boolean;
+    canWithdrawPublish: boolean;
+    canApprovePublish: boolean;
+    canRejectPublish: boolean;
+  };
 }
 
 // 各 kind renderer（返回 ReactNode）。kind 差异收敛在此 map 内，外层布局/操作区共用。
 const RENDERERS: Record<WorkspaceEntityKind, (entity: WorkspaceEntity, ctx: RendererCtx) => React.ReactNode> = {
   email_thread: (entity) => renderEmailThread(entity.raw as SearchHit),
-  annotation: (entity) => <AnnotationDetail annotation={entity.raw as AnnotationListItem | CodeAnnotation} />,
+  annotation: (entity, ctx) => (
+    <AnnotationDetail
+      annotation={entity.raw as AnnotationListItem | CodeAnnotation}
+      actions={ctx.annotationActions}
+      computePermissions={ctx.annotationPermissions}
+    />
+  ),
   tag: (entity, ctx) => (
     <TagSummaryCard tag={entity.raw as TagTree | TagRead} onOpenTarget={ctx.onOpenTagTarget} />
   ),
@@ -39,12 +86,42 @@ const RENDERERS: Record<WorkspaceEntityKind, (entity: WorkspaceEntity, ctx: Rend
   ),
 };
 
-export default function EntityDetailPanel({ entity, onOpenTarget, onOpenTagTarget, onClose }: EntityDetailPanelProps) {
+export default function EntityDetailPanel({
+  entity,
+  onOpenTarget,
+  onOpenTagTarget,
+  onDeleteTag,
+  canDeleteTag,
+  annotationActions,
+  annotationPermissions,
+  onClose,
+}: EntityDetailPanelProps) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   const rendered = useMemo(() => {
     if (!entity) return null;
     const r = RENDERERS[entity.kind];
-    return r ? r(entity, { onOpenTagTarget }) : <div className="p-5 text-sm text-slate-500">未知 kind: {entity.kind}</div>;
-  }, [entity, onOpenTagTarget]);
+    return r
+      ? r(entity, { onOpenTagTarget, annotationActions, annotationPermissions })
+      : <div className="p-5 text-sm text-slate-500">未知 kind: {entity.kind}</div>;
+  }, [entity, onOpenTagTarget, annotationActions, annotationPermissions]);
+
+  // 仅 tag kind 在外层渲染删除按钮；annotation 的删除由 AnnotationCard 内部按钮触发。
+  const tagDeletable = Boolean(
+    entity && entity.kind === 'tag' && onDeleteTag && (canDeleteTag ? canDeleteTag(entity) : true),
+  );
+
+  async function handleDeleteConfirm() {
+    if (!entity || !onDeleteTag) return;
+    setDeleting(true);
+    try {
+      await onDeleteTag(entity);
+      setConfirmOpen(false);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   if (!entity) {
     return (
@@ -97,10 +174,35 @@ export default function EntityDetailPanel({ entity, onOpenTarget, onOpenTagTarge
               打开完整视图
             </button>
           )}
+          {tagDeletable && (
+            <button
+              type="button"
+              onClick={() => setConfirmOpen(true)}
+              className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs text-rose-600 hover:bg-rose-50"
+            >
+              <Trash2 className="h-3 w-3" />
+              删除标签
+            </button>
+          )}
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">{rendered}</div>
+
+      <ConfirmModal
+        isOpen={confirmOpen}
+        title="删除标签"
+        message={`确认删除标签「${entity.title}」？该标签下的所有子标签和绑定关系将一并删除，且不可撤销。`}
+        confirmLabel={deleting ? '删除中…' : '删除'}
+        cancelLabel="取消"
+        variant="danger"
+        onConfirm={() => {
+          void handleDeleteConfirm();
+        }}
+        onCancel={() => {
+          if (!deleting) setConfirmOpen(false);
+        }}
+      />
     </div>
   );
 }
@@ -158,93 +260,71 @@ function renderEmailThread(hit: SearchHit) {
   );
 }
 
-function AnnotationDetail({ annotation: a }: { annotation: AnnotationListItem | CodeAnnotation }) {
-  const [expanded, setExpanded] = useState(false);
-
-  return (
-    <div className="space-y-4 p-5 text-sm">
-      <div>
-        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Target</div>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-          <dt className="text-slate-500">type</dt>
-          <dd className="text-slate-800">{a.target_type}</dd>
-          <dt className="text-slate-500">ref</dt>
-          <dd className="truncate font-mono text-[11px] text-slate-700">{a.target_ref}</dd>
-          <dt className="text-slate-500">label</dt>
-          <dd className="text-slate-800">{a.target_label || '—'}</dd>
-        </dl>
-      </div>
-
-      <div>
-        <div className="mb-1 flex items-center justify-between">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Body</div>
-          <button
-            type="button"
-            onClick={() => setExpanded(true)}
-            className="inline-flex items-center gap-1 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-            aria-label="放大查看批注"
-            title="放大查看"
-          >
-            <Maximize2 className="h-3.5 w-3.5" />
-          </button>
-        </div>
-        <div className="markdown-content rounded-lg bg-slate-50 p-3 text-xs leading-relaxed text-slate-700">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{a.body || ''}</ReactMarkdown>
-        </div>
-      </div>
-
-      {expanded && (
-        <AnnotationLightbox annotation={a} onClose={() => setExpanded(false)} />
-      )}
-    </div>
-  );
-}
-
-function AnnotationLightbox({
+function AnnotationDetail({
   annotation: a,
-  onClose,
+  actions,
+  computePermissions,
 }: {
   annotation: AnnotationListItem | CodeAnnotation;
-  onClose: () => void;
+  actions?: AnnotationActionCallbacks;
+  computePermissions?: (a: AnnotationListItem | CodeAnnotation) => {
+    canManage: boolean;
+    canRequestPublish: boolean;
+    canWithdrawPublish: boolean;
+    canApprovePublish: boolean;
+    canRejectPublish: boolean;
+  };
 }) {
+  const perms = computePermissions ? computePermissions(a) : undefined;
+
+  function targetSubtitle(): string {
+    if ('file_path' in a && a.file_path) return `${a.version || ''} ${a.file_path}`.trim();
+    if ('thread_id' in a && a.thread_id) return a.thread_id;
+    return a.target_ref || '';
+  }
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-    >
-      <div
-        className="flex h-[90vh] w-[min(960px,95vw)] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
-          <div className="min-w-0">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              Annotation
-            </div>
-            <div className="mt-0.5 truncate text-sm font-medium text-slate-900">
-              {a.target_label || a.target_ref || a.annotation_id}
-            </div>
-            <div className="mt-0.5 truncate font-mono text-[11px] text-slate-500">
-              {a.target_type} · {a.target_ref}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-          <div className="markdown-content text-sm leading-relaxed text-slate-800">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{a.body || ''}</ReactMarkdown>
-          </div>
-        </div>
+    <div className="p-4">
+      {/* Compact target meta strip above the card */}
+      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
+        <span className="font-medium text-slate-600">{a.target_type}</span>
+        <span className="truncate font-mono text-slate-500">{a.target_ref}</span>
+        {a.target_label && <span className="text-slate-600">· {a.target_label}</span>}
       </div>
+
+      <AnnotationCard
+        annotationId={a.annotation_id}
+        annotationType={a.annotation_type || 'email'}
+        author={a.author || ''}
+        authorUserId={a.author_user_id}
+        visibility={a.visibility}
+        publishStatus={a.publish_status}
+        body={a.body || ''}
+        createdAt={a.created_at}
+        updatedAt={a.updated_at || a.created_at}
+        publishReviewComment={a.publish_review_comment}
+        targetLabel={a.target_label || a.annotation_id}
+        targetSubtitle={targetSubtitle()}
+        canManage={perms?.canManage}
+        canRequestPublish={perms?.canRequestPublish}
+        canWithdrawPublish={perms?.canWithdrawPublish}
+        canApprovePublish={perms?.canApprovePublish}
+        canRejectPublish={perms?.canRejectPublish}
+        canReply={false}
+        onEdit={actions?.onEdit ? (body) => actions.onEdit!(a, body) : () => {}}
+        onDelete={actions?.onDelete ? () => actions!.onDelete!(a) : () => {}}
+        onReply={() => {}}
+        onRequestPublish={actions?.onRequestPublish ? () => actions!.onRequestPublish!(a) : undefined}
+        onWithdrawPublish={actions?.onWithdrawPublish ? () => actions!.onWithdrawPublish!(a) : undefined}
+        onApprovePublish={actions?.onApprovePublish ? () => {
+          const comment = window.prompt('审核备注（可选）') ?? '';
+          void actions!.onApprovePublish!(a, comment);
+        } : undefined}
+        onRejectPublish={actions?.onRejectPublish ? () => {
+          const comment = window.prompt('驳回原因（可选）') ?? '';
+          void actions!.onRejectPublish!(a, comment);
+        } : undefined}
+      />
     </div>
   );
 }

@@ -34,9 +34,11 @@ export interface WorkspaceDataState {
   total: number;
   loading: boolean;
   error: string | null;
+  /** 触发当前 view+filters 组合的重新拉取。 */
+  refresh: () => void;
 }
 
-const EMPTY_STATE: WorkspaceDataState = {
+const EMPTY_STATE: Omit<WorkspaceDataState, 'refresh'> = {
   entities: [],
   rawEmailHits: [],
   rawAnnotations: [],
@@ -69,7 +71,9 @@ export function useWorkspaceData(
   page: number,
   pageSize: number,
 ): WorkspaceDataState {
-  const [state, setState] = useState<WorkspaceDataState>(EMPTY_STATE);
+  const [state, setState] = useState<Omit<WorkspaceDataState, 'refresh'>>(EMPTY_STATE);
+  const [reloadKey, setReloadKey] = useState(0);
+  const refresh = () => setReloadKey((k) => k + 1);
 
   // 把非基本类型和易变字段拍平到基本类型，给 effect 做稳定依赖
   const tagsKey = JSON.stringify(filters.tags || []);
@@ -99,7 +103,7 @@ export function useWorkspaceData(
 
     setState((s) => ({ ...s, loading: true, error: null }));
 
-    const task = async (): Promise<WorkspaceDataState> => {
+    const task = async (): Promise<Omit<WorkspaceDataState, 'refresh'>> => {
       if (view === 'email') {
         const res = await searchEmails(q || '', {
           mode,
@@ -189,7 +193,8 @@ export function useWorkspaceData(
     publish_status,
     page,
     pageSize,
+    reloadKey,
   ]);
 
-  return state;
+  return { ...state, refresh };
 }
