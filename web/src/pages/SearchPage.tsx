@@ -39,6 +39,7 @@ import SummaryPanel from '../components/search/SummaryPanel';
 import BatchTagBar from '../components/search/BatchTagBar';
 import AnnotationResults from '../components/search/AnnotationResults';
 import ResultCard from '../components/search/ResultCard';
+import SearchInspectorDock from '../components/search/SearchInspectorDock';
 import { errorMessage } from '../components/search/searchUtils';
 import { useContributions } from '../hooks/useContributions';
 
@@ -49,6 +50,7 @@ export default function SearchPage() {
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedThread, setSelectedThread] = useState<string | null>(null);
+  const [inspectedMessageId, setInspectedMessageId] = useState<string>('');
   const [page, setPage] = useState(1);
   const [tagStats, setTagStats] = useState<TagStats[]>([]);
 
@@ -129,6 +131,7 @@ export default function SearchPage() {
         sort_order: sortOrder || undefined,
       });
       setResult(data);
+      setInspectedMessageId(data.hits[0]?.message_id || '');
 
       // 并行搜索批注
       if (includeAnnotations && query.trim()) {
@@ -168,6 +171,13 @@ export default function SearchPage() {
     hitMessageIds,
     hitThreadIds,
   );
+  const inspectedHit =
+    result?.hits.find((hit) => hit.message_id === inspectedMessageId) ||
+    result?.hits[0] ||
+    null;
+  const inspectedStats = inspectedHit
+    ? contribByMessage[inspectedHit.message_id] || contribByThread[inspectedHit.thread_id]
+    : null;
 
   const handleToggleSelect = (messageId: string) => {
     setSelectedMessages((prev) => {
@@ -387,7 +397,7 @@ export default function SearchPage() {
       </SectionPanel>
 
       {result && (
-        <SectionPanel>
+        <SectionPanel className="relative">
           <StickyContextBar
             title={query.trim() || 'Filtered email search'}
             subtitle={`${result.total.toLocaleString()} result${result.total === 1 ? '' : 's'} · ${result.mode}`}
@@ -537,6 +547,7 @@ export default function SearchPage() {
                 key={hit.message_id}
                 hit={hit}
                 onThread={() => setSelectedThread(hit.thread_id)}
+                onInspect={(nextHit) => setInspectedMessageId(nextHit.message_id)}
                 selected={selectedMessages.has(hit.message_id)}
                 onToggleSelect={handleToggleSelect}
                 messageStats={contribByMessage[hit.message_id]}
@@ -544,6 +555,12 @@ export default function SearchPage() {
               />
             ))}
           </div>
+
+          <SearchInspectorDock
+            hit={inspectedHit}
+            stats={inspectedStats}
+            onOpenThread={setSelectedThread}
+          />
 
           <AnnotationResults
             annotationResults={annotationResults}

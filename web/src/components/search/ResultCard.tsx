@@ -1,14 +1,14 @@
 import type { SearchHit } from '../../api/types';
 import type { ContributionStats } from '../../api/contributions';
-import EmailTagEditor from '../EmailTagEditor';
 import { highlightSnippet } from './searchUtils';
-import { Database, FileText, MessageSquareText, Tags } from 'lucide-react';
+import { Info } from 'lucide-react';
 
 interface ResultCardProps {
   hit: SearchHit;
   onThread: () => void;
   selected?: boolean;
   onToggleSelect?: (messageId: string) => void;
+  onInspect?: (hit: SearchHit) => void;
   messageStats?: ContributionStats | null;
   threadStats?: ContributionStats | null;
 }
@@ -18,6 +18,7 @@ export default function ResultCard({
   onThread,
   selected,
   onToggleSelect,
+  onInspect,
   messageStats,
   threadStats,
 }: ResultCardProps) {
@@ -29,9 +30,14 @@ export default function ResultCard({
   const annotationCount = stats?.annotation_count || 0;
   const draftCount = stats?.draft_count || 0;
   const hasInspector = tagCount > 0 || knowledgeCount > 0 || annotationCount > 0 || draftCount > 0 || hit.source;
+  const inspectCount = tagCount + annotationCount + knowledgeCount + draftCount;
 
   return (
-    <div className="group rounded-lg border border-gray-200 bg-white px-3 py-2 transition hover:border-slate-300 hover:bg-slate-50">
+    <div
+      className="group rounded-lg border border-gray-200 bg-white px-3 py-2 transition hover:border-slate-300 hover:bg-slate-50"
+      onMouseEnter={() => onInspect?.(hit)}
+      onFocus={() => onInspect?.(hit)}
+    >
       <div className="flex items-start gap-2">
         {onToggleSelect && (
           <input
@@ -77,71 +83,16 @@ export default function ResultCard({
 
         <div className="flex shrink-0 items-center gap-2">
           {hasInspector && (
-            <div className="relative">
-              <button
-                type="button"
-                className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-slate-500 hover:border-slate-300 hover:text-slate-950"
-                aria-label="Inspect tags and contributions"
-              >
-                <Tags size={13} />
-                {tagCount + annotationCount + knowledgeCount + draftCount}
-              </button>
-              <div className="pointer-events-auto fixed inset-x-3 bottom-3 z-50 hidden max-h-[72vh] overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 text-left shadow-xl shadow-slate-900/10 group-hover:block group-focus-within:block md:absolute md:bottom-auto md:left-auto md:right-0 md:top-full md:mt-2 md:max-h-[calc(100vh-8rem)] md:w-72">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <div className="text-xs font-semibold text-slate-950">Result inspector</div>
-                  <div className="text-[11px] text-slate-500">score {hit.score.toFixed(3)}</div>
-                </div>
-
-                <div className="space-y-2">
-                  <div>
-                    <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                      <Tags size={12} />
-                      Tags
-                    </div>
-                    {tagCount > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {hit.tags.slice(0, 8).map((tag) => (
-                          <span key={tag} className="rounded bg-indigo-50 px-1.5 py-0.5 text-xs text-indigo-700">
-                            {tag}
-                          </span>
-                        ))}
-                        {tagCount > 8 && (
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
-                            +{tagCount - 8}
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-slate-500">No tags</div>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="rounded-lg bg-blue-50 px-2 py-1.5 text-blue-700">
-                      <div className="flex items-center gap-1 text-[11px]"><Database size={12} />Knowledge</div>
-                      <div className="text-sm font-semibold">{knowledgeCount}</div>
-                    </div>
-                    <div className="rounded-lg bg-purple-50 px-2 py-1.5 text-purple-700">
-                      <div className="flex items-center gap-1 text-[11px]"><MessageSquareText size={12} />Notes</div>
-                      <div className="text-sm font-semibold">{annotationCount}</div>
-                    </div>
-                    <div className="rounded-lg bg-slate-100 px-2 py-1.5 text-slate-700">
-                      <div className="flex items-center gap-1 text-[11px]"><FileText size={12} />Drafts</div>
-                      <div className="text-sm font-semibold">{draftCount}</div>
-                    </div>
-                  </div>
-
-                  {hit.source && (
-                    <div className="flex items-center justify-between rounded-lg bg-sky-50 px-2 py-1.5 text-xs text-sky-700">
-                      <span>Source</span>
-                      <span className="font-medium">{hit.source}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => onInspect?.(hit)}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-slate-500 hover:border-slate-300 hover:text-slate-950"
+              aria-label="Inspect tags and contributions"
+            >
+              <Info size={13} />
+              {inspectCount}
+            </button>
           )}
-          <EmailTagEditor messageId={hit.message_id} initialTags={hit.tags || []} compact hideTags />
           <button
             type="button"
             onClick={onThread}
