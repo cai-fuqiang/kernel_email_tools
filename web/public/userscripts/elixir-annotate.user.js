@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kernel KB — elixir 注解
 // @namespace    kernel-email-tools
-// @version      0.1.0
+// @version      0.1.2
 // @description  在 elixir.bootlin.com 上为内核源码行添加注解和标签
 // @author       Kernel KB
 // @match        https://elixir.bootlin.com/linux/*
@@ -119,6 +119,18 @@
       box-sizing: border-box;
     }
     #${PANEL_ID} textarea:focus { border-color: #6366f1; }
+    #${PANEL_ID} .kb-field { margin-top: 10px; }
+    #${PANEL_ID} .kb-field label {
+      display: block; margin-bottom: 4px; font-size: 11px; font-weight: 600;
+      color: #64748b; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    #${PANEL_ID} .kb-select {
+      width: 100%; padding: 8px 10px; border: 1px solid #e2e8f0;
+      border-radius: 10px; font-size: 13px; color: #334155; background: #fff;
+      outline: none; box-sizing: border-box;
+    }
+    #${PANEL_ID} .kb-select:disabled { background: #f8fafc; color: #64748b; }
+    #${PANEL_ID} .kb-hint { margin-top: 4px; font-size: 11px; color: #94a3b8; }
     #${PANEL_ID} .kb-tags { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
     #${PANEL_ID} .kb-tag {
       font-size: 11px; padding: 3px 10px; border-radius: 9999px;
@@ -183,6 +195,14 @@
       </div>
       <div class="kb-line-preview">${escapeHtml(selectedText)}</div>
       <textarea id="kb-annotation-body" placeholder="注解内容（Markdown）..."></textarea>
+      <div class="kb-field">
+        <label for="kb-visibility">可见性</label>
+        <select id="kb-visibility" class="kb-select" disabled>
+          <option value="private">private</option>
+          <option value="public">public</option>
+        </select>
+        <div class="kb-hint" id="kb-visibility-hint">正在检查当前用户权限...</div>
+      </div>
       <div class="kb-tags" id="kb-tag-list"></div>
       <input type="text" id="kb-tag-search" placeholder="搜索已有标签..." style="width:100%;padding:8px;margin-top:8px;border:1px solid #e2e8f0;border-radius:10px;font-size:13px;outline:none;box-sizing:border-box;">
       <div class="kb-actions">
@@ -206,6 +226,34 @@
     // load tags
     let allTags = [];
     let selectedTags = [];
+    let currentUser = null;
+    const visibilitySelect = document.getElementById('kb-visibility');
+    const visibilityHint = document.getElementById('kb-visibility-hint');
+
+    function applyVisibilityPermissions(user) {
+      currentUser = user;
+      if (!visibilitySelect || !visibilityHint) return;
+      if (user && user.role === 'admin') {
+        visibilitySelect.disabled = false;
+        visibilitySelect.value = 'public';
+        visibilityHint.textContent = 'admin 可保存 public 或 private 注解。';
+        return;
+      }
+      visibilitySelect.disabled = true;
+      visibilitySelect.value = 'private';
+      if (user) {
+        visibilityHint.textContent = '当前角色只能保存 private 注解；公开需在系统内提交申请。';
+      } else {
+        visibilityHint.textContent = '未识别到登录用户；保存可能被服务端拒绝。';
+      }
+    }
+
+    applyVisibilityPermissions(null);
+    apiGet('/api/auth/session').then(data => {
+      const user = data && data.authenticated ? data.user : null;
+      applyVisibilityPermissions(user);
+    }).catch(() => applyVisibilityPermissions(null));
+
     apiGet('/api/tags?flat=true').then(data => {
       if (data && Array.isArray(data)) allTags = data;
       else if (data && Array.isArray(data.tags)) allTags = data.tags;
@@ -250,11 +298,15 @@
       msgEl.className = 'kb-error';
 
       try {
+        const visibility = currentUser && currentUser.role === 'admin'
+          ? (document.getElementById('kb-visibility')?.value || 'public')
+          : 'private';
+
         // create annotation
         const ann = await apiPost('/api/annotations', {
           annotation_type: 'code',
           body: body,
-          visibility: 'public',
+          visibility: visibility,
           target_type: 'kernel_file',
           target_ref: targetRef,
           target_label: filePath,
@@ -396,7 +448,7 @@
     if (!parsed || !parsed.filePath) return;
     const targetRef = parsed.version + ':' + parsed.filePath;
 
-    apiGet('/api/annotations?target_type=kernel_file&target_ref=' + encodeURIComponent(targetRef) + '&page_size=200').then(res => {
+    apiGet('/api/annotations?target_type=kernel_file&target_ref=' + encodeURIComponent(targetRef) + '&page_size=100').then(res => {
       const annotations = res ? (res.annotations || []) : [];
       clearDots();
       const seen = new Set();
