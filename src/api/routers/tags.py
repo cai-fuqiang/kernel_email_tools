@@ -15,7 +15,9 @@ from src.api import state
 from src.storage.models import (
     TagRead, TagTree, TagCreate, TagAssignmentCreate, TagAssignmentRead,
     TagBundle, EmailORM, EmailRead,
+    TagORM, TagAliasORM, TagAssignmentORM,
 )
+from src.storage.tag_store import TARGET_TYPE_EMAIL_MESSAGE
 
 from src.api.deps import (
     CurrentUser, get_current_user, get_optional_current_user, require_roles,

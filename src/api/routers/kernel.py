@@ -25,6 +25,7 @@ from src.api.deps import (
 )
 from src.api.schemas import AnnotationResponse, DraftApplyRequest, DraftApplyResponse
 from src.kernel_source.fallback import FallbackKernelSource
+from src.storage.models import AnnotationCreate, AnnotationORM, AnnotationUpdate
 
 router = APIRouter(tags=["kernel"])
 

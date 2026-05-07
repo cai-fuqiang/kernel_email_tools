@@ -24,6 +24,7 @@ from src.api.deps import (
 )
 from src.api.schemas import AnnotationResponse, DraftApplyRequest, DraftApplyResponse
 from src.retriever.base import SearchQuery
+from src.qa.ask_drafts import AskDraftService
 
 router = APIRouter(tags=["search"])
 
