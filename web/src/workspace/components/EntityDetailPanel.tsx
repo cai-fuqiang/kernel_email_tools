@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { X, ExternalLink } from 'lucide-react';
-import type { AnnotationListItem, CodeAnnotation, SearchHit, TagRead, TagTree } from '../../api/types';
+import type { AnnotationListItem, CodeAnnotation, SearchHit, TagRead, TagTargetItem, TagTree } from '../../api/types';
 import type { WorkspaceEntity, WorkspaceEntityKind } from '../types';
 import TagSummaryCard from './TagSummaryCard';
 
@@ -8,6 +8,8 @@ interface EntityDetailPanelProps {
   entity: WorkspaceEntity | null;
   /** 打开完整 ThreadDrawer / 跳转 kernel-code 等 */
   onOpenTarget?: (entity: WorkspaceEntity) => void;
+  /** 点击 tag 详情面板里的某个 target item（用于 tag 视图下的跳转） */
+  onOpenTagTarget?: (target: TagTargetItem) => void;
   onClose?: () => void;
 }
 
@@ -19,22 +21,28 @@ interface EntityDetailPanelProps {
  * 新增 kind 只需扩充 RENDERERS。
  */
 
-// 各 kind renderer（返回 ReactNode）
-const RENDERERS: Record<WorkspaceEntityKind, (entity: WorkspaceEntity) => React.ReactNode> = {
+interface RendererCtx {
+  onOpenTagTarget?: (target: TagTargetItem) => void;
+}
+
+// 各 kind renderer（返回 ReactNode）。kind 差异收敛在此 map 内，外层布局/操作区共用。
+const RENDERERS: Record<WorkspaceEntityKind, (entity: WorkspaceEntity, ctx: RendererCtx) => React.ReactNode> = {
   email_thread: (entity) => renderEmailThread(entity.raw as SearchHit),
   annotation: (entity) => renderAnnotation(entity.raw as AnnotationListItem | CodeAnnotation),
-  tag: (entity) => <TagSummaryCard tag={entity.raw as TagTree | TagRead} />,
+  tag: (entity, ctx) => (
+    <TagSummaryCard tag={entity.raw as TagTree | TagRead} onOpenTarget={ctx.onOpenTagTarget} />
+  ),
   knowledge_entity: () => (
     <div className="p-5 text-sm text-slate-500">Knowledge entity 详情暂未实现，请跳转 Knowledge 页面查看。</div>
   ),
 };
 
-export default function EntityDetailPanel({ entity, onOpenTarget, onClose }: EntityDetailPanelProps) {
+export default function EntityDetailPanel({ entity, onOpenTarget, onOpenTagTarget, onClose }: EntityDetailPanelProps) {
   const rendered = useMemo(() => {
     if (!entity) return null;
     const r = RENDERERS[entity.kind];
-    return r ? r(entity) : <div className="p-5 text-sm text-slate-500">未知 kind: {entity.kind}</div>;
-  }, [entity]);
+    return r ? r(entity, { onOpenTagTarget }) : <div className="p-5 text-sm text-slate-500">未知 kind: {entity.kind}</div>;
+  }, [entity, onOpenTagTarget]);
 
   if (!entity) {
     return (

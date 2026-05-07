@@ -12,7 +12,7 @@ import {
   type WorkspaceView,
 } from '../workspace/hooks/useWorkspaceData';
 import type { WorkspaceEntity } from '../workspace/types';
-import type { AnnotationListItem, ChannelOption } from '../api/types';
+import type { AnnotationListItem, ChannelOption, TagTargetItem } from '../api/types';
 import { getChannels, getTagStats, type TagStats } from '../api/client';
 
 const VALID_VIEWS: WorkspaceView[] = ['email', 'tag', 'annotation'];
@@ -146,6 +146,34 @@ export default function WorkspacePage() {
       params.set('q', target.ref);
       setSearchParams(params);
     }
+  }
+
+  function handleOpenTagTarget(t: TagTargetItem) {
+    const meta = t.target_meta || {};
+    const anchor = t.anchor || {};
+    if (t.target_type === 'email_thread') {
+      setThreadOpen({ threadId: t.target_ref });
+      return;
+    }
+    if (t.target_type === 'email_message' || t.target_type === 'email_paragraph') {
+      const threadId = (meta.thread_id as string) || (anchor.thread_id as string) || t.target_ref;
+      const messageId = (meta.message_id as string) || t.target_ref;
+      setThreadOpen({ threadId, focusMessageId: messageId });
+      return;
+    }
+    if (t.target_type === 'code_line' || t.target_type === 'kernel_code') {
+      const version = (anchor.version as string) || (meta.version as string);
+      const filePath = (anchor.file_path as string) || (meta.file_path as string);
+      const startLine = (anchor.start_line as number | undefined) || (meta.start_line as number | undefined);
+      if (version && filePath) {
+        const params = new URLSearchParams({ v: version, path: filePath });
+        if (startLine) params.set('line', String(startLine));
+        navigate(`/kernel-code?${params.toString()}`);
+        return;
+      }
+    }
+    // sdm_section / knowledge / 其它：暂无统一打开方式，console 留痕便于排查
+    console.warn('[Workspace] no handler for tag target type', t.target_type, t.target_ref);
   }
 
   return (
@@ -291,6 +319,7 @@ export default function WorkspacePage() {
           <EntityDetailPanel
             entity={selectedEntity}
             onOpenTarget={handleOpenTarget}
+            onOpenTagTarget={handleOpenTagTarget}
             onClose={() => setSelectedId(null)}
           />
         </aside>
