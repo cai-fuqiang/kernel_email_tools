@@ -21,66 +21,90 @@ export default function ResultCard({
   messageStats,
   threadStats,
 }: ResultCardProps) {
+  const senderName = hit.sender.split('<')[0].trim() || hit.sender;
+  const dateLabel = hit.date ? new Date(hit.date).toLocaleDateString() : '';
+  const stats = messageStats || threadStats;
+
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow">
-      {onToggleSelect && (
-        <div className="float-right ml-3">
+    <div className="group rounded-lg border border-gray-200 bg-white px-4 py-3 transition hover:border-slate-300 hover:bg-slate-50">
+      <div className="flex items-start gap-3">
+        {onToggleSelect && (
           <input
             type="checkbox"
             checked={selected || false}
             onChange={() => onToggleSelect(hit.message_id)}
-            className="w-4 h-4 rounded border-slate-300"
+            className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300"
+            aria-label={`Select ${hit.subject}`}
           />
-        </div>
-      )}
+        )}
 
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <h3 className="text-sm font-semibold text-gray-900 truncate">{hit.subject}</h3>
-            <ContributionChips stats={messageStats || threadStats} />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <button
+              type="button"
+              onClick={onThread}
+              className="min-w-0 truncate text-left text-base font-semibold text-gray-950 hover:text-indigo-700"
+            >
+              {hit.subject}
+            </button>
+            <ContributionChips stats={stats} />
+            {hit.tags?.slice(0, 3).map((tag) => (
+              <span key={tag} className="rounded bg-indigo-50 px-1.5 py-0.5 text-xs text-indigo-700">
+                {tag}
+              </span>
+            ))}
+            {(hit.tags?.length || 0) > 3 && (
+              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
+                +{hit.tags.length - 3}
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500 flex-wrap">
-            <span className="font-medium text-gray-700">
-              {hit.sender.split('<')[0].trim()}
-            </span>
-            <span>{hit.date ? new Date(hit.date).toLocaleDateString() : ''}</span>
+
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+            <span className="truncate font-medium text-gray-700">{senderName}</span>
+            {dateLabel && <span>{dateLabel}</span>}
+            {hit.list_name && <span>{hit.list_name}</span>}
             {hit.has_patch && (
-              <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-xs font-medium">
+              <span className="rounded bg-green-50 px-1.5 py-0.5 text-xs font-medium text-green-700">
                 patch
               </span>
             )}
+          </div>
+
+          {hit.snippet && (
+            <p
+              className="mt-1.5 line-clamp-2 text-xs leading-5 text-gray-600"
+              dangerouslySetInnerHTML={{
+                __html: highlightSnippet(hit.snippet),
+              }}
+            />
+          )}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="hidden items-center gap-1 opacity-0 transition group-hover:flex group-hover:opacity-100">
             {hit.source && (
-              <span className="px-1.5 py-0.5 bg-sky-50 text-sky-700 rounded text-xs font-medium">
+              <span className="rounded bg-sky-50 px-1.5 py-0.5 text-xs font-medium text-sky-700">
                 {hit.source}
               </span>
             )}
+            <span className="rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-600">
+              score {hit.score.toFixed(3)}
+            </span>
           </div>
-          {/* 可编辑标签 */}
-          <div className="mt-2">
-            <EmailTagEditor messageId={hit.message_id} initialTags={hit.tags || []} />
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs px-2 py-1 bg-indigo-50 text-indigo-600 rounded-full font-medium">
-            {hit.score.toFixed(3)}
-          </span>
+          <EmailTagEditor messageId={hit.message_id} initialTags={hit.tags || []} compact hideTags />
           <button
+            type="button"
             onClick={onThread}
-            className="text-xs px-2.5 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
+            className="rounded-lg border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-white"
           >
             Thread
           </button>
+          <span className="rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-600 group-hover:hidden">
+            {hit.score.toFixed(3)}
+          </span>
         </div>
       </div>
-      {hit.snippet && (
-        <p
-          className="mt-3 text-xs text-gray-600 leading-relaxed line-clamp-2"
-          dangerouslySetInnerHTML={{
-            __html: highlightSnippet(hit.snippet),
-          }}
-        />
-      )}
     </div>
   );
 }

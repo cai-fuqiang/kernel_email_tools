@@ -105,19 +105,19 @@ export default function ConversationCard({
           </div>
 
           {turn.response.sources.length > 0 && (
-            <details className="rounded-xl border border-gray-100 bg-gray-50 p-3" open>
+            <details className="rounded-lg border border-gray-100 bg-gray-50 p-3" open>
               <summary className="cursor-pointer text-sm font-semibold text-gray-700">Sources ({turn.response.sources.length})</summary>
-              <div className="mt-3 space-y-2">
+              <div className="mt-3 grid gap-2 lg:grid-cols-2">
                 {turn.response.sources.map((source, index) => (
                   <button
                     key={index}
                     type="button"
                     onClick={() => onOpenThread(source.thread_id || '', source.message_id)}
                     disabled={!source.thread_id}
-                    className="block w-full rounded-lg border border-gray-100 bg-white p-3 text-left hover:border-indigo-200 hover:bg-indigo-50/30 disabled:cursor-default"
+                    className="block min-h-24 w-full rounded-lg border border-gray-100 bg-white px-3 py-2.5 text-left transition hover:border-indigo-200 hover:bg-indigo-50/30 disabled:cursor-default"
                   >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <p className="truncate text-sm font-medium text-gray-900">{source.subject}</p>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-gray-900">{source.subject}</p>
                       <ContributionChips
                         stats={
                           contribByMessageId[source.message_id || ''] ||
@@ -125,12 +125,16 @@ export default function ConversationCard({
                         }
                       />
                     </div>
-                    <p className="mt-1 text-xs text-gray-500">
-                      {source.sender} · {source.date}
+                    <p className="mt-1 truncate text-xs text-gray-500">
+                      {source.sender?.split('<')[0].trim() || source.sender} · {source.date}
                       {source.source && <span> · {source.source}</span>}
-                      {typeof source.score === 'number' && <span> · score {source.score.toFixed(3)}</span>}
                     </p>
-                    {source.snippet && <p className="mt-2 line-clamp-3 text-xs text-gray-600">{source.snippet}</p>}
+                    {source.snippet && <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-gray-600">{source.snippet}</p>}
+                    {typeof source.score === 'number' && (
+                      <span className="mt-2 inline-flex rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-600">
+                        {source.score.toFixed(3)}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>

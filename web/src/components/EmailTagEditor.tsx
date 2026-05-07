@@ -17,6 +17,7 @@ interface EmailTagEditorProps {
   targetRef?: string;
   anchor?: Record<string, unknown>;
   compact?: boolean;
+  hideTags?: boolean;
   placeholder?: string;
   initialTags?: string[];
 }
@@ -27,6 +28,7 @@ export default function EmailTagEditor({
   targetRef,
   anchor,
   compact = false,
+  hideTags = false,
   placeholder = 'Type tag name...',
   initialTags,
 }: EmailTagEditorProps) {
@@ -186,7 +188,7 @@ export default function EmailTagEditor({
 
   return (
     <div className="relative inline-flex items-center gap-1 flex-wrap">
-      {directTags.map((tag) => (
+      {!hideTags && directTags.map((tag) => (
         (() => {
           const removable = directAssignments.some(
             (assignment) => assignment.tag_id === tag.id && canManageTag(tag, assignment),
@@ -215,7 +217,7 @@ export default function EmailTagEditor({
         })()
       ))}
 
-      {aggregatedOnly.map((tag) => (
+      {!hideTags && aggregatedOnly.map((tag) => (
         <span
           key={`agg-${tag.slug}`}
           className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-xs"
