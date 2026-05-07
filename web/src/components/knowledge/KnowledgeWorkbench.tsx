@@ -20,6 +20,7 @@ import EntityRelationsPanel, {
 import EvidencePanel from './EvidencePanel';
 import HumanNotesPanel from './HumanNotesPanel';
 import EntityHistoryPanel from './EntityHistoryPanel';
+import KnowledgeInspectorDock from './KnowledgeInspectorDock';
 import {
   DEFAULT_ENTITY_TYPE,
   extractKnowledgeEvidence,
@@ -704,7 +705,7 @@ export default function KnowledgeWorkbench() {
             </div>
           </div>
         ) : (
-          <div className="mx-auto max-w-6xl space-y-5 p-4 md:p-6">
+          <div className="relative mx-auto max-w-6xl space-y-5 p-4 md:p-6">
             <StickyContextBar
               title={selectedEntity.canonical_name}
               subtitle={`${readableType(selectedEntity.entity_type)} · ${selectedEvidenceCount} evidence · ${relationCount} relations`}
@@ -746,6 +747,16 @@ export default function KnowledgeWorkbench() {
                   )}
                 </>
               }
+            />
+
+            <KnowledgeInspectorDock
+              entity={selectedEntity}
+              annotations={annotations}
+              annotationBody={annotationBody}
+              canWrite={canWrite}
+              saving={saving}
+              onAnnotationBodyChange={setAnnotationBody}
+              onCreateAnnotation={handleCreateAnnotation}
             />
 
             <div className="sticky top-[73px] z-10 flex gap-2 overflow-x-auto border-b border-slate-200 bg-slate-50/95 py-2 backdrop-blur">

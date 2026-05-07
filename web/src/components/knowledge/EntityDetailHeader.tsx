@@ -1,5 +1,4 @@
 import type { KnowledgeEntity } from '../../api/types';
-import EmailTagEditor from '../EmailTagEditor';
 import { formatDateTime, readableType, statusTone } from './knowledgeUtils';
 
 interface EntityDetailHeaderProps {
@@ -29,6 +28,8 @@ export default function EntityDetailHeader({
   onUpdateName,
   onUpdateAliases,
 }: EntityDetailHeaderProps) {
+  const showActionsColumn = canWrite;
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between gap-6">
@@ -62,37 +63,33 @@ export default function EntityDetailHeader({
             disabled={!canWrite}
           />
         </div>
-        <div className="w-72 shrink-0">
-          <EmailTagEditor
-            targetType="knowledge_entity"
-            targetRef={selectedEntity.entity_id}
-          />
-          {canWrite && relationTargets.length > 0 && (
-            <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs font-semibold text-gray-700">Merge this duplicate into</div>
-              <select
-                value={mergeTargetId}
-                onChange={(e) => onMergeTargetChange(e.target.value)}
-                className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs"
-              >
-                <option value="">Choose target...</option>
-                {relationTargets.map((entity) => (
-                  <option key={entity.entity_id} value={entity.entity_id}>
-                    {entity.canonical_name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={onMerge}
-                disabled={saving || !mergeTargetId}
-                className="mt-2 w-full rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-              >
-                Merge into target
-              </button>
-            </div>
-          )}
-          {canWrite && (
+        {showActionsColumn && (
+          <div className="w-56 shrink-0">
+            {relationTargets.length > 0 && (
+              <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <div className="text-xs font-semibold text-gray-700">Merge this duplicate into</div>
+                <select
+                  value={mergeTargetId}
+                  onChange={(e) => onMergeTargetChange(e.target.value)}
+                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs"
+                >
+                  <option value="">Choose target...</option>
+                  {relationTargets.map((entity) => (
+                    <option key={entity.entity_id} value={entity.entity_id}>
+                      {entity.canonical_name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={onMerge}
+                  disabled={saving || !mergeTargetId}
+                  className="mt-2 w-full rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                >
+                  Merge into target
+                </button>
+              </div>
+            )}
             <button
               type="button"
               onClick={onShowDelete}
@@ -100,8 +97,8 @@ export default function EntityDetailHeader({
             >
               Delete entity
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </section>
   );
