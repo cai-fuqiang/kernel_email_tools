@@ -6,6 +6,7 @@ import EmailTagEditor from './EmailTagEditor';
 import KernelPathLinkedText from './KernelPathLinkedText';
 import KnowledgeBackRefs from './KnowledgeBackRefs';
 import PatchDiffBlock from './PatchDiffBlock';
+import QuotedTextBlock from './QuotedTextBlock';
 import ThreadAnnotationCard, { AnnotationInput } from './ThreadAnnotationCard';
 import { extractPatchVersion } from '../utils/kernelPathRefs';
 import { loreUrl } from '../utils/externalLinks';
@@ -194,11 +195,7 @@ export default function LayeredEmailCard({
 
     // 引用块：展示但不翻译
     if (blockType === 'quoted') {
-      return (
-        <div key={idx} className="email-paragraph">
-          <pre className="text-sm whitespace-pre-wrap break-words text-gray-500 leading-relaxed border-l-3 border-gray-300 pl-3 italic">{para}</pre>
-        </div>
-      );
+      return <QuotedTextBlock key={idx} text={para} />;
     }
 
     const needTrans = shouldTranslate(block);
