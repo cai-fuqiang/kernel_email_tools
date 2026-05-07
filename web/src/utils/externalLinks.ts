@@ -1,9 +1,9 @@
 /**
  * External code / mailing-list link builders.
  *
- * 项目放弃自建符号索引（PLAN-30002），统一通过外链跳转到 Elixir Bootlin、
- * git.kernel.org、lore.kernel.org 等成熟站点。所有 URL 拼接函数集中在本模块，
- * 避免散落各处的硬编码。
+ * PLAN-30002 已调整为 local-first code resolver：代码阅读主路径优先走
+ * 本系统 Code Browser，Elixir / git.kernel.org 作为 fallback 外链。
+ * 本模块保留外链 URL 拼接和本地 Code Browser URL 拼接，避免硬编码散落。
  *
  * 内网部署可通过 `/api/system/config` 暴露的 `external_links` 配置覆盖默认 base URL。
  */
@@ -59,6 +59,22 @@ function encodePath(path: string): string {
     .filter(Boolean)
     .map(encodeURIComponent)
     .join('/');
+}
+
+/**
+ * 构建本系统 Code Browser URL。BrowserRouter 使用 `/app` basename，
+ * 所以普通 anchor 需要带 `/app/kernel-code` 前缀。
+ */
+export function localKernelCodeUrl(
+  version: string,
+  filePath: string,
+  line?: number,
+): string {
+  const params = new URLSearchParams();
+  params.set('v', version);
+  params.set('path', filePath);
+  if (line && line > 0) params.set('line', String(line));
+  return `/app/kernel-code?${params.toString()}`;
 }
 
 /**

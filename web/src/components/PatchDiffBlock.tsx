@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { extractPatchHeaderPath } from '../utils/kernelPathRefs';
-import { pickKernelSourceUrl } from '../utils/externalLinks';
+import KernelSourceLink from './KernelSourceLink';
 
 function getDiffLineClass(line: string): string {
   const trimmed = line.trimStart();
@@ -23,7 +23,7 @@ interface PatchDiffBlockProps {
  *
  * - 默认折叠，标题栏显示文件数和增删行统计
  * - 展开后按行着色：`+` 绿、`-` 红、`@@` 蓝、`diff --git` 黄、上下文灰
- * - `--- a/path` / `+++ b/path` / `diff --git a/X b/Y` 渲染为可点击的 Elixir / git.kernel.org 外链
+ * - `--- a/path` / `+++ b/path` / `diff --git a/X b/Y` 渲染为 local-first 代码链接
  */
 export default function PatchDiffBlock({ content, version }: PatchDiffBlockProps) {
   const [open, setOpen] = useState(false);
@@ -47,21 +47,18 @@ export default function PatchDiffBlock({ content, version }: PatchDiffBlockProps
       if (path) {
         const prefix = line.slice(0, line.indexOf(trimmed) + 4); // 包含 `--- ` 或 `+++ `
         const aOrB = trimmed.slice(4).startsWith('a/') ? 'a/' : trimmed.slice(4).startsWith('b/') ? 'b/' : '';
-        const { url } = pickKernelSourceUrl(version, path);
         return (
           <>
             {prefix}
             {aOrB}
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
+            <KernelSourceLink
+              version={version}
+              path={path}
               className="underline decoration-dotted hover:text-sky-300"
-              title={`在 Elixir / git.kernel.org 查看 ${path} (${version})`}
               onClick={(e) => e.stopPropagation()}
             >
               {path}
-            </a>
+            </KernelSourceLink>
           </>
         );
       }
@@ -71,30 +68,26 @@ export default function PatchDiffBlock({ content, version }: PatchDiffBlockProps
       const m = trimmed.match(/^diff --git\s+a\/(\S+)\s+b\/(\S+)/);
       if (m) {
         const prefix = line.slice(0, line.indexOf('diff --git'));
-        const { url: urlA } = pickKernelSourceUrl(version, m[1]);
-        const { url: urlB } = pickKernelSourceUrl(version, m[2]);
         return (
           <>
             {prefix}diff --git a/
-            <a
-              href={urlA}
-              target="_blank"
-              rel="noopener noreferrer"
+            <KernelSourceLink
+              version={version}
+              path={m[1]}
               className="underline decoration-dotted hover:text-sky-300"
               onClick={(e) => e.stopPropagation()}
             >
               {m[1]}
-            </a>
+            </KernelSourceLink>
             {' b/'}
-            <a
-              href={urlB}
-              target="_blank"
-              rel="noopener noreferrer"
+            <KernelSourceLink
+              version={version}
+              path={m[2]}
               className="underline decoration-dotted hover:text-sky-300"
               onClick={(e) => e.stopPropagation()}
             >
               {m[2]}
-            </a>
+            </KernelSourceLink>
           </>
         );
       }

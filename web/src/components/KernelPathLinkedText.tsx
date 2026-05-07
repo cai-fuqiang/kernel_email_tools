@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from 'react';
 import { parseKernelPathRefs } from '../utils/kernelPathRefs';
-import { pickKernelSourceUrl } from '../utils/externalLinks';
+import KernelSourceLink from './KernelSourceLink';
 
 interface Props {
   /** 原始文本，可能包含内核源码路径（如 `mm/vmscan.c:1234`） */
@@ -14,13 +14,13 @@ interface Props {
 }
 
 /**
- * 把文本中出现的内核源码路径渲染为可点击的外链，指向 Elixir Bootlin
- * 或 git.kernel.org（由 pickKernelSourceUrl 根据版本决定）。
+ * 把文本中出现的内核源码路径渲染为可点击链接，优先指向本系统
+ * Code Browser；本地缺失时由 resolver fallback 到 Elixir / git.kernel.org。
  *
  * 非路径片段按原样以纯文本渲染，保留换行/空白。
  *
  * @see parseKernelPathRefs
- * @see PLAN-30002 Phase 3
+ * @see PLAN-30002 Phase 3 / Phase 6
  */
 export default function KernelPathLinkedText({
   text,
@@ -44,19 +44,17 @@ export default function KernelPathLinkedText({
         <Fragment key={`t-${i}`}>{text.slice(cursor, ref.start)}</Fragment>,
       );
     }
-    const { url } = pickKernelSourceUrl(version, ref.path, ref.line);
     parts.push(
-      <a
+      <KernelSourceLink
         key={`l-${i}`}
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
+        version={version}
+        path={ref.path}
+        line={ref.line}
         className="text-indigo-600 hover:text-indigo-800 hover:underline decoration-dotted"
-        title={`在 Elixir / git.kernel.org 查看 (${version})`}
         onClick={(e) => e.stopPropagation()}
       >
         {ref.raw}
-      </a>,
+      </KernelSourceLink>,
     );
     cursor = ref.end;
   });

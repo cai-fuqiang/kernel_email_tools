@@ -777,6 +777,19 @@ export interface KernelTreeResponse {
   total: number;
 }
 
+export interface KernelResolveResponse {
+  source: 'local' | 'elixir' | 'git.kernel.org';
+  url: string;
+  external_url: string;
+  external_source: 'elixir' | 'git.kernel.org';
+  local_file_available: boolean;
+  resolved_version: string;
+  path: string;
+  line: number | null;
+  line_count: number | null;
+  fallback_reason: string | null;
+}
+
 export interface CodeAnnotation {
   annotation_id: string;
   annotation_type: string;

@@ -107,17 +107,17 @@
 
 目标：把 Elixir 从主路径降级为 fallback，让本系统自己拥有稳定的代码上下文解析能力，为后续 Contextual Ask / AI code understanding 做地基。
 
-- [ ] 后端新增统一 resolver service：
+- [x] 后端新增统一 resolver service：
   - 输入：`version`, `path`, optional `line`, optional `symbol`
   - 输出：`source=local|elixir|git_kernel_org`, `url`, `local_file_available`, `resolved_version`, `path`, `line`, optional `symbol_kind`
   - 优先级：本地 kernel git repo -> Elixir -> git.kernel.org
-- [ ] 新增 API：
+- [x] 新增 API：
   - `GET /api/kernel/resolve?version=...&path=...&line=...`
-  - `GET /api/kernel/resolve-symbol?version=...&symbol=...&path_hint=...`
-- [ ] 前端 `pickKernelSourceUrl` 升级为 resolver client：
+  - `GET /api/kernel/resolve-symbol?version=...&symbol=...&path_hint=...`（待最小符号索引阶段实现）
+- [x] 前端 `pickKernelSourceUrl` 升级为 resolver client：
   - Code Browser、ThreadDrawer、PatchDiffBlock、Knowledge meta 都走同一 resolver
   - UI 明确区分本地跳转和外部跳转，但交互保持轻量
-- [ ] 本地文件路径跳转：
+- [x] 本地文件路径跳转：
   - 邮件正文路径识别优先打开本系统 Code Browser
   - Patch header `diff --git` / `--- a/` / `+++ b/` 优先打开本地对应文件和行号
   - 本地缺失时显示外链 fallback

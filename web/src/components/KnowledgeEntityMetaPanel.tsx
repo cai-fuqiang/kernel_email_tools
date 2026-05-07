@@ -6,7 +6,8 @@ import {
   type KnowledgeEntityMetaSchema,
   pickPrimaryVersion,
 } from '../utils/knowledgeMeta';
-import { elixirIdentUrl, pickKernelSourceUrl } from '../utils/externalLinks';
+import { elixirIdentUrl } from '../utils/externalLinks';
+import KernelSourceLink from './KernelSourceLink';
 
 interface KnowledgeEntityMetaPanelProps {
   meta: KnowledgeEntityMetaSchema;
@@ -220,36 +221,31 @@ export default function KnowledgeEntityMetaPanel({
           <p className="mt-2 text-xs text-gray-500">No files linked yet.</p>
         ) : (
           <ul className="mt-2 flex flex-wrap gap-2">
-            {meta.source_files.map((path) => {
-              const picked = pickKernelSourceUrl(primaryVersion, path);
-              return (
-                <li
-                  key={path}
-                  className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 py-1 pl-2 pr-1 text-xs"
+            {meta.source_files.map((path) => (
+              <li
+                key={path}
+                className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 py-1 pl-2 pr-1 text-xs"
+              >
+                <KernelSourceLink
+                  version={primaryVersion}
+                  path={path}
+                  className="inline-flex items-center gap-1 font-mono text-gray-700 hover:text-indigo-600"
                 >
-                  <a
-                    href={picked.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={`Open in ${picked.source} (${primaryVersion})`}
-                    className="inline-flex items-center gap-1 font-mono text-gray-700 hover:text-indigo-600"
+                  {path}
+                  <ExternalLink className="h-3 w-3 opacity-60" />
+                </KernelSourceLink>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => removeFile(path)}
+                    className="rounded p-0.5 hover:bg-white"
+                    aria-label="Remove file"
                   >
-                    {path}
-                    <ExternalLink className="h-3 w-3 opacity-60" />
-                  </a>
-                  {canEdit && (
-                    <button
-                      type="button"
-                      onClick={() => removeFile(path)}
-                      className="rounded p-0.5 hover:bg-white"
-                      aria-label="Remove file"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  )}
-                </li>
-              );
-            })}
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </li>
+            ))}
           </ul>
         )}
         {canEdit && (

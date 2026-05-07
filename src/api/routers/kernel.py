@@ -1,6 +1,7 @@
 """kernel API routes."""
 
 from datetime import datetime
+from urllib.parse import quote
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
@@ -23,8 +24,72 @@ from src.api.deps import (
     _resolve_user_from_session,
 )
 from src.api.schemas import AnnotationResponse, DraftApplyRequest, DraftApplyResponse
+from src.kernel_source.fallback import FallbackKernelSource
 
 router = APIRouter(tags=["kernel"])
+
+
+def _encode_kernel_path(path: str) -> str:
+    return "/".join(quote(part, safe="") for part in path.split("/") if part)
+
+
+def _external_links_cfg() -> dict:
+    return state._app_config.get("external_links", {}) or {}
+
+
+def _elixir_supports_version(version: str) -> bool:
+    if not version:
+        return False
+    v = version.strip()
+    if v in {"latest", "master"}:
+        return True
+    import re
+
+    m = re.match(r"^v?(\d+)\.(\d+)(?:\.(\d+))?", v)
+    if not m:
+        return True
+    major = int(m.group(1))
+    minor = int(m.group(2))
+    patch = int(m.group(3) or 0)
+    if major < 2:
+        return False
+    if major == 2 and minor < 6:
+        return False
+    if major == 2 and minor == 6 and patch < 12:
+        return False
+    return True
+
+
+def _elixir_url(version: str, path: str, line: int | None = None) -> str:
+    base = (_external_links_cfg().get("elixir_base") or "https://elixir.bootlin.com/linux").rstrip("/")
+    url = f"{base}/{quote(version, safe='')}/source/{_encode_kernel_path(path)}"
+    if line and line > 0:
+        url += f"#L{line}"
+    return url
+
+
+def _git_kernel_url(version: str, path: str, line: int | None = None) -> str:
+    base = (
+        _external_links_cfg().get("git_base")
+        or "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git"
+    ).rstrip("/")
+    url = f"{base}/tree/{_encode_kernel_path(path)}?h={quote(version, safe='')}"
+    if line and line > 0:
+        url += f"#n{line}"
+    return url
+
+
+def _fallback_source_url(version: str, path: str, line: int | None = None) -> tuple[str, str]:
+    if _elixir_supports_version(version):
+        return _elixir_url(version, path, line), "elixir"
+    return _git_kernel_url(version, path, line), "git.kernel.org"
+
+
+def _local_code_url(version: str, path: str, line: int | None = None) -> str:
+    params = f"v={quote(version, safe='')}&path={quote(path, safe='')}"
+    if line and line > 0:
+        params += f"&line={line}"
+    return f"/app/kernel-code?{params}"
 
 @router.get("/api/kernel/versions")
 async def kernel_versions(
@@ -141,6 +206,62 @@ class CodeAnnotationCreateRequest(BaseModel):
 class CodeAnnotationUpdateRequest(BaseModel):
     """更新代码注释请求。"""
     body: str = Field(..., min_length=1, description="注释正文")
+
+
+@router.get("/api/kernel/resolve")
+async def kernel_resolve(
+    version: str = Query(..., min_length=1, description="内核版本 tag"),
+    path: str = Query(..., min_length=1, description="仓库内相对文件路径"),
+    line: Optional[int] = Query(None, ge=1, description="可选行号"),
+):
+    """解析源码跳转目标，优先返回本系统本地 Code Browser。
+
+    这是 PLAN-30002 Phase 6 的最小 resolver：只处理 path/line，不做符号解析。
+    本地 git 有对应文件时返回 `source=local`；否则返回 Elixir/git.kernel.org
+    fallback URL，前端可用同一响应决定点击目标和 tooltip。
+    """
+    if not state._kernel_source:
+        raise HTTPException(status_code=503, detail="Kernel source not initialized")
+
+    normalized_path = path.strip().lstrip("/")
+    if not normalized_path or ".." in normalized_path.split("/"):
+        raise HTTPException(status_code=400, detail="Invalid kernel source path")
+
+    source = state._kernel_source
+    local_source = source._primary if isinstance(source, FallbackKernelSource) else source
+
+    local_error = None
+    try:
+        file_content = await local_source.get_file(version, normalized_path)
+        fallback_url, fallback_source = _fallback_source_url(version, normalized_path, line)
+        return {
+            "source": "local",
+            "url": _local_code_url(version, normalized_path, line),
+            "external_url": fallback_url,
+            "external_source": fallback_source,
+            "local_file_available": True,
+            "resolved_version": file_content.version,
+            "path": file_content.path,
+            "line": line,
+            "line_count": file_content.line_count,
+            "fallback_reason": None,
+        }
+    except (FileNotFoundError, ValueError) as e:
+        local_error = str(e)
+
+    fallback_url, fallback_source = _fallback_source_url(version, normalized_path, line)
+    return {
+        "source": fallback_source,
+        "url": fallback_url,
+        "external_url": fallback_url,
+        "external_source": fallback_source,
+        "local_file_available": False,
+        "resolved_version": version,
+        "path": normalized_path,
+        "line": line,
+        "line_count": None,
+        "fallback_reason": local_error,
+    }
 
 
 @router.get("/api/kernel/annotations")

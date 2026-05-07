@@ -39,6 +39,7 @@ import type {
   UserRead,
   KernelVersionsResponse,
   KernelFileResponse,
+  KernelResolveResponse,
   KernelTreeResponse,
   CodeAnnotation,
   CodeAnnotationCreate,
@@ -1324,6 +1325,18 @@ export async function getKernelTree(
   return fetchJSON<KernelTreeResponse>(
     `${API_BASE}/kernel/tree/${encodeURIComponent(version)}${suffix}`
   );
+}
+
+export async function resolveKernelSource(
+  version: string,
+  path: string,
+  line?: number | null,
+): Promise<KernelResolveResponse> {
+  const params = new URLSearchParams();
+  params.set('version', version);
+  params.set('path', path);
+  if (line && line > 0) params.set('line', String(line));
+  return fetchJSON<KernelResolveResponse>(`${API_BASE}/kernel/resolve?${params}`);
 }
 
 export async function getCodeAnnotations(
