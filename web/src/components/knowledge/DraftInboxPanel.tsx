@@ -14,6 +14,7 @@ interface DraftInboxPanelProps {
   onFilterChange: (value: string) => void;
   onOpenDraft: (draft: KnowledgeDraft) => void;
   onRejectDraft: (draft: KnowledgeDraft) => void;
+  className?: string;
 }
 
 const FILTERS = [
@@ -34,6 +35,7 @@ export default function DraftInboxPanel({
   onFilterChange,
   onOpenDraft,
   onRejectDraft,
+  className = '',
 }: DraftInboxPanelProps) {
   const sortedDrafts = [...drafts]
     .sort((a, b) => {
@@ -47,7 +49,7 @@ export default function DraftInboxPanel({
     .slice(0, 6);
 
   return (
-    <div className="border-b border-slate-200 bg-amber-50/60 p-4">
+    <div className={`border-b border-slate-200 bg-amber-50/60 p-4 ${className}`}>
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">

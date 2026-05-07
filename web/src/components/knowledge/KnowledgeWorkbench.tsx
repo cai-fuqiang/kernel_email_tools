@@ -68,7 +68,7 @@ import type {
 } from '../../api/types';
 import { useAuth } from '../../auth';
 import StickyContextBar from '../StickyContextBar';
-import { PageHeader, PrimaryButton, SecondaryButton, StatusBadge } from '../ui';
+import { PrimaryButton, SecondaryButton, StatusBadge } from '../ui';
 
 export default function KnowledgeWorkbench() {
   const { canWrite, isAdmin } = useAuth();
@@ -127,6 +127,14 @@ export default function KnowledgeWorkbench() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedThread, setSelectedThread] = useState<ThreadFocus | null>(null);
   const [mergeTargetId, setMergeTargetId] = useState('');
+  const sectionLinks = [
+    ['#knowledge-overview', 'Overview'],
+    ['#knowledge-explanation', 'Explanation'],
+    ['#knowledge-relations-panel', 'Relations'],
+    ['#knowledge-evidence', 'Evidence'],
+    ['#knowledge-notes', 'Notes'],
+    ['#knowledge-history', 'History'],
+  ];
 
   const loadEntities = useCallback(async (opts?: { append?: boolean; page?: number }) => {
     const targetPage = opts?.page ?? 1;
@@ -670,56 +678,7 @@ export default function KnowledgeWorkbench() {
         onSelectEntity={handleSelectEntity}
       />
 
-      <DraftInboxPanel
-        drafts={drafts}
-        draftLoading={draftLoading}
-        draftFilter={draftFilter}
-        draftError={draftError}
-        draftSaving={draftSaving}
-        onRefresh={loadDrafts}
-        onFilterChange={setDraftFilter}
-        onOpenDraft={handleOpenDraft}
-        onRejectDraft={handleRejectDraft}
-      />
-
       <main className="flex-1 overflow-y-auto">
-        {activeDraft && activeDraftPayload && (
-          <div className="m-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
-            <div className="mb-3 flex items-start justify-between gap-4">
-              <div>
-                <div className="text-sm font-semibold text-gray-950">
-                  Review draft from {activeDraft.source_type}
-                </div>
-                <div className="mt-1 text-xs leading-5 text-gray-500">
-                  {activeDraft.question || activeDraft.source_ref || activeDraft.draft_id}
-                  {activeDraftCounts > 0 && <span> · {activeDraftCounts} candidate items</span>}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveDraft(null);
-                  setActiveDraftPayload(null);
-                  setDraftSaved(null);
-                  setDraftError('');
-                }}
-                className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-medium text-amber-700"
-              >
-                Close
-              </button>
-            </div>
-            <DraftReviewPanel
-              draft={activeDraftPayload}
-              onChange={setActiveDraftPayload}
-              onSave={handleAcceptDraft}
-              saving={draftSaving}
-              saved={draftSaved}
-              error={draftError}
-              compact
-            />
-          </div>
-        )}
-
         {!selectedEntity ? (
           <div className="mx-auto flex h-full max-w-3xl items-center px-8">
             <div>
@@ -745,7 +704,7 @@ export default function KnowledgeWorkbench() {
             </div>
           </div>
         ) : (
-          <div className="mx-auto max-w-7xl space-y-5 p-4 md:p-6">
+          <div className="mx-auto max-w-6xl space-y-5 p-4 md:p-6">
             <StickyContextBar
               title={selectedEntity.canonical_name}
               subtitle={`${readableType(selectedEntity.entity_type)} · ${selectedEvidenceCount} evidence · ${relationCount} relations`}
@@ -788,62 +747,66 @@ export default function KnowledgeWorkbench() {
                 </>
               }
             />
-            <PageHeader
-              eyebrow="Knowledge Workbench"
-              title={selectedEntity.canonical_name}
-              description="Review the stable explanation, check evidence, add notes, and connect related knowledge."
-              meta={
-                <div className="flex flex-wrap gap-2">
-                  <StatusBadge tone="muted">{readableType(selectedEntity.entity_type)}</StatusBadge>
-                  <StatusBadge
-                    tone={
-                      selectedEntity.status === 'active'
-                        ? 'success'
-                        : selectedEntity.status === 'deprecated'
-                        ? 'warning'
-                        : 'muted'
-                    }
-                  >
-                    {selectedEntity.status}
-                  </StatusBadge>
-                  <StatusBadge tone="info">{selectedEvidenceCount} evidence</StatusBadge>
-                  <StatusBadge tone="muted">{relationCount} relations</StatusBadge>
-                </div>
-              }
-            />
 
-            <div className="flex gap-2 overflow-x-auto pb-1 lg:hidden">
-              {[
-                ['#knowledge-overview', 'Overview'],
-                ['#knowledge-explanation', 'Explanation'],
-                ['#knowledge-relations-panel', 'Relations'],
-                ['#knowledge-evidence', 'Evidence'],
-                ['#knowledge-notes', 'Notes'],
-                ['#knowledge-history', 'History'],
-              ].map(([href, label]) => (
-                <a key={href} href={href} className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600">
+            <div className="sticky top-[73px] z-10 flex gap-2 overflow-x-auto border-b border-slate-200 bg-slate-50/95 py-2 backdrop-blur">
+              {sectionLinks.map(([href, label]) => (
+                <a key={href} href={href} className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:border-slate-300 hover:text-slate-950">
                   {label}
                 </a>
               ))}
             </div>
 
-            <div className="lg:grid lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-5">
-              <aside className="sticky top-20 hidden h-fit rounded-lg border border-slate-200 bg-white p-2 lg:block">
-                {[
-                  ['#knowledge-overview', 'Overview'],
-                  ['#knowledge-explanation', 'Explanation'],
-                  ['#knowledge-relations-panel', 'Relations'],
-                  ['#knowledge-evidence', 'Evidence'],
-                  ['#knowledge-notes', 'Notes'],
-                  ['#knowledge-history', 'History'],
-                ].map(([href, label]) => (
-                  <a key={href} href={href} className="block rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-950">
-                    {label}
-                  </a>
-                ))}
-              </aside>
+            {activeDraft && activeDraftPayload ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <div className="mb-3 flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-950">
+                      Review draft from {activeDraft.source_type}
+                    </div>
+                    <div className="mt-1 text-xs leading-5 text-gray-500">
+                      {activeDraft.question || activeDraft.source_ref || activeDraft.draft_id}
+                      {activeDraftCounts > 0 && <span> · {activeDraftCounts} candidate items</span>}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveDraft(null);
+                      setActiveDraftPayload(null);
+                      setDraftSaved(null);
+                      setDraftError('');
+                    }}
+                    className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-medium text-amber-700"
+                  >
+                    Close
+                  </button>
+                </div>
+                <DraftReviewPanel
+                  draft={activeDraftPayload}
+                  onChange={setActiveDraftPayload}
+                  onSave={handleAcceptDraft}
+                  saving={draftSaving}
+                  saved={draftSaved}
+                  error={draftError}
+                  compact
+                />
+              </div>
+            ) : (
+              <DraftInboxPanel
+                drafts={drafts}
+                draftLoading={draftLoading}
+                draftFilter={draftFilter}
+                draftError={draftError}
+                draftSaving={draftSaving}
+                onRefresh={loadDrafts}
+                onFilterChange={setDraftFilter}
+                onOpenDraft={handleOpenDraft}
+                onRejectDraft={handleRejectDraft}
+                className="rounded-xl border border-amber-200"
+              />
+            )}
 
-              <div className="min-w-0 space-y-5">
+            <div className="min-w-0 space-y-5">
                 <section id="knowledge-overview" className="scroll-mt-24 space-y-5">
                   <EntityDetailHeader
                     selectedEntity={selectedEntity}
@@ -975,7 +938,6 @@ export default function KnowledgeWorkbench() {
                 <section id="knowledge-history" className="scroll-mt-24">
                   <EntityHistoryPanel entityId={selectedEntityId} />
                 </section>
-              </div>
             </div>
           </div>
         )}
