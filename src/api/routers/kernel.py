@@ -23,7 +23,12 @@ from src.api.deps import (
     _local_auth_config, _header_name, _pbkdf2_iterations, _fallback_user,
     _resolve_user_from_session,
 )
-from src.api.schemas import AnnotationResponse, DraftApplyRequest, DraftApplyResponse
+from src.api.schemas import (
+    AnnotationResponse,
+    DraftApplyRequest,
+    DraftApplyResponse,
+    _annotation_to_response,
+)
 from src.kernel_source.fallback import FallbackKernelSource
 from src.storage.models import AnnotationCreate, AnnotationORM, AnnotationUpdate
 
