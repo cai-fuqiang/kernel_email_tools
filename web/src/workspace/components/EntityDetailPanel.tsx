@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { X, ExternalLink } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { X, ExternalLink, Maximize2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { AnnotationListItem, CodeAnnotation, SearchHit, TagRead, TagTargetItem, TagTree } from '../../api/types';
@@ -30,7 +30,7 @@ interface RendererCtx {
 // 各 kind renderer（返回 ReactNode）。kind 差异收敛在此 map 内，外层布局/操作区共用。
 const RENDERERS: Record<WorkspaceEntityKind, (entity: WorkspaceEntity, ctx: RendererCtx) => React.ReactNode> = {
   email_thread: (entity) => renderEmailThread(entity.raw as SearchHit),
-  annotation: (entity) => renderAnnotation(entity.raw as AnnotationListItem | CodeAnnotation),
+  annotation: (entity) => <AnnotationDetail annotation={entity.raw as AnnotationListItem | CodeAnnotation} />,
   tag: (entity, ctx) => (
     <TagSummaryCard tag={entity.raw as TagTree | TagRead} onOpenTarget={ctx.onOpenTagTarget} />
   ),
@@ -158,7 +158,9 @@ function renderEmailThread(hit: SearchHit) {
   );
 }
 
-function renderAnnotation(a: AnnotationListItem | CodeAnnotation) {
+function AnnotationDetail({ annotation: a }: { annotation: AnnotationListItem | CodeAnnotation }) {
+  const [expanded, setExpanded] = useState(false);
+
   return (
     <div className="space-y-4 p-5 text-sm">
       <div>
@@ -174,9 +176,73 @@ function renderAnnotation(a: AnnotationListItem | CodeAnnotation) {
       </div>
 
       <div>
-        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Body</div>
+        <div className="mb-1 flex items-center justify-between">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Body</div>
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="inline-flex items-center gap-1 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            aria-label="放大查看批注"
+            title="放大查看"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
         <div className="markdown-content rounded-lg bg-slate-50 p-3 text-xs leading-relaxed text-slate-700">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{a.body || ''}</ReactMarkdown>
+        </div>
+      </div>
+
+      {expanded && (
+        <AnnotationLightbox annotation={a} onClose={() => setExpanded(false)} />
+      )}
+    </div>
+  );
+}
+
+function AnnotationLightbox({
+  annotation: a,
+  onClose,
+}: {
+  annotation: AnnotationListItem | CodeAnnotation;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="flex h-[90vh] w-[min(960px,95vw)] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
+          <div className="min-w-0">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              Annotation
+            </div>
+            <div className="mt-0.5 truncate text-sm font-medium text-slate-900">
+              {a.target_label || a.target_ref || a.annotation_id}
+            </div>
+            <div className="mt-0.5 truncate font-mono text-[11px] text-slate-500">
+              {a.target_type} · {a.target_ref}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div className="markdown-content text-sm leading-relaxed text-slate-800">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{a.body || ''}</ReactMarkdown>
+          </div>
         </div>
       </div>
     </div>
