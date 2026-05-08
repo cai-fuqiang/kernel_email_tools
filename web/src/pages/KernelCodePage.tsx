@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   BookOpenText,
   Clock3,
@@ -10,6 +10,7 @@ import {
   FileCode2,
   FolderTree,
   GitBranch,
+  Library,
   Layers3,
   Link2,
   MessagesSquare,
@@ -20,20 +21,24 @@ import {
   Waypoints,
 } from 'lucide-react';
 import {
+  getEntitiesByMessageId,
   getTargetTags,
   getCodeAnnotations,
   getKernelFile,
   getKernelTree,
   getKernelVersions,
+  getThread,
 } from '../api/client';
 import type {
   CodeAnnotation,
+  KnowledgeEntity,
   KernelFileResponse,
   KernelTreeEntry,
   KernelVersionInfo,
   TagRead,
 } from '../api/types';
 import EmailTagEditor from '../components/EmailTagEditor';
+import ThreadDrawer from '../components/ThreadDrawer';
 import { showToast } from '../components/Toast';
 import AnnotationPanel from '../components/kernelCode/AnnotationPanel';
 import {
@@ -174,6 +179,14 @@ function mergeTags(...groups: TagRead[][]): TagRead[] {
   return Array.from(seen.values());
 }
 
+type ThreadPreview = {
+  threadId: string;
+  subject: string;
+  emailCount: number;
+  annotationCount: number;
+  focusMessageId?: string;
+};
+
 export default function KernelCodePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlVersion = searchParams.get('v') || '';
@@ -201,6 +214,11 @@ export default function KernelCodePage() {
   const [targetDirectTags, setTargetDirectTags] = useState<TagRead[]>([]);
   const [targetAggregatedTags, setTargetAggregatedTags] = useState<TagRead[]>([]);
   const [targetTagsLoading, setTargetTagsLoading] = useState(false);
+  const [relatedThreadPreviews, setRelatedThreadPreviews] = useState<ThreadPreview[]>([]);
+  const [relatedThreadsLoading, setRelatedThreadsLoading] = useState(false);
+  const [relatedKnowledgeEntities, setRelatedKnowledgeEntities] = useState<KnowledgeEntity[]>([]);
+  const [relatedKnowledgeLoading, setRelatedKnowledgeLoading] = useState(false);
+  const [threadOpen, setThreadOpen] = useState<{ threadId: string; focusMessageId?: string } | null>(null);
   const [symbolPopover, setSymbolPopover] = useState<{
     symbol: string;
     x: number;
@@ -388,6 +406,36 @@ export default function KernelCodePage() {
     [targetAggregatedTags, targetDirectTags],
   );
 
+  const relatedThreadRefs = useMemo(() => {
+    const refs = new Map<string, { threadId: string; focusMessageId?: string }>();
+    for (const annotation of relatedAnnotations) {
+      const threadId =
+        (typeof annotation.meta?.thread_id === 'string' ? annotation.meta.thread_id : '').trim();
+      if (!threadId) continue;
+      const focusMessageId =
+        annotation.code_target?.message_id ||
+        (typeof annotation.meta?.message_id === 'string' ? annotation.meta.message_id : '') ||
+        undefined;
+      if (!refs.has(threadId)) refs.set(threadId, { threadId, focusMessageId });
+    }
+    return Array.from(refs.values()).slice(0, 4);
+  }, [relatedAnnotations]);
+
+  const relatedMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const annotation of relatedAnnotations) {
+      const candidates = [
+        annotation.code_target?.message_id,
+        typeof annotation.meta?.message_id === 'string' ? annotation.meta.message_id : '',
+      ];
+      for (const candidate of candidates) {
+        const normalized = String(candidate || '').trim();
+        if (normalized) ids.add(normalized);
+      }
+    }
+    return Array.from(ids).slice(0, 6);
+  }, [relatedAnnotations]);
+
   const targetHealthLabel = useMemo(() => {
     if (!currentFile) return 'No target loaded';
     if (relatedAnnotations.length > 0 && selectedSymbol) return 'Anchored with notes';
@@ -442,6 +490,76 @@ export default function KernelCodePage() {
       cancelled = true;
     };
   }, [selectedTargetAnchor, selectedTargetAnchorExpanded, selectedTargetRef]);
+
+  useEffect(() => {
+    if (relatedThreadRefs.length === 0) {
+      setRelatedThreadPreviews([]);
+      return;
+    }
+
+    let cancelled = false;
+    setRelatedThreadsLoading(true);
+    Promise.allSettled(
+      relatedThreadRefs.map(async (ref) => {
+        const thread = await getThread(ref.threadId);
+        return {
+          threadId: ref.threadId,
+          subject: thread.emails[0]?.subject || ref.threadId,
+          emailCount: thread.emails.length,
+          annotationCount: thread.annotations.length,
+          focusMessageId: ref.focusMessageId,
+        } satisfies ThreadPreview;
+      }),
+    )
+      .then((results) => {
+        if (cancelled) return;
+        setRelatedThreadPreviews(
+          results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : [])),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setRelatedThreadPreviews([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRelatedThreadsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [relatedThreadRefs]);
+
+  useEffect(() => {
+    if (relatedMessageIds.length === 0) {
+      setRelatedKnowledgeEntities([]);
+      return;
+    }
+
+    let cancelled = false;
+    setRelatedKnowledgeLoading(true);
+    Promise.allSettled(relatedMessageIds.map((messageId) => getEntitiesByMessageId(messageId)))
+      .then((results) => {
+        if (cancelled) return;
+        const entityMap = new Map<string, KnowledgeEntity>();
+        for (const result of results) {
+          if (result.status !== 'fulfilled') continue;
+          for (const entity of result.value.entities) {
+            if (!entityMap.has(entity.entity_id)) entityMap.set(entity.entity_id, entity);
+          }
+        }
+        setRelatedKnowledgeEntities(Array.from(entityMap.values()).slice(0, 6));
+      })
+      .catch(() => {
+        if (!cancelled) setRelatedKnowledgeEntities([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRelatedKnowledgeLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [relatedMessageIds]);
 
   function handleVersionSelect(tag: string) {
     setSelectedVersion(tag);
@@ -1130,6 +1248,76 @@ export default function KernelCodePage() {
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
                   <MessagesSquare className="h-4 w-4 text-slate-500" />
+                  Related Threads
+                </div>
+                <div className="space-y-3">
+                  {relatedThreadsLoading ? (
+                    <div className="text-xs text-slate-500">Loading thread context...</div>
+                  ) : relatedThreadPreviews.length > 0 ? (
+                    relatedThreadPreviews.map((thread) => (
+                      <button
+                        key={thread.threadId}
+                        type="button"
+                        onClick={() => setThreadOpen({ threadId: thread.threadId, focusMessageId: thread.focusMessageId })}
+                        className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:border-sky-200 hover:bg-sky-50/60"
+                      >
+                        <div className="text-sm font-semibold text-slate-900 line-clamp-2">
+                          {thread.subject}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                          <span>{thread.emailCount} emails</span>
+                          <span>{thread.annotationCount} annotations</span>
+                          <span className="truncate font-mono">{thread.threadId}</span>
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs leading-5 text-slate-500">
+                      No linked thread context is surfaced for the current selection yet. Patch-hunk created notes will start making this stack much richer.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                  <Library className="h-4 w-4 text-slate-500" />
+                  Knowledge Backlinks
+                </div>
+                <div className="space-y-3">
+                  {relatedKnowledgeLoading ? (
+                    <div className="text-xs text-slate-500">Loading knowledge backlinks...</div>
+                  ) : relatedKnowledgeEntities.length > 0 ? (
+                    relatedKnowledgeEntities.map((entity) => (
+                      <Link
+                        key={entity.entity_id}
+                        to={`/knowledge?entity_id=${encodeURIComponent(entity.entity_id)}`}
+                        className="block rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 transition hover:border-emerald-200 hover:bg-emerald-50/60"
+                      >
+                        <div className="text-sm font-semibold text-slate-900">
+                          {entity.canonical_name}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {entity.entity_type} · {entity.status}
+                        </div>
+                        {entity.summary && (
+                          <div className="mt-2 text-xs leading-5 text-slate-600">
+                            {entity.summary.slice(0, 160)}
+                          </div>
+                        )}
+                      </Link>
+                    ))
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs leading-5 text-slate-500">
+                      No knowledge entities are linked back to the current message evidence yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                  <MessagesSquare className="h-4 w-4 text-slate-500" />
                   Annotation Stack
                 </div>
                 <div className="space-y-3">
@@ -1263,6 +1451,14 @@ export default function KernelCodePage() {
             <span className="text-sm">×</span>
           </IconButton>
         </div>
+      )}
+
+      {threadOpen && (
+        <ThreadDrawer
+          threadId={threadOpen.threadId}
+          focusMessageId={threadOpen.focusMessageId}
+          onClose={() => setThreadOpen(null)}
+        />
       )}
     </PageShell>
   );
