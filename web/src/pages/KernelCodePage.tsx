@@ -66,6 +66,10 @@ function formatBytes(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function parentKernelPath(path: string): string {
+  return path.split('/').slice(0, -1).join('/');
+}
+
 function detectNearestSymbol(lines: string[], focusLine: number | null): string | null {
   if (!focusLine || focusLine < 1) return null;
   const fnPattern =
@@ -343,6 +347,24 @@ export default function KernelCodePage() {
     [loadTree, treeCache],
   );
 
+  const resolveKnownPathKind = useCallback(
+    (path: string): AtlasPathKind => {
+      if (!path) return 'directory';
+      if (currentFile?.path === path) return 'file';
+      if (currentPath === path && currentPathKind) return currentPathKind;
+      const parentPath = parentKernelPath(path);
+      const pathParts = path.split('/').filter(Boolean);
+      const entryName = pathParts[pathParts.length - 1];
+      const parentEntries = treeCache[parentPath] || [];
+      const matchedEntry = parentEntries.find(
+        (entry) => entry.path === path || entry.name === entryName,
+      );
+      if (!matchedEntry) return null;
+      return matchedEntry.type === 'directory' ? 'directory' : 'file';
+    },
+    [currentFile, currentPath, currentPathKind, treeCache],
+  );
+
   const expandAncestors = useCallback(
     async (path: string, includeSelf: boolean) => {
       const parts = path.split('/').filter(Boolean);
@@ -391,6 +413,7 @@ export default function KernelCodePage() {
     setFileLoading(true);
     setCurrentPath(path);
     setCurrentPathKind('file');
+    setCurrentFile(null);
     setPathInput(path);
     setDirectoryEntries([]);
     const focusLine = targetLine ?? urlLine;
@@ -419,6 +442,23 @@ export default function KernelCodePage() {
   const openPath = useCallback(
     async (path: string, targetLine?: number | null) => {
       if (!selectedVersion || !path) return;
+      if (path === currentPath && currentPathKind === 'directory') {
+        return;
+      }
+      if (path === currentPath && currentPathKind === 'file' && currentFile?.path === path) {
+        const focusTarget = targetLine ?? urlLine;
+        setSelectedLines(focusTarget ? new Set([focusTarget]) : new Set());
+        return;
+      }
+      const knownKind = resolveKnownPathKind(path);
+      if (knownKind === 'directory') {
+        await openDirectory(path);
+        return;
+      }
+      if (knownKind === 'file') {
+        await loadFile(path, targetLine);
+        return;
+      }
       const tree = await loadTree(path, { silent: true });
       if (tree) {
         await openDirectory(path);
@@ -426,7 +466,17 @@ export default function KernelCodePage() {
       }
       await loadFile(path, targetLine);
     },
-    [loadFile, loadTree, openDirectory, selectedVersion],
+    [
+      currentFile,
+      currentPath,
+      currentPathKind,
+      loadFile,
+      loadTree,
+      openDirectory,
+      resolveKnownPathKind,
+      selectedVersion,
+      urlLine,
+    ],
   );
 
   useEffect(() => {
@@ -1129,8 +1179,8 @@ export default function KernelCodePage() {
 
                   {treeLoading && Object.keys(treeCache).length === 0 ? (
                     <div className="text-xs text-slate-500">Loading tree…</div>
-                  ) : treeCache['']?.length ? (
-                    renderTreeEntries('')
+                  ) : treeCache[treePath]?.length ? (
+                    renderTreeEntries(treePath)
                   ) : (
                     <div className="text-xs text-slate-400">No entries here.</div>
                   )}
