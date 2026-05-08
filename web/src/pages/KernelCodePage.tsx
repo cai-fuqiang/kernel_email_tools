@@ -599,7 +599,15 @@ export default function KernelCodePage() {
       .then((results) => {
         if (cancelled) return;
         setRelatedThreadPreviews(
-          results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : [])),
+          results
+            .flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
+            .sort((a, b) => {
+              const aOverlap = a.leadPatch?.matchedHunks.length || 0;
+              const bOverlap = b.leadPatch?.matchedHunks.length || 0;
+              if (bOverlap !== aOverlap) return bOverlap - aOverlap;
+              if (b.matchedPatchCount !== a.matchedPatchCount) return b.matchedPatchCount - a.matchedPatchCount;
+              return b.patchCount - a.patchCount;
+            }),
         );
       })
       .catch(() => {
@@ -1520,6 +1528,23 @@ export default function KernelCodePage() {
                             ) : null}
                             <span className="truncate font-mono">{thread.threadId}</span>
                           </div>
+                          {thread.leadPatch?.matchedHunks.length ? (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {thread.leadPatch.matchedHunks.slice(0, 3).map((hunk, index) => (
+                                <button
+                                  key={`patch-card-${thread.threadId}-${hunk.startLine}-${index}`}
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleSelectRange(hunk.startLine, hunk.endLine);
+                                  }}
+                                  className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800 hover:bg-amber-100"
+                                >
+                                  Jump L{hunk.startLine}{hunk.endLine !== hunk.startLine ? `-${hunk.endLine}` : ''}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
                         </button>
                       ))
                   ) : (
