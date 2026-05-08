@@ -832,7 +832,11 @@ export default function KernelCodePage() {
     scrollToLine(normalizedStart);
   }
 
-  function handleLineClick(line: number) {
+  function handleLineClick(line: number, event?: ReactMouseEvent<HTMLDivElement>) {
+    if (event?.shiftKey && selectedLines.size > 0) {
+      handleSelectRange(focusLine || line, line);
+      return;
+    }
     if (selectedLines.size === 1 && selectedLines.has(line)) {
       setSelectedLines(new Set<number>());
       setSearchParams(
@@ -1302,7 +1306,7 @@ export default function KernelCodePage() {
                           <div
                             key={lineNum}
                             data-line={lineNum}
-                            onClick={() => handleLineClick(lineNum)}
+                            onClick={(e) => handleLineClick(lineNum, e)}
                             className={`group grid w-max cursor-pointer grid-cols-[12px_44px_max-content_22px] border-b border-slate-100/70 px-2 ${
                               isSelected ? 'bg-amber-50' : 'hover:bg-slate-50'
                             }`}

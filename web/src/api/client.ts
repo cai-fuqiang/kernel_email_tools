@@ -128,8 +128,19 @@ function normalizeAnnotation<T extends object>(
         : {},
   };
 
+  const normalized = withNormalizedCodeTarget(annotation);
+  const codeTarget = normalized.code_target;
+
   return {
-    ...withNormalizedCodeTarget(annotation),
+    ...normalized,
+    ...(codeTarget
+      ? {
+          version: (normalized as { version?: string }).version || codeTarget.version,
+          file_path: (normalized as { file_path?: string }).file_path || codeTarget.path,
+          start_line: (normalized as { start_line?: number }).start_line || codeTarget.start_line,
+          end_line: (normalized as { end_line?: number }).end_line || codeTarget.end_line,
+        }
+      : {}),
     target,
   };
 }
