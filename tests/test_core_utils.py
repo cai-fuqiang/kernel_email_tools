@@ -5,6 +5,7 @@ import os
 import pytest
 
 from src.qa.providers import parse_json_object, resolve_api_key
+from src.code_targets import build_code_target
 from src.storage.tag_store import (
     build_paragraph_anchor,
     hash_anchor,
@@ -117,6 +118,41 @@ class TestParseJsonObject:
 
     def test_list_returns_none(self):
         assert parse_json_object("[1, 2, 3]") is None
+
+
+class TestBuildCodeTarget:
+    def test_builds_from_explicit_fields(self):
+        target = build_code_target(
+            version="v6.6",
+            path="mm/mmap.c",
+            start_line=12,
+            end_line=16,
+        )
+        assert target["repo"] == "linux"
+        assert target["version"] == "v6.6"
+        assert target["path"] == "mm/mmap.c"
+        assert target["start_line"] == 12
+        assert target["end_line"] == 16
+        assert target["target_ref"] == "v6.6:mm/mmap.c"
+
+    def test_builds_from_target_ref_and_anchor(self):
+        target = build_code_target(
+            target_ref="v6.1:kernel/sched/core.c",
+            anchor={"start_line": 101, "end_line": 104},
+        )
+        assert target["version"] == "v6.1"
+        assert target["path"] == "kernel/sched/core.c"
+        assert target["start_line"] == 101
+        assert target["end_line"] == 104
+
+    def test_normalizes_end_line_when_missing(self):
+        target = build_code_target(
+            version="v6.8",
+            path="fs/ext4/balloc.c",
+            start_line=7,
+        )
+        assert target["start_line"] == 7
+        assert target["end_line"] == 7
 
 
 class TestNormalizeRole:

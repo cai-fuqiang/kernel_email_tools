@@ -17,6 +17,7 @@ import {
 } from '../api/client';
 import { useAuth } from '../auth';
 import type { AnnotationListItem } from '../api/types';
+import { codeTargetToKernelCodeUrl, normalizeCodeTarget } from '../utils/codeTarget';
 
 interface AnnotationTreeProps {
   annotations: AnnotationListItem[];
@@ -126,9 +127,9 @@ export default function AnnotationTree({ annotations, onAnnotationsChange, layou
       return;
     }
 
-    if (annotation.target_type === 'kernel_file' && annotation.version && annotation.file_path) {
-      const line = annotation.start_line || Number(annotation.anchor?.['start_line'] || 1);
-      navigate(`/kernel-code?v=${encodeURIComponent(annotation.version)}&path=${encodeURIComponent(annotation.file_path)}&line=${line}`);
+    const codeTarget = normalizeCodeTarget(annotation);
+    if (annotation.target_type === 'kernel_file' && codeTarget) {
+      navigate(codeTargetToKernelCodeUrl(codeTarget));
       return;
     }
 
@@ -182,7 +183,7 @@ export default function AnnotationTree({ annotations, onAnnotationsChange, layou
       return;
     }
 
-    if (annotation.target_type === 'kernel_file' && annotation.version && annotation.file_path) {
+    if (annotation.target_type === 'kernel_file' && normalizeCodeTarget(annotation)) {
       setPreviewAnnotation(annotation);
       return;
     }

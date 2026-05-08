@@ -1,9 +1,15 @@
-> **Status**: planned
+> **Status**: in-progress
 > **Updated**: 2026-05-08
 > **Depends-on**: PLAN-30002, PLAN-31002, PLAN-36000
 > **Priority**: P1
 
 # Kernel Code Atlas：多版本内核代码地图与标注工作台
+
+## Implementation Status
+
+- Phase 1 已部分落地：Web Code Browser 的文案和页面主结构已经重定位为 `Kernel Code Atlas`。
+- Phase 2 正在落地：已新增统一 `code_target` payload helper，并接入 code annotation / tag target / Workspace 跳转的主路径，开始收敛散落的 `version + file_path + line range` 解析逻辑。
+- 下一步继续把 ThreadDrawer patch hunk、Knowledge evidence 和更多 tag/annotation 入口切到同一 payload。
 
 ## Summary
 

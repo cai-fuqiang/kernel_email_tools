@@ -274,6 +274,19 @@ export interface TagTargetBundle {
   aggregated_tags: TagRead[];
 }
 
+export interface CodeTarget {
+  repo: string;
+  version: string;
+  path: string;
+  start_line: number;
+  end_line: number;
+  symbol: string;
+  commit: string;
+  patch_id: string;
+  message_id: string;
+  target_ref: string;
+}
+
 export interface TagTargetItem {
   assignment_id: string;
   target_type: string;
@@ -321,6 +334,7 @@ export interface Annotation {
   target_label: string;
   target_subtitle: string;
   anchor: Record<string, unknown>;
+  code_target?: CodeTarget;
   thread_id: string;
   in_reply_to: string;
   version?: string;
@@ -485,6 +499,7 @@ export interface AnnotationListItem {
   target_label: string;
   target_subtitle: string;
   anchor: Record<string, unknown>;
+  code_target?: CodeTarget;
   meta?: Record<string, unknown>;
   thread_id?: string;
   in_reply_to?: string;
@@ -816,6 +831,7 @@ export interface CodeAnnotation {
   target_label: string;
   target_subtitle: string;
   anchor: Record<string, unknown>;
+  code_target?: CodeTarget;
   meta?: Record<string, unknown>;
 }
 

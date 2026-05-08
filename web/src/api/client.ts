@@ -46,6 +46,7 @@ import type {
   CodeAnnotationListResponse,
 
 } from './types';
+import { withNormalizedCodeTarget } from '../utils/codeTarget';
 export type { TagAssignment, TagRead, TagStats, TagTargetBundle, TagTargetItem, TagTargetsResponse, TagTree } from './types';
 
 // 使用相对路径，同源请求不会有 CORS 问题
@@ -128,7 +129,7 @@ function normalizeAnnotation<T extends object>(
   };
 
   return {
-    ...annotation,
+    ...withNormalizedCodeTarget(annotation),
     target,
   };
 }

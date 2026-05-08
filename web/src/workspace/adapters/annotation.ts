@@ -1,4 +1,5 @@
 import type { AnnotationListItem, CodeAnnotation } from '../../api/types';
+import { normalizeCodeTarget } from '../../utils/codeTarget';
 import type { WorkspaceBadge, WorkspaceEntity, WorkspaceTarget, WorkspaceTargetType } from '../types';
 
 function truncate(text: string, n: number): string {
@@ -41,6 +42,16 @@ function targetTypeFromAnnotation(targetType: string | undefined): WorkspaceTarg
  * `<version>:<file_path>` 的拆分（kernel_file 类批注的常见落库形态）。
  */
 function buildCodeAnchor(a: AnnotationListItem): Record<string, unknown> {
+  const codeTarget = normalizeCodeTarget(a);
+  if (codeTarget) {
+    return {
+      ...(a.anchor || {}),
+      version: codeTarget.version,
+      file_path: codeTarget.path,
+      start_line: codeTarget.start_line,
+      end_line: codeTarget.end_line,
+    };
+  }
   const raw = (a.anchor || {}) as Record<string, unknown>;
   const anyA = a as unknown as {
     version?: string;
@@ -116,8 +127,11 @@ export function annotationToEntity(a: AnnotationListItem): WorkspaceEntity {
  */
 export function codeAnnotationToEntity(a: CodeAnnotation): WorkspaceEntity {
   const dateLabel = a.created_at ? new Date(a.created_at).toLocaleDateString() : '';
-  const locationLabel = `${a.file_path}:${a.start_line}${a.end_line && a.end_line !== a.start_line ? `-${a.end_line}` : ''}`;
-  const subtitleParts = [a.author || 'unknown', dateLabel, `${a.version} · ${locationLabel}`];
+  const codeTarget = normalizeCodeTarget(a);
+  const locationLabel = codeTarget
+    ? `${codeTarget.path}:${codeTarget.start_line}${codeTarget.end_line && codeTarget.end_line !== codeTarget.start_line ? `-${codeTarget.end_line}` : ''}`
+    : `${a.file_path}:${a.start_line}${a.end_line && a.end_line !== a.start_line ? `-${a.end_line}` : ''}`;
+  const subtitleParts = [a.author || 'unknown', dateLabel, `${codeTarget?.version || a.version} · ${locationLabel}`];
 
   const badges: WorkspaceBadge[] = [
     { label: 'annotation', tone: 'info' },
@@ -132,17 +146,19 @@ export function codeAnnotationToEntity(a: CodeAnnotation): WorkspaceEntity {
     kind: 'annotation',
     target: {
       type: 'code_line',
-      ref: `${a.version}:${a.file_path}`,
-      anchor: { start_line: a.start_line, end_line: a.end_line, version: a.version, file_path: a.file_path },
+      ref: codeTarget?.target_ref || `${a.version}:${a.file_path}`,
+      anchor: codeTarget
+        ? { start_line: codeTarget.start_line, end_line: codeTarget.end_line, version: codeTarget.version, file_path: codeTarget.path }
+        : { start_line: a.start_line, end_line: a.end_line, version: a.version, file_path: a.file_path },
     },
     title: firstLine(a.body) || '(empty annotation)',
     subtitle: subtitleParts.filter(Boolean).join(' · '),
     excerpt: truncate(a.body || '', 180),
     badges,
     meta: [
-      { label: 'version', value: a.version },
-      { label: 'file', value: a.file_path },
-      { label: 'lines', value: `${a.start_line}–${a.end_line}` },
+      { label: 'version', value: codeTarget?.version || a.version },
+      { label: 'file', value: codeTarget?.path || a.file_path },
+      { label: 'lines', value: `${codeTarget?.start_line || a.start_line}–${codeTarget?.end_line || a.end_line}` },
     ],
     updatedAt: a.updated_at || a.created_at || undefined,
     raw: a,

@@ -926,6 +926,7 @@ class AnnotationRead(BaseModel):
     file_path: str = ""
     start_line: int = 0
     end_line: int = 0
+    code_target: dict = Field(default_factory=dict)
     meta: dict = Field(default_factory=dict)
 
     model_config = {"from_attributes": True}

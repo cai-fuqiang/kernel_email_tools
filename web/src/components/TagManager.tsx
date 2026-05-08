@@ -17,6 +17,7 @@ import {
 import ThreadDrawer from './ThreadDrawer';
 import { useAuth } from '../auth';
 import ConfirmModal from './ConfirmModal';
+import { codeTargetToKernelCodeUrl, normalizeCodeTarget } from '../utils/codeTarget';
 
 type TagAction =
   | { kind: 'delete'; tagId: number; tagName: string }
@@ -265,9 +266,12 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
     }
     if (target.target_type === 'annotation') {
       const annotationType = String(meta.annotation_type || '');
-      if (annotationType === 'code' && meta.version && meta.file_path) {
-        const line = Number(meta.start_line || 1);
-        navigate(`/kernel-code?v=${encodeURIComponent(String(meta.version))}&path=${encodeURIComponent(String(meta.file_path))}&line=${line}`);
+      const annotationCodeTarget = normalizeCodeTarget({
+        ...(meta as Record<string, unknown>),
+        code_target: meta.code_target as Record<string, unknown> | undefined,
+      });
+      if (annotationType === 'code' && annotationCodeTarget) {
+        navigate(codeTargetToKernelCodeUrl(annotationCodeTarget));
         return;
       }
       const threadId = String(meta.thread_id || '');
@@ -282,11 +286,14 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
       return;
     }
     if (target.target_type === 'kernel_line_range') {
-      const version = String(meta.version || '');
-      const filePath = String(meta.file_path || '');
-      const line = Number(meta.start_line || target.anchor?.start_line || 1);
-      if (version && filePath) {
-        navigate(`/kernel-code?v=${encodeURIComponent(version)}&path=${encodeURIComponent(filePath)}&line=${line}`);
+      const codeTarget = normalizeCodeTarget({
+        ...(meta as Record<string, unknown>),
+        anchor: target.anchor,
+        target_ref: target.target_ref,
+        code_target: meta.code_target as Record<string, unknown> | undefined,
+      });
+      if (codeTarget) {
+        navigate(codeTargetToKernelCodeUrl(codeTarget));
       }
       return;
     }

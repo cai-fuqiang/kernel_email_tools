@@ -18,8 +18,8 @@
 | PLAN | 主题 | Status | Priority | 备注 |
 |------|------|--------|----------|------|
 | [PLAN-30002](PLAN-30002-external-code-jump.md) | 代码跳转与 local-first resolver | in-progress | **P1** | 外链闭环已完成；下一步把 Elixir 降级为 fallback，建立本地代码 resolver |
-| [PLAN-37001](PLAN-37001-kernel-code-atlas.md) | Kernel Code Atlas：多版本代码地图与标注工作台 | planned | **P1** | 重新定义 Web Code Browser 边界：保留跨版本阅读、标注和 tag，不做 Web IDE |
-| [PLAN-31005](PLAN-31005.md) | 统一信息工作台（Workspace） | in-progress / partially implemented | **P0 cleanup**, then P2 | 代码中已有 `/workspace`、adapter 和页面雏形；当前优先完成三视图冒烟 |
+| [PLAN-37001](PLAN-37001-kernel-code-atlas.md) | Kernel Code Atlas：多版本代码地图与标注工作台 | in-progress | **P1** | 文案和前端壳已改为 Atlas；当前推进 code target normalization MVP |
+| [PLAN-31005](PLAN-31005.md) | 统一信息工作台（Workspace） | done / staged follow-up | **P0 cleanup**, then P2 | Stage 1 主流程已收口，真实写数据与 LLM 联调降为后续低优先级 |
 | [PLAN-31002](PLAN-31002-knowledge-workbench-roadmap.md) | Knowledge Workbench 路线图 | in-progress | P2 | 范围过大，新工作请新建独立 PLAN 引用 |
 | [PLAN-36000](PLAN-36000-survey-style-batch-tagging.md) | Survey-Style 批量打标签（YAML 问卷） | planned | P2 | 借鉴 eunomia-bpf/code-survey；先 Phase 1 PoC 验证质量 |
 | [PLAN-35001](PLAN-35001-FUTURE-ai-assisted-knowledge-pipeline.md) | AI 邮件入库流水线 | future | P3 | 100 万邮件 LLM 成本 ~$2000，先验证再放量 |
@@ -66,7 +66,7 @@
 4. ~~**P1** PLAN-34001 贡献度标记（后端 `/api/contributions/lookup` + 前端 chip）~~ ✅ 2026-05-06
 5. ~~**P1** PLAN-31001 Phase 3+4+5 收尾（fulltext search / import-export / history / direction switch / load more）~~ ✅ 2026-05-06
 6. ~~**P0** PLAN-31004 Pending Verification（浏览器尺寸、移动端、Knowledge/ThreadDrawer/Search/Ask 核心冒烟）~~ ✅ 2026-05-08
-7. **P0** PLAN-31005 状态校准与 Workspace 冒烟（旧路由兼容、email/tag/annotation 三个 view 主流程）
+7. ~~**P0** PLAN-31005 状态校准与 Workspace 冒烟（旧路由兼容、email/tag/annotation 三个 view 主流程）~~ ✅ 2026-05-08
 8. **P1** PLAN-37001 Phase 1+2（产品边界清理 + Code Target Normalization MVP；必要时拆新 PLAN）
 9. **P1** PLAN-37001 Phase 3（代码位置 annotation/tag/knowledge evidence 最小闭环）
 10. **P1** PLAN-30002 Phase 6 剩余项（local-first resolver 的最小符号索引仅在闭环需要时推进）

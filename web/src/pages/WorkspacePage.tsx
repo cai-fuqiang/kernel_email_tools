@@ -33,6 +33,7 @@ import {
   updateAnnotation,
   type TagStats,
 } from '../api/client';
+import { codeTargetToKernelCodeUrl, normalizeCodeTarget } from '../utils/codeTarget';
 import { showToast } from '../components/Toast';
 import BatchTagBar from '../components/search/BatchTagBar';
 import SummaryPanel from '../components/search/SummaryPanel';
@@ -175,21 +176,9 @@ export default function WorkspacePage() {
       }
     }
     if (target.type === 'code_line') {
-      const anchor = target.anchor as { version?: string; file_path?: string; start_line?: number } | undefined;
-      let version = anchor?.version || '';
-      let filePath = anchor?.file_path || '';
-      // 兜底：target.ref 形如 "<version>:<file_path>"
-      if ((!version || !filePath) && target.ref) {
-        const idx = target.ref.indexOf(':');
-        if (idx > 0) {
-          version = version || target.ref.slice(0, idx);
-          filePath = filePath || target.ref.slice(idx + 1);
-        }
-      }
-      if (version && filePath) {
-        const params = new URLSearchParams({ v: version, path: filePath });
-        if (anchor?.start_line) params.set('line', String(anchor.start_line));
-        navigate(`/kernel-code?${params.toString()}`);
+      const codeTarget = normalizeCodeTarget({ anchor: target.anchor, target_ref: target.ref });
+      if (codeTarget) {
+        navigate(codeTargetToKernelCodeUrl(codeTarget));
         return;
       }
     }
@@ -214,14 +203,15 @@ export default function WorkspacePage() {
       setThreadOpen({ threadId, focusMessageId: messageId });
       return;
     }
-    if (t.target_type === 'code_line' || t.target_type === 'kernel_code') {
-      const version = (anchor.version as string) || (meta.version as string);
-      const filePath = (anchor.file_path as string) || (meta.file_path as string);
-      const startLine = (anchor.start_line as number | undefined) || (meta.start_line as number | undefined);
-      if (version && filePath) {
-        const params = new URLSearchParams({ v: version, path: filePath });
-        if (startLine) params.set('line', String(startLine));
-        navigate(`/kernel-code?${params.toString()}`);
+    if (t.target_type === 'code_line' || t.target_type === 'kernel_code' || t.target_type === 'kernel_line_range') {
+      const codeTarget = normalizeCodeTarget({
+        ...(meta as Record<string, unknown>),
+        anchor,
+        target_ref: t.target_ref,
+        code_target: meta.code_target as Record<string, unknown> | undefined,
+      });
+      if (codeTarget) {
+        navigate(codeTargetToKernelCodeUrl(codeTarget));
         return;
       }
     }

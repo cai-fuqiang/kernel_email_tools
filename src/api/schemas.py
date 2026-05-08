@@ -17,6 +17,7 @@ class AnnotationResponse(BaseModel):
     target_label: str = ""
     target_subtitle: str = ""
     anchor: dict = Field(default_factory=dict)
+    code_target: dict = Field(default_factory=dict)
     meta: dict = Field(default_factory=dict)
     thread_id: str = ""
     parent_annotation_id: str = ""
@@ -69,6 +70,7 @@ def _annotation_to_response(annotation: Any) -> AnnotationResponse:
         target_label=_get("target_label", ""),
         target_subtitle=_get("target_subtitle", ""),
         anchor=_get("anchor", {}) or {},
+        code_target=_get("code_target", {}) or {},
         meta=_get("meta", {}) or {},
         thread_id=_get("thread_id", ""),
         parent_annotation_id=_get("parent_annotation_id", "") or "",

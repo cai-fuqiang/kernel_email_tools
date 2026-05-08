@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.orm.attributes import NO_VALUE
 from sqlalchemy.orm import selectinload
 
+from src.code_targets import build_code_target
 from src.storage.models import (
     AnnotationORM,
     EmailORM,
@@ -746,6 +747,15 @@ class TagStore:
                     select(AnnotationORM).where(AnnotationORM.annotation_id.in_(annotation_ids))
                 )).scalars().all()
                 for row in rows:
+                    code_target = build_code_target(
+                        version=row.version or "",
+                        path=row.file_path or "",
+                        start_line=row.start_line or 0,
+                        end_line=row.end_line or 0,
+                        target_ref=row.target_ref or "",
+                        anchor=row.anchor or {},
+                        meta=row.meta or {},
+                    ) if row.annotation_type == "code" else {}
                     ann_map[row.annotation_id] = {
                         "annotation_id": row.annotation_id,
                         "annotation_type": row.annotation_type,
@@ -758,6 +768,7 @@ class TagStore:
                         "file_path": row.file_path or "",
                         "start_line": row.start_line or 0,
                         "end_line": row.end_line or 0,
+                        "code_target": code_target,
                     }
 
             # --- batch query knowledge entities ---
@@ -790,15 +801,16 @@ class TagStore:
                 elif tt == TARGET_TYPE_ANNOTATION:
                     target_meta = ann_map.get(tref, {})
                 elif tt == TARGET_TYPE_KERNEL_LINE_RANGE:
-                    version = ""
-                    file_path = ""
-                    if ":" in tref:
-                        version, file_path = tref.split(":", 1)
+                    code_target = build_code_target(
+                        target_ref=tref,
+                        anchor=assignment.anchor or {},
+                    )
                     target_meta = {
-                        "version": version,
-                        "file_path": file_path,
-                        "start_line": assignment.anchor.get("start_line", 0),
-                        "end_line": assignment.anchor.get("end_line", 0),
+                        "version": code_target["version"],
+                        "file_path": code_target["path"],
+                        "start_line": code_target["start_line"],
+                        "end_line": code_target["end_line"],
+                        "code_target": code_target,
                     }
                 elif tt == TARGET_TYPE_KNOWLEDGE_ENTITY:
                     target_meta = entity_map.get(tref, {})

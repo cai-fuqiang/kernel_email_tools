@@ -15,6 +15,7 @@ from typing import Optional
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from src.code_targets import build_code_target
 from src.storage.models import (
     AnnotationCreate,
     AnnotationORM,
@@ -53,17 +54,30 @@ def _normalize_annotation_payload(annotation: AnnotationCreate) -> AnnotationCre
     elif data.annotation_type == "code":
         if not data.target_type:
             data.target_type = "kernel_file"
-        if not data.target_ref and data.version and data.file_path:
-            data.target_ref = f"{data.version}:{data.file_path}"
+        code_target = build_code_target(
+            version=data.version,
+            path=data.file_path,
+            start_line=data.start_line,
+            end_line=data.end_line,
+            target_ref=data.target_ref,
+            anchor=data.anchor,
+            meta=data.meta,
+        )
+        if not data.target_ref:
+            data.target_ref = code_target["target_ref"]
         if not data.target_label:
-            data.target_label = data.file_path
+            data.target_label = code_target["path"]
         if not data.target_subtitle:
-            data.target_subtitle = data.version
+            data.target_subtitle = code_target["version"]
         if not data.anchor and data.start_line > 0:
             data.anchor = {
-                "start_line": data.start_line,
-                "end_line": data.end_line or data.start_line,
+                "start_line": code_target["start_line"],
+                "end_line": code_target["end_line"],
             }
+        data.meta = {
+            **(data.meta or {}),
+            "code_target": code_target,
+        }
 
     return data
 
@@ -119,7 +133,33 @@ class UnifiedAnnotationStore:
                 "file_path": ann.file_path or "",
                 "start_line": ann.start_line or int(anchor.get("start_line", 0) or 0),
                 "end_line": ann.end_line or int(anchor.get("end_line", 0) or 0),
-                "meta": ann.meta or {},
+                "code_target": build_code_target(
+                    version=ann.version or "",
+                    path=ann.file_path or "",
+                    start_line=ann.start_line or int(anchor.get("start_line", 0) or 0),
+                    end_line=ann.end_line or int(anchor.get("end_line", 0) or 0),
+                    target_ref=ann.target_ref or "",
+                    anchor=anchor,
+                    meta=ann.meta or {},
+                ) if ann.annotation_type == "code" else {},
+                "meta": {
+                    **(ann.meta or {}),
+                    **(
+                        {
+                            "code_target": build_code_target(
+                                version=ann.version or "",
+                                path=ann.file_path or "",
+                                start_line=ann.start_line or int(anchor.get("start_line", 0) or 0),
+                                end_line=ann.end_line or int(anchor.get("end_line", 0) or 0),
+                                target_ref=ann.target_ref or "",
+                                anchor=anchor,
+                                meta=ann.meta or {},
+                            )
+                        }
+                        if ann.annotation_type == "code"
+                        else {}
+                    ),
+                },
             }
         )
 
@@ -352,7 +392,6 @@ class UnifiedAnnotationStore:
             "target_label": ann.target_label or "",
             "target_subtitle": ann.target_subtitle or "",
             "anchor": anchor,
-            "meta": ann.meta or {},
             "thread_id": ann.thread_id or "",
             "in_reply_to": ann.in_reply_to or "",
             "version": ann.version or "",
@@ -361,6 +400,33 @@ class UnifiedAnnotationStore:
             "end_line": ann.end_line or int(anchor.get("end_line", 0) or 0),
             "email_subject": email_subject or "",
             "email_sender": email_sender or "",
+            "code_target": build_code_target(
+                version=ann.version or "",
+                path=ann.file_path or "",
+                start_line=ann.start_line or int(anchor.get("start_line", 0) or 0),
+                end_line=ann.end_line or int(anchor.get("end_line", 0) or 0),
+                target_ref=ann.target_ref or "",
+                anchor=anchor,
+                meta=ann.meta or {},
+            ) if ann.annotation_type == "code" else None,
+            "meta": {
+                **(ann.meta or {}),
+                **(
+                    {
+                        "code_target": build_code_target(
+                            version=ann.version or "",
+                            path=ann.file_path or "",
+                            start_line=ann.start_line or int(anchor.get("start_line", 0) or 0),
+                            end_line=ann.end_line or int(anchor.get("end_line", 0) or 0),
+                            target_ref=ann.target_ref or "",
+                            anchor=anchor,
+                            meta=ann.meta or {},
+                        )
+                    }
+                    if ann.annotation_type == "code"
+                    else {}
+                ),
+            },
         }
 
     async def update(self, annotation_id: str, data: AnnotationUpdate) -> Optional[AnnotationRead]:
