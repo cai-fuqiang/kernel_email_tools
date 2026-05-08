@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Mail, NotebookText, Search, Tag as TagIcon } from 'lucide-react';
+import { Mail, NotebookText, Search, Sparkles, Tag as TagIcon } from 'lucide-react';
 import { useAuth } from '../auth';
 import ThreadDrawer from '../components/ThreadDrawer';
 import EntityList from '../workspace/components/EntityList';
@@ -15,7 +15,7 @@ import {
   type WorkspaceView,
 } from '../workspace/hooks/useWorkspaceData';
 import type { WorkspaceEntity } from '../workspace/types';
-import type { AnnotationListItem, ChannelOption, CodeAnnotation, TagTargetItem, TagTree } from '../api/types';
+import type { AnnotationListItem, ChannelOption, CodeAnnotation, SearchHit, TagTargetItem, TagTree } from '../api/types';
 import {
   deleteAnnotation,
   deleteCodeAnnotation,
@@ -26,10 +26,18 @@ import {
   withdrawAnnotationPublication,
   approveAnnotationPublication,
   rejectAnnotationPublication,
+  applySummaryDraft,
+  createSummaryDraft,
+  createTagAssignment,
+  summarizeSearchResults,
   updateAnnotation,
   type TagStats,
 } from '../api/client';
 import { showToast } from '../components/Toast';
+import BatchTagBar from '../components/search/BatchTagBar';
+import SummaryPanel from '../components/search/SummaryPanel';
+import { errorMessage } from '../components/search/searchUtils';
+import type { AskDraftApplyResponse, AskDraftResponse, SourceRef, SummarizeResponse } from '../api/types';
 
 const VALID_VIEWS: WorkspaceView[] = ['email', 'tag', 'annotation'];
 const PAGE_SIZE = 20;
@@ -75,6 +83,15 @@ export default function WorkspacePage() {
   const [tagStats, setTagStats] = useState<TagStats[]>([]);
 
   const [threadOpen, setThreadOpen] = useState<{ threadId: string; focusMessageId?: string } | null>(null);
+  const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set());
+  const [batchTagInput, setBatchTagInput] = useState('');
+  const [batchTagging, setBatchTagging] = useState(false);
+  const [summarizing, setSummarizing] = useState(false);
+  const [summary, setSummary] = useState<SummarizeResponse | null>(null);
+  const [draftBundle, setDraftBundle] = useState<AskDraftResponse | null>(null);
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [draftSaved, setDraftSaved] = useState<AskDraftApplyResponse | null>(null);
+  const [showDraftPanel, setShowDraftPanel] = useState(false);
 
   // 加载元数据
   useEffect(() => {
@@ -95,7 +112,16 @@ export default function WorkspacePage() {
   useEffect(() => {
     setPage(1);
     setSelectedId(null);
+    setSelectedMessages(new Set());
+    setSummary(null);
+    setDraftBundle(null);
+    setDraftSaved(null);
+    setShowDraftPanel(false);
   }, [view, q, filters]);
+
+  useEffect(() => {
+    setSelectedMessages(new Set());
+  }, [view, page]);
 
   const effectiveFilters: WorkspaceFilters = useMemo(() => ({ q, ...filters }), [q, filters]);
   const data = useWorkspaceData(isAuthenticated ? view : 'email', effectiveFilters, page, PAGE_SIZE);
@@ -107,6 +133,7 @@ export default function WorkspacePage() {
 
   const totalPages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
   const semanticNeedsQuery = view === 'email' && filters.mode === 'semantic' && !q.trim();
+  const canUseEmailResultActions = view === 'email' && data.rawEmailHits.length > 0;
 
   // email view 无任何条件时的引导提示
   const showEmailEmptyHint =
@@ -200,6 +227,119 @@ export default function WorkspacePage() {
     }
     // sdm_section / knowledge / 其它：暂无统一打开方式，console 留痕便于排查
     console.warn('[Workspace] no handler for tag target type', t.target_type, t.target_ref);
+  }
+
+  function handleToggleMessage(messageId: string) {
+    setSelectedMessages((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
+  }
+
+  function handleSelectAllMessages() {
+    if (!canUseEmailResultActions) return;
+    const pageMessageIds = data.rawEmailHits.map((hit) => hit.message_id);
+    setSelectedMessages((prev) => (
+      prev.size === pageMessageIds.length ? new Set() : new Set(pageMessageIds)
+    ));
+  }
+
+  async function handleBatchTag() {
+    const tagName = batchTagInput.trim();
+    if (!tagName || selectedMessages.size === 0) return;
+    setBatchTagging(true);
+    let done = 0;
+    let failed = 0;
+    for (const messageId of selectedMessages) {
+      try {
+        await createTagAssignment({
+          tag_name: tagName,
+          target_type: 'email_message',
+          target_ref: messageId,
+        });
+        done++;
+      } catch {
+        failed++;
+      }
+    }
+    setBatchTagging(false);
+    setBatchTagInput('');
+    setSelectedMessages(new Set());
+    data.refresh();
+    if (failed > 0) {
+      showToast(`已打标签 ${done} 封，${failed} 封失败`, 'error');
+    } else {
+      showToast(`已为 ${done} 封邮件打上标签 "${tagName}"`, 'success');
+    }
+  }
+
+  async function handleSummarize() {
+    if (!canUseEmailResultActions || summarizing) return;
+    setSummarizing(true);
+    setSummary(null);
+    setDraftBundle(null);
+    setDraftSaved(null);
+    setShowDraftPanel(false);
+    try {
+      const hits = data.rawEmailHits.slice(0, 10);
+      const resp = await summarizeSearchResults({
+        query: q || 'kernel discussion',
+        hits,
+      });
+      setSummary(resp);
+    } catch (e) {
+      showToast(errorMessage(e, 'Summarize failed'), 'error');
+    } finally {
+      setSummarizing(false);
+    }
+  }
+
+  async function handleCreateDraft() {
+    if (!summary || draftLoading) return;
+    setDraftLoading(true);
+    setDraftBundle(null);
+    setDraftSaved(null);
+    try {
+      const sources: SourceRef[] = summary.sources.map((s) => ({
+        message_id: s.message_id,
+        subject: s.subject,
+        sender: s.sender,
+        date: s.date,
+        snippet: s.snippet,
+        thread_id: s.thread_id,
+        list_name: s.list_name,
+      }));
+      const bundle = await createSummaryDraft(q || 'kernel discussion', summary.answer, sources);
+      setDraftBundle(bundle);
+      setShowDraftPanel(true);
+    } catch (e) {
+      showToast(errorMessage(e, 'Create draft failed'), 'error');
+    } finally {
+      setDraftLoading(false);
+    }
+  }
+
+  async function handleApplyDraft() {
+    if (!draftBundle) return;
+    setDraftLoading(true);
+    try {
+      const resp = await applySummaryDraft(draftBundle);
+      setDraftSaved(resp);
+      if (resp.errors.length > 0) {
+        showToast(
+          `Draft saved with ${resp.errors.length} error(s): ${resp.errors.map((e) => e.message).join(', ')}`,
+          'error',
+        );
+      } else {
+        showToast('Draft saved', 'success');
+      }
+    } catch (e) {
+      showToast(errorMessage(e, 'Apply draft failed'), 'error');
+    } finally {
+      setDraftLoading(false);
+    }
   }
 
   // ── Tag 视图 ────────────────────────────────────────────────────────────
@@ -408,11 +548,87 @@ export default function WorkspacePage() {
             <div className="px-6 py-12 text-center text-sm text-rose-600">Error: {data.error}</div>
           ) : (
             <>
+              {canUseEmailResultActions && (
+                <div className="border-b border-slate-100 bg-white px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="flex items-center gap-1.5 text-xs text-slate-500">
+                      <input
+                        type="checkbox"
+                        checked={selectedMessages.size === data.rawEmailHits.length}
+                        onChange={handleSelectAllMessages}
+                        className="h-3.5 w-3.5 rounded border-slate-300"
+                      />
+                      全选本页
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleSummarize}
+                      disabled={summarizing || data.rawEmailHits.length === 0}
+                      className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2.5 py-1 text-xs text-white hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      {summarizing ? '概括中...' : `AI 概括前 ${Math.min(data.rawEmailHits.length, 10)} 条`}
+                    </button>
+                  </div>
+
+                  {summary && (
+                    <div className="mt-3">
+                      <SummaryPanel
+                        summary={summary}
+                        draftBundle={draftBundle}
+                        draftSaved={draftSaved}
+                        draftLoading={draftLoading}
+                        showDraftPanel={showDraftPanel}
+                        onCreateDraft={handleCreateDraft}
+                        onDraftChange={(next) => {
+                          setDraftBundle(next);
+                          setDraftSaved(null);
+                        }}
+                        onApplyDraft={handleApplyDraft}
+                        onCloseDraft={() => {
+                          setShowDraftPanel(false);
+                          setDraftBundle(null);
+                          setDraftSaved(null);
+                        }}
+                        onOpenThread={(threadId) => setThreadOpen({ threadId })}
+                      />
+                    </div>
+                  )}
+
+                  {selectedMessages.size > 0 && (
+                    <div className="mt-3">
+                      <BatchTagBar
+                        selectedCount={selectedMessages.size}
+                        batchTagInput={batchTagInput}
+                        onBatchTagInputChange={setBatchTagInput}
+                        batchTagging={batchTagging}
+                        onBatchTag={handleBatchTag}
+                        onCancel={() => {
+                          setSelectedMessages(new Set());
+                          setBatchTagInput('');
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
               <EntityList
                 entities={data.entities}
                 selectedId={selectedId}
                 onSelect={(entity) => setSelectedId(entity.id)}
                 onActivate={handleOpenTarget}
+                leadingControl={view === 'email' ? (entity) => {
+                  const hit = entity.raw as SearchHit;
+                  return (
+                    <input
+                      type="checkbox"
+                      checked={selectedMessages.has(hit.message_id)}
+                      onChange={() => handleToggleMessage(hit.message_id)}
+                      className="h-3.5 w-3.5 rounded border-slate-300"
+                      aria-label={`选择 ${entity.title}`}
+                    />
+                  );
+                } : undefined}
               />
               {data.total > 0 && view !== 'tag' && (
                 <div className="flex items-center justify-center gap-2 p-4 text-xs text-slate-500">

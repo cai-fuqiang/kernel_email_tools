@@ -22,6 +22,8 @@ interface EntityListProps {
   onSelect: (entity: WorkspaceEntity) => void;
   /** 在已选中的行上再次点击时触发（用于打开 thread / 跳转 code 等） */
   onActivate?: (entity: WorkspaceEntity) => void;
+  /** Optional row-leading control such as a checkbox; kept kind-agnostic by the caller. */
+  leadingControl?: (entity: WorkspaceEntity) => React.ReactNode;
   emptyMessage?: string;
 }
 
@@ -42,6 +44,7 @@ export default function EntityList({
   selectedId,
   onSelect,
   onActivate,
+  leadingControl,
   emptyMessage = '没有匹配的实体',
 }: EntityListProps) {
   if (entities.length === 0) {
@@ -74,6 +77,14 @@ export default function EntityList({
             }}
           >
             <div className="flex items-start justify-between gap-3">
+              {leadingControl && (
+                <div
+                  className="shrink-0 pt-0.5"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {leadingControl(entity)}
+                </div>
+              )}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   {Icon && <Icon className="h-4 w-4 shrink-0 text-slate-500" />}
