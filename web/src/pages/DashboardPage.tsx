@@ -289,7 +289,7 @@ export default function DashboardPage() {
           <ActionTile to="/ask" icon={Bot} title="Ask agent" description="Ask follow-up questions over mailing-list evidence." />
           <ActionTile to="/agent-research" icon={FileText} title="New agent research" description="Run a topic-driven investigation and review its draft." />
           <ActionTile to="/knowledge" icon={Library} title="Browse knowledge" description="Edit entities, evidence, relations, and review drafts." />
-          <ActionTile to="/kernel-code" icon={Code2} title="Open code" description="Inspect local kernel source and linked annotations." />
+          <ActionTile to="/kernel-code" icon={Code2} title="Open Atlas" description="Inspect code targets, versions, and linked annotations." />
           <ActionTile to="/manual/search" icon={BookOpen} title="Manuals" description="Search Intel SDM and related technical references." />
         </div>
       </SectionPanel>

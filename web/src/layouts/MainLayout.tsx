@@ -141,7 +141,7 @@ export default function MainLayout() {
         <nav className="flex-1 space-y-6 overflow-y-auto p-4">
           <NavSection title="Research" items={researchItems} />
           <NavSection title="Knowledge Workbench" items={workbenchItems} />
-          <NavSection title="Code" items={[{ to: '/kernel-code', label: 'Code Browser', icon: Code2 }]} />
+          <NavSection title="Code" items={[{ to: '/kernel-code', label: 'Code Atlas', icon: Code2 }]} />
           {isAdmin && (
             <NavSection
               title="Admin"
