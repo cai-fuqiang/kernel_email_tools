@@ -190,6 +190,51 @@ function patchTouchesPath(patchContent: string, filePath: string): boolean {
   return patterns.some((pattern) => pattern.test(patchContent));
 }
 
+function parsePatchHunkMatches(
+  patchContent: string,
+  filePath: string,
+  selectedRange: { startLine: number; endLine: number } | null,
+): Array<{ startLine: number; endLine: number }> {
+  if (!patchContent || !filePath || !selectedRange) return [];
+  const lines = patchContent.split('\n');
+  const matches: Array<{ startLine: number; endLine: number }> = [];
+  let oldPath = '';
+  let newPath = '';
+
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith('diff --git ')) {
+      const match = trimmed.match(/^diff --git\s+a\/(\S+)\s+b\/(\S+)/);
+      oldPath = match?.[1] || '';
+      newPath = match?.[2] || '';
+      continue;
+    }
+    if (trimmed.startsWith('--- ')) {
+      oldPath = trimmed.replace(/^---\s+/, '').replace(/^[ab]\//, '').trim();
+      continue;
+    }
+    if (trimmed.startsWith('+++ ')) {
+      newPath = trimmed.replace(/^\+\+\+\s+/, '').replace(/^[ab]\//, '').trim();
+      continue;
+    }
+    if (!trimmed.startsWith('@@')) continue;
+
+    const activePath = newPath || oldPath;
+    if (activePath !== filePath) continue;
+
+    const hunk = trimmed.match(/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/);
+    if (!hunk) continue;
+    const startLine = Number(hunk[3] || 0);
+    const count = Number(hunk[4] || 1);
+    const endLine = Math.max(startLine, startLine + Math.max(count, 1) - 1);
+    if (startLine <= selectedRange.endLine && endLine >= selectedRange.startLine) {
+      matches.push({ startLine, endLine });
+    }
+  }
+
+  return matches;
+}
+
 type ThreadPreview = {
   threadId: string;
   subject: string;
@@ -201,6 +246,7 @@ type ThreadPreview = {
     messageId: string;
     subject: string;
     touchesCurrentPath: boolean;
+    matchedHunks: Array<{ startLine: number; endLine: number }>;
   };
   focusMessageId?: string;
 };
@@ -525,6 +571,9 @@ export default function KernelCodePage() {
           ? patchEmails.filter((email) => patchTouchesPath(email.patch_content || '', currentPath))
           : [];
         const leadPatchEmail = matchedPatchEmails[0] || patchEmails[0];
+        const leadPatchMatchedHunks = leadPatchEmail
+          ? parsePatchHunkMatches(leadPatchEmail.patch_content || '', currentPath, selectedRange)
+          : [];
         return {
           threadId: ref.threadId,
           subject: thread.emails[0]?.subject || ref.threadId,
@@ -539,6 +588,7 @@ export default function KernelCodePage() {
                   subject: leadPatchEmail.subject || leadPatchEmail.message_id,
                   touchesCurrentPath:
                     currentPath ? patchTouchesPath(leadPatchEmail.patch_content || '', currentPath) : false,
+                  matchedHunks: leadPatchMatchedHunks,
                 }
               : undefined;
           })(),
@@ -562,7 +612,7 @@ export default function KernelCodePage() {
     return () => {
       cancelled = true;
     };
-  }, [currentPath, relatedThreadRefs]);
+  }, [currentPath, relatedThreadRefs, selectedRange]);
 
   useEffect(() => {
     if (relatedMessageIds.length === 0) {
@@ -613,12 +663,37 @@ export default function KernelCodePage() {
     void loadFile(pathInput.trim());
   }
 
-  function handleLineClick(line: number) {
-    setSelectedLines((prev) => (prev.has(line) ? new Set<number>() : new Set([line])));
+  function scrollToLine(line: number) {
+    window.requestAnimationFrame(() => {
+      const container = codeViewRef.current;
+      const target = container?.querySelector<HTMLElement>(`[data-line="${line}"]`);
+      target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  }
+
+  function handleSelectRange(startLine: number, endLine: number = startLine) {
+    const normalizedStart = Math.max(1, Math.min(startLine, endLine));
+    const normalizedEnd = Math.max(normalizedStart, Math.max(startLine, endLine));
+    const next = new Set<number>();
+    for (let line = normalizedStart; line <= normalizedEnd; line += 1) next.add(line);
+    setSelectedLines(next);
     setSearchParams(
-      { v: selectedVersion, path: currentPath, ...(line ? { line: String(line) } : {}) },
+      { v: selectedVersion, path: currentPath, line: String(normalizedStart) },
       { replace: true },
     );
+    scrollToLine(normalizedStart);
+  }
+
+  function handleLineClick(line: number) {
+    if (selectedLines.size === 1 && selectedLines.has(line)) {
+      setSelectedLines(new Set<number>());
+      setSearchParams(
+        { v: selectedVersion, path: currentPath },
+        { replace: true },
+      );
+      return;
+    }
+    handleSelectRange(line);
   }
 
   function handleCodeMouseUp(e: ReactMouseEvent<HTMLDivElement>) {
@@ -962,6 +1037,7 @@ export default function KernelCodePage() {
                     return (
                       <div
                         key={lineNum}
+                        data-line={lineNum}
                         onClick={() => handleLineClick(lineNum)}
                         className={`group grid cursor-pointer grid-cols-[18px_64px_minmax(0,1fr)_24px] border-b border-slate-100/80 px-3 ${
                           isSelected ? 'bg-amber-50' : 'hover:bg-slate-50'
@@ -1332,6 +1408,23 @@ export default function KernelCodePage() {
                             <div className="mt-1 text-[11px] font-mono text-slate-500 truncate">
                               {thread.leadPatch.messageId}
                             </div>
+                            {thread.leadPatch.matchedHunks.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {thread.leadPatch.matchedHunks.slice(0, 3).map((hunk, index) => (
+                                  <button
+                                    key={`${thread.threadId}-hunk-${hunk.startLine}-${index}`}
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      handleSelectRange(hunk.startLine, hunk.endLine);
+                                    }}
+                                    className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800 hover:bg-amber-100"
+                                  >
+                                    L{hunk.startLine}{hunk.endLine !== hunk.startLine ? `-${hunk.endLine}` : ''}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                       </button>
@@ -1402,9 +1495,11 @@ export default function KernelCodePage() {
                                 {thread.leadPatch?.subject || thread.subject}
                               </div>
                               <div className="mt-1 text-xs text-slate-500">
-                                {thread.matchedPatchCount > 0 && currentPath
-                                  ? `Patch content in this thread touches ${currentPath}.`
-                                  : 'Surfaced from thread evidence attached to this code target.'}
+                                {thread.leadPatch?.matchedHunks.length
+                                  ? `Lead patch overlaps ${selectedRangeLabel} through ${thread.leadPatch.matchedHunks.length} matched hunk${thread.leadPatch.matchedHunks.length === 1 ? '' : 's'}.`
+                                  : thread.matchedPatchCount > 0 && currentPath
+                                    ? `Patch content in this thread touches ${currentPath}.`
+                                    : 'Surfaced from thread evidence attached to this code target.'}
                               </div>
                             </div>
                             <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800">
@@ -1418,6 +1513,11 @@ export default function KernelCodePage() {
                                 {thread.matchedPatchCount} file hit{thread.matchedPatchCount === 1 ? '' : 's'}
                               </span>
                             )}
+                            {thread.leadPatch?.matchedHunks.length ? (
+                              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-800">
+                                {thread.leadPatch.matchedHunks.length} hunk overlap{thread.leadPatch.matchedHunks.length === 1 ? '' : 's'}
+                              </span>
+                            ) : null}
                             <span className="truncate font-mono">{thread.threadId}</span>
                           </div>
                         </button>
@@ -1441,7 +1541,7 @@ export default function KernelCodePage() {
                       <button
                         key={annotation.annotation_id}
                         type="button"
-                        onClick={() => setSelectedLines(new Set([annotation.start_line]))}
+                        onClick={() => handleSelectRange(annotation.start_line, annotation.end_line)}
                         className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:border-sky-200 hover:bg-sky-50/50"
                       >
                         <div className="flex items-start justify-between gap-3">
