@@ -26,7 +26,7 @@ export function PageShell({
 }) {
   return (
     <div className={cx('min-h-full bg-slate-50 px-5 py-6 md:px-8', className)}>
-      <div className={cx('mx-auto w-full space-y-6', wide ? 'max-w-7xl' : 'max-w-6xl')}>
+      <div className={cx('mx-auto w-full space-y-6', wide ? 'max-w-[1800px]' : 'max-w-6xl')}>
         {children}
       </div>
     </div>
