@@ -453,6 +453,29 @@ export default function WorkspacePage() {
         </aside>
       </div>
 
+      {selectedEntity && (
+        <div className="fixed inset-0 z-40 bg-slate-950/30 xl:hidden" role="dialog" aria-modal="true">
+          <div className="ml-auto flex h-full w-full max-w-[34rem] min-w-0 flex-col bg-white shadow-2xl">
+            <EntityDetailPanel
+              entity={selectedEntity}
+              onOpenTarget={(entity) => {
+                handleOpenTarget(entity);
+                setSelectedId(null);
+              }}
+              onOpenTagTarget={(target) => {
+                handleOpenTagTarget(target);
+                setSelectedId(null);
+              }}
+              onDeleteTag={handleDeleteTag}
+              canDeleteTag={canDeleteTag}
+              annotationActions={annotationActions}
+              annotationPermissions={annotationPermissions}
+              onClose={() => setSelectedId(null)}
+            />
+          </div>
+        </div>
+      )}
+
       {threadOpen && (
         <ThreadDrawer
           threadId={threadOpen.threadId}
