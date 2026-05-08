@@ -88,7 +88,7 @@ export default function TreeEmailCard({
   const renderFullHeader = () => {
     const totalDesc = children.length > 0 ? countDescendants(node) : 0;
     return (
-    <div className="flex items-center gap-3 py-3 px-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border-l-4 border-blue-400">
+    <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border-l-4 border-blue-400 bg-gray-50 px-3 py-3 transition-colors hover:bg-gray-100 md:flex-nowrap md:gap-3 md:px-4">
       <div
         className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm"
         style={{ backgroundColor: `hsl(${getAuthorName(email.sender).charCodeAt(0) * 15 % 360}, 65%, 50%)` }}
@@ -96,20 +96,22 @@ export default function TreeEmailCard({
         {getAuthorName(email.sender).charAt(0).toUpperCase()}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-gray-900 text-sm">{getAuthorName(email.sender)}</span>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="min-w-0 truncate text-sm font-semibold text-gray-900">{getAuthorName(email.sender)}</span>
           {depth > 0 && (
             <span className="text-xs text-blue-500 bg-blue-50 px-2 py-0.5 rounded">
               → {depth} 层回复
             </span>
           )}
-          <span className="text-xs text-gray-400 ml-auto">
+          <span className="ml-auto shrink-0 text-xs text-gray-400">
             {email.date ? new Date(email.date).toLocaleDateString('zh-CN', {
               year: 'numeric', month: 'short', day: 'numeric',
               hour: '2-digit', minute: '2-digit'
             }) : ''}
           </span>
-          <KnowledgeBackRefs messageId={email.message_id} />
+          <div className="min-w-0">
+            <KnowledgeBackRefs messageId={email.message_id} />
+          </div>
         </div>
         <div className="text-sm text-gray-600 truncate mt-1">{email.subject}</div>
         {email.references && email.references.length > 0 && (
@@ -119,16 +121,16 @@ export default function TreeEmailCard({
         )}
       </div>
       {email.has_patch && (
-        <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">PATCH</span>
+        <span className="shrink-0 rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-700">PATCH</span>
       )}
       {children.length > 0 && (
-        <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded-full">
+        <span className="shrink-0 rounded-full bg-gray-200 px-2 py-1 text-xs text-gray-500">
           {children.length} 回复{totalDesc > children.length && (
             <span className="text-gray-400"> / 共 {totalDesc}</span>
           )}
         </span>
       )}
-      <span className="text-gray-400 text-lg">{isExpanded ? '▼' : '▶'}</span>
+      <span className="shrink-0 text-lg text-gray-400">{isExpanded ? '▼' : '▶'}</span>
       <a
         href={loreUrl(email.message_id)}
         target="_blank"
@@ -212,7 +214,7 @@ export default function TreeEmailCard({
   // 批注节点特殊渲染
   if (node.isAnnotation && node.annotation) {
     return (
-      <div style={{ marginLeft: depth > 0 ? '16px': 0 }}>
+      <div className="min-w-0" style={{ marginLeft: depth > 0 ? 'clamp(4px, 2vw, 16px)': 0 }}>
         <ThreadAnnotationCard
           annotation={node.annotation}
           depth={0}
@@ -246,7 +248,7 @@ export default function TreeEmailCard({
           </div>
         )}
         {replyingTo === node.annotation.annotation_id && (
-          <div style={{ marginLeft: '16px' }}>
+          <div className="min-w-0" style={{ marginLeft: 'clamp(4px, 2vw, 16px)' }}>
             <AnnotationInput
               onSubmit={(body, visibility) => { onAddAnnotation(node.annotation!.thread_id, node.annotation!.annotation_id, body, visibility); onSetReplyingTo(null); }}
               onCancel={() => onSetReplyingTo(null)}
@@ -260,10 +262,10 @@ export default function TreeEmailCard({
   return (
     <div
       data-message-id={email.message_id}
-      className={`email-node rounded-lg transition-all ${
+      className={`email-node min-w-0 rounded-lg transition-all ${
         highlightedTarget === `message:${email.message_id}` ? 'ring-2 ring-amber-200 bg-amber-50/60' : ''
       }`}
-      style={{ marginLeft: depth > 0 ? '16px' : 0 }}
+      style={{ marginLeft: depth > 0 ? 'clamp(4px, 2vw, 16px)' : 0 }}
     >
       <details className="email-thread" open={isExpanded}>
         <summary
@@ -272,11 +274,11 @@ export default function TreeEmailCard({
         >
           {renderFullHeader()}
         </summary>
-        <div className="email-body px-4 pb-4 mt-2">
+        <div className="email-body mt-2 min-w-0 px-2 pb-4 md:px-4">
           <div className="mb-3">
             <EmailTagEditor messageId={email.message_id} />
           </div>
-          <div className="email-content rounded-lg overflow-hidden">
+          <div className="email-content min-w-0 overflow-hidden rounded-lg">
             {paragraphs.map((block, idx) => renderParagraph(block, idx))}
           </div>
           {email.has_patch && email.patch_content && (

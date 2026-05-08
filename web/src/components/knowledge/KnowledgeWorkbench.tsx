@@ -648,7 +648,7 @@ export default function KnowledgeWorkbench() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 xl:flex xl:h-screen">
+    <div className="min-h-screen min-w-0 overflow-x-hidden bg-slate-50 xl:flex xl:h-screen">
       <EntityListPanel
         entities={entities}
         selectedEntityId={selectedEntityId}
@@ -679,9 +679,9 @@ export default function KnowledgeWorkbench() {
         onSelectEntity={handleSelectEntity}
       />
 
-      <main className="flex-1 overflow-y-auto">
+      <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
         {!selectedEntity ? (
-          <div className="mx-auto flex h-full max-w-3xl items-center px-8">
+          <div className="mx-auto flex h-full max-w-3xl items-center px-4 md:px-8">
             <div>
               <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">
                 Knowledge workflow
@@ -705,7 +705,7 @@ export default function KnowledgeWorkbench() {
             </div>
           </div>
         ) : (
-          <div className="relative mx-auto max-w-6xl space-y-5 p-4 md:p-6">
+          <div className="relative mx-auto max-w-6xl min-w-0 space-y-5 overflow-x-hidden p-4 md:p-6">
             <StickyContextBar
               title={selectedEntity.canonical_name}
               subtitle={`${readableType(selectedEntity.entity_type)} · ${selectedEvidenceCount} evidence · ${relationCount} relations`}
@@ -759,7 +759,7 @@ export default function KnowledgeWorkbench() {
               onCreateAnnotation={handleCreateAnnotation}
             />
 
-            <div className="sticky top-[73px] z-10 flex gap-2 overflow-x-auto border-b border-slate-200 bg-slate-50/95 py-2 backdrop-blur">
+            <div className="sticky top-[73px] z-10 flex max-w-full gap-2 overflow-x-auto border-b border-slate-200 bg-slate-50/95 py-2 backdrop-blur">
               {sectionLinks.map(([href, label]) => (
                 <a key={href} href={href} className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:border-slate-300 hover:text-slate-950">
                   {label}
@@ -817,7 +817,7 @@ export default function KnowledgeWorkbench() {
               />
             )}
 
-            <div className="min-w-0 space-y-5">
+            <div className="min-w-0 max-w-full space-y-5 overflow-x-hidden">
                 <section id="knowledge-overview" className="scroll-mt-24 space-y-5">
                   <EntityDetailHeader
                     selectedEntity={selectedEntity}

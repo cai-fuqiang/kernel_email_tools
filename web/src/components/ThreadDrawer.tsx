@@ -73,7 +73,9 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
   const [translationJob, setTranslationJob] = useState<TranslationJobResponse | null>(null);
   const [cacheMessage, setCacheMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [, setFoldLevel] = useState<FoldLevel>('expanded');
-  const [viewMode, setViewMode] = useState<ViewMode>('tree');
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches ? 'layered' : 'tree',
+  );
   const [layeredExpandedIds, setLayeredExpandedIds] = useState<Set<number>>(new Set());
   const [highlightedTarget, setHighlightedTarget] = useState<string | null>(null);
 
@@ -318,7 +320,11 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
         : '';
     if (!selector || !targetKey) return;
 
-    setViewMode('tree');
+    setViewMode(
+      typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+        ? 'layered'
+        : 'tree',
+    );
     const timer = window.setTimeout(() => {
       const target = document.querySelector<HTMLElement>(selector);
       if (!target) return;
@@ -415,10 +421,9 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
     : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex">
+    <div className="fixed inset-0 z-50 flex overflow-hidden">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative ml-auto bg-gray-50 flex flex-col"
-           style={{ width: '90vw', height: '100vh' }}>
+      <div className="relative ml-auto flex h-screen w-full min-w-0 flex-col overflow-hidden bg-gray-50 md:w-[90vw]">
         {thread && (
           <ThreadInspectorDock
             threadId={threadId}
@@ -479,7 +484,7 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
           }
         />
         {/* 内容区域 */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 md:p-6">
           {loading && (
             <div className="flex items-center justify-center py-20">
               <div className="text-gray-400 text-lg">加载中...</div>
@@ -491,8 +496,8 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
             </div>
           )}
           {thread && (
-            <div className="thread">
-              <div className="bg-white rounded-lg px-4 py-3 mb-6 flex items-center gap-6 text-sm text-gray-600 border border-gray-200">
+            <div className="thread min-w-0">
+              <div className="mb-4 flex min-w-0 flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-3 text-sm text-gray-600 md:mb-6 md:gap-6 md:px-4">
                 <span><strong className="text-gray-900">{thread.emails.length}</strong> 封邮件</span>
                 <span><strong className="text-gray-900">{threadTree.length}</strong> 个主题</span>
                 {thread.annotations && thread.annotations.length > 0 && (
@@ -505,7 +510,7 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
                   <ContributionChips stats={threadContribStats} compact={false} />
                 )}
               </div>
-              <div className="space-y-3">
+              <div className="min-w-0 space-y-3">
                 {viewMode === 'tree' ? (
                   threadTree.map((rootNode, idx) => (
                     <TreeEmailCard 
@@ -574,6 +579,7 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
         .bilingual-block {
           display: flex;
           border-bottom: 1px solid #e5e7eb;
+          min-width: 0;
         }
         .bilingual-block:last-child {
           border-bottom: none;
@@ -611,6 +617,29 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
         }
         .diff-line-text {
           white-space: pre;
+          min-width: 0;
+          overflow-wrap: anywhere;
+        }
+        @media (max-width: 767px) {
+          .bilingual-block {
+            display: block;
+          }
+          .bilingual-original,
+          .bilingual-translation {
+            flex: none;
+            width: 100%;
+            border-right: 0;
+          }
+          .bilingual-original {
+            border-bottom: 1px solid #e5e7eb;
+          }
+          .diff-line {
+            min-width: 0;
+          }
+          .diff-line-text {
+            white-space: pre-wrap;
+            word-break: break-word;
+          }
         }
         .diff-add {
           background: rgba(34, 197, 94, 0.15);

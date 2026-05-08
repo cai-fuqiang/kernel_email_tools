@@ -209,12 +209,12 @@ export default function KnowledgeGraphView({
   }, [nodes, edges, centerEntityId, handleNodeClick]);
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-white">
+    <div className="relative min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white">
       <div className="absolute left-3 top-3 z-10 rounded-lg border border-gray-200 bg-white/95 px-3 py-2 shadow-sm">
         <div className="text-xs font-semibold text-gray-900">Local relationship map</div>
         <div className="mt-1 text-[11px] text-gray-500">{nodes.length} nodes · {edges.length} relations</div>
       </div>
-      <div ref={containerRef} className="h-[520px] w-full" />
+      <div ref={containerRef} className="h-[420px] w-full md:h-[520px]" />
       <div className="flex flex-wrap items-center gap-3 border-t border-gray-100 px-3 py-2 text-[11px] text-gray-500">
         {Object.entries(TYPE_COLORS).map(([type, color]) => (
           <span key={type} className="inline-flex items-center gap-1">

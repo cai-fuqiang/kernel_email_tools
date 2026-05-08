@@ -1,6 +1,6 @@
 # Plans Index
 
-> Last reorganized: **2026-05-06** (PLAN-30002 updated with local-first code resolver)
+> Last reorganized: **2026-05-08** (project-wide priority review added; next work should focus on workflow closure before new feature expansion)
 
 本目录维护项目的规约文档（PLAN-xxx）。已完成的计划归档到 `done/`，被取代的计划归档到 `done/superseded/`。每个活跃 PLAN 顶部应当带元数据头：
 
@@ -13,15 +13,52 @@
 
 ---
 
-## 活跃计划（5）
+## 活跃计划（8）
 
 | PLAN | 主题 | Status | Priority | 备注 |
 |------|------|--------|----------|------|
 | [PLAN-30002](PLAN-30002-external-code-jump.md) | 代码跳转与 local-first resolver | in-progress | **P1** | 外链闭环已完成；下一步把 Elixir 降级为 fallback，建立本地代码 resolver |
+| [PLAN-37001](PLAN-37001-kernel-code-atlas.md) | Kernel Code Atlas：多版本代码地图与标注工作台 | planned | **P1** | 重新定义 Web Code Browser 边界：保留跨版本阅读、标注和 tag，不做 Web IDE |
 | [PLAN-31004](PLAN-31004-ui-information-hierarchy.md) | UI 信息层次与首屏引导（Workbench 第二轮） | in-progress | **P1** | Dashboard 首屏已接入；下一步 Sticky 上下文条 + 信息密度 |
+| [PLAN-31005](PLAN-31005.md) | 统一信息工作台（Workspace） | in-progress / partially implemented | **P0 cleanup**, then P2 | 代码中已有 `/workspace`、adapter 和页面雏形；当前优先完成三视图冒烟 |
 | [PLAN-31002](PLAN-31002-knowledge-workbench-roadmap.md) | Knowledge Workbench 路线图 | in-progress | P2 | 范围过大，新工作请新建独立 PLAN 引用 |
 | [PLAN-36000](PLAN-36000-survey-style-batch-tagging.md) | Survey-Style 批量打标签（YAML 问卷） | planned | P2 | 借鉴 eunomia-bpf/code-survey；先 Phase 1 PoC 验证质量 |
 | [PLAN-35001](PLAN-35001-FUTURE-ai-assisted-knowledge-pipeline.md) | AI 邮件入库流水线 | future | P3 | 100 万邮件 LLM 成本 ~$2000，先验证再放量 |
+| [PLAN-37000](PLAN-37000-low-priority-markdown-wiki-export.md) | Markdown Wiki Export | planned | P3 | 低优先级；等核心证据链稳定后再做 |
+
+---
+
+## 2026-05-08 项目评估结论
+
+当前项目已经具备邮件导入、全文/语义检索、Ask/Research Agent、Knowledge Workbench、Draft Review、批注、标签、翻译、手册和内核代码浏览等能力。代码健康度尚可：`pytest -q` 135 个测试通过，`web npm run lint` 和 `web npm run build` 通过。
+
+主要风险已经从“缺功能”转为“功能面过宽、计划状态滞后、关键闭环尚未完全验收”。后续优先级应按 **收口主工作流 > 稳定证据链 > 小步验证新方向 > 批量 AI/插件/导出** 排列。
+
+### 近期优先级
+
+1. **P0：验收并关闭 PLAN-31004**
+   - 原因：Dashboard、StickyContextBar、信息密度、Knowledge/ThreadDrawer 体验已经基本落地，但仍有浏览器尺寸、移动端、DB 冒烟和核心功能回归待验证。
+   - 完成标准：浏览器人工冒烟通过，`PLAN-31004` 状态改为 `done`，并归档到 `done/`。
+2. **P0：校准 PLAN-31005 Workspace 状态**
+   - 原因：`web/src/pages/WorkspacePage.tsx`、workspace adapters 和侧边栏入口已经存在，但计划仍是 `draft`，README 之前也未列入活跃计划。
+   - 完成标准：把 `PLAN-31005` 改为 `in-progress (partially implemented)`，补充已实现内容、未验收项和下一步冒烟清单。
+3. **P1：Code Target Normalization MVP**
+   - 原因：Kernel Code Atlas 是大方向，但不应立即做完整多版本 Atlas。先统一代码位置引用结构，支撑 code annotation、tag、Knowledge evidence 共享同一种目标表达。
+   - 建议拆出独立 PLAN：`version + repo + path + start_line + end_line + symbol + message_id/patch_id`，先用结构化 JSON 过渡，必要时后续建表。
+4. **P1：邮件 patch ↔ 代码位置 ↔ annotation/tag ↔ knowledge 闭环**
+   - 原因：这是项目最有差异化的主线，比完整符号索引、编辑器插件和批量 AI 更先。
+   - 完成标准：从 ThreadDrawer patch hunk 或 Code view 选区创建 annotation/tag，并能从代码页、邮件页、Knowledge evidence 互相跳转。
+5. **P2：Survey 单 thread PoC**
+   - 原因：Survey-style 批量标签有价值，但应先验证单 thread 质量、成本和人工 review 体验。
+   - 完成标准：只做 YAML schema + 单 thread runner + DraftReviewPanel 接入，不开放批量 run。
+
+### 暂缓事项
+
+- VS Code / Neovim 插件：等 Code Target 稳定后再做 editor-native bridge。
+- 完整 Kernel Code Atlas：先做 code target 和 annotation/tag 闭环，不先做跨版本函数级对照。
+- 完整符号索引 / Find References：不替代编辑器和 Elixir，除非后续有明确证据链需求。
+- AI 邮件入库流水线批量化：禁止从百万邮件全量 LLM 起步，所有批量 run 必须 dry_run 和硬上限。
+- Markdown Wiki Export：低优先级，等知识模型和证据链稳定后再做。
 
 ---
 
@@ -32,9 +69,13 @@
 3. ~~**P1** PLAN-34000 Phase 1/3/5 收尾（SemanticRetriever 测试 2→6、confirm/prompt → ConfirmModal、KnowledgePage chunk 500→54 KB）~~ ✅ 2026-05-06
 4. ~~**P1** PLAN-34001 贡献度标记（后端 `/api/contributions/lookup` + 前端 chip）~~ ✅ 2026-05-06
 5. ~~**P1** PLAN-31001 Phase 3+4+5 收尾（fulltext search / import-export / history / direction switch / load more）~~ ✅ 2026-05-06
-6. **P1** PLAN-30002 Phase 6（Local-first Code Resolver：本地 repo 主路径，Elixir/git.kernel.org fallback）
-7. **P2** PLAN-30002 Phase 7（GILT-like Contextual Ask，依赖 Phase 6）
-8. **P3** PLAN-35001 P1 起步（本地小模型去噪，零 API 成本）
+6. **P0** PLAN-31004 Pending Verification（浏览器尺寸、移动端、Knowledge/ThreadDrawer/Search/Ask 核心冒烟）
+7. **P0** PLAN-31005 状态校准与 Workspace 冒烟（旧路由兼容、email/tag/annotation 三个 view 主流程）
+8. **P1** PLAN-37001 Phase 1+2（产品边界清理 + Code Target Normalization MVP；必要时拆新 PLAN）
+9. **P1** PLAN-37001 Phase 3（代码位置 annotation/tag/knowledge evidence 最小闭环）
+10. **P1** PLAN-30002 Phase 6 剩余项（local-first resolver 的最小符号索引仅在闭环需要时推进）
+11. **P2** PLAN-36000 Phase 1（单 thread Survey PoC，验证质量和成本）
+12. **P2/P3** VS Code / Neovim bridge、批量 Survey、AI 入库流水线、Markdown Wiki Export
 
 ---
 

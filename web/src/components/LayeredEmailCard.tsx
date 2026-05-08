@@ -283,10 +283,10 @@ export default function LayeredEmailCard({
   return (
     <div
       data-message-id={email.message_id}
-      className={`email-node rounded-lg transition-all ${
+      className={`email-node min-w-0 rounded-lg transition-all ${
         highlightedTarget === `message:${email.message_id}` ? 'ring-2 ring-amber-200 bg-amber-50/60' : ''
       }`}
-      style={{ marginLeft: depth > 0 ? `${Math.min(depth, 6) * 16}px` : 0 }}
+      style={{ marginLeft: depth > 0 ? `clamp(4px, ${Math.min(depth, 6) * 1.2}vw, ${Math.min(depth, 6) * 16}px)` : 0 }}
     >
       <div
         onClick={() => onToggleExpand(email.id)}
@@ -296,11 +296,11 @@ export default function LayeredEmailCard({
       </div>
 
       {isExpanded && (
-        <div className="email-body px-4 pb-4 mt-2">
+        <div className="email-body mt-2 min-w-0 px-2 pb-4 md:px-4">
           <div className="mb-3">
             <EmailTagEditor messageId={email.message_id} />
           </div>
-          <div className="email-content rounded-lg overflow-hidden">
+          <div className="email-content min-w-0 overflow-hidden rounded-lg">
             {paragraphs.map((block, idx) => renderParagraph(block, idx))}
       </div>
           {email.has_patch && email.patch_content && (
