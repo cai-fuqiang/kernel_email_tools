@@ -179,11 +179,29 @@ function mergeTags(...groups: TagRead[][]): TagRead[] {
   return Array.from(seen.values());
 }
 
+function patchTouchesPath(patchContent: string, filePath: string): boolean {
+  if (!patchContent || !filePath) return false;
+  const escaped = filePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const patterns = [
+    new RegExp(`\\b---\\s+a/${escaped}\\b`),
+    new RegExp(`\\b\\+\\+\\+\\s+b/${escaped}\\b`),
+    new RegExp(`\\bdiff --git\\s+a/${escaped}\\s+b/${escaped}\\b`),
+  ];
+  return patterns.some((pattern) => pattern.test(patchContent));
+}
+
 type ThreadPreview = {
   threadId: string;
   subject: string;
   emailCount: number;
   annotationCount: number;
+  patchCount: number;
+  matchedPatchCount: number;
+  leadPatch?: {
+    messageId: string;
+    subject: string;
+    touchesCurrentPath: boolean;
+  };
   focusMessageId?: string;
 };
 
@@ -502,11 +520,28 @@ export default function KernelCodePage() {
     Promise.allSettled(
       relatedThreadRefs.map(async (ref) => {
         const thread = await getThread(ref.threadId);
+        const patchEmails = thread.emails.filter((email) => email.has_patch);
+        const matchedPatchEmails = currentPath
+          ? patchEmails.filter((email) => patchTouchesPath(email.patch_content || '', currentPath))
+          : [];
+        const leadPatchEmail = matchedPatchEmails[0] || patchEmails[0];
         return {
           threadId: ref.threadId,
           subject: thread.emails[0]?.subject || ref.threadId,
           emailCount: thread.emails.length,
           annotationCount: thread.annotations.length,
+          patchCount: patchEmails.length,
+          matchedPatchCount: matchedPatchEmails.length,
+          leadPatch: (() => {
+            return leadPatchEmail
+              ? {
+                  messageId: leadPatchEmail.message_id,
+                  subject: leadPatchEmail.subject || leadPatchEmail.message_id,
+                  touchesCurrentPath:
+                    currentPath ? patchTouchesPath(leadPatchEmail.patch_content || '', currentPath) : false,
+                }
+              : undefined;
+          })(),
           focusMessageId: ref.focusMessageId,
         } satisfies ThreadPreview;
       }),
@@ -527,7 +562,7 @@ export default function KernelCodePage() {
     return () => {
       cancelled = true;
     };
-  }, [relatedThreadRefs]);
+  }, [currentPath, relatedThreadRefs]);
 
   useEffect(() => {
     if (relatedMessageIds.length === 0) {
@@ -1267,8 +1302,38 @@ export default function KernelCodePage() {
                         <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
                           <span>{thread.emailCount} emails</span>
                           <span>{thread.annotationCount} annotations</span>
+                          {thread.patchCount > 0 && (
+                            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
+                              {thread.patchCount} patch{thread.patchCount === 1 ? '' : 'es'}
+                            </span>
+                          )}
+                          {thread.matchedPatchCount > 0 && (
+                            <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 font-medium text-sky-700">
+                              {thread.matchedPatchCount} hit{thread.matchedPatchCount === 1 ? '' : 's'} {currentPath ? 'this file' : 'selection'}
+                            </span>
+                          )}
                           <span className="truncate font-mono">{thread.threadId}</span>
                         </div>
+                        {thread.leadPatch && (
+                          <div className="mt-2 rounded-lg border border-slate-200 bg-white/80 px-2.5 py-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                Lead Patch
+                              </div>
+                              {thread.leadPatch.touchesCurrentPath && (
+                                <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700">
+                                  touches {currentPath.split('/').pop() || 'file'}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 text-xs font-medium text-slate-800 line-clamp-2">
+                              {thread.leadPatch.subject}
+                            </div>
+                            <div className="mt-1 text-[11px] font-mono text-slate-500 truncate">
+                              {thread.leadPatch.messageId}
+                            </div>
+                          </div>
+                        )}
                       </button>
                     ))
                   ) : (
@@ -1310,6 +1375,56 @@ export default function KernelCodePage() {
                   ) : (
                     <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs leading-5 text-slate-500">
                       No knowledge entities are linked back to the current message evidence yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                  <Route className="h-4 w-4 text-slate-500" />
+                  Patch Backlinks
+                </div>
+                <div className="space-y-3">
+                  {relatedThreadPreviews.some((thread) => thread.patchCount > 0) ? (
+                    relatedThreadPreviews
+                      .filter((thread) => thread.patchCount > 0)
+                      .map((thread) => (
+                        <button
+                          key={`patch-${thread.threadId}`}
+                          type="button"
+                          onClick={() => setThreadOpen({ threadId: thread.threadId, focusMessageId: thread.leadPatch?.messageId || thread.focusMessageId })}
+                          className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:border-amber-200 hover:bg-amber-50/60"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-slate-900 line-clamp-2">
+                                {thread.leadPatch?.subject || thread.subject}
+                              </div>
+                              <div className="mt-1 text-xs text-slate-500">
+                                {thread.matchedPatchCount > 0 && currentPath
+                                  ? `Patch content in this thread touches ${currentPath}.`
+                                  : 'Surfaced from thread evidence attached to this code target.'}
+                              </div>
+                            </div>
+                            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800">
+                              PATCH
+                            </span>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                            <span>{thread.patchCount} patch mail{thread.patchCount === 1 ? '' : 's'}</span>
+                            {thread.matchedPatchCount > 0 && (
+                              <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 font-medium text-sky-700">
+                                {thread.matchedPatchCount} file hit{thread.matchedPatchCount === 1 ? '' : 's'}
+                              </span>
+                            )}
+                            <span className="truncate font-mono">{thread.threadId}</span>
+                          </div>
+                        </button>
+                      ))
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs leading-5 text-slate-500">
+                      No patch-bearing threads have surfaced for this selection yet. Once more annotations carry thread context, Atlas can foreground patch provenance here.
                     </div>
                   )}
                 </div>
