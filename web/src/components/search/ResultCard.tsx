@@ -33,7 +33,7 @@ export default function ResultCard({
 
   return (
     <div className="group/search-result relative rounded-lg border border-gray-200 bg-white px-3 py-2 transition hover:border-slate-300 hover:bg-slate-50">
-      <div className="flex items-start gap-2">
+      <div className="flex flex-wrap items-start gap-2 sm:flex-nowrap">
         {onToggleSelect && (
           <input
             type="checkbox"
@@ -76,7 +76,7 @@ export default function ResultCard({
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 pl-6 sm:w-auto sm:flex-nowrap sm:pl-0">
           {hasDock && (
             <div className="relative">
               <button

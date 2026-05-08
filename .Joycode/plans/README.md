@@ -13,13 +13,12 @@
 
 ---
 
-## 活跃计划（8）
+## 活跃计划（7）
 
 | PLAN | 主题 | Status | Priority | 备注 |
 |------|------|--------|----------|------|
 | [PLAN-30002](PLAN-30002-external-code-jump.md) | 代码跳转与 local-first resolver | in-progress | **P1** | 外链闭环已完成；下一步把 Elixir 降级为 fallback，建立本地代码 resolver |
 | [PLAN-37001](PLAN-37001-kernel-code-atlas.md) | Kernel Code Atlas：多版本代码地图与标注工作台 | planned | **P1** | 重新定义 Web Code Browser 边界：保留跨版本阅读、标注和 tag，不做 Web IDE |
-| [PLAN-31004](PLAN-31004-ui-information-hierarchy.md) | UI 信息层次与首屏引导（Workbench 第二轮） | in-progress | **P1** | Dashboard 首屏已接入；下一步 Sticky 上下文条 + 信息密度 |
 | [PLAN-31005](PLAN-31005.md) | 统一信息工作台（Workspace） | in-progress / partially implemented | **P0 cleanup**, then P2 | 代码中已有 `/workspace`、adapter 和页面雏形；当前优先完成三视图冒烟 |
 | [PLAN-31002](PLAN-31002-knowledge-workbench-roadmap.md) | Knowledge Workbench 路线图 | in-progress | P2 | 范围过大，新工作请新建独立 PLAN 引用 |
 | [PLAN-36000](PLAN-36000-survey-style-batch-tagging.md) | Survey-Style 批量打标签（YAML 问卷） | planned | P2 | 借鉴 eunomia-bpf/code-survey；先 Phase 1 PoC 验证质量 |
@@ -36,19 +35,16 @@
 
 ### 近期优先级
 
-1. **P0：验收并关闭 PLAN-31004**
-   - 原因：Dashboard、StickyContextBar、信息密度、Knowledge/ThreadDrawer 体验已经基本落地，但仍有浏览器尺寸、移动端、DB 冒烟和核心功能回归待验证。
-   - 完成标准：浏览器人工冒烟通过，`PLAN-31004` 状态改为 `done`，并归档到 `done/`。
-2. **P0：校准 PLAN-31005 Workspace 状态**
+1. **P0：校准并收口 PLAN-31005 Workspace**
    - 原因：`web/src/pages/WorkspacePage.tsx`、workspace adapters 和侧边栏入口已经存在，但计划仍是 `draft`，README 之前也未列入活跃计划。
-   - 完成标准：把 `PLAN-31005` 改为 `in-progress (partially implemented)`，补充已实现内容、未验收项和下一步冒烟清单。
-3. **P1：Code Target Normalization MVP**
+   - 完成标准：完成 email/tag/annotation 三视图远端冒烟，明确 Workspace 与 Search/Annotations/Tags 旧路由的边界，决定保留、合并或降级入口。
+2. **P1：Code Target Normalization MVP**
    - 原因：Kernel Code Atlas 是大方向，但不应立即做完整多版本 Atlas。先统一代码位置引用结构，支撑 code annotation、tag、Knowledge evidence 共享同一种目标表达。
    - 建议拆出独立 PLAN：`version + repo + path + start_line + end_line + symbol + message_id/patch_id`，先用结构化 JSON 过渡，必要时后续建表。
-4. **P1：邮件 patch ↔ 代码位置 ↔ annotation/tag ↔ knowledge 闭环**
+3. **P1：邮件 patch ↔ 代码位置 ↔ annotation/tag ↔ knowledge 闭环**
    - 原因：这是项目最有差异化的主线，比完整符号索引、编辑器插件和批量 AI 更先。
    - 完成标准：从 ThreadDrawer patch hunk 或 Code view 选区创建 annotation/tag，并能从代码页、邮件页、Knowledge evidence 互相跳转。
-5. **P2：Survey 单 thread PoC**
+4. **P2：Survey 单 thread PoC**
    - 原因：Survey-style 批量标签有价值，但应先验证单 thread 质量、成本和人工 review 体验。
    - 完成标准：只做 YAML schema + 单 thread runner + DraftReviewPanel 接入，不开放批量 run。
 
@@ -69,7 +65,7 @@
 3. ~~**P1** PLAN-34000 Phase 1/3/5 收尾（SemanticRetriever 测试 2→6、confirm/prompt → ConfirmModal、KnowledgePage chunk 500→54 KB）~~ ✅ 2026-05-06
 4. ~~**P1** PLAN-34001 贡献度标记（后端 `/api/contributions/lookup` + 前端 chip）~~ ✅ 2026-05-06
 5. ~~**P1** PLAN-31001 Phase 3+4+5 收尾（fulltext search / import-export / history / direction switch / load more）~~ ✅ 2026-05-06
-6. **P0** PLAN-31004 Pending Verification（浏览器尺寸、移动端、Knowledge/ThreadDrawer/Search/Ask 核心冒烟）
+6. ~~**P0** PLAN-31004 Pending Verification（浏览器尺寸、移动端、Knowledge/ThreadDrawer/Search/Ask 核心冒烟）~~ ✅ 2026-05-08
 7. **P0** PLAN-31005 状态校准与 Workspace 冒烟（旧路由兼容、email/tag/annotation 三个 view 主流程）
 8. **P1** PLAN-37001 Phase 1+2（产品边界清理 + Code Target Normalization MVP；必要时拆新 PLAN）
 9. **P1** PLAN-37001 Phase 3（代码位置 annotation/tag/knowledge evidence 最小闭环）
@@ -79,7 +75,7 @@
 
 ---
 
-## 已完成（done/，23）
+## 已完成（done/，24）
 
 按时间顺序从早到晚：
 
@@ -106,6 +102,7 @@
   - PLAN-31000 统一知识图谱 Phase 1~Graph projection
   - PLAN-31001 知识图谱功能增强（Phase 1 实体删除/图谱可视化/遍历 API；Phase 2 内核版本+文件/符号链接；Phase 3 fulltext search GIN+tsvector；Phase 4 import/export + 变更历史 knowledge_entity_versions；Phase 5 反向引用 KnowledgeBackRefs + 关系方向切换 + relation_type 过滤 + load-more 分页；新增 15 项后端测试，2026-05-06 收尾）
   - PLAN-31003 UI Workbench 第一轮整理
+  - PLAN-31004 UI 信息层次与首屏引导（Workbench 第二轮，Dashboard / StickyContextBar / 紧凑结果卡 / Knowledge 拆分 / ThreadDrawer 与移动端收口，2026-05-08 远端冒烟后关闭）
   - PLAN-32000 安全/稳定性修复（API key、密码环境变量化）
   - PLAN-33000 Ask ↔ Knowledge 双向闭环 P0
 - AI Agent
