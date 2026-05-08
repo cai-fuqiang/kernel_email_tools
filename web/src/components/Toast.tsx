@@ -47,11 +47,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ showToast: addToast }}>
       {children}
-      <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-2">
+      <div className="fixed right-6 top-20 z-[100] flex max-w-sm flex-col gap-2">
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`${colors[toast.type]} text-white px-4 py-3 rounded-xl shadow-lg text-sm max-w-sm animate-slide-up`}
+            className={`${colors[toast.type]} rounded-xl px-4 py-3 text-sm text-white shadow-lg animate-slide-up`}
             onClick={() => removeToast(toast.id)}
           >
             {toast.message}

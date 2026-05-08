@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   BookOpenText,
   Clock3,
@@ -436,6 +436,9 @@ export default function KernelCodePage() {
     if (!focusLine || focusLine < 1 || focusLine > codeLines.length) return '';
     return codeLines[focusLine - 1]?.trim() || '';
   }, [codeLines, focusLine]);
+  const fileFacts = currentFile
+    ? `${currentFile.line_count.toLocaleString()} lines · ${formatBytes(currentFile.size)}`
+    : 'Open a file to inspect source';
 
   const annotationSnippet = useMemo(
     () => relatedAnnotations[0]?.body?.replace(/\s+/g, ' ').trim() || '',
@@ -803,7 +806,7 @@ export default function KernelCodePage() {
       <PageHeader
         eyebrow="Code Atlas"
         title="Kernel Code Atlas"
-        description="Read kernel source with shared context: keep versions, code ranges, annotations, tags, and linked evidence in one place."
+        description="Versioned code reading with annotations, tags, and backlinks."
         meta={
           <div className="flex flex-wrap gap-2">
             <StatusBadge tone="info">Multi-version reading</StatusBadge>
@@ -899,16 +902,14 @@ export default function KernelCodePage() {
           </div>
         </div>
 
-        <div className="grid gap-0 xl:grid-cols-[18rem_minmax(0,1fr)_24rem]">
+        <div className="grid gap-0 xl:grid-cols-[14rem_minmax(0,1fr)] 2xl:grid-cols-[15rem_minmax(0,1fr)]">
           <aside className="border-b border-slate-200 bg-slate-50/70 xl:border-b-0 xl:border-r">
             <div className="border-b border-slate-200 px-5 py-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <FolderTree className="h-4 w-4 text-slate-500" />
                 Atlas Home
               </div>
-              <p className="mt-2 text-xs leading-5 text-slate-500">
-                Move by version and path, then keep the selected code range anchored to shared notes.
-              </p>
+              <p className="mt-2 text-xs leading-5 text-slate-500">Version, path, target.</p>
             </div>
 
             <div className="space-y-4 px-4 py-4">
@@ -926,7 +927,7 @@ export default function KernelCodePage() {
                   <div className="text-sm font-semibold text-slate-900">Path Browser</div>
                   <div className="mt-1 text-xs text-slate-500">{treePath || 'root'}</div>
                 </div>
-                <div className="max-h-[22rem] overflow-y-auto px-3 py-3">
+                <div className="max-h-[30rem] overflow-y-auto px-3 py-3">
                   <div className="mb-2 flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -1008,105 +1009,191 @@ export default function KernelCodePage() {
             </div>
           </aside>
 
-          <div className="min-w-0 border-b border-slate-200 bg-white xl:border-b-0 xl:border-r">
-            <div className="border-b border-slate-200 px-5 py-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-1 text-xs text-slate-500">
-                    <span className="font-medium uppercase tracking-[0.16em] text-slate-400">Code Target</span>
-                    {pathSegments.length > 0 && <ChevronRight className="h-3.5 w-3.5" />}
-                    {pathSegments.map((segment, index) => (
-                      <div key={`${segment}-${index}`} className="flex items-center gap-1">
-                        <span className={index === pathSegments.length - 1 ? 'font-medium text-slate-800' : ''}>
-                          {segment}
-                        </span>
-                        {index < pathSegments.length - 1 && <ChevronRight className="h-3.5 w-3.5" />}
+          <div className="min-w-0 bg-slate-50/60">
+            <div className="border-b border-slate-200 px-4 py-4 2xl:px-5">
+              <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_19rem]">
+                <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="border-b border-slate-200 px-4 py-3">
+                  <div className="flex flex-col gap-2 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
+                        <span className="font-medium uppercase tracking-[0.16em] text-slate-400">Code Target</span>
+                        {pathSegments.length > 0 && <ChevronRight className="h-3.5 w-3.5" />}
+                        {pathSegments.map((segment, index) => (
+                          <div key={`${segment}-${index}`} className="flex items-center gap-1">
+                            <span className={index === pathSegments.length - 1 ? 'font-medium text-slate-800' : ''}>
+                              {segment}
+                            </span>
+                            {index < pathSegments.length - 1 && <ChevronRight className="h-3.5 w-3.5" />}
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                      <div className="mt-2 flex flex-wrap items-center gap-3">
+                        <h2 className="truncate text-base font-semibold text-slate-950">
+                          {currentPath || 'Select a file to start reading'}
+                        </h2>
+                        <StatusBadge tone="muted">{selectedVersion || 'No version'}</StatusBadge>
+                        <StatusBadge tone="info">{selectedRangeLabel}</StatusBadge>
+                        {selectedSymbol && <StatusBadge tone="success">{selectedSymbol}</StatusBadge>}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {fileFacts}
+                        {selectedSymbol ? ` · symbol ${selectedSymbol}` : ''}
+                      </div>
+                    </div>
+
+                    {currentExternal && (
+                      <a
+                        href={currentExternal.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        Open source
+                      </a>
+                    )}
                   </div>
-                  <h2 className="mt-2 truncate text-lg font-semibold text-slate-950">
-                    {currentPath || 'Select a file to start reading'}
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Keep a stable reference to the file, line range, and surrounding evidence instead of treating this as a generic editor.
-                  </p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <StatusBadge tone="muted">{selectedVersion || 'No version'}</StatusBadge>
-                  <StatusBadge tone="info">{selectedRangeLabel}</StatusBadge>
-                  {selectedSymbol && <StatusBadge tone="success">{selectedSymbol}</StatusBadge>}
+                  <div
+                    ref={codeViewRef}
+                    onMouseUp={handleCodeMouseUp}
+                    className="relative max-h-[74vh] overflow-auto bg-white"
+                  >
+                  {fileLoading ? (
+                    <div className="px-6 py-12 text-sm text-slate-500">Opening file…</div>
+                  ) : currentFile ? (
+                    <div className="font-mono text-sm">
+                      {codeLines.map((line, index) => {
+                        const lineNum = index + 1;
+                        const isSelected = selectedLines.has(lineNum);
+                        const annotationCount = annotationCountByLine.get(lineNum) || 0;
+                        const linePicked = pickKernelSourceUrl(selectedVersion, currentPath, lineNum);
+                        return (
+                          <div
+                            key={lineNum}
+                            data-line={lineNum}
+                            onClick={() => handleLineClick(lineNum)}
+                            className={`group grid cursor-pointer grid-cols-[18px_56px_minmax(0,1fr)_24px] border-b border-slate-100/80 px-3 ${
+                              isSelected ? 'bg-amber-50' : 'hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className="flex items-center justify-center">
+                              <span
+                                className={`h-2.5 w-2.5 rounded-full ${
+                                  annotationCount > 0 ? 'bg-sky-500' : isSelected ? 'bg-amber-500' : 'bg-transparent'
+                                }`}
+                              />
+                            </div>
+                            <span className="select-none py-1.5 pr-3 text-right text-xs text-slate-400">
+                              {lineNum}
+                            </span>
+                            <div className="min-w-0 py-1.5 whitespace-pre text-slate-800">
+                              {line}
+                            </div>
+                            <a
+                              href={linePicked.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex items-center justify-center text-slate-300 opacity-0 transition hover:text-sky-700 group-hover:opacity-100"
+                              title={`Open line ${lineNum} upstream`}
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-6">
+                      <EmptyState
+                        title="No code target loaded yet"
+                        description="Open a file path to start building an Atlas view around versions, line ranges, annotations, and linked knowledge."
+                      />
+                    </div>
+                  )}
+                  </div>
                 </div>
+
+                <aside className="self-start overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70 shadow-sm 2xl:sticky 2xl:top-4">
+                  <div className="border-b border-slate-200 px-5 py-4">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                    <BookOpenText className="h-4 w-4 text-slate-500" />
+                    Inspector
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">Target metadata and annotation actions.</p>
+                </div>
+
+                  <div className="space-y-4 px-4 py-4">
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                          <Pin className="h-4 w-4 text-slate-500" />
+                          Code Target
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">Stable target for reading and notes.</div>
+                      </div>
+                      <StatusBadge tone={relatedAnnotations.length > 0 ? 'success' : 'warning'}>
+                        {targetHealthLabel}
+                      </StatusBadge>
+                    </div>
+                    <dl className="mt-4 space-y-2">
+                      <MetaRow label="version" value={selectedVersion || '—'} />
+                      <MetaRow label="path" value={currentPath || '—'} />
+                      <MetaRow label="range" value={selectedRangeLabel} />
+                      <MetaRow label="symbol" value={selectedSymbol || 'Not inferred'} />
+                      <MetaRow label="repo" value="linux" />
+                      <MetaRow
+                        label="related"
+                        value={`${relatedAnnotations.length} annotations · ${selectedLines.size > 0 ? 'selection pinned' : 'browse mode'}`}
+                      />
+                    </dl>
+
+                    <div className="mt-4 grid gap-2">
+                      {selectedSymbol && (
+                        <a
+                          href={elixirIdentUrl(selectedVersion || 'latest', selectedSymbol)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          <ScrollText className="h-3.5 w-3.5" />
+                          Search symbol
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                    {currentFile ? (
+                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        <AnnotationPanel
+                          annotations={annotations}
+                          selectedLines={selectedLines}
+                          version={selectedVersion}
+                          filePath={currentPath}
+                          onAnnotationCreated={handleAnnotationCreated}
+                        />
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-400">
+                        Load a file to inspect annotations and tags.
+                      </div>
+                    )}
+                  </div>
+                </aside>
               </div>
             </div>
 
-            <div
-              ref={codeViewRef}
-              onMouseUp={handleCodeMouseUp}
-              className="relative max-h-[44rem] overflow-auto bg-white"
-            >
-              {fileLoading ? (
-                <div className="px-6 py-12 text-sm text-slate-500">Opening file…</div>
-              ) : currentFile ? (
-                <div className="font-mono text-sm">
-                  {codeLines.map((line, index) => {
-                    const lineNum = index + 1;
-                    const isSelected = selectedLines.has(lineNum);
-                    const annotationCount = annotationCountByLine.get(lineNum) || 0;
-                    const linePicked = pickKernelSourceUrl(selectedVersion, currentPath, lineNum);
-                    return (
-                      <div
-                        key={lineNum}
-                        data-line={lineNum}
-                        onClick={() => handleLineClick(lineNum)}
-                        className={`group grid cursor-pointer grid-cols-[18px_64px_minmax(0,1fr)_24px] border-b border-slate-100/80 px-3 ${
-                          isSelected ? 'bg-amber-50' : 'hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="flex items-center justify-center">
-                          <span
-                            className={`h-2.5 w-2.5 rounded-full ${
-                              annotationCount > 0 ? 'bg-sky-500' : isSelected ? 'bg-amber-500' : 'bg-transparent'
-                            }`}
-                          />
-                        </div>
-                        <span className="select-none py-1.5 pr-3 text-right text-xs text-slate-400">
-                          {lineNum}
-                        </span>
-                        <div className="min-w-0 py-1.5 whitespace-pre text-slate-800">
-                          {line}
-                        </div>
-                        <a
-                          href={linePicked.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex items-center justify-center text-slate-300 opacity-0 transition hover:text-sky-700 group-hover:opacity-100"
-                          title={`Open line ${lineNum} upstream`}
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="p-6">
-                  <EmptyState
-                    title="No code target loaded yet"
-                    description="Open a file path to start building an Atlas view around versions, line ranges, annotations, and linked knowledge."
-                  />
-                </div>
-              )}
-            </div>
-
             {currentFile && (
-              <div className="border-t border-slate-200 bg-slate-50/80 px-5 py-4">
+              <div className="bg-slate-50/80 px-4 py-4 2xl:px-5">
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
                   <Link2 className="h-4 w-4 text-slate-500" />
-                  Related Layer
+                  Evidence Stack
                 </div>
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+                <div className="grid gap-4 2xl:grid-cols-2">
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1124,7 +1211,7 @@ export default function KernelCodePage() {
                           <AtlasChip label="Health" value={targetHealthLabel} />
                         </div>
                       </div>
-                      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                      <div className="mt-4 grid gap-3 xl:grid-cols-2">
                         <RelatedCard
                           title="Code target"
                           subtitle={`${selectedVersion} · ${selectedRangeLabel}`}
@@ -1241,432 +1328,262 @@ export default function KernelCodePage() {
                       </div>
                     </div>
                   </div>
+                  <div className="space-y-4">
+                    {currentFile && selectedRange && (
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                          <Layers3 className="h-4 w-4 text-slate-500" />
+                          Target Tags
+                        </div>
+                        <div className="space-y-3">
+                          <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              Direct tags
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {targetTagsLoading ? (
+                                <span className="text-xs text-slate-500">Loading tags...</span>
+                              ) : targetDirectTags.length > 0 ? (
+                                targetDirectTags.map((tag) => (
+                                  <span
+                                    key={`direct-${tag.slug}`}
+                                    className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-800"
+                                  >
+                                    {tag.name}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-xs text-slate-400">No direct tags on this exact range yet.</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              Visible coverage
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {targetAggregatedTags.length > 0 ? (
+                                targetAggregatedTags.map((tag) => (
+                                  <span
+                                    key={`agg-${tag.slug}`}
+                                    className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800"
+                                  >
+                                    {tag.name}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-xs text-slate-400">No inherited or aggregated tags surfaced yet.</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                            <div className="mb-2 text-xs text-slate-500">
+                              Add a tag directly to {selectedRangeLabel} so mail, patch, and code readers can converge on the same target.
+                            </div>
+                            <EmailTagEditor
+                              targetType="kernel_line_range"
+                              targetRef={selectedTargetRef}
+                              anchor={selectedTargetAnchorExpanded ?? undefined}
+                              compact
+                              placeholder="Tag this code target"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                        <MessagesSquare className="h-4 w-4 text-slate-500" />
+                        Annotation Stack
+                      </div>
+                      <div className="space-y-3">
+                        {relatedAnnotations.length > 0 ? (
+                          relatedAnnotations.slice(0, 3).map((annotation) => (
+                            <button
+                              key={annotation.annotation_id}
+                              type="button"
+                              onClick={() => handleSelectRange(annotation.start_line, annotation.end_line)}
+                              className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:border-sky-200 hover:bg-sky-50/50"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-xs font-semibold text-slate-900">
+                                    L{annotation.start_line}
+                                    {annotation.end_line !== annotation.start_line ? `-${annotation.end_line}` : ''}
+                                  </div>
+                                  <div className="mt-1 text-xs leading-5 text-slate-600">
+                                    {annotation.body.replace(/\s+/g, ' ').trim().slice(0, 160) || 'Empty note'}
+                                  </div>
+                                </div>
+                                <StatusBadge
+                                  tone={
+                                    annotation.publish_status === 'approved'
+                                      ? 'success'
+                                      : annotation.publish_status === 'pending'
+                                        ? 'warning'
+                                        : 'muted'
+                                  }
+                                >
+                                  {annotation.publish_status}
+                                </StatusBadge>
+                              </div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs leading-5 text-slate-500">
+                            No saved annotations overlap the current selection yet. Pin a line or range, then use the panel below to create the first shared note.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                        <MessagesSquare className="h-4 w-4 text-slate-500" />
+                        Related Threads
+                      </div>
+                      <div className="space-y-3">
+                        {relatedThreadsLoading ? (
+                          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs text-slate-500">
+                            Loading thread context...
+                          </div>
+                        ) : relatedThreadPreviews.length > 0 ? (
+                          relatedThreadPreviews.slice(0, 3).map((thread) => (
+                            <div
+                              key={thread.threadId}
+                              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3"
+                            >
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setThreadOpen({
+                                    threadId: thread.threadId,
+                                    focusMessageId: thread.focusMessageId,
+                                  })
+                                }
+                                className="block w-full text-left"
+                              >
+                                <div className="text-sm font-semibold text-slate-900">{thread.subject}</div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  {thread.emailCount} mails · {thread.annotationCount} notes · {thread.patchCount} patches
+                                </div>
+                              </button>
+                              {(thread.matchedPatchCount > 0 || thread.leadPatch?.matchedHunks.length) && (
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {thread.matchedPatchCount > 0 && (
+                                    <StatusBadge tone="info">
+                                      {thread.matchedPatchCount} file hit{thread.matchedPatchCount === 1 ? '' : 's'}
+                                    </StatusBadge>
+                                  )}
+                                  {(thread.leadPatch?.matchedHunks || []).slice(0, 3).map((hunk) => (
+                                    <button
+                                      key={`${thread.threadId}-${hunk.startLine}-${hunk.endLine}`}
+                                      type="button"
+                                      onClick={() => handleSelectRange(hunk.startLine, hunk.endLine)}
+                                      className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                                    >
+                                      L{hunk.startLine}
+                                      {hunk.endLine !== hunk.startLine ? `-${hunk.endLine}` : ''}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs leading-5 text-slate-500">
+                            No thread backlinks surfaced for this selection yet. Patch-driven annotations will start to make this column denser.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                        <Library className="h-4 w-4 text-slate-500" />
+                        Knowledge Backlinks
+                      </div>
+                      <div className="space-y-3">
+                        {relatedKnowledgeLoading ? (
+                          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs text-slate-500">
+                            Loading linked knowledge...
+                          </div>
+                        ) : relatedKnowledgeEntities.length > 0 ? (
+                          relatedKnowledgeEntities.slice(0, 4).map((entity) => (
+                            <div
+                              key={entity.entity_id}
+                              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="truncate text-sm font-semibold text-slate-900">
+                                    {entity.canonical_name || entity.entity_id}
+                                  </div>
+                                  <div className="mt-1 text-xs text-slate-500">
+                                    {entity.entity_type} · {entity.status || 'linked evidence'}
+                                  </div>
+                                </div>
+                                <StatusBadge tone="muted">{entity.status || 'active'}</StatusBadge>
+                              </div>
+                              {entity.summary && (
+                                <div className="mt-2 text-xs leading-5 text-slate-600">
+                                  {entity.summary.slice(0, 180)}
+                                </div>
+                              )}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs leading-5 text-slate-500">
+                            No knowledge entities point back to the messages behind this target yet.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                        <Layers3 className="h-4 w-4 text-slate-500" />
+                        Atlas Signals
+                      </div>
+                      <div className="space-y-3">
+                        <EvidenceCard
+                          icon={<Route className="h-4 w-4" />}
+                          title="Selection payload"
+                          subtitle={selectedLines.size > 0 ? 'Live target update enabled' : 'Browse-only state'}
+                          body="Selection changes the target payload immediately, while the annotation panel below still owns creation and review."
+                        />
+                        <EvidenceCard
+                          icon={<MessagesSquare className="h-4 w-4" />}
+                          title="Annotation density"
+                          subtitle={`${annotations.length} note${annotations.length === 1 ? '' : 's'} in file`}
+                          body={
+                            relatedAnnotations.length > 0
+                              ? 'The current selection already overlaps saved notes, which means this target is ready for thread and knowledge back-links.'
+                              : 'No saved note overlaps the current selection yet. This is still a clean target waiting for its first shared interpretation.'
+                          }
+                          tone={relatedAnnotations.length > 0 ? 'sky' : 'slate'}
+                        />
+                        <EvidenceCard
+                          icon={<ShieldCheck className="h-4 w-4" />}
+                          title="Evidence roadmap"
+                          subtitle="Mail / patch / knowledge backlinks"
+                          body={
+                            selectedTargetTags.length > 0
+                              ? `This inspector now shows live tag coverage for the selected code target. The next pass is surfacing related threads and knowledge backlinks next to these same tags and notes.`
+                              : 'The visual shell now supports code targets, patch-hunk entry points, annotations, and live target tags. The next pass will stack related threads and knowledge evidence directly in this inspector.'
+                          }
+                          tone="emerald"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
           </div>
-
-          <aside className="bg-slate-50/70">
-            <div className="border-b border-slate-200 px-5 py-4">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <BookOpenText className="h-4 w-4 text-slate-500" />
-                Inspector
-              </div>
-              <p className="mt-2 text-xs leading-5 text-slate-500">
-                Structured metadata on the current code target, plus the existing annotation workflow.
-              </p>
-            </div>
-
-            <div className="space-y-4 px-4 py-4">
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                      <Pin className="h-4 w-4 text-slate-500" />
-                      Code Target
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      Atlas keeps this exact target stable even when reading moves between mail, code, and review.
-                    </div>
-                  </div>
-                  <StatusBadge tone={relatedAnnotations.length > 0 ? 'success' : 'warning'}>
-                    {targetHealthLabel}
-                  </StatusBadge>
-                </div>
-                <dl className="mt-4 space-y-2">
-                  <MetaRow label="version" value={selectedVersion || '—'} />
-                  <MetaRow label="path" value={currentPath || '—'} />
-                  <MetaRow label="range" value={selectedRangeLabel} />
-                  <MetaRow label="symbol" value={selectedSymbol || 'Not inferred'} />
-                  <MetaRow label="repo" value="linux" />
-                  <MetaRow
-                    label="related"
-                    value={`${relatedAnnotations.length} annotations · ${selectedLines.size > 0 ? 'selection pinned' : 'browse mode'}`}
-                  />
-                </dl>
-
-                <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  {currentExternal && (
-                    <a
-                      href={currentExternal.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center gap-1 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      Open source
-                    </a>
-                  )}
-                  {selectedSymbol && (
-                    <a
-                      href={elixirIdentUrl(selectedVersion || 'latest', selectedSymbol)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                      <ScrollText className="h-3.5 w-3.5" />
-                      Search symbol
-                    </a>
-                  )}
-                </div>
-              </div>
-
-              {currentFile && selectedRange && (
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                    <Layers3 className="h-4 w-4 text-slate-500" />
-                    Target Tags
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        Direct tags
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {targetTagsLoading ? (
-                          <span className="text-xs text-slate-500">Loading tags...</span>
-                        ) : targetDirectTags.length > 0 ? (
-                          targetDirectTags.map((tag) => (
-                            <span
-                              key={`direct-${tag.slug}`}
-                              className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-800"
-                            >
-                              {tag.name}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-xs text-slate-400">No direct tags on this exact range yet.</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        Visible coverage
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {targetAggregatedTags.length > 0 ? (
-                          targetAggregatedTags.map((tag) => (
-                            <span
-                              key={`agg-${tag.slug}`}
-                              className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800"
-                            >
-                              {tag.name}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-xs text-slate-400">No inherited or aggregated tags surfaced yet.</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                      <div className="mb-2 text-xs text-slate-500">
-                        Add a tag directly to {selectedRangeLabel} so mail, patch, and code readers can converge on the same target.
-                      </div>
-                      <EmailTagEditor
-                        targetType="kernel_line_range"
-                        targetRef={selectedTargetRef}
-                        anchor={selectedTargetAnchorExpanded ?? undefined}
-                        compact
-                        placeholder="Tag this code target"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                  <MessagesSquare className="h-4 w-4 text-slate-500" />
-                  Related Threads
-                </div>
-                <div className="space-y-3">
-                  {relatedThreadsLoading ? (
-                    <div className="text-xs text-slate-500">Loading thread context...</div>
-                  ) : relatedThreadPreviews.length > 0 ? (
-                    relatedThreadPreviews.map((thread) => (
-                      <button
-                        key={thread.threadId}
-                        type="button"
-                        onClick={() => setThreadOpen({ threadId: thread.threadId, focusMessageId: thread.focusMessageId })}
-                        className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:border-sky-200 hover:bg-sky-50/60"
-                      >
-                        <div className="text-sm font-semibold text-slate-900 line-clamp-2">
-                          {thread.subject}
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
-                          <span>{thread.emailCount} emails</span>
-                          <span>{thread.annotationCount} annotations</span>
-                          {thread.patchCount > 0 && (
-                            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
-                              {thread.patchCount} patch{thread.patchCount === 1 ? '' : 'es'}
-                            </span>
-                          )}
-                          {thread.matchedPatchCount > 0 && (
-                            <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 font-medium text-sky-700">
-                              {thread.matchedPatchCount} hit{thread.matchedPatchCount === 1 ? '' : 's'} {currentPath ? 'this file' : 'selection'}
-                            </span>
-                          )}
-                          <span className="truncate font-mono">{thread.threadId}</span>
-                        </div>
-                        {thread.leadPatch && (
-                          <div className="mt-2 rounded-lg border border-slate-200 bg-white/80 px-2.5 py-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                                Lead Patch
-                              </div>
-                              {thread.leadPatch.touchesCurrentPath && (
-                                <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700">
-                                  touches {currentPath.split('/').pop() || 'file'}
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-1 text-xs font-medium text-slate-800 line-clamp-2">
-                              {thread.leadPatch.subject}
-                            </div>
-                            <div className="mt-1 text-[11px] font-mono text-slate-500 truncate">
-                              {thread.leadPatch.messageId}
-                            </div>
-                            {thread.leadPatch.matchedHunks.length > 0 && (
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {thread.leadPatch.matchedHunks.slice(0, 3).map((hunk, index) => (
-                                  <button
-                                    key={`${thread.threadId}-hunk-${hunk.startLine}-${index}`}
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      handleSelectRange(hunk.startLine, hunk.endLine);
-                                    }}
-                                    className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800 hover:bg-amber-100"
-                                  >
-                                    L{hunk.startLine}{hunk.endLine !== hunk.startLine ? `-${hunk.endLine}` : ''}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </button>
-                    ))
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs leading-5 text-slate-500">
-                      No linked thread context is surfaced for the current selection yet. Patch-hunk created notes will start making this stack much richer.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                  <Library className="h-4 w-4 text-slate-500" />
-                  Knowledge Backlinks
-                </div>
-                <div className="space-y-3">
-                  {relatedKnowledgeLoading ? (
-                    <div className="text-xs text-slate-500">Loading knowledge backlinks...</div>
-                  ) : relatedKnowledgeEntities.length > 0 ? (
-                    relatedKnowledgeEntities.map((entity) => (
-                      <Link
-                        key={entity.entity_id}
-                        to={`/knowledge?entity_id=${encodeURIComponent(entity.entity_id)}`}
-                        className="block rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 transition hover:border-emerald-200 hover:bg-emerald-50/60"
-                      >
-                        <div className="text-sm font-semibold text-slate-900">
-                          {entity.canonical_name}
-                        </div>
-                        <div className="mt-1 text-xs text-slate-500">
-                          {entity.entity_type} · {entity.status}
-                        </div>
-                        {entity.summary && (
-                          <div className="mt-2 text-xs leading-5 text-slate-600">
-                            {entity.summary.slice(0, 160)}
-                          </div>
-                        )}
-                      </Link>
-                    ))
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs leading-5 text-slate-500">
-                      No knowledge entities are linked back to the current message evidence yet.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                  <Route className="h-4 w-4 text-slate-500" />
-                  Patch Backlinks
-                </div>
-                <div className="space-y-3">
-                  {relatedThreadPreviews.some((thread) => thread.patchCount > 0) ? (
-                    relatedThreadPreviews
-                      .filter((thread) => thread.patchCount > 0)
-                      .map((thread) => (
-                        <button
-                          key={`patch-${thread.threadId}`}
-                          type="button"
-                          onClick={() => setThreadOpen({ threadId: thread.threadId, focusMessageId: thread.leadPatch?.messageId || thread.focusMessageId })}
-                          className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:border-amber-200 hover:bg-amber-50/60"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="text-sm font-semibold text-slate-900 line-clamp-2">
-                                {thread.leadPatch?.subject || thread.subject}
-                              </div>
-                              <div className="mt-1 text-xs text-slate-500">
-                                {thread.leadPatch?.matchedHunks.length
-                                  ? `Lead patch overlaps ${selectedRangeLabel} through ${thread.leadPatch.matchedHunks.length} matched hunk${thread.leadPatch.matchedHunks.length === 1 ? '' : 's'}.`
-                                  : thread.matchedPatchCount > 0 && currentPath
-                                    ? `Patch content in this thread touches ${currentPath}.`
-                                    : 'Surfaced from thread evidence attached to this code target.'}
-                              </div>
-                            </div>
-                            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800">
-                              PATCH
-                            </span>
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
-                            <span>{thread.patchCount} patch mail{thread.patchCount === 1 ? '' : 's'}</span>
-                            {thread.matchedPatchCount > 0 && (
-                              <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 font-medium text-sky-700">
-                                {thread.matchedPatchCount} file hit{thread.matchedPatchCount === 1 ? '' : 's'}
-                              </span>
-                            )}
-                            {thread.leadPatch?.matchedHunks.length ? (
-                              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-800">
-                                {thread.leadPatch.matchedHunks.length} hunk overlap{thread.leadPatch.matchedHunks.length === 1 ? '' : 's'}
-                              </span>
-                            ) : null}
-                            <span className="truncate font-mono">{thread.threadId}</span>
-                          </div>
-                          {thread.leadPatch?.matchedHunks.length ? (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {thread.leadPatch.matchedHunks.slice(0, 3).map((hunk, index) => (
-                                <button
-                                  key={`patch-card-${thread.threadId}-${hunk.startLine}-${index}`}
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    handleSelectRange(hunk.startLine, hunk.endLine);
-                                  }}
-                                  className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800 hover:bg-amber-100"
-                                >
-                                  Jump L{hunk.startLine}{hunk.endLine !== hunk.startLine ? `-${hunk.endLine}` : ''}
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
-                        </button>
-                      ))
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs leading-5 text-slate-500">
-                      No patch-bearing threads have surfaced for this selection yet. Once more annotations carry thread context, Atlas can foreground patch provenance here.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                  <MessagesSquare className="h-4 w-4 text-slate-500" />
-                  Annotation Stack
-                </div>
-                <div className="space-y-3">
-                  {relatedAnnotations.length > 0 ? (
-                    relatedAnnotations.slice(0, 3).map((annotation) => (
-                      <button
-                        key={annotation.annotation_id}
-                        type="button"
-                        onClick={() => handleSelectRange(annotation.start_line, annotation.end_line)}
-                        className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:border-sky-200 hover:bg-sky-50/50"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold text-slate-900">
-                              L{annotation.start_line}
-                              {annotation.end_line !== annotation.start_line ? `-${annotation.end_line}` : ''}
-                            </div>
-                            <div className="mt-1 text-xs leading-5 text-slate-600">
-                              {annotation.body.replace(/\s+/g, ' ').trim().slice(0, 160) || 'Empty note'}
-                            </div>
-                          </div>
-                          <StatusBadge
-                            tone={
-                              annotation.publish_status === 'approved'
-                                ? 'success'
-                                : annotation.publish_status === 'pending'
-                                  ? 'warning'
-                                  : 'muted'
-                            }
-                          >
-                            {annotation.publish_status}
-                          </StatusBadge>
-                        </div>
-                      </button>
-                    ))
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs leading-5 text-slate-500">
-                      No saved annotations overlap the current selection yet. Pin a line or range, then use the panel below to create the first shared note.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                  <Layers3 className="h-4 w-4 text-slate-500" />
-                  Atlas Signals
-                </div>
-                <div className="space-y-3">
-                  <EvidenceCard
-                    icon={<Route className="h-4 w-4" />}
-                    title="Selection payload"
-                    subtitle={selectedLines.size > 0 ? 'Live target update enabled' : 'Browse-only state'}
-                    body="Selection changes the target payload immediately, while the annotation panel below still owns creation and review."
-                  />
-                  <EvidenceCard
-                    icon={<MessagesSquare className="h-4 w-4" />}
-                    title="Annotation density"
-                    subtitle={`${annotations.length} note${annotations.length === 1 ? '' : 's'} in file`}
-                    body={
-                      relatedAnnotations.length > 0
-                        ? 'The current selection already overlaps saved notes, which means this target is ready for thread and knowledge back-links.'
-                        : 'No saved note overlaps the current selection yet. This is still a clean target waiting for its first shared interpretation.'
-                    }
-                    tone={relatedAnnotations.length > 0 ? 'sky' : 'slate'}
-                  />
-                  <EvidenceCard
-                    icon={<ShieldCheck className="h-4 w-4" />}
-                    title="Evidence roadmap"
-                    subtitle="Mail / patch / knowledge backlinks"
-                    body={
-                      selectedTargetTags.length > 0
-                        ? `This inspector now shows live tag coverage for the selected code target. The next pass is surfacing related threads and knowledge backlinks next to these same tags and notes.`
-                        : 'The visual shell now supports code targets, patch-hunk entry points, annotations, and live target tags. The next pass will stack related threads and knowledge evidence directly in this inspector.'
-                    }
-                    tone="emerald"
-                  />
-                </div>
-              </div>
-
-              {currentFile ? (
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                  <AnnotationPanel
-                    annotations={annotations}
-                    selectedLines={selectedLines}
-                    version={selectedVersion}
-                    filePath={currentPath}
-                    onAnnotationCreated={handleAnnotationCreated}
-                  />
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-400">
-                  Load a file to inspect annotations and tags.
-                </div>
-              )}
-            </div>
-          </aside>
         </div>
       </SectionPanel>
 
