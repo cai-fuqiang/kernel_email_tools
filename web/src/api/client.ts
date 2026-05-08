@@ -1323,9 +1323,19 @@ export async function getKernelTree(
   path: string = '',
 ): Promise<KernelTreeResponse> {
   const suffix = path ? `/${path}` : '';
-  return fetchJSON<KernelTreeResponse>(
+  type RawKernelTreeResponse = Omit<KernelTreeResponse, 'entries'> & {
+    entries: Array<Omit<KernelTreeResponse['entries'][number], 'type'> & { type: 'file' | 'directory' | 'dir' }>;
+  };
+  const tree = await fetchJSON<RawKernelTreeResponse>(
     `${API_BASE}/kernel/tree/${encodeURIComponent(version)}${suffix}`
   );
+  return {
+    ...tree,
+    entries: tree.entries.map((entry) => ({
+      ...entry,
+      type: entry.type === 'dir' ? 'directory' : entry.type,
+    })),
+  };
 }
 
 const kernelResolveCache = new Map<string, Promise<KernelResolveResponse>>();
