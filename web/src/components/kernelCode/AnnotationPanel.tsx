@@ -26,6 +26,7 @@ interface AnnotationPanelProps {
   version: string;
   filePath: string;
   onAnnotationCreated: () => void;
+  hideHeader?: boolean;
 }
 
 export default function AnnotationPanel({
@@ -34,6 +35,7 @@ export default function AnnotationPanel({
   version,
   filePath,
   onAnnotationCreated,
+  hideHeader = false,
 }: AnnotationPanelProps) {
   const { canWrite, currentUser, isAdmin } = useAuth();
   const [body, setBody] = useState('');
@@ -174,7 +176,7 @@ export default function AnnotationPanel({
   return (
     <>
     <div className="flex w-full flex-col overflow-hidden bg-gray-50">
-      <div className="flex items-center justify-between border-b border-gray-200 bg-white p-2.5">
+      {!hideHeader && <div className="flex items-center justify-between border-b border-gray-200 bg-white p-2.5">
         <h3 className="text-sm font-semibold text-gray-700">注解</h3>
         <div className="flex items-center gap-1.5">
           {canWrite && selectedLines.size > 0 && (
@@ -189,7 +191,19 @@ export default function AnnotationPanel({
             </>
           )}
         </div>
-      </div>
+      </div>}
+
+      {hideHeader && canWrite && selectedLines.size > 0 && (
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="text-[10px] text-gray-400">{lineInfo}</span>
+          <button
+            onClick={() => setIsComposerOpen(prev => !prev)}
+            className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[10px] font-medium text-indigo-700 hover:bg-indigo-100"
+          >
+            {isComposerOpen ? '收起' : '新增注解'}
+          </button>
+        </div>
+      )}
 
       {canWrite && selectedLines.size > 0 && isComposerOpen && (
         <div className="border-b border-gray-100 bg-white px-2.5 py-2">
