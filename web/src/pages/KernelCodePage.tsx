@@ -877,11 +877,12 @@ export default function KernelCodePage() {
       <div className="space-y-0.5">
         {entries.map((entry) => {
           const isDirectory = entry.type === 'directory';
-          const isExpanded = expandedTreePaths.has(entry.path);
-          const isActive = entry.path === currentPath;
-          const entryPicked = entry.type === 'file' ? pickKernelSourceUrl(selectedVersion, entry.path) : null;
+          const entryPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+          const isExpanded = expandedTreePaths.has(entryPath);
+          const isActive = entryPath === currentPath;
+          const entryPicked = entry.type === 'file' ? pickKernelSourceUrl(selectedVersion, entryPath) : null;
           return (
-            <div key={entry.path}>
+            <div key={entryPath}>
               <div
                 className={`group flex items-center justify-between rounded-md border px-1.5 py-1.5 text-xs ${
                   isActive
@@ -894,9 +895,9 @@ export default function KernelCodePage() {
                   type="button"
                   onClick={() => {
                     if (isDirectory) {
-                      toggleTreeDirectory(entry.path);
+                      toggleTreeDirectory(entryPath);
                     } else {
-                      void loadFile(entry.path);
+                      void loadFile(entryPath);
                     }
                   }}
                   className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
@@ -926,7 +927,7 @@ export default function KernelCodePage() {
                   </a>
                 )}
               </div>
-              {isDirectory && isExpanded && <div className="mt-0.5">{renderTreeEntries(entry.path, depth + 1)}</div>}
+              {isDirectory && isExpanded && <div className="mt-0.5">{renderTreeEntries(entryPath, depth + 1)}</div>}
             </div>
           );
         })}
