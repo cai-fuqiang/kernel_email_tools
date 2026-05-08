@@ -1002,7 +1002,7 @@ export default function KernelCodePage() {
       setScriptCopied(true);
       setTimeout(() => setScriptCopied(false), 2000);
     } catch {
-      showToast('复制失败，请手动从 /app/userscripts/elixir-annotate.user.js 下载', 'error');
+      showToast('Copy failed. Download manually from /app/userscripts/elixir-annotate.user.js', 'error');
     }
   }
 
@@ -1213,8 +1213,8 @@ export default function KernelCodePage() {
 
                   {treeLoading && Object.keys(treeCache).length === 0 ? (
                     <div className="text-xs text-slate-500">Loading tree…</div>
-                  ) : treeCache[treePath]?.length ? (
-                    renderTreeEntries(treePath)
+                  ) : treeCache['']?.length ? (
+                    renderTreeEntries('')
                   ) : (
                     <div className="text-xs text-slate-400">No entries here.</div>
                   )}
@@ -1286,59 +1286,10 @@ export default function KernelCodePage() {
                   {fileLoading ? (
                     <div className="px-6 py-12 text-sm text-slate-500">Opening file…</div>
                   ) : isDirectoryView ? (
-                    <div className="px-3 py-3">
-                      <div className="mb-2 flex items-center justify-between px-3 text-xs text-slate-500">
-                        <span>{currentPath || 'root'}</span>
-                        <span>{directoryEntries.length.toLocaleString()} entries</span>
-                      </div>
-                      <div className="overflow-hidden rounded-xl border border-slate-200">
-                        {directoryEntries.length > 0 ? (
-                          directoryEntries.map((entry) => {
-                            const entryPicked = pickKernelSourceUrl(selectedVersion, entry.path);
-                            return (
-                              <div
-                                key={entry.path}
-                                className="group grid grid-cols-[24px_minmax(0,1fr)_88px_24px] items-center border-b border-slate-100/80 px-3 py-2 text-sm last:border-b-0 hover:bg-slate-50"
-                              >
-                                <span className={entry.type === 'directory' ? 'text-sky-600' : 'text-slate-400'}>
-                                  {entry.type === 'directory' ? <FolderTree className="h-4 w-4" /> : <FileCode2 className="h-4 w-4" />}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (entry.type === 'directory') {
-                                      toggleTreeDirectory(entry.path);
-                                      void openDirectory(entry.path);
-                                    } else {
-                                      void loadFile(entry.path);
-                                    }
-                                  }}
-                                  className="truncate text-left font-medium text-slate-800"
-                                >
-                                  {entry.type === 'directory' ? `${entry.name}/` : entry.name}
-                                </button>
-                                <span className="text-right text-xs text-slate-400">
-                                  {entry.type === 'directory' ? 'dir' : formatBytes(entry.size)}
-                                </span>
-                                <a
-                                  href={entryPicked.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center justify-center text-slate-300 opacity-0 transition hover:text-sky-700 group-hover:opacity-100"
-                                  title={`Open ${entry.name} upstream`}
-                                >
-                                  <ExternalLink className="h-3.5 w-3.5" />
-                                </a>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <div className="px-4 py-8 text-center text-sm text-slate-400">
-                            This directory is empty.
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    <EmptyState
+                      title="Directory expanded in navigator"
+                      description="Use the left tree to browse directories, then choose a file to open it here."
+                    />
                   ) : currentFile ? (
                     <div className="inline-block min-w-max font-mono text-[12px] leading-[18px]">
                       {codeLines.map((line, index) => {
@@ -1478,7 +1429,7 @@ export default function KernelCodePage() {
 
                     {currentFile ? (
                       <InspectorSection
-                        title="注解"
+                        title="Annotations"
                         icon={<MessagesSquare className="h-4 w-4" />}
                         collapsed={collapsedInspectorSections.has('annotations')}
                         onToggle={() => toggleInspectorSection('annotations')}
