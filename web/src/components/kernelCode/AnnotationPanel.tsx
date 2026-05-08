@@ -38,6 +38,7 @@ export default function AnnotationPanel({
   const { canWrite, currentUser, isAdmin } = useAuth();
   const [body, setBody] = useState('');
   const [saving, setSaving] = useState(false);
+  const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
@@ -60,6 +61,13 @@ export default function AnnotationPanel({
     setExpandedIds(new Set(rootAnnotations.map(a => a.annotation_id)));
   }, [rootAnnotations]);
 
+  useEffect(() => {
+    if (selectedLines.size === 0) {
+      setIsComposerOpen(false);
+      setBody('');
+    }
+  }, [selectedLines]);
+
   const handleCreate = async () => {
     if (!body.trim() || selectedLines.size === 0) return;
     setSaving(true);
@@ -71,6 +79,7 @@ export default function AnnotationPanel({
         body: body.trim(), visibility: isAdmin ? 'public' : 'private',
       });
       setBody('');
+      setIsComposerOpen(false);
       onAnnotationCreated();
     } catch (e: unknown) {
       showToast(`创建失败: ${e instanceof Error ? e.message : e}`, 'error');
@@ -167,12 +176,22 @@ export default function AnnotationPanel({
     <div className="flex max-h-[40vh] w-full flex-col overflow-hidden border-t border-gray-200 bg-gray-50 lg:max-h-none lg:w-80 lg:border-l lg:border-t-0">
       <div className="p-3 border-b border-gray-200 bg-white flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-700">注解</h3>
-        {canWrite && selectedLines.size > 0 && (
-          <span className="text-[10px] text-gray-400">{lineInfo}</span>
-        )}
+        <div className="flex items-center gap-2">
+          {canWrite && selectedLines.size > 0 && (
+            <>
+              <span className="text-[10px] text-gray-400">{lineInfo}</span>
+              <button
+                onClick={() => setIsComposerOpen(prev => !prev)}
+                className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[10px] font-medium text-indigo-700 hover:bg-indigo-100"
+              >
+                {isComposerOpen ? '收起' : '新增注解'}
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
-      {canWrite && selectedLines.size > 0 && (
+      {canWrite && selectedLines.size > 0 && isComposerOpen && (
         <div className="px-3 py-2 bg-white border-b border-gray-100">
           <textarea
             value={body}
@@ -183,7 +202,17 @@ export default function AnnotationPanel({
           <div className="flex gap-2 mt-2">
             <button onClick={handleCreate} disabled={!body.trim() || saving}
               className="px-3 py-1 text-xs font-medium text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 disabled:opacity-50">
-              {saving ? '保存中...' : '新增注解'}
+              {saving ? '保存中...' : '保存注解'}
+            </button>
+            <button
+              onClick={() => {
+                setIsComposerOpen(false);
+                setBody('');
+              }}
+              disabled={saving}
+              className="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+            >
+              取消
             </button>
           </div>
           <div className="mt-2">
