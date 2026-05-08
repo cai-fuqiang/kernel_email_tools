@@ -20,6 +20,7 @@ import {
   Waypoints,
 } from 'lucide-react';
 import {
+  getTargetTags,
   getCodeAnnotations,
   getKernelFile,
   getKernelTree,
@@ -30,7 +31,9 @@ import type {
   KernelFileResponse,
   KernelTreeEntry,
   KernelVersionInfo,
+  TagRead,
 } from '../api/types';
+import EmailTagEditor from '../components/EmailTagEditor';
 import { showToast } from '../components/Toast';
 import AnnotationPanel from '../components/kernelCode/AnnotationPanel';
 import {
@@ -161,6 +164,16 @@ function EvidenceCard({
   );
 }
 
+function mergeTags(...groups: TagRead[][]): TagRead[] {
+  const seen = new Map<string, TagRead>();
+  for (const group of groups) {
+    for (const tag of group) {
+      if (!seen.has(tag.slug)) seen.set(tag.slug, tag);
+    }
+  }
+  return Array.from(seen.values());
+}
+
 export default function KernelCodePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlVersion = searchParams.get('v') || '';
@@ -185,6 +198,9 @@ export default function KernelCodePage() {
   const [treeEntries, setTreeEntries] = useState<KernelTreeEntry[]>([]);
   const [treeLoading, setTreeLoading] = useState(false);
   const [showAllVersions, setShowAllVersions] = useState(false);
+  const [targetDirectTags, setTargetDirectTags] = useState<TagRead[]>([]);
+  const [targetAggregatedTags, setTargetAggregatedTags] = useState<TagRead[]>([]);
+  const [targetTagsLoading, setTargetTagsLoading] = useState(false);
   const [symbolPopover, setSymbolPopover] = useState<{
     symbol: string;
     x: number;
@@ -287,6 +303,15 @@ export default function KernelCodePage() {
     [codeLines, focusLine],
   );
 
+  const selectedRange = useMemo(() => {
+    if (selectedLines.size === 0) return null;
+    const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+    return {
+      startLine: sorted[0],
+      endLine: sorted[sorted.length - 1],
+    };
+  }, [selectedLines]);
+
   const annotationCountByLine = useMemo(() => {
     const counts = new Map<number, number>();
     for (const annotation of annotations) {
@@ -335,6 +360,34 @@ export default function KernelCodePage() {
     [relatedAnnotations],
   );
 
+  const selectedTargetRef = useMemo(() => {
+    if (!selectedVersion || !currentPath) return '';
+    return `${selectedVersion}:${currentPath}`;
+  }, [currentPath, selectedVersion]);
+
+  const selectedTargetAnchor = useMemo(() => {
+    if (!selectedRange) return null;
+    return {
+      start_line: selectedRange.startLine,
+      end_line: selectedRange.endLine,
+    };
+  }, [selectedRange]);
+
+  const selectedTargetAnchorExpanded = useMemo(() => {
+    if (!selectedRange) return null;
+    return {
+      start_line: selectedRange.startLine,
+      end_line: selectedRange.endLine,
+      version: selectedVersion,
+      file_path: currentPath,
+    };
+  }, [currentPath, selectedRange, selectedVersion]);
+
+  const selectedTargetTags = useMemo(
+    () => mergeTags(targetDirectTags, targetAggregatedTags),
+    [targetAggregatedTags, targetDirectTags],
+  );
+
   const targetHealthLabel = useMemo(() => {
     if (!currentFile) return 'No target loaded';
     if (relatedAnnotations.length > 0 && selectedSymbol) return 'Anchored with notes';
@@ -355,6 +408,40 @@ export default function KernelCodePage() {
     }
     return 'Browse the file first, then pin a line or range so Atlas can attach notes, tags, and related threads to one exact location.';
   }, [currentFile, relatedAnnotations.length, selectedLines.size]);
+
+  useEffect(() => {
+    if (!selectedTargetRef || !selectedTargetAnchor || !selectedTargetAnchorExpanded) {
+      setTargetDirectTags([]);
+      setTargetAggregatedTags([]);
+      return;
+    }
+
+    let cancelled = false;
+    setTargetTagsLoading(true);
+    Promise.allSettled([
+      getTargetTags('kernel_line_range', selectedTargetRef, selectedTargetAnchor),
+      getTargetTags('kernel_line_range', selectedTargetRef, selectedTargetAnchorExpanded),
+    ])
+      .then((results) => {
+        if (cancelled) return;
+        const bundles = results
+          .flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
+        setTargetDirectTags(mergeTags(...bundles.map((bundle) => bundle.direct_tags)));
+        setTargetAggregatedTags(mergeTags(...bundles.map((bundle) => bundle.aggregated_tags)));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTargetDirectTags([]);
+        setTargetAggregatedTags([]);
+      })
+      .finally(() => {
+        if (!cancelled) setTargetTagsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTargetAnchor, selectedTargetAnchorExpanded, selectedTargetRef]);
 
   function handleVersionSelect(tag: string) {
     setSelectedVersion(tag);
@@ -838,7 +925,7 @@ export default function KernelCodePage() {
                         tone="emerald"
                         body={
                           relatedAnnotations.length > 0
-                            ? 'This range already has human notes, so it is ready to accumulate knowledge evidence and downstream review context.'
+                            ? `This range already has ${relatedAnnotations.length} note${relatedAnnotations.length === 1 ? '' : 's'} and ${selectedTargetTags.length} visible tag${selectedTargetTags.length === 1 ? '' : 's'}, so it is ready to accumulate downstream review context.`
                             : 'Once a note or tag exists here, Atlas can treat this location as a reusable evidence handle across code, mail, and knowledge views.'
                         }
                       />
@@ -895,8 +982,12 @@ export default function KernelCodePage() {
                         <EvidenceCard
                           icon={<Route className="h-4 w-4" />}
                           title="Atlas Workflow"
-                          subtitle="Read -> pin -> annotate -> bridge"
-                          body="The current shell now supports stable code targets, patch hunk entry points, and code annotations. The next UI step is bringing related threads and tags into this same evidence stack."
+                          subtitle="Read -> pin -> tag / annotate -> bridge"
+                          body={
+                            selectedTargetTags.length > 0
+                              ? `This target already carries ${selectedTargetTags.length} visible tag${selectedTargetTags.length === 1 ? '' : 's'}, so the next useful step is surfacing matching threads and knowledge backlinks in the same stack.`
+                              : 'The current shell now supports stable code targets, patch hunk entry points, and code annotations. The next UI step is bringing related threads and tags into this same evidence stack.'
+                          }
                         />
                       </div>
                     </div>
@@ -971,6 +1062,117 @@ export default function KernelCodePage() {
                 </div>
               </div>
 
+              {currentFile && selectedRange && (
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                    <Layers3 className="h-4 w-4 text-slate-500" />
+                    Target Tags
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        Direct tags
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {targetTagsLoading ? (
+                          <span className="text-xs text-slate-500">Loading tags...</span>
+                        ) : targetDirectTags.length > 0 ? (
+                          targetDirectTags.map((tag) => (
+                            <span
+                              key={`direct-${tag.slug}`}
+                              className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-800"
+                            >
+                              {tag.name}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-slate-400">No direct tags on this exact range yet.</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        Visible coverage
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {targetAggregatedTags.length > 0 ? (
+                          targetAggregatedTags.map((tag) => (
+                            <span
+                              key={`agg-${tag.slug}`}
+                              className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800"
+                            >
+                              {tag.name}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-slate-400">No inherited or aggregated tags surfaced yet.</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                      <div className="mb-2 text-xs text-slate-500">
+                        Add a tag directly to {selectedRangeLabel} so mail, patch, and code readers can converge on the same target.
+                      </div>
+                      <EmailTagEditor
+                        targetType="kernel_line_range"
+                        targetRef={selectedTargetRef}
+                        anchor={selectedTargetAnchorExpanded ?? undefined}
+                        compact
+                        placeholder="Tag this code target"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                  <MessagesSquare className="h-4 w-4 text-slate-500" />
+                  Annotation Stack
+                </div>
+                <div className="space-y-3">
+                  {relatedAnnotations.length > 0 ? (
+                    relatedAnnotations.slice(0, 3).map((annotation) => (
+                      <button
+                        key={annotation.annotation_id}
+                        type="button"
+                        onClick={() => setSelectedLines(new Set([annotation.start_line]))}
+                        className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:border-sky-200 hover:bg-sky-50/50"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-slate-900">
+                              L{annotation.start_line}
+                              {annotation.end_line !== annotation.start_line ? `-${annotation.end_line}` : ''}
+                            </div>
+                            <div className="mt-1 text-xs leading-5 text-slate-600">
+                              {annotation.body.replace(/\s+/g, ' ').trim().slice(0, 160) || 'Empty note'}
+                            </div>
+                          </div>
+                          <StatusBadge
+                            tone={
+                              annotation.publish_status === 'approved'
+                                ? 'success'
+                                : annotation.publish_status === 'pending'
+                                  ? 'warning'
+                                  : 'muted'
+                            }
+                          >
+                            {annotation.publish_status}
+                          </StatusBadge>
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs leading-5 text-slate-500">
+                      No saved annotations overlap the current selection yet. Pin a line or range, then use the panel below to create the first shared note.
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
                   <Layers3 className="h-4 w-4 text-slate-500" />
@@ -998,7 +1200,11 @@ export default function KernelCodePage() {
                     icon={<ShieldCheck className="h-4 w-4" />}
                     title="Evidence roadmap"
                     subtitle="Mail / patch / knowledge backlinks"
-                    body="The visual shell now supports code targets, patch-hunk entry points, and annotations. The next pass will stack related threads and knowledge evidence directly in this inspector."
+                    body={
+                      selectedTargetTags.length > 0
+                        ? `This inspector now shows live tag coverage for the selected code target. The next pass is surfacing related threads and knowledge backlinks next to these same tags and notes.`
+                        : 'The visual shell now supports code targets, patch-hunk entry points, annotations, and live target tags. The next pass will stack related threads and knowledge evidence directly in this inspector.'
+                    }
                     tone="emerald"
                   />
                 </div>
