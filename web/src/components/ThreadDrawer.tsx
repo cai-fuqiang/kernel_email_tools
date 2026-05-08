@@ -615,6 +615,56 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
           border-right: 1px solid #374151;
           margin-right: 10px;
         }
+        .diff-target-link,
+        .diff-target-placeholder {
+          display: inline-block;
+          width: 54px;
+          flex-shrink: 0;
+          margin-right: 10px;
+          text-align: right;
+          font-size: 11px;
+        }
+        .diff-target-link {
+          color: #93c5fd;
+          text-decoration: none;
+        }
+        .diff-target-link:hover {
+          color: #dbeafe;
+          text-decoration: underline;
+        }
+        .diff-hunk-actions {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          margin-left: 12px;
+          flex-shrink: 0;
+        }
+        .diff-action-button {
+          border: 1px solid #475569;
+          border-radius: 6px;
+          background: rgba(15, 23, 42, 0.4);
+          color: #cbd5e1;
+          padding: 2px 8px;
+          font-size: 11px;
+          line-height: 1.4;
+        }
+        .diff-action-button:hover {
+          background: rgba(30, 41, 59, 0.9);
+          color: #f8fafc;
+        }
+        .diff-hunk-editor {
+          margin: 6px 12px 10px 126px;
+          border: 1px solid #1e293b;
+          border-radius: 10px;
+          background: #0f172a;
+          padding: 10px;
+        }
+        .diff-hunk-editor-label {
+          margin-bottom: 6px;
+          color: #94a3b8;
+          font-size: 11px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
         .diff-line-text {
           white-space: pre;
           min-width: 0;
