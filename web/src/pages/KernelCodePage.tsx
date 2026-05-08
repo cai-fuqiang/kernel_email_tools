@@ -3,16 +3,21 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   BookOpenText,
+  Clock3,
   ChevronRight,
   Copy,
   ExternalLink,
   FileCode2,
   FolderTree,
   GitBranch,
+  Layers3,
   Link2,
+  MessagesSquare,
   Pin,
+  Route,
   ScrollText,
-  Tags,
+  ShieldCheck,
+  Waypoints,
 } from 'lucide-react';
 import {
   getCodeAnnotations,
@@ -110,6 +115,48 @@ function RelatedCard({
       <div className="text-sm font-medium text-slate-900">{title}</div>
       <div className="mt-1 text-xs text-slate-500">{subtitle}</div>
       <div className="mt-3 text-xs leading-5 text-slate-600">{detail}</div>
+    </div>
+  );
+}
+
+function AtlasChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+      <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-900">{value}</div>
+    </div>
+  );
+}
+
+function EvidenceCard({
+  icon,
+  title,
+  subtitle,
+  body,
+  tone = 'slate',
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  body: string;
+  tone?: 'slate' | 'sky' | 'emerald' | 'amber';
+}) {
+  const toneMap = {
+    slate: 'border-slate-200 bg-white',
+    sky: 'border-sky-200 bg-sky-50/60',
+    emerald: 'border-emerald-200 bg-emerald-50/60',
+    amber: 'border-amber-200 bg-amber-50/70',
+  } as const;
+  return (
+    <div className={`rounded-xl border px-4 py-3 ${toneMap[tone]}`}>
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 text-slate-500">{icon}</div>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-slate-900">{title}</div>
+          <div className="mt-1 text-xs text-slate-500">{subtitle}</div>
+          <div className="mt-2 text-xs leading-5 text-slate-600">{body}</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -266,6 +313,48 @@ export default function KernelCodePage() {
   const currentExternal = currentFile
     ? pickKernelSourceUrl(selectedVersion, currentPath, focusLine || undefined)
     : null;
+
+  const selectedVersionIndex = useMemo(
+    () => filteredVersions.findIndex((version) => version.tag === selectedVersion),
+    [filteredVersions, selectedVersion],
+  );
+
+  const nearbyVersions = useMemo(() => {
+    if (selectedVersionIndex < 0) return filteredVersions.slice(0, 5);
+    const start = Math.max(0, selectedVersionIndex - 2);
+    return filteredVersions.slice(start, start + 5);
+  }, [filteredVersions, selectedVersionIndex]);
+
+  const currentLinePreview = useMemo(() => {
+    if (!focusLine || focusLine < 1 || focusLine > codeLines.length) return '';
+    return codeLines[focusLine - 1]?.trim() || '';
+  }, [codeLines, focusLine]);
+
+  const annotationSnippet = useMemo(
+    () => relatedAnnotations[0]?.body?.replace(/\s+/g, ' ').trim() || '',
+    [relatedAnnotations],
+  );
+
+  const targetHealthLabel = useMemo(() => {
+    if (!currentFile) return 'No target loaded';
+    if (relatedAnnotations.length > 0 && selectedSymbol) return 'Anchored with notes';
+    if (relatedAnnotations.length > 0) return 'Anchored, symbol pending';
+    if (selectedLines.size > 0) return 'Ready for annotation';
+    return 'Reading context only';
+  }, [currentFile, relatedAnnotations.length, selectedLines.size, selectedSymbol]);
+
+  const targetNarrative = useMemo(() => {
+    if (!currentFile) {
+      return 'Load a file and pin a code range to gather annotations, tags, and related evidence around one stable code target.';
+    }
+    if (relatedAnnotations.length > 0) {
+      return `This range already carries ${relatedAnnotations.length} linked annotation${relatedAnnotations.length === 1 ? '' : 's'}, so Atlas can use it as a stable evidence anchor.`;
+    }
+    if (selectedLines.size > 0) {
+      return 'The selection is ready to become a shared code target. Add an annotation or tag to persist the reading context.';
+    }
+    return 'Browse the file first, then pin a line or range so Atlas can attach notes, tags, and related threads to one exact location.';
+  }, [currentFile, relatedAnnotations.length, selectedLines.size]);
 
   function handleVersionSelect(tag: string) {
     setSelectedVersion(tag);
@@ -676,39 +765,142 @@ export default function KernelCodePage() {
             </div>
 
             {currentFile && (
-              <div className="border-t border-slate-200 bg-slate-50/70 px-5 py-4">
+              <div className="border-t border-slate-200 bg-slate-50/80 px-5 py-4">
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
                   <Link2 className="h-4 w-4 text-slate-500" />
                   Related Layer
                 </div>
-                <div className="grid gap-3 lg:grid-cols-3">
-                  <RelatedCard
-                    title="Code target"
-                    subtitle={`${selectedVersion} · ${selectedRangeLabel}`}
-                    detail={
-                      selectedSymbol
-                        ? `Nearest symbol inferred as ${selectedSymbol}.`
-                        : 'Select a line to pin symbol-level context.'
-                    }
-                  />
-                  <RelatedCard
-                    title="Annotations"
-                    subtitle={`${relatedAnnotations.length} linked note${relatedAnnotations.length === 1 ? '' : 's'}`}
-                    detail={
-                      relatedAnnotations.length > 0
-                        ? relatedAnnotations[0].body.slice(0, 120)
-                        : 'No note attached to this range yet. Create one from the inspector.'
-                    }
-                  />
-                  <RelatedCard
-                    title="Evidence bridge"
-                    subtitle="Mail / patch / knowledge"
-                    detail={
-                      currentExternal
-                        ? `Resolver currently prefers ${currentExternal.source} for external context. Mail and knowledge links will accumulate here as code targets normalize.`
-                        : 'External source links appear once a file is loaded.'
-                    }
-                  />
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                            Target Brief
+                          </div>
+                          <div className="mt-2 text-base font-semibold text-slate-950">
+                            {currentPath || 'No file selected'}
+                          </div>
+                          <div className="mt-1 text-sm text-slate-500">{targetNarrative}</div>
+                        </div>
+                        <div className="grid min-w-[220px] gap-2 sm:grid-cols-2">
+                          <AtlasChip label="Range" value={selectedRangeLabel} />
+                          <AtlasChip label="Health" value={targetHealthLabel} />
+                        </div>
+                      </div>
+                      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                        <RelatedCard
+                          title="Code target"
+                          subtitle={`${selectedVersion} · ${selectedRangeLabel}`}
+                          detail={
+                            selectedSymbol
+                              ? `Nearest symbol inferred as ${selectedSymbol}.`
+                              : 'Select a line to pin symbol-level context.'
+                          }
+                        />
+                        <RelatedCard
+                          title="Annotation layer"
+                          subtitle={`${relatedAnnotations.length} linked note${relatedAnnotations.length === 1 ? '' : 's'}`}
+                          detail={
+                            annotationSnippet
+                              ? annotationSnippet.slice(0, 140)
+                              : 'No note attached to this range yet. Create one from the inspector.'
+                          }
+                        />
+                        <RelatedCard
+                          title="Resolver status"
+                          subtitle={currentExternal ? currentExternal.source : 'pending'}
+                          detail={
+                            currentExternal
+                              ? `Primary reading link currently resolves through ${currentExternal.source}. Atlas still keeps the local code target stable for notes and tags.`
+                              : 'External source links appear once a file is loaded.'
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 lg:grid-cols-2">
+                      <EvidenceCard
+                        icon={<MessagesSquare className="h-4 w-4" />}
+                        title="Patch / Thread Bridge"
+                        subtitle="Mail discussions connect here"
+                        tone="sky"
+                        body={
+                          focusLine
+                            ? `Patch hunk links can now land on ${selectedVersion}:${currentPath}:L${focusLine}. The next closure step is surfacing matching threads directly in this panel.`
+                            : 'Select a line to anchor patch and thread evidence to one exact code target.'
+                        }
+                      />
+                      <EvidenceCard
+                        icon={<ShieldCheck className="h-4 w-4" />}
+                        title="Knowledge Evidence"
+                        subtitle="Shared interpretation layer"
+                        tone="emerald"
+                        body={
+                          relatedAnnotations.length > 0
+                            ? 'This range already has human notes, so it is ready to accumulate knowledge evidence and downstream review context.'
+                            : 'Once a note or tag exists here, Atlas can treat this location as a reusable evidence handle across code, mail, and knowledge views.'
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                        <Waypoints className="h-4 w-4 text-slate-500" />
+                        Version Trail
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {nearbyVersions.map((version) => {
+                          const active = version.tag === selectedVersion;
+                          return (
+                            <button
+                              key={version.tag}
+                              type="button"
+                              onClick={() => handleVersionSelect(version.tag)}
+                              className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-sm transition ${
+                                active
+                                  ? 'border-sky-200 bg-sky-50 text-sky-800'
+                                  : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                              }`}
+                            >
+                              <span className="font-medium">{version.tag}</span>
+                              <span className="text-xs text-slate-400">
+                                {version.kind === 'release' ? 'release' : 'rc'}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                        <Clock3 className="h-4 w-4 text-slate-500" />
+                        Selection Feed
+                      </div>
+                      <div className="mt-3 space-y-3">
+                        <EvidenceCard
+                          icon={<Pin className="h-4 w-4" />}
+                          title={focusLine ? `Pinned at L${focusLine}` : 'No pinned line yet'}
+                          subtitle={selectedSymbol || 'Symbol inference pending'}
+                          body={
+                            currentLinePreview
+                              ? currentLinePreview
+                              : 'Pick a line to expose the exact code slice that Atlas will use as the evidence handle.'
+                          }
+                          tone="amber"
+                        />
+                        <EvidenceCard
+                          icon={<Route className="h-4 w-4" />}
+                          title="Atlas Workflow"
+                          subtitle="Read -> pin -> annotate -> bridge"
+                          body="The current shell now supports stable code targets, patch hunk entry points, and code annotations. The next UI step is bringing related threads and tags into this same evidence stack."
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -726,12 +918,22 @@ export default function KernelCodePage() {
             </div>
 
             <div className="space-y-4 px-4 py-4">
-              <div className="rounded-xl border border-slate-200 bg-white px-4 py-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                  <Pin className="h-4 w-4 text-slate-500" />
-                  Code Target
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                      <Pin className="h-4 w-4 text-slate-500" />
+                      Code Target
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      Atlas keeps this exact target stable even when reading moves between mail, code, and review.
+                    </div>
+                  </div>
+                  <StatusBadge tone={relatedAnnotations.length > 0 ? 'success' : 'warning'}>
+                    {targetHealthLabel}
+                  </StatusBadge>
                 </div>
-                <dl className="space-y-2">
+                <dl className="mt-4 space-y-2">
                   <MetaRow label="version" value={selectedVersion || '—'} />
                   <MetaRow label="path" value={currentPath || '—'} />
                   <MetaRow label="range" value={selectedRangeLabel} />
@@ -739,17 +941,17 @@ export default function KernelCodePage() {
                   <MetaRow label="repo" value="linux" />
                   <MetaRow
                     label="related"
-                    value={`${relatedAnnotations.length} annotations · 0 linked threads surfaced`}
+                    value={`${relatedAnnotations.length} annotations · ${selectedLines.size > 0 ? 'selection pinned' : 'browse mode'}`}
                   />
                 </dl>
 
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   {currentExternal && (
                     <a
                       href={currentExternal.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+                      className="inline-flex items-center justify-center gap-1 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800"
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
                       Open source
@@ -760,7 +962,7 @@ export default function KernelCodePage() {
                       href={elixirIdentUrl(selectedVersion || 'latest', selectedSymbol)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
                     >
                       <ScrollText className="h-3.5 w-3.5" />
                       Search symbol
@@ -769,26 +971,41 @@ export default function KernelCodePage() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-slate-200 bg-white px-4 py-4">
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                  <Tags className="h-4 w-4 text-slate-500" />
+                  <Layers3 className="h-4 w-4 text-slate-500" />
                   Atlas Signals
                 </div>
-                <div className="space-y-3 text-xs text-slate-600">
-                  <div className="rounded-lg bg-slate-50 px-3 py-2">
-                    Selection changes the target payload immediately; the annotation panel below still owns creation and review.
-                  </div>
-                  <div className="rounded-lg bg-slate-50 px-3 py-2">
-                    Current file has {annotations.length} saved code annotation{annotations.length === 1 ? '' : 's'}.
-                  </div>
-                  <div className="rounded-lg bg-slate-50 px-3 py-2">
-                    Mail / patch / knowledge backlinks are the next normalization step after this visual shell.
-                  </div>
+                <div className="space-y-3">
+                  <EvidenceCard
+                    icon={<Route className="h-4 w-4" />}
+                    title="Selection payload"
+                    subtitle={selectedLines.size > 0 ? 'Live target update enabled' : 'Browse-only state'}
+                    body="Selection changes the target payload immediately, while the annotation panel below still owns creation and review."
+                  />
+                  <EvidenceCard
+                    icon={<MessagesSquare className="h-4 w-4" />}
+                    title="Annotation density"
+                    subtitle={`${annotations.length} note${annotations.length === 1 ? '' : 's'} in file`}
+                    body={
+                      relatedAnnotations.length > 0
+                        ? 'The current selection already overlaps saved notes, which means this target is ready for thread and knowledge back-links.'
+                        : 'No saved note overlaps the current selection yet. This is still a clean target waiting for its first shared interpretation.'
+                    }
+                    tone={relatedAnnotations.length > 0 ? 'sky' : 'slate'}
+                  />
+                  <EvidenceCard
+                    icon={<ShieldCheck className="h-4 w-4" />}
+                    title="Evidence roadmap"
+                    subtitle="Mail / patch / knowledge backlinks"
+                    body="The visual shell now supports code targets, patch-hunk entry points, and annotations. The next pass will stack related threads and knowledge evidence directly in this inspector."
+                    tone="emerald"
+                  />
                 </div>
               </div>
 
               {currentFile ? (
-                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                   <AnnotationPanel
                     annotations={annotations}
                     selectedLines={selectedLines}
