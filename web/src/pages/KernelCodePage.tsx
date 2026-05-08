@@ -12,6 +12,10 @@ import {
   Library,
   Layers3,
   MessagesSquare,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   Pin,
   ScrollText,
 } from 'lucide-react';
@@ -218,6 +222,8 @@ export default function KernelCodePage() {
   const [expandedTreePaths, setExpandedTreePaths] = useState<Set<string>>(new Set());
   const [treeLoading, setTreeLoading] = useState(false);
   const [showAllVersions, setShowAllVersions] = useState(false);
+  const [navigatorCollapsed, setNavigatorCollapsed] = useState(false);
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [targetDirectTags, setTargetDirectTags] = useState<TagRead[]>([]);
   const [targetAggregatedTags, setTargetAggregatedTags] = useState<TagRead[]>([]);
   const [targetTagsLoading, setTargetTagsLoading] = useState(false);
@@ -934,6 +940,26 @@ export default function KernelCodePage() {
                 <FileCode2 className="h-4 w-4 text-slate-500" />
                 Code Atlas
               </div>
+              <div className="hidden items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 xl:flex">
+                <button
+                  type="button"
+                  onClick={() => setNavigatorCollapsed((value) => !value)}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition hover:bg-white hover:text-slate-900"
+                  aria-label={navigatorCollapsed ? 'Expand navigator' : 'Collapse navigator'}
+                  title={navigatorCollapsed ? 'Expand navigator' : 'Collapse navigator'}
+                >
+                  {navigatorCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInspectorCollapsed((value) => !value)}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition hover:bg-white hover:text-slate-900"
+                  aria-label={inspectorCollapsed ? 'Expand inspector' : 'Collapse inspector'}
+                  title={inspectorCollapsed ? 'Expand inspector' : 'Collapse inspector'}
+                >
+                  {inspectorCollapsed ? <PanelRightOpen className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
+                </button>
+              </div>
               {versionsLoading ? (
                 <div className="text-sm text-slate-500">Loading versions...</div>
               ) : (
@@ -1010,12 +1036,48 @@ export default function KernelCodePage() {
           </div>
         </div>
 
-        <div className="grid min-h-[calc(100vh-8rem)] gap-0 xl:h-[calc(100vh-8rem)] xl:grid-cols-[12.5rem_minmax(0,1fr)] 2xl:grid-cols-[13.5rem_minmax(0,1fr)]">
+        <div
+          className={`grid min-h-[calc(100vh-8rem)] gap-0 xl:h-[calc(100vh-8rem)] ${
+            navigatorCollapsed
+              ? 'xl:grid-cols-[3rem_minmax(0,1fr)] 2xl:grid-cols-[3rem_minmax(0,1fr)]'
+              : 'xl:grid-cols-[12.5rem_minmax(0,1fr)] 2xl:grid-cols-[13.5rem_minmax(0,1fr)]'
+          }`}
+        >
           <aside className="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/80 xl:border-b-0 xl:border-r">
+            {navigatorCollapsed ? (
+              <div className="hidden min-h-0 flex-1 flex-col items-center gap-3 px-2 py-3 xl:flex">
+                <button
+                  type="button"
+                  onClick={() => setNavigatorCollapsed(false)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900"
+                  aria-label="Expand navigator"
+                  title="Expand navigator"
+                >
+                  <PanelLeftOpen className="h-4 w-4" />
+                </button>
+                <FolderTree className="h-4 w-4 text-slate-400" />
+                <div className="h-px w-full bg-slate-200" />
+                <div className="[writing-mode:vertical-rl] text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  Navigator
+                </div>
+              </div>
+            ) : (
+              <>
             <div className="border-b border-slate-200 px-4 py-3">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <FolderTree className="h-4 w-4 text-slate-500" />
                 Navigator
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNavigatorCollapsed(true)}
+                  className="hidden h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 xl:inline-flex"
+                  aria-label="Collapse navigator"
+                  title="Collapse navigator"
+                >
+                  <PanelLeftClose className="h-4 w-4" />
+                </button>
               </div>
               <p className="mt-1 truncate text-xs text-slate-500">{treePath || 'root'}</p>
             </div>
@@ -1071,11 +1133,19 @@ export default function KernelCodePage() {
                 </div>
               </div>
             </div>
+              </>
+            )}
           </aside>
 
           <div className="min-w-0 bg-slate-50/60">
             <div className="h-full min-h-0">
-              <div className="grid h-full min-h-0 gap-0 xl:grid-cols-[minmax(0,1fr)_18rem] 2xl:grid-cols-[minmax(0,1fr)_19rem]">
+              <div
+                className={`grid h-full min-h-0 gap-0 ${
+                  inspectorCollapsed
+                    ? 'xl:grid-cols-[minmax(0,1fr)_3rem] 2xl:grid-cols-[minmax(0,1fr)_3rem]'
+                    : 'xl:grid-cols-[minmax(0,1fr)_18rem] 2xl:grid-cols-[minmax(0,1fr)_19rem]'
+                }`}
+              >
                 <div className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
                   <div className="border-b border-slate-200 px-3 py-2">
                   <div className="flex flex-col gap-2 xl:flex-row xl:items-start xl:justify-between">
@@ -1236,13 +1306,43 @@ export default function KernelCodePage() {
                 </div>
 
                 <aside className="flex min-h-0 flex-col overflow-hidden border-t border-slate-200 bg-slate-50/80 xl:border-l xl:border-t-0">
+                  {inspectorCollapsed ? (
+                    <div className="hidden min-h-0 flex-1 flex-col items-center gap-3 px-2 py-3 xl:flex">
+                      <button
+                        type="button"
+                        onClick={() => setInspectorCollapsed(false)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900"
+                        aria-label="Expand inspector"
+                        title="Expand inspector"
+                      >
+                        <PanelRightOpen className="h-4 w-4" />
+                      </button>
+                      <BookOpenText className="h-4 w-4 text-slate-400" />
+                      <div className="h-px w-full bg-slate-200" />
+                      <div className="[writing-mode:vertical-rl] text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        Inspector
+                      </div>
+                    </div>
+                  ) : (
+                    <>
                   <div className="border-b border-slate-200 px-4 py-3">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                    <BookOpenText className="h-4 w-4 text-slate-500" />
-                    Inspector
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                        <BookOpenText className="h-4 w-4 text-slate-500" />
+                        Inspector
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setInspectorCollapsed(true)}
+                        className="hidden h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 xl:inline-flex"
+                        aria-label="Collapse inspector"
+                        title="Collapse inspector"
+                      >
+                        <PanelRightClose className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <p className="mt-1 truncate text-xs text-slate-500">Target, notes, evidence.</p>
                   </div>
-                  <p className="mt-1 truncate text-xs text-slate-500">Target, notes, evidence.</p>
-                </div>
 
                   <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
                   <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
@@ -1396,6 +1496,8 @@ export default function KernelCodePage() {
                       </div>
                     </div>
                   </div>
+                    </>
+                  )}
                 </aside>
               </div>
             </div>

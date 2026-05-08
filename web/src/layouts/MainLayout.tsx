@@ -12,6 +12,8 @@ import {
   LogOut,
   MailSearch,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   Users,
   X,
 } from 'lucide-react';
@@ -33,7 +35,7 @@ function roleTone(role: string) {
   return 'muted';
 }
 
-function NavSection({ title, items }: { title: string; items: NavItem[] }) {
+function NavSection({ title, items, collapsed = false }: { title: string; items: NavItem[]; collapsed?: boolean }) {
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
       isActive
@@ -43,16 +45,24 @@ function NavSection({ title, items }: { title: string; items: NavItem[] }) {
 
   return (
     <div>
-      <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-        {title}
-      </div>
+      {!collapsed && (
+        <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+          {title}
+        </div>
+      )}
       <div className="space-y-1">
         {items.map((item) => {
           const Icon = item.icon;
           return (
-            <NavLink key={item.to} to={item.to} end={item.end} className={linkClass}>
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              title={collapsed ? item.label : undefined}
+              className={linkClass}
+            >
               <Icon className="h-4 w-4 shrink-0" />
-              <span className="truncate">{item.label}</span>
+              {!collapsed && <span className="truncate">{item.label}</span>}
             </NavLink>
           );
         })}
@@ -64,6 +74,7 @@ function NavSection({ title, items }: { title: string; items: NavItem[] }) {
 export default function MainLayout() {
   const [totalEmails, setTotalEmails] = useState<number | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [desktopNavCollapsed, setDesktopNavCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser, loading: authLoading, isAdmin, canWrite, error: authError, logout } = useAuth();
@@ -91,20 +102,29 @@ export default function MainLayout() {
     { to: '/manual/ask', label: 'Ask Manuals', icon: MailSearch },
   ];
 
-  const SidebarContent = () => (
+  const SidebarContent = ({ collapsed = false }: { collapsed?: boolean }) => (
     <>
-        <div className="border-b border-slate-200 p-5">
-          <div className="flex items-center gap-3">
+        <div className={collapsed ? 'border-b border-slate-200 p-3' : 'border-b border-slate-200 p-5'}>
+          <div className={collapsed ? 'flex flex-col items-center gap-3' : 'flex items-center gap-3'}>
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
               <MailSearch className="h-5 w-5" />
             </div>
-            <div className="min-w-0">
+            {!collapsed && <div className="min-w-0">
               <h1 className="truncate text-base font-semibold text-slate-950">Kernel Mail KB</h1>
               <p className="mt-0.5 text-xs text-slate-500">Research to reusable knowledge</p>
-            </div>
+            </div>}
+            <button
+              type="button"
+              onClick={() => setDesktopNavCollapsed((value) => !value)}
+              className="hidden h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50 hover:text-slate-900 lg:inline-flex"
+              aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+              title={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+            >
+              {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            </button>
           </div>
 
-          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          {!collapsed && <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
             {authLoading ? (
               <div className="text-xs text-slate-500">Loading user...</div>
             ) : currentUser ? (
@@ -135,13 +155,13 @@ export default function MainLayout() {
             ) : (
               <div className="text-xs text-slate-500">{authError || 'Unauthenticated'}</div>
             )}
-          </div>
+          </div>}
         </div>
 
-        <nav className="flex-1 space-y-6 overflow-y-auto p-4">
-          <NavSection title="Research" items={researchItems} />
-          <NavSection title="Knowledge Workbench" items={workbenchItems} />
-          <NavSection title="Code" items={[{ to: '/kernel-code', label: 'Code Atlas', icon: Code2 }]} />
+        <nav className={collapsed ? 'flex-1 space-y-4 overflow-y-auto px-2 py-4' : 'flex-1 space-y-6 overflow-y-auto p-4'}>
+          <NavSection title="Research" items={researchItems} collapsed={collapsed} />
+          <NavSection title="Knowledge Workbench" items={workbenchItems} collapsed={collapsed} />
+          <NavSection title="Code" items={[{ to: '/kernel-code', label: 'Code Atlas', icon: Code2 }]} collapsed={collapsed} />
           {isAdmin && (
             <NavSection
               title="Admin"
@@ -149,19 +169,20 @@ export default function MainLayout() {
                 { to: '/users', label: 'Users', icon: Users },
                 { to: '/admin/annotation-review', label: 'Annotation Review', icon: FileCheck2 },
               ]}
+              collapsed={collapsed}
             />
           )}
-          <NavSection title="Manuals" items={manualItems} />
+          <NavSection title="Manuals" items={manualItems} collapsed={collapsed} />
         </nav>
 
-        <div className="border-t border-slate-200 p-4">
+        {!collapsed && <div className="border-t border-slate-200 p-4">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
             <p className="text-xs font-medium uppercase text-slate-400">Indexed emails</p>
             <p className="mt-1 text-xl font-semibold text-slate-950">
               {totalEmails !== null ? totalEmails.toLocaleString() : '...'}
             </p>
           </div>
-        </div>
+        </div>}
     </>
   );
 
@@ -209,8 +230,8 @@ export default function MainLayout() {
         </div>
       )}
 
-      <aside className="hidden w-72 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
-        <SidebarContent />
+      <aside className={`${desktopNavCollapsed ? 'w-16' : 'w-72'} hidden shrink-0 flex-col border-r border-slate-200 bg-white transition-[width] duration-200 lg:flex`}>
+        <SidebarContent collapsed={desktopNavCollapsed} />
       </aside>
 
       <main className="min-w-0 flex-1 overflow-auto">
