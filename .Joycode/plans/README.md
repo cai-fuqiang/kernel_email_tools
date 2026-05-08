@@ -13,12 +13,11 @@
 
 ---
 
-## 活跃计划（7）
+## 活跃计划（6）
 
 | PLAN | 主题 | Status | Priority | 备注 |
 |------|------|--------|----------|------|
 | [PLAN-30002](PLAN-30002-external-code-jump.md) | 代码跳转与 local-first resolver | in-progress | **P1** | 外链闭环已完成；下一步把 Elixir 降级为 fallback，建立本地代码 resolver |
-| [PLAN-37001](PLAN-37001-kernel-code-atlas.md) | Kernel Code Atlas：多版本代码地图与标注工作台 | in-progress | **P1** | 文案和前端壳已改为 Atlas；当前推进 code target normalization MVP |
 | [PLAN-31005](PLAN-31005.md) | 统一信息工作台（Workspace） | done / staged follow-up | **P0 cleanup**, then P2 | Stage 1 主流程已收口，真实写数据与 LLM 联调降为后续低优先级 |
 | [PLAN-31002](PLAN-31002-knowledge-workbench-roadmap.md) | Knowledge Workbench 路线图 | in-progress | P2 | 范围过大，新工作请新建独立 PLAN 引用 |
 | [PLAN-36000](PLAN-36000-survey-style-batch-tagging.md) | Survey-Style 批量打标签（YAML 问卷） | planned | P2 | 借鉴 eunomia-bpf/code-survey；先 Phase 1 PoC 验证质量 |
@@ -67,15 +66,14 @@
 5. ~~**P1** PLAN-31001 Phase 3+4+5 收尾（fulltext search / import-export / history / direction switch / load more）~~ ✅ 2026-05-06
 6. ~~**P0** PLAN-31004 Pending Verification（浏览器尺寸、移动端、Knowledge/ThreadDrawer/Search/Ask 核心冒烟）~~ ✅ 2026-05-08
 7. ~~**P0** PLAN-31005 状态校准与 Workspace 冒烟（旧路由兼容、email/tag/annotation 三个 view 主流程）~~ ✅ 2026-05-08
-8. **P1** PLAN-37001 Phase 1+2（产品边界清理 + Code Target Normalization MVP；必要时拆新 PLAN）
-9. **P1** PLAN-37001 Phase 3（代码位置 annotation/tag/knowledge evidence 最小闭环）
-10. **P1** PLAN-30002 Phase 6 剩余项（local-first resolver 的最小符号索引仅在闭环需要时推进）
-11. **P2** PLAN-36000 Phase 1（单 thread Survey PoC，验证质量和成本）
-12. **P2/P3** VS Code / Neovim bridge、批量 Survey、AI 入库流水线、Markdown Wiki Export
+8. ~~**P1** PLAN-37001 Phase 1+2+3+4（产品边界清理 + Code Target Normalization + code/mail/knowledge 闭环 + cross-version context）~~ ✅ 2026-05-08
+9. **P1** PLAN-30002 Phase 6 剩余项（local-first resolver 的最小符号索引仅在闭环需要时推进）
+10. **P2** PLAN-36000 Phase 1（单 thread Survey PoC，验证质量和成本）
+11. **P2/P3** VS Code / Neovim bridge、批量 Survey、AI 入库流水线、Markdown Wiki Export
 
 ---
 
-## 已完成（done/，24）
+## 已完成（done/，25）
 
 按时间顺序从早到晚：
 
@@ -103,6 +101,7 @@
   - PLAN-31001 知识图谱功能增强（Phase 1 实体删除/图谱可视化/遍历 API；Phase 2 内核版本+文件/符号链接；Phase 3 fulltext search GIN+tsvector；Phase 4 import/export + 变更历史 knowledge_entity_versions；Phase 5 反向引用 KnowledgeBackRefs + 关系方向切换 + relation_type 过滤 + load-more 分页；新增 15 项后端测试，2026-05-06 收尾）
   - PLAN-31003 UI Workbench 第一轮整理
   - PLAN-31004 UI 信息层次与首屏引导（Workbench 第二轮，Dashboard / StickyContextBar / 紧凑结果卡 / Knowledge 拆分 / ThreadDrawer 与移动端收口，2026-05-08 远端冒烟后关闭）
+  - PLAN-37001 Kernel Code Atlas（产品边界重定位、code_target normalization、patch/tag/annotation/knowledge/thread 最小闭环、跨版本上下文保持与 patch backlink hunk 导航，2026-05-08 收尾）
   - PLAN-32000 安全/稳定性修复（API key、密码环境变量化）
   - PLAN-33000 Ask ↔ Knowledge 双向闭环 P0
 - AI Agent

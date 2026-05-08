@@ -1,4 +1,4 @@
-> **Status**: in-progress
+> **Status**: done (Phase 1 + 2 + 3 + 4 落地，2026-05-08；Editor-Native Bridge 留作后续独立跟进)
 > **Updated**: 2026-05-08
 > **Depends-on**: PLAN-30002, PLAN-31002, PLAN-36000
 > **Priority**: P1
@@ -7,9 +7,11 @@
 
 ## Implementation Status
 
-- Phase 1 已部分落地：Web Code Browser 的文案和页面主结构已经重定位为 `Kernel Code Atlas`。
-- Phase 2 正在落地：已新增统一 `code_target` payload helper，并接入 code annotation / tag target / Workspace 跳转的主路径，开始收敛散落的 `version + file_path + line range` 解析逻辑。
-- 下一步继续把 ThreadDrawer patch hunk、Knowledge evidence 和更多 tag/annotation 入口切到同一 payload。
+- Phase 1 已落地：Web Code Browser 的文案、导航入口和页面主结构已经重定位为 `Kernel Code Atlas`。
+- Phase 2 已落地：统一 `code_target` payload helper 已接入 code annotation / tag target / Workspace / patch hunk 主路径，开始替代散落的 `version + file_path + line range` 解析逻辑。
+- Phase 3 已落地：代码行范围、patch hunk、annotation/tag 创建与反向查看已经在 Atlas 中形成最小闭环。
+- Phase 4 已落地：跨版本切换会保留当前文件和选区上下文，Patch Backlinks 能显示文件命中与 hunk overlap，并可直接把主视图选区带回对应代码段。
+- Phase 5 未纳入本次收口：editor-native bridge 仍应作为后续独立桥接工作推进，而不是阻塞当前 Atlas 闭环验收。
 
 ## Summary
 
