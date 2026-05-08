@@ -20,6 +20,39 @@ type PendingAction =
   | { kind: 'reject'; annotationId: string }
   | { kind: 'delete'; annotationId: string; isReply: boolean };
 
+function numericField(source: Record<string, unknown> | undefined, key: string): number {
+  const value = source?.[key];
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function getAnnotationLineRange(annotation: CodeAnnotation): { start: number; end: number } {
+  const codeTarget = annotation.code_target as Record<string, unknown> | undefined;
+  const metaCodeTarget = annotation.meta?.code_target as Record<string, unknown> | undefined;
+  const start =
+    annotation.start_line ||
+    numericField(annotation.anchor, 'start_line') ||
+    numericField(codeTarget, 'start_line') ||
+    numericField(metaCodeTarget, 'start_line');
+  const end =
+    annotation.end_line ||
+    numericField(annotation.anchor, 'end_line') ||
+    numericField(codeTarget, 'end_line') ||
+    numericField(metaCodeTarget, 'end_line') ||
+    start;
+  return { start, end: end > 0 ? Math.max(start, end) : start };
+}
+
+function formatAnnotationLineRange(annotation: CodeAnnotation): string {
+  const { start, end } = getAnnotationLineRange(annotation);
+  if (start <= 0) return 'Line unknown';
+  return `L${start}${end !== start ? `-${end}` : ''}`;
+}
+
 interface AnnotationPanelProps {
   annotations: CodeAnnotation[];
   selectedLines: Set<number>;
@@ -94,7 +127,8 @@ export default function AnnotationPanel({
   const relevant = annotations.filter(a => {
     if (a.in_reply_to) return true;
     if (selectedLines.size === 0) return true;
-    return Array.from(selectedLines).some(l => a.start_line <= l && a.end_line >= l);
+    const { start, end } = getAnnotationLineRange(a);
+    return Array.from(selectedLines).some(l => start <= l && end >= l);
   });
 
   const PublishButton = ({ a }: { a: CodeAnnotation }) => {
@@ -267,7 +301,7 @@ export default function AnnotationPanel({
                             {isExpanded ? '▼' : '▶'}
                           </button>
                         )}
-                        <span className="text-xs text-gray-400">L{root.start_line}{root.end_line !== root.start_line ? `-${root.end_line}` : ''}</span>
+                        <span className="text-xs text-gray-400">{formatAnnotationLineRange(root)}</span>
                         {replyCount > 0 && <span className="text-[10px] text-gray-400">({replyCount})</span>}
                         <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${sc}`}>{root.publish_status}</span>
                       </div>
@@ -299,7 +333,7 @@ export default function AnnotationPanel({
                       <div className="px-3 py-2 bg-gray-50 flex items-center justify-between border-b border-gray-200">
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] text-green-500 bg-green-50 px-1.5 py-0.5 rounded">Reply</span>
-                          <span className="text-xs text-gray-400">L{reply.start_line}</span>
+                          <span className="text-xs text-gray-400">{formatAnnotationLineRange(reply)}</span>
                           <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${statusColors[reply.publish_status] || 'bg-slate-100 text-slate-700'}`}>{reply.publish_status}</span>
                         </div>
                         <div className="flex items-center gap-2">

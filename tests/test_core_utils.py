@@ -1,9 +1,12 @@
 """Tests for core utility functions and API key resolution."""
 
 import os
+from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 
+from src.api.schemas import _annotation_to_response
 from src.qa.providers import parse_json_object, resolve_api_key
 from src.code_targets import build_code_target
 from src.storage.tag_store import (
@@ -153,6 +156,43 @@ class TestBuildCodeTarget:
         )
         assert target["start_line"] == 7
         assert target["end_line"] == 7
+
+
+class TestAnnotationResponse:
+    def test_code_annotation_includes_line_fields(self):
+        response = _annotation_to_response(
+            SimpleNamespace(
+                annotation_id="code-annot-1",
+                annotation_type="code",
+                body="note",
+                author="tester",
+                target_type="kernel_file",
+                target_ref="v6.8:mm/mmap.c",
+                target_label="mm/mmap.c",
+                target_subtitle="v6.8",
+                anchor={"start_line": 10, "end_line": 19},
+                code_target={
+                    "version": "v6.8",
+                    "path": "mm/mmap.c",
+                    "start_line": 10,
+                    "end_line": 19,
+                },
+                meta={},
+                version="v6.8",
+                file_path="mm/mmap.c",
+                start_line=10,
+                end_line=19,
+                visibility="public",
+                publish_status="approved",
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+        )
+
+        assert response.version == "v6.8"
+        assert response.file_path == "mm/mmap.c"
+        assert response.start_line == 10
+        assert response.end_line == 19
 
 
 class TestNormalizeRole:

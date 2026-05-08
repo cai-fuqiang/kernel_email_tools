@@ -22,6 +22,10 @@ class AnnotationResponse(BaseModel):
     thread_id: str = ""
     parent_annotation_id: str = ""
     in_reply_to: str = ""
+    version: str = ""
+    file_path: str = ""
+    start_line: int = 0
+    end_line: int = 0
     visibility: str = "private"
     publish_status: str = "none"
     created_at: Optional[datetime] = None
@@ -75,6 +79,10 @@ def _annotation_to_response(annotation: Any) -> AnnotationResponse:
         thread_id=_get("thread_id", ""),
         parent_annotation_id=_get("parent_annotation_id", "") or "",
         in_reply_to=_get("in_reply_to", ""),
+        version=_get("version", ""),
+        file_path=_get("file_path", ""),
+        start_line=_get("start_line", 0) or 0,
+        end_line=_get("end_line", 0) or 0,
         visibility=_get("visibility", "private") or "private",
         publish_status=_get("publish_status", "none") or "none",
         created_at=_get("created_at", None) or None,
