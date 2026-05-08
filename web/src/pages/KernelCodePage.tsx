@@ -657,11 +657,23 @@ export default function KernelCodePage() {
   function handleVersionSelect(tag: string) {
     setSelectedVersion(tag);
     setCurrentFile(null);
+    setAnnotations([]);
+    if (currentPath) {
+      setPathInput(currentPath);
+      setSearchParams(
+        {
+          v: tag,
+          path: currentPath,
+          ...(selectedRange ? { line: String(selectedRange.startLine) } : {}),
+        },
+        { replace: true },
+      );
+      return;
+    }
     setCurrentPath('');
     setPathInput('');
     setTreePath('');
     setTreeEntries([]);
-    setAnnotations([]);
     setSelectedLines(new Set());
     setSearchParams({ v: tag }, { replace: true });
   }
