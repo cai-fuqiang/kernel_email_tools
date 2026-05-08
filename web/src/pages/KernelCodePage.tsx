@@ -370,17 +370,18 @@ export default function KernelCodePage() {
   const openDirectory = useCallback(
     async (path: string) => {
       if (!selectedVersion) return;
-      const tree = await ensureTreeLoaded(path);
-      if (!tree) return;
       setCurrentPath(path);
       setCurrentPathKind('directory');
       setCurrentFile(null);
-      setDirectoryEntries(tree.entries);
+      setDirectoryEntries([]);
       setAnnotations([]);
       setSelectedLines(new Set());
       setPathInput(path);
-      await expandAncestors(path, true);
       setSearchParams({ v: selectedVersion, path }, { replace: true });
+      const tree = await ensureTreeLoaded(path);
+      if (!tree) return;
+      setDirectoryEntries(tree.entries);
+      await expandAncestors(path, true);
     },
     [ensureTreeLoaded, expandAncestors, selectedVersion, setSearchParams],
   );
@@ -391,21 +392,21 @@ export default function KernelCodePage() {
     setCurrentPath(path);
     setCurrentPathKind('file');
     setPathInput(path);
+    setDirectoryEntries([]);
+    const focusLine = targetLine ?? urlLine;
+    setSelectedLines(focusLine ? new Set([focusLine]) : new Set());
+    setSearchParams(
+      { v: selectedVersion, path, ...(focusLine ? { line: String(focusLine) } : {}) },
+      { replace: true },
+    );
     try {
       const [fileRes, annotRes] = await Promise.all([
         getKernelFile(selectedVersion, path),
         getCodeAnnotations(selectedVersion, path).catch(() => [] as CodeAnnotation[]),
       ]);
       setCurrentFile(fileRes);
-      setDirectoryEntries([]);
       setAnnotations(annotRes);
-      const focusLine = targetLine ?? urlLine;
-      setSelectedLines(focusLine ? new Set([focusLine]) : new Set());
       await expandAncestors(path, false);
-      setSearchParams(
-        { v: selectedVersion, path, ...(focusLine ? { line: String(focusLine) } : {}) },
-        { replace: true },
-      );
     } catch (e: unknown) {
       showToast(e instanceof Error ? e.message : String(e), 'error');
       setCurrentFile(null);
@@ -1103,7 +1104,10 @@ export default function KernelCodePage() {
                   <div className="mb-2 flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={() => setTreePath('')}
+                      onClick={() => {
+                        setTreePath('');
+                        void ensureTreeLoaded('');
+                      }}
                       className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
                     >
                       /
@@ -1111,7 +1115,11 @@ export default function KernelCodePage() {
                     {treePath && (
                       <button
                         type="button"
-                        onClick={() => setTreePath(treePath.split('/').slice(0, -1).join('/'))}
+                        onClick={() => {
+                          const parentPath = treePath.split('/').slice(0, -1).join('/');
+                          setTreePath(parentPath);
+                          void ensureTreeLoaded(parentPath);
+                        }}
                         className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
                       >
                         ..
