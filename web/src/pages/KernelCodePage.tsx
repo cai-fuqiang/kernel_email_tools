@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { MouseEvent as ReactMouseEvent } from 'react';
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   BookOpenText,
@@ -111,6 +111,84 @@ function AtlasMetric({
   );
 }
 
+const C_KEYWORDS = new Set([
+  'asm', 'auto', 'break', 'case', 'const', 'continue', 'default', 'do', 'else', 'enum',
+  'extern', 'for', 'goto', 'if', 'inline', 'register', 'restrict', 'return', 'sizeof',
+  'static', 'struct', 'switch', 'typedef', 'union', 'volatile', 'while',
+]);
+
+const C_TYPES = new Set([
+  'bool', 'char', 'double', 'float', 'int', 'long', 'short', 'signed', 'unsigned', 'void',
+  'u8', 'u16', 'u32', 'u64', 's8', 's16', 's32', 's64', 'size_t', 'ssize_t',
+]);
+
+function highlightedTokenClass(token: string): string {
+  if (token.startsWith('//') || token.startsWith('/*')) return 'text-emerald-600';
+  if (token.startsWith('"') || token.startsWith("'")) return 'text-amber-700';
+  if (/^(?:0x[\da-fA-F]+|\d)/.test(token)) return 'text-violet-700';
+  if (C_KEYWORDS.has(token)) return 'font-medium text-sky-700';
+  if (C_TYPES.has(token)) return 'font-medium text-indigo-700';
+  if (/^[A-Z][A-Z0-9_]+$/.test(token) && token.length > 1) return 'text-fuchsia-700';
+  return '';
+}
+
+function renderHighlightedLine(line: string): ReactNode {
+  if (!line) return '\u00a0';
+  if (line.trimStart().startsWith('#')) {
+    return <span className="text-fuchsia-700">{line}</span>;
+  }
+  const tokenPattern = /(\/\/.*|\/\*.*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b0x[\da-fA-F]+[uUlL]*\b|\b\d+(?:\.\d+)?[uUlLfF]*\b|\b[A-Za-z_]\w*\b)/g;
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  for (const match of line.matchAll(tokenPattern)) {
+    const token = match[0];
+    const index = match.index ?? 0;
+    if (index > lastIndex) parts.push(line.slice(lastIndex, index));
+    const className = highlightedTokenClass(token);
+    parts.push(className ? <span key={`${index}-${token}`} className={className}>{token}</span> : token);
+    lastIndex = index + token.length;
+  }
+  if (lastIndex < line.length) parts.push(line.slice(lastIndex));
+  return parts;
+}
+
+function InspectorSection({
+  title,
+  icon,
+  collapsed,
+  onToggle,
+  children,
+  headerExtra,
+}: {
+  title: string;
+  icon: ReactNode;
+  collapsed: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+  headerExtra?: ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left transition hover:bg-slate-50"
+        aria-expanded={!collapsed}
+      >
+        <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-900">
+          <span className="text-slate-500">{icon}</span>
+          <span className="truncate">{title}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          {headerExtra}
+          <ChevronRight className={`h-4 w-4 text-slate-400 transition ${collapsed ? '' : 'rotate-90'}`} />
+        </span>
+      </button>
+      {!collapsed && <div className="border-t border-slate-100 px-3 py-3">{children}</div>}
+    </section>
+  );
+}
+
 function mergeTags(...groups: TagRead[][]): TagRead[] {
   const seen = new Map<string, TagRead>();
   for (const group of groups) {
@@ -194,6 +272,7 @@ type ThreadPreview = {
 };
 
 type AtlasPathKind = 'file' | 'directory' | null;
+type InspectorSectionId = 'target' | 'annotations' | 'tags' | 'threads' | 'knowledge';
 
 export default function KernelCodePage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -224,6 +303,7 @@ export default function KernelCodePage() {
   const [showAllVersions, setShowAllVersions] = useState(false);
   const [navigatorCollapsed, setNavigatorCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [collapsedInspectorSections, setCollapsedInspectorSections] = useState<Set<InspectorSectionId>>(() => new Set());
   const [targetDirectTags, setTargetDirectTags] = useState<TagRead[]>([]);
   const [targetAggregatedTags, setTargetAggregatedTags] = useState<TagRead[]>([]);
   const [targetTagsLoading, setTargetTagsLoading] = useState(false);
@@ -764,6 +844,15 @@ export default function KernelCodePage() {
     handleSelectRange(line);
   }
 
+  function toggleInspectorSection(section: InspectorSectionId) {
+    setCollapsedInspectorSections((current) => {
+      const next = new Set(current);
+      if (next.has(section)) next.delete(section);
+      else next.add(section);
+      return next;
+    });
+  }
+
   function toggleTreeDirectory(path: string) {
     if (expandedTreePaths.has(path)) {
       const next = new Set<string>();
@@ -806,7 +895,6 @@ export default function KernelCodePage() {
                   onClick={() => {
                     if (isDirectory) {
                       toggleTreeDirectory(entry.path);
-                      void openDirectory(entry.path);
                     } else {
                       void loadFile(entry.path);
                     }
@@ -1252,7 +1340,7 @@ export default function KernelCodePage() {
                       </div>
                     </div>
                   ) : currentFile ? (
-                    <div className="w-max min-w-full font-mono text-[12px] leading-[18px]">
+                    <div className="inline-block min-w-max font-mono text-[12px] leading-[18px]">
                       {codeLines.map((line, index) => {
                         const lineNum = index + 1;
                         const isSelected = selectedLines.has(lineNum);
@@ -1263,7 +1351,7 @@ export default function KernelCodePage() {
                             key={lineNum}
                             data-line={lineNum}
                             onClick={() => handleLineClick(lineNum)}
-                            className={`group grid cursor-pointer grid-cols-[12px_44px_minmax(max-content,1fr)_22px] border-b border-slate-100/70 px-2 ${
+                            className={`group grid w-max cursor-pointer grid-cols-[12px_44px_max-content_22px] border-b border-slate-100/70 px-2 ${
                               isSelected ? 'bg-amber-50' : 'hover:bg-slate-50'
                             }`}
                           >
@@ -1277,8 +1365,8 @@ export default function KernelCodePage() {
                             <span className="select-none py-0.5 pr-2 text-right text-[11px] text-slate-400">
                               {lineNum}
                             </span>
-                            <div className="min-w-0 whitespace-pre py-0.5 text-slate-800">
-                              {line}
+                            <div className="whitespace-pre py-0.5 pr-8 text-slate-800">
+                              {renderHighlightedLine(line)}
                             </div>
                             <a
                               href={linePicked.url}
@@ -1345,18 +1433,21 @@ export default function KernelCodePage() {
                   </div>
 
                   <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
-                  <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                          <Pin className="h-4 w-4 text-slate-500" />
-                          Code Target
-                        </div>
-                        <div className="mt-1 text-xs text-slate-500">Stable target for reading and notes.</div>
-                      </div>
+                  <InspectorSection
+                    title="Code Target"
+                    icon={<Pin className="h-4 w-4" />}
+                    collapsed={collapsedInspectorSections.has('target')}
+                    onToggle={() => toggleInspectorSection('target')}
+                    headerExtra={
                       <StatusBadge tone={relatedAnnotations.length > 0 ? 'success' : 'warning'}>
                         {targetHealthLabel}
                       </StatusBadge>
+                    }
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="mt-1 text-xs text-slate-500">Stable target for reading and notes.</div>
+                      </div>
                     </div>
                     <dl className="mt-3 space-y-1.5">
                       <MetaRow label="version" value={selectedVersion || '—'} />
@@ -1383,18 +1474,29 @@ export default function KernelCodePage() {
                         </a>
                       )}
                     </div>
-                  </div>
+                  </InspectorSection>
 
                     {currentFile ? (
-                      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                      <InspectorSection
+                        title="注解"
+                        icon={<MessagesSquare className="h-4 w-4" />}
+                        collapsed={collapsedInspectorSections.has('annotations')}
+                        onToggle={() => toggleInspectorSection('annotations')}
+                        headerExtra={
+                          selectedLines.size > 0 ? (
+                            <span className="text-[10px] font-medium text-slate-400">{selectedRangeLabel}</span>
+                          ) : null
+                        }
+                      >
                         <AnnotationPanel
                           annotations={annotations}
                           selectedLines={selectedLines}
                           version={selectedVersion}
                           filePath={currentPath}
                           onAnnotationCreated={handleAnnotationCreated}
+                          hideHeader
                         />
-                      </div>
+                      </InspectorSection>
                     ) : (
                       <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-400">
                         Load a file to inspect annotations and tags.
@@ -1402,11 +1504,17 @@ export default function KernelCodePage() {
                     )}
 
                     {currentFile && selectedRange && (
-                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
-                        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                          <Layers3 className="h-4 w-4 text-slate-500" />
-                          Tags
-                        </div>
+                      <InspectorSection
+                        title="Tags"
+                        icon={<Layers3 className="h-4 w-4" />}
+                        collapsed={collapsedInspectorSections.has('tags')}
+                        onToggle={() => toggleInspectorSection('tags')}
+                        headerExtra={
+                          selectedTargetTags.length > 0 ? (
+                            <span className="text-[10px] font-medium text-slate-400">{selectedTargetTags.length}</span>
+                          ) : null
+                        }
+                      >
                         <div className="flex flex-wrap gap-1.5">
                           {targetTagsLoading ? (
                             <span className="text-xs text-slate-500">Loading tags...</span>
@@ -1432,14 +1540,20 @@ export default function KernelCodePage() {
                             placeholder="Tag this code target"
                           />
                         </div>
-                      </div>
+                      </InspectorSection>
                     )}
 
-                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
-                      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                        <MessagesSquare className="h-4 w-4 text-slate-500" />
-                        Threads
-                      </div>
+                    <InspectorSection
+                      title="Threads"
+                      icon={<MessagesSquare className="h-4 w-4" />}
+                      collapsed={collapsedInspectorSections.has('threads')}
+                      onToggle={() => toggleInspectorSection('threads')}
+                      headerExtra={
+                        relatedThreadPreviews.length > 0 ? (
+                          <span className="text-[10px] font-medium text-slate-400">{relatedThreadPreviews.length}</span>
+                        ) : null
+                      }
+                    >
                       <div className="space-y-2">
                         {relatedThreadsLoading ? (
                           <div className="text-xs text-slate-500">Loading thread context...</div>
@@ -1466,13 +1580,19 @@ export default function KernelCodePage() {
                           <div className="text-xs leading-5 text-slate-400">No thread backlinks for this selection yet.</div>
                         )}
                       </div>
-                    </div>
+                    </InspectorSection>
 
-                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
-                      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                        <Library className="h-4 w-4 text-slate-500" />
-                        Knowledge
-                      </div>
+                    <InspectorSection
+                      title="Knowledge"
+                      icon={<Library className="h-4 w-4" />}
+                      collapsed={collapsedInspectorSections.has('knowledge')}
+                      onToggle={() => toggleInspectorSection('knowledge')}
+                      headerExtra={
+                        relatedKnowledgeEntities.length > 0 ? (
+                          <span className="text-[10px] font-medium text-slate-400">{relatedKnowledgeEntities.length}</span>
+                        ) : null
+                      }
+                    >
                       <div className="space-y-2">
                         {relatedKnowledgeLoading ? (
                           <div className="text-xs text-slate-500">Loading linked knowledge...</div>
@@ -1494,7 +1614,7 @@ export default function KernelCodePage() {
                           <div className="text-xs leading-5 text-slate-400">No knowledge backlinks surfaced yet.</div>
                         )}
                       </div>
-                    </div>
+                    </InspectorSection>
                   </div>
                     </>
                   )}
