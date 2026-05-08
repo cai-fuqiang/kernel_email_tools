@@ -251,6 +251,8 @@ type ThreadPreview = {
   focusMessageId?: string;
 };
 
+type AtlasPathKind = 'file' | 'directory' | null;
+
 export default function KernelCodePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlVersion = searchParams.get('v') || '';
@@ -263,7 +265,9 @@ export default function KernelCodePage() {
   const [currentFile, setCurrentFile] = useState<KernelFileResponse | null>(null);
   const [fileLoading, setFileLoading] = useState(false);
   const [currentPath, setCurrentPath] = useState(urlPath);
+  const [currentPathKind, setCurrentPathKind] = useState<AtlasPathKind>(null);
   const [pathInput, setPathInput] = useState(urlPath);
+  const [directoryEntries, setDirectoryEntries] = useState<KernelTreeEntry[]>([]);
   const [annotations, setAnnotations] = useState<CodeAnnotation[]>([]);
   const [selectedLines, setSelectedLines] = useState<Set<number>>(() => {
     const set = new Set<number>();
@@ -272,7 +276,8 @@ export default function KernelCodePage() {
   });
   const [scriptCopied, setScriptCopied] = useState(false);
   const [treePath, setTreePath] = useState('');
-  const [treeEntries, setTreeEntries] = useState<KernelTreeEntry[]>([]);
+  const [treeCache, setTreeCache] = useState<Record<string, KernelTreeEntry[]>>({});
+  const [expandedTreePaths, setExpandedTreePaths] = useState<Set<string>>(new Set());
   const [treeLoading, setTreeLoading] = useState(false);
   const [showAllVersions, setShowAllVersions] = useState(false);
   const [targetDirectTags, setTargetDirectTags] = useState<TagRead[]>([]);
@@ -302,19 +307,101 @@ export default function KernelCodePage() {
       .finally(() => setVersionsLoading(false));
   }, []);
 
+  const sortEntries = useCallback(
+    (entries: KernelTreeEntry[]) =>
+      entries.slice().sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      }),
+    [],
+  );
+
+  const loadTree = useCallback(async (path: string = '', options?: { silent?: boolean }) => {
+    if (!selectedVersion) return;
+    setTreeLoading(true);
+    try {
+      const res = await getKernelTree(selectedVersion, path);
+      const sorted = sortEntries(res.entries);
+      setTreeCache((prev) => ({ ...prev, [res.path]: sorted }));
+      return { path: res.path, entries: sorted };
+    } catch (e: unknown) {
+      if (!options?.silent) {
+        showToast(e instanceof Error ? e.message : 'Failed to load file tree', 'error');
+      }
+      return null;
+    } finally {
+      setTreeLoading(false);
+    }
+  }, [selectedVersion, sortEntries]);
+
+  const ensureTreeLoaded = useCallback(
+    async (path: string = '') => {
+      const cached = treeCache[path];
+      if (cached) return { path, entries: cached };
+      return loadTree(path);
+    },
+    [loadTree, treeCache],
+  );
+
+  const expandAncestors = useCallback(
+    async (path: string, includeSelf: boolean) => {
+      const parts = path.split('/').filter(Boolean);
+      const dirSegments = includeSelf ? parts : parts.slice(0, -1);
+      if (dirSegments.length === 0) {
+        setExpandedTreePaths(new Set());
+        setTreePath('');
+        await ensureTreeLoaded('');
+        return;
+      }
+      const nextExpanded = new Set<string>();
+      let prefix = '';
+      for (const segment of dirSegments) {
+        prefix = prefix ? `${prefix}/${segment}` : segment;
+        nextExpanded.add(prefix);
+        await ensureTreeLoaded(prefix);
+      }
+      setExpandedTreePaths(nextExpanded);
+      setTreePath(dirSegments[dirSegments.length - 1] ? dirSegments.join('/') : '');
+      await ensureTreeLoaded('');
+    },
+    [ensureTreeLoaded],
+  );
+
+  const openDirectory = useCallback(
+    async (path: string) => {
+      if (!selectedVersion) return;
+      const tree = await ensureTreeLoaded(path);
+      if (!tree) return;
+      setCurrentPath(path);
+      setCurrentPathKind('directory');
+      setCurrentFile(null);
+      setDirectoryEntries(tree.entries);
+      setAnnotations([]);
+      setSelectedLines(new Set());
+      setPathInput(path);
+      await expandAncestors(path, true);
+      setSearchParams({ v: selectedVersion, path }, { replace: true });
+    },
+    [ensureTreeLoaded, expandAncestors, selectedVersion, setSearchParams],
+  );
+
   const loadFile = useCallback(async (path: string, targetLine?: number | null) => {
     if (!selectedVersion || !path) return;
     setFileLoading(true);
     setCurrentPath(path);
+    setCurrentPathKind('file');
+    setPathInput(path);
     try {
       const [fileRes, annotRes] = await Promise.all([
         getKernelFile(selectedVersion, path),
         getCodeAnnotations(selectedVersion, path).catch(() => [] as CodeAnnotation[]),
       ]);
       setCurrentFile(fileRes);
+      setDirectoryEntries([]);
       setAnnotations(annotRes);
       const focusLine = targetLine ?? urlLine;
       setSelectedLines(focusLine ? new Set([focusLine]) : new Set());
+      await expandAncestors(path, false);
       setSearchParams(
         { v: selectedVersion, path, ...(focusLine ? { line: String(focusLine) } : {}) },
         { replace: true },
@@ -322,51 +409,45 @@ export default function KernelCodePage() {
     } catch (e: unknown) {
       showToast(e instanceof Error ? e.message : String(e), 'error');
       setCurrentFile(null);
+      setCurrentPathKind(null);
     } finally {
       setFileLoading(false);
     }
-  }, [selectedVersion, setSearchParams, urlLine]);
+  }, [expandAncestors, selectedVersion, setSearchParams, urlLine]);
 
-  const loadTree = useCallback(async (path: string = '') => {
-    if (!selectedVersion) return;
-    setTreeLoading(true);
-    try {
-      const res = await getKernelTree(selectedVersion, path);
-      setTreePath(res.path);
-      setTreeEntries(
-        res.entries.slice().sort((a, b) => {
-          if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
-          return a.name.localeCompare(b.name);
-        }),
-      );
-    } catch (e: unknown) {
-      showToast(e instanceof Error ? e.message : 'Failed to load file tree', 'error');
-    } finally {
-      setTreeLoading(false);
-    }
-  }, [selectedVersion]);
+  const openPath = useCallback(
+    async (path: string, targetLine?: number | null) => {
+      if (!selectedVersion || !path) return;
+      const tree = await loadTree(path, { silent: true });
+      if (tree) {
+        await openDirectory(path);
+        return;
+      }
+      await loadFile(path, targetLine);
+    },
+    [loadFile, loadTree, openDirectory, selectedVersion],
+  );
 
   useEffect(() => {
     if (urlPath && selectedVersion) {
-      void loadFile(urlPath, urlLine);
+      void openPath(urlPath, urlLine);
     }
-  }, [loadFile, selectedVersion, urlPath, urlLine]);
+  }, [openPath, selectedVersion, urlPath, urlLine]);
 
   useEffect(() => {
     if (selectedVersion) {
-      void loadTree(treePath);
+      void ensureTreeLoaded('');
     }
-  }, [loadTree, selectedVersion, treePath]);
+  }, [ensureTreeLoaded, selectedVersion]);
 
   const filteredVersions = useMemo(
     () => (showAllVersions ? versions : versions.filter((v) => v.kind === 'release' || !v.tag.includes('-rc'))),
     [showAllVersions, versions],
   );
 
-  const codeLines = useMemo(
-    () => (currentFile ? currentFile.content.split('\n') : []),
-    [currentFile],
-  );
+  const codeLines = useMemo(() => (currentFile ? currentFile.content.split('\n') : []), [currentFile]);
+  const isDirectoryView = currentPathKind === 'directory';
+  const isFileView = currentPathKind === 'file' && !!currentFile;
 
   const focusLine = useMemo(() => {
     const sorted = Array.from(selectedLines).sort((a, b) => a - b);
@@ -417,8 +498,8 @@ export default function KernelCodePage() {
     [currentPath],
   );
 
-  const currentExternal = currentFile
-    ? pickKernelSourceUrl(selectedVersion, currentPath, focusLine || undefined)
+  const currentExternal = currentPath
+    ? pickKernelSourceUrl(selectedVersion, currentPath, isFileView ? focusLine || undefined : undefined)
     : null;
 
   const selectedVersionIndex = useMemo(
@@ -438,7 +519,9 @@ export default function KernelCodePage() {
   }, [codeLines, focusLine]);
   const fileFacts = currentFile
     ? `${currentFile.line_count.toLocaleString()} lines · ${formatBytes(currentFile.size)}`
-    : 'Open a file to inspect source';
+    : isDirectoryView
+      ? `${directoryEntries.length.toLocaleString()} entries`
+      : 'Open a file to inspect source';
 
   const annotationSnippet = useMemo(
     () => relatedAnnotations[0]?.body?.replace(/\s+/g, ' ').trim() || '',
@@ -504,16 +587,20 @@ export default function KernelCodePage() {
   }, [relatedAnnotations]);
 
   const targetHealthLabel = useMemo(() => {
-    if (!currentFile) return 'No target loaded';
+    if (!currentPathKind) return 'No target loaded';
+    if (isDirectoryView) return 'Directory context';
     if (relatedAnnotations.length > 0 && selectedSymbol) return 'Anchored with notes';
     if (relatedAnnotations.length > 0) return 'Anchored, symbol pending';
     if (selectedLines.size > 0) return 'Ready for annotation';
     return 'Reading context only';
-  }, [currentFile, relatedAnnotations.length, selectedLines.size, selectedSymbol]);
+  }, [currentPathKind, isDirectoryView, relatedAnnotations.length, selectedLines.size, selectedSymbol]);
 
   const targetNarrative = useMemo(() => {
-    if (!currentFile) {
+    if (!currentPathKind) {
       return 'Load a file and pin a code range to gather annotations, tags, and related evidence around one stable code target.';
+    }
+    if (isDirectoryView) {
+      return 'This is a directory listing. Open a file from the list or the left tree to switch into source reading mode.';
     }
     if (relatedAnnotations.length > 0) {
       return `This range already carries ${relatedAnnotations.length} linked annotation${relatedAnnotations.length === 1 ? '' : 's'}, so Atlas can use it as a stable evidence anchor.`;
@@ -522,7 +609,7 @@ export default function KernelCodePage() {
       return 'The selection is ready to become a shared code target. Add an annotation or tag to persist the reading context.';
     }
     return 'Browse the file first, then pin a line or range so Atlas can attach notes, tags, and related threads to one exact location.';
-  }, [currentFile, relatedAnnotations.length, selectedLines.size]);
+  }, [currentPathKind, isDirectoryView, relatedAnnotations.length, selectedLines.size]);
 
   useEffect(() => {
     if (!selectedTargetRef || !selectedTargetAnchor || !selectedTargetAnchorExpanded) {
@@ -534,8 +621,8 @@ export default function KernelCodePage() {
     let cancelled = false;
     setTargetTagsLoading(true);
     Promise.allSettled([
-      getTargetTags('kernel_line_range', selectedTargetRef, selectedTargetAnchor),
-      getTargetTags('kernel_line_range', selectedTargetRef, selectedTargetAnchorExpanded),
+        getTargetTags('kernel_line_range', selectedTargetRef, selectedTargetAnchor),
+        getTargetTags('kernel_line_range', selectedTargetRef, selectedTargetAnchorExpanded),
     ])
       .then((results) => {
         if (cancelled) return;
@@ -660,7 +747,11 @@ export default function KernelCodePage() {
   function handleVersionSelect(tag: string) {
     setSelectedVersion(tag);
     setCurrentFile(null);
+    setCurrentPathKind(null);
+    setDirectoryEntries([]);
     setAnnotations([]);
+    setTreeCache({});
+    setExpandedTreePaths(new Set());
     if (currentPath) {
       setPathInput(currentPath);
       setSearchParams(
@@ -676,14 +767,13 @@ export default function KernelCodePage() {
     setCurrentPath('');
     setPathInput('');
     setTreePath('');
-    setTreeEntries([]);
     setSelectedLines(new Set());
     setSearchParams({ v: tag }, { replace: true });
   }
 
   function handleLoadFile() {
     if (!isValidFilePath(pathInput)) return;
-    void loadFile(pathInput.trim());
+    void openPath(pathInput.trim());
   }
 
   function scrollToLine(line: number) {
@@ -717,6 +807,88 @@ export default function KernelCodePage() {
       return;
     }
     handleSelectRange(line);
+  }
+
+  function toggleTreeDirectory(path: string) {
+    if (expandedTreePaths.has(path)) {
+      const next = new Set<string>();
+      for (const item of expandedTreePaths) {
+        if (item !== path && !item.startsWith(`${path}/`)) next.add(item);
+      }
+      setExpandedTreePaths(next);
+      setTreePath(path.split('/').slice(0, -1).join('/'));
+      return;
+    }
+    void (async () => {
+      await ensureTreeLoaded(path);
+      setExpandedTreePaths((prev) => new Set(prev).add(path));
+      setTreePath(path);
+    })();
+  }
+
+  function renderTreeEntries(parentPath: string = '', depth: number = 0): JSX.Element | null {
+    const entries = treeCache[parentPath] || [];
+    if (entries.length === 0) return null;
+    return (
+      <div className="space-y-1">
+        {entries.map((entry) => {
+          const isDirectory = entry.type === 'directory';
+          const isExpanded = expandedTreePaths.has(entry.path);
+          const isActive = entry.path === currentPath;
+          const entryPicked = entry.type === 'file' ? pickKernelSourceUrl(selectedVersion, entry.path) : null;
+          return (
+            <div key={entry.path}>
+              <div
+                className={`group flex items-center justify-between rounded-lg border px-2 py-2 text-xs ${
+                  isActive
+                    ? 'border-sky-200 bg-sky-50 text-sky-800'
+                    : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50'
+                }`}
+                style={{ paddingLeft: `${depth * 14 + 8}px` }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isDirectory) {
+                      toggleTreeDirectory(entry.path);
+                      void openDirectory(entry.path);
+                    } else {
+                      void loadFile(entry.path);
+                    }
+                  }}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                >
+                  <span className="text-slate-400">
+                    {isDirectory ? (
+                      <ChevronRight className={`h-3.5 w-3.5 transition ${isExpanded ? 'rotate-90 text-sky-600' : ''}`} />
+                    ) : (
+                      <FileCode2 className="h-3.5 w-3.5" />
+                    )}
+                  </span>
+                  <span className={isDirectory ? 'text-sky-600' : 'text-slate-400'}>
+                    {isDirectory ? <FolderTree className="h-3.5 w-3.5" /> : <FileCode2 className="h-3.5 w-3.5" />}
+                  </span>
+                  <span className="truncate">{isDirectory ? `${entry.name}/` : entry.name}</span>
+                </button>
+                {entryPicked && (
+                  <a
+                    href={entryPicked.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="opacity-0 transition group-hover:opacity-100 hover:text-sky-700"
+                    title="Open upstream"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                )}
+              </div>
+              {isDirectory && isExpanded && <div className="mt-1">{renderTreeEntries(entry.path, depth + 1)}</div>}
+            </div>
+          );
+        })}
+      </div>
+    );
   }
 
   function handleCodeMouseUp(e: ReactMouseEvent<HTMLDivElement>) {
@@ -947,62 +1119,12 @@ export default function KernelCodePage() {
                     )}
                   </div>
 
-                  {treeLoading ? (
+                  {treeLoading && Object.keys(treeCache).length === 0 ? (
                     <div className="text-xs text-slate-500">Loading tree…</div>
-                  ) : treeEntries.length === 0 ? (
-                    <div className="text-xs text-slate-400">No entries here.</div>
+                  ) : treeCache['']?.length ? (
+                    renderTreeEntries('')
                   ) : (
-                    <div className="space-y-1">
-                      {treeEntries.slice(0, 36).map((entry) => {
-                        const entryPicked =
-                          entry.type === 'file'
-                            ? pickKernelSourceUrl(selectedVersion, entry.path)
-                            : null;
-                        const active = entry.path === currentPath;
-                        return (
-                          <div
-                            key={entry.path}
-                            className={`group flex items-center justify-between rounded-lg border px-2 py-2 text-xs ${
-                              active
-                                ? 'border-sky-200 bg-sky-50 text-sky-800'
-                                : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (entry.type === 'directory') {
-                                  setTreePath(entry.path);
-                                } else {
-                                  setPathInput(entry.path);
-                                  void loadFile(entry.path);
-                                }
-                              }}
-                              className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                            >
-                              <span className={entry.type === 'directory' ? 'text-sky-600' : 'text-slate-400'}>
-                                {entry.type === 'directory' ? <FolderTree className="h-3.5 w-3.5" /> : <FileCode2 className="h-3.5 w-3.5" />}
-                              </span>
-                              <span className="truncate">
-                                {entry.type === 'directory' ? `${entry.name}/` : entry.name}
-                              </span>
-                            </button>
-                            {entryPicked && (
-                              <a
-                                href={entryPicked.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="opacity-0 transition group-hover:opacity-100 hover:text-sky-700"
-                                title="Open upstream"
-                              >
-                                <ExternalLink className="h-3.5 w-3.5" />
-                              </a>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <div className="text-xs text-slate-400">No entries here.</div>
                   )}
                 </div>
               </div>
@@ -1063,6 +1185,60 @@ export default function KernelCodePage() {
                   >
                   {fileLoading ? (
                     <div className="px-6 py-12 text-sm text-slate-500">Opening file…</div>
+                  ) : isDirectoryView ? (
+                    <div className="px-3 py-3">
+                      <div className="mb-2 flex items-center justify-between px-3 text-xs text-slate-500">
+                        <span>{currentPath || 'root'}</span>
+                        <span>{directoryEntries.length.toLocaleString()} entries</span>
+                      </div>
+                      <div className="overflow-hidden rounded-xl border border-slate-200">
+                        {directoryEntries.length > 0 ? (
+                          directoryEntries.map((entry) => {
+                            const entryPicked = pickKernelSourceUrl(selectedVersion, entry.path);
+                            return (
+                              <div
+                                key={entry.path}
+                                className="group grid grid-cols-[24px_minmax(0,1fr)_88px_24px] items-center border-b border-slate-100/80 px-3 py-2 text-sm last:border-b-0 hover:bg-slate-50"
+                              >
+                                <span className={entry.type === 'directory' ? 'text-sky-600' : 'text-slate-400'}>
+                                  {entry.type === 'directory' ? <FolderTree className="h-4 w-4" /> : <FileCode2 className="h-4 w-4" />}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (entry.type === 'directory') {
+                                      toggleTreeDirectory(entry.path);
+                                      void openDirectory(entry.path);
+                                    } else {
+                                      void loadFile(entry.path);
+                                    }
+                                  }}
+                                  className="truncate text-left font-medium text-slate-800"
+                                >
+                                  {entry.type === 'directory' ? `${entry.name}/` : entry.name}
+                                </button>
+                                <span className="text-right text-xs text-slate-400">
+                                  {entry.type === 'directory' ? 'dir' : formatBytes(entry.size)}
+                                </span>
+                                <a
+                                  href={entryPicked.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center justify-center text-slate-300 opacity-0 transition hover:text-sky-700 group-hover:opacity-100"
+                                  title={`Open ${entry.name} upstream`}
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                </a>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="px-4 py-8 text-center text-sm text-slate-400">
+                            This directory is empty.
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   ) : currentFile ? (
                     <div className="font-mono text-sm">
                       {codeLines.map((line, index) => {
