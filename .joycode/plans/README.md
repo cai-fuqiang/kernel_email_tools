@@ -1,6 +1,6 @@
 # Plans Index
 
-> Last reorganized: **2026-05-08** (project-wide priority review added; next work should focus on workflow closure before new feature expansion)
+> Last reorganized: **2026-05-09** (direction adjusted: feature/topic-centric human Knowledge first; keep AI/skill automation as later assistance)
 
 本目录维护项目的规约文档（PLAN-xxx）。已完成的计划归档到 `done/`，被取代的计划归档到 `done/superseded/`。每个活跃 PLAN 顶部应当带元数据头：
 
@@ -13,16 +13,52 @@
 
 ---
 
-## 活跃计划（6）
+## 活跃 / 后续计划（6）
 
 | PLAN | 主题 | Status | Priority | 备注 |
 |------|------|--------|----------|------|
 | [PLAN-30002](PLAN-30002-external-code-jump.md) | 代码跳转与 local-first resolver | in-progress | **P1** | 外链闭环已完成；下一步把 Elixir 降级为 fallback，建立本地代码 resolver |
 | [PLAN-31005](PLAN-31005.md) | 统一信息工作台（Workspace） | done / staged follow-up | **P0 cleanup**, then P2 | Stage 1 主流程已收口，真实写数据与 LLM 联调降为后续低优先级 |
 | [PLAN-31002](PLAN-31002-knowledge-workbench-roadmap.md) | Knowledge Workbench 路线图 | in-progress | P2 | 范围过大，新工作请新建独立 PLAN 引用 |
-| [PLAN-36000](PLAN-36000-survey-style-batch-tagging.md) | Survey-Style 批量打标签（YAML 问卷） | planned | P2 | 借鉴 eunomia-bpf/code-survey；先 Phase 1 PoC 验证质量 |
-| [PLAN-35001](PLAN-35001-FUTURE-ai-assisted-knowledge-pipeline.md) | AI 邮件入库流水线 | future | P3 | 100 万邮件 LLM 成本 ~$2000，先验证再放量 |
-| [PLAN-37000](PLAN-37000-low-priority-markdown-wiki-export.md) | Markdown Wiki Export | planned | P3 | 低优先级；等核心证据链稳定后再做 |
+| [PLAN-35001](PLAN-35001-FUTURE-ai-assisted-knowledge-pipeline.md) | AI 辅助草稿 / Survey helper | future | P3 | 后置为人工工作流助手；不作为自动邮件入库主线 |
+| [PLAN-38000](PLAN-38000-my-future.md) | Evidence-driven kernel knowledge production | planned | P0/P1 | 方向性计划；按 2026-05-09 修正优先人工知识沉淀 |
+| [PLAN-39000](PLAN-39000-kernel-knowledge-research-skill.md) | Kernel knowledge research skill | future | P3 | 后续把内核知识点研究方法固化成 skill；当前不实施 |
+
+---
+
+## 2026-05-09 方向修正：人工知识库优先
+
+当前阶段的重点不是让 AI 自动研究邮件，也不是让 agent 独立构建知识主线。更重要的是，系统不应该以“邮件”为知识组织中心，而应该以 **功能点 / 机制 / 设计主题** 为中心。Linux 内核知识点往往横跨邮件讨论、patch revision、commit、代码位置、外部文章和后续修正；AI 可以做摘要、找线索和生成候选草稿，但不能可靠替代人从一个功能点出发完成取舍、串联和结论维护。
+
+近期产品主线应调整为 **人工构建知识库，AI 降低体力成本**：
+
+1. 人选择研究主题和功能点，例如 RSDL scheduler、CFS introduction、EEVDF scheduler。
+2. 人围绕该主题收集并确认邮件、patch、code、commit、annotation、link 等证据。
+3. 人维护时间线、关系、争议点和当前结论。
+4. AI 只生成候选摘要、证据摘录、关联建议和待审核草稿。
+5. Skill / Agent 自动化等人工流程稳定后再推进。
+
+这意味着 PLAN-35001、Survey、Research Skill 等方向都应作为辅助层或后续工具化能力，不应挤占当前人工 Knowledge Workbench 和证据闭环建设。
+
+### 方法论：Feature / Topic 优先
+
+邮件是证据载体，不是知识中心。新的人工知识工作流应优先围绕 `Feature / Topic` 建模：
+
+```text
+Feature / Topic
+  -> Timeline
+  -> Evidence nodes
+       - mail thread
+       - patch revision
+       - commit
+       - code location
+       - external link
+       - human annotation
+  -> Conclusions
+  -> Open questions
+```
+
+以 RSDL scheduler 为例，即使 patch 没有进入主线，它仍可能影响后续 CFS 讨论。仅从最终 commit 或某封邮件出发会漏掉这类历史设计脉络；从功能点出发，才能把 rejected patch、邮件争议、后续 commit 和外部解释串到同一条时间轴上。
 
 ---
 
@@ -30,29 +66,30 @@
 
 当前项目已经具备邮件导入、全文/语义检索、Ask/Research Agent、Knowledge Workbench、Draft Review、批注、标签、翻译、手册和内核代码浏览等能力。代码健康度尚可：`pytest -q` 135 个测试通过，`web npm run lint` 和 `web npm run build` 通过。
 
-主要风险已经从“缺功能”转为“功能面过宽、计划状态滞后、关键闭环尚未完全验收”。后续优先级应按 **收口主工作流 > 稳定证据链 > 小步验证新方向 > 批量 AI/插件/导出** 排列。
+主要风险已经从“缺功能”转为“功能面过宽、计划状态滞后、关键闭环尚未完全验收”。后续优先级应按 **丰富人工知识库 > 稳定证据链 > 小步验证新方向 > 批量 AI/插件/导出** 排列。
 
 ### 近期优先级
 
-1. **P0：校准并收口 PLAN-31005 Workspace**
-   - 原因：`web/src/pages/WorkspacePage.tsx`、workspace adapters 和侧边栏入口已经存在，但计划仍是 `draft`，README 之前也未列入活跃计划。
-   - 完成标准：完成 email/tag/annotation 三视图远端冒烟，明确 Workspace 与 Search/Annotations/Tags 旧路由的边界，决定保留、合并或降级入口。
-2. **P1：Code Target Normalization MVP**
-   - 原因：Kernel Code Atlas 是大方向，但不应立即做完整多版本 Atlas。先统一代码位置引用结构，支撑 code annotation、tag、Knowledge evidence 共享同一种目标表达。
-   - 建议拆出独立 PLAN：`version + repo + path + start_line + end_line + symbol + message_id/patch_id`，先用结构化 JSON 过渡，必要时后续建表。
-3. **P1：邮件 patch ↔ 代码位置 ↔ annotation/tag ↔ knowledge 闭环**
+1. **P0/P1：丰富 feature-centric 人工 Knowledge Workbench**
+   - 原因：长期价值来自人维护的功能点知识、证据、关系、时间线和结论，而不是 AI 自动摘要堆积。
+   - 完成标准：用户可以围绕一个功能点 / 机制 / 设计主题手工组织邮件、patch、代码、commit、annotation 和外链，并维护清晰时间轴、结论与待确认项。
+2. **P1：邮件 patch ↔ 代码位置 ↔ annotation/tag ↔ knowledge 闭环**
    - 原因：这是项目最有差异化的主线，比完整符号索引、编辑器插件和批量 AI 更先。
    - 完成标准：从 ThreadDrawer patch hunk 或 Code view 选区创建 annotation/tag，并能从代码页、邮件页、Knowledge evidence 互相跳转。
-4. **P2：Survey 单 thread PoC**
-   - 原因：Survey-style 批量标签有价值，但应先验证单 thread 质量、成本和人工 review 体验。
-   - 完成标准：只做 YAML schema + 单 thread runner + DraftReviewPanel 接入，不开放批量 run。
+3. **P1/P2：人工主题时间线 MVP**
+   - 原因：知识点演进需要人确认哪些邮件、patch version、commit 和外部链接真正重要。
+   - 完成标准：先支持人工维护关联列表和时间线，不做自动推断完整历史。
+4. **P2：Survey / AI 草稿的小样本辅助**
+   - 原因：Survey-style 和 AI draft 有辅助价值，但必须服务人工 review，不作为自动入库主线。
+   - 完成标准：只做单 thread / 单 topic PoC，验证质量、成本和审核体验，不开放批量 run。
 
 ### 暂缓事项
 
 - VS Code / Neovim 插件：等 Code Target 稳定后再做 editor-native bridge。
 - 完整 Kernel Code Atlas：先做 code target 和 annotation/tag 闭环，不先做跨版本函数级对照。
 - 完整符号索引 / Find References：不替代编辑器和 Elixir，除非后续有明确证据链需求。
-- AI 邮件入库流水线批量化：禁止从百万邮件全量 LLM 起步，所有批量 run 必须 dry_run 和硬上限。
+- AI 邮件入库流水线批量化：后置为人工工作流助手；禁止从百万邮件全量 LLM 起步，所有批量 run 必须 dry_run 和硬上限。
+- Kernel knowledge research skill：作为 PLAN-39000 后续方向保留；等人工证据、时间线和结论模型稳定后再实施。
 - Markdown Wiki Export：低优先级，等知识模型和证据链稳定后再做。
 
 ---
@@ -67,9 +104,12 @@
 6. ~~**P0** PLAN-31004 Pending Verification（浏览器尺寸、移动端、Knowledge/ThreadDrawer/Search/Ask 核心冒烟）~~ ✅ 2026-05-08
 7. ~~**P0** PLAN-31005 状态校准与 Workspace 冒烟（旧路由兼容、email/tag/annotation 三个 view 主流程）~~ ✅ 2026-05-08
 8. ~~**P1** PLAN-37001 Phase 1+2+3+4（产品边界清理 + Code Target Normalization + code/mail/knowledge 闭环 + cross-version context）~~ ✅ 2026-05-08
-9. **P1** PLAN-30002 Phase 6 剩余项（local-first resolver 的最小符号索引仅在闭环需要时推进）
-10. **P2** PLAN-36000 Phase 1（单 thread Survey PoC，验证质量和成本）
-11. **P2/P3** VS Code / Neovim bridge、批量 Survey、AI 入库流水线、Markdown Wiki Export
+9. **P1** 人工 Knowledge Workbench 丰富（主题、证据、关系、结论、待确认项）
+10. **P1** 人工主题时间线 MVP（先手动关联邮件 / patch / commit / code / links）
+11. **P1** PLAN-30002 Phase 6 剩余项（local-first resolver 的最小符号索引仅在闭环需要时推进）
+12. **P2** 单 thread / 单 topic Survey 或 AI 草稿 PoC（验证质量、成本和人工 review 体验）
+13. **P3** PLAN-39000 Kernel knowledge research skill（等人工研究流程稳定后再固化为 skill）
+14. **P3** VS Code / Neovim bridge、批量 Survey、AI 入库流水线、Markdown Wiki Export
 
 ---
 

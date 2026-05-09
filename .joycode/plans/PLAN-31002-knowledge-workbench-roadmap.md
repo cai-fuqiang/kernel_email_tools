@@ -1,5 +1,5 @@
 > **Status**: in-progress (Phase 1~5 + G1~G6 大部分已完成；剩 Phase 6 Ask Uses Knowledge 已部分由 PLAN-33000 完成、Phase 7 质量指标未做)
-> **Updated**: 2026-05-01
+> **Updated**: 2026-05-09
 > **Depends-on**: PLAN-31000 (done), PLAN-33000 (done)
 > **Priority**: P2 — 长期路线图，建议拆分为独立可交付 PLAN
 > **Note**: 范围过大，后续新工作请新建独立 PLAN 引用本路线图
@@ -9,6 +9,7 @@
 ## Summary
 - 目标是把知识库从“实体管理页面”升级为“内核知识沉淀工作台”。
 - Ask、Search、Thread 阅读产生的是候选材料；Knowledge 负责承载经过人工确认、可复用、可追溯的结论。
+- Knowledge 的组织中心应从邮件转向功能点 / 机制 / 设计主题；邮件、patch、commit、代码和外链都是 evidence。
 - 当前阶段先改善页面可理解性：左侧浏览知识项，右侧编辑解释、查看来源邮件、记录人工笔记。
 - 后续重点是让 Ask 结果、邮件证据、人工 annotation、tag 形成稳定闭环。
 
@@ -35,24 +36,48 @@
 - Ask 到 Knowledge 的流转还不够强：Ask 可以生成草稿，但缺少统一的审核入口、重复实体处理、证据完整性提示。
 - 证据不是一等模型：目前来源主要保存在 `meta.ask` 中，能用，但后续难以做证据质量、覆盖率、引用复用和审计。
 - 知识项之间缺少关系：内核知识经常是机制、子系统、历史问题、patch discussion 互相解释，单个实体不足以组织复杂主题。
+- 当前入口仍偏邮件和 thread，容易把知识拆成碎片；应该允许用户从 RSDL scheduler 这类功能点出发，手工串联多版本邮件、patch、commit、代码和外部解释。
 
 ## Product Model
+- Feature / Topic：知识组织中心，代表一个功能点、机制、设计主题或历史争议。
+- Timeline：围绕 Feature / Topic 串联 RFC、patch version、review、rejected alternative、merged commit、follow-up fix 和当前状态。
 - Ask Agent：负责从邮件中找证据、生成临时回答和候选草稿。
 - Knowledge Workbench：负责人工确认、归纳、编辑、去重、建立长期知识。
 - Annotation：负责保存人的判断、疑问、修正和 review 记录。
 - Tag：负责轻量分类和跨对象检索，不替代知识实体。
-- Evidence：负责把知识项中的关键 claim 连接回邮件、thread、搜索 query 或 Ask run。
+- Evidence：负责把知识项中的关键 claim 连接回邮件、thread、patch、commit、code target、外部链接、搜索 query 或 Ask run。
 
 ## UX Direction
-- 首页以“知识工作流”解释用途：Ask/Search -> Review evidence -> Save knowledge。
+- 首页以“功能点研究工作流”解释用途：Choose topic -> Collect evidence -> Build timeline -> Write conclusion。
 - 列表项展示人能理解的信息：名称、类型、状态、摘要、证据数量、更新时间，而不是优先展示内部 id。
 - 详情页按阅读顺序组织：
   - Header：知识项名称、类型、状态、标签。
   - At a glance：来源数量、人工笔记数量、类型、审核状态。
+  - Timeline：重要邮件、patch、commit、代码变化和外部资料按时间排列。
   - Explanation：短结论和详细笔记。
-  - Source emails：可跳转邮件证据。
+  - Evidence：可跳转邮件、patch、commit、代码和外链证据。
   - Human notes：人工修正、疑问和 review 记录。
 - 空状态要告诉用户如何开始，而不是只显示“没有数据”。
+
+## Feature-Centric Methodology
+
+Knowledge Workbench 不应只是邮件证据的收纳盒。第一等对象应是 `Feature / Topic`：
+
+```text
+Feature / Topic
+  -> Timeline
+  -> Evidence nodes
+       - mail thread
+       - patch revision
+       - commit
+       - code location
+       - external link
+       - human annotation
+  -> Conclusions
+  -> Open questions
+```
+
+例子：RSDL scheduler 可能没有直接合入主线，但其 patch 和邮件争议仍可能影响后续 CFS 设计。系统应允许用户创建 “RSDL scheduler” 或 “scheduler fairness design” 主题，并手工把 RSDL patch thread、CFS announcement、相关 commit、代码位置和外部解释串到同一条时间轴中。
 
 ## Roadmap
 

@@ -13,6 +13,7 @@ import EntityDetailHeader, {
 } from './EntityDetailHeader';
 import EntityMetricsCards from './EntityMetricsCards';
 import EntityExplanationEditor from './EntityExplanationEditor';
+import KnowledgeTimelinePanel from './KnowledgeTimelinePanel';
 import EntityRelationsPanel, {
   type RelationForm,
   type ViewMode,
@@ -130,6 +131,7 @@ export default function KnowledgeWorkbench() {
   const [mergeTargetId, setMergeTargetId] = useState('');
   const sectionLinks = [
     ['#knowledge-overview', 'Overview'],
+    ['#knowledge-timeline', 'Timeline'],
     ['#knowledge-explanation', 'Explanation'],
     ['#knowledge-relations-panel', 'Relations'],
     ['#knowledge-evidence', 'Evidence'],
@@ -381,6 +383,7 @@ export default function KnowledgeWorkbench() {
   const selectedEvidenceCount = selectedEntity
     ? evidenceRows.length || evidence.sources.length || evidence.threadIds.length
     : 0;
+  const timelineCount = selectedMetaSchema.timeline.length;
   const directEvidenceCount = evidenceRows.filter((row) => row.source_type !== 'generated').length;
   const generatedEvidenceCount = evidence.sources.length + evidence.threadIds.length;
   const evidenceDates = evidenceRows
@@ -708,7 +711,7 @@ export default function KnowledgeWorkbench() {
           <div className="relative mx-auto max-w-6xl min-w-0 space-y-5 overflow-x-hidden p-4 md:p-6">
             <StickyContextBar
               title={selectedEntity.canonical_name}
-              subtitle={`${readableType(selectedEntity.entity_type)} · ${selectedEvidenceCount} evidence · ${relationCount} relations`}
+              subtitle={`${readableType(selectedEntity.entity_type)} · ${selectedEvidenceCount} evidence · ${timelineCount} timeline events · ${relationCount} relations`}
               meta={
                 <>
                   <StatusBadge
@@ -862,9 +865,31 @@ export default function KnowledgeWorkbench() {
                     evidenceCount={selectedEvidenceCount}
                     annotationCount={annotations.length}
                     relationCount={relationCount}
+                    timelineCount={timelineCount}
                     canWrite={canWrite}
                     onStatusChange={(value) =>
                       setSelectedEntity((prev) => (prev ? { ...prev, status: value } : prev))
+                    }
+                  />
+                </section>
+
+                <section id="knowledge-timeline" className="scroll-mt-24">
+                  <KnowledgeTimelinePanel
+                    timeline={selectedMetaSchema.timeline}
+                    canWrite={canWrite}
+                    onOpenThread={handleOpenThread}
+                    onChange={(timeline) =>
+                      setSelectedEntity((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              meta: mergeKnowledgeMeta(prev.meta, {
+                                ...extractKnowledgeMeta(prev.meta),
+                                timeline,
+                              }),
+                            }
+                          : prev,
+                      )
                     }
                   />
                 </section>

@@ -40,17 +40,63 @@
 
 > 构建一个证据驱动的 Linux 内核知识生产系统。AI 负责帮助收集、连接、总结和生成草稿；人负责审核、修正、合并和维护长期知识。
 
-项目中心不是 `email`，而是 `knowledge with evidence`。邮件是最重要的第一类语料，但它只是语料之一。
+项目中心不是 `email`，而是 `feature/topic knowledge with evidence`。邮件是最重要的第一类语料，但它只是证据载体之一。知识组织的起点应当是一个功能点、机制或设计主题，例如 RSDL scheduler、CFS introduction、EEVDF scheduler、mmap locking 或 KVM dirty logging。
 
 整体工作流应当是：
 
 ```text
 raw kernel material
+  -> feature/topic selection
   -> retrieval and context packing
   -> AI-assisted analysis and draft generation
   -> human review and merge
-  -> durable knowledge graph with evidence links
+  -> durable topic timeline and knowledge graph with evidence links
 ```
+
+## Feature / Topic 优先的方法论
+
+当前设计如果从邮件出发，很容易把知识拆成碎片：一封邮件可能只是某个 patch revision 的局部 review，也可能只是多年争议中的一个侧面。用户真正需要理解的是“这个功能为什么出现、经历过哪些方案、哪些 patch 被拒、哪些 commit 合入、当前代码为什么长这样”。
+
+因此后续 Knowledge Workbench 应把 `Feature / Topic` 作为第一等对象：
+
+```text
+Feature / Topic
+  -> Timeline
+  -> Evidence nodes
+       - mail thread
+       - patch revision
+       - commit
+       - code location
+       - external link
+       - human annotation
+  -> Conclusions
+  -> Open questions
+```
+
+### 方法论 1: 时间轴
+
+时间轴用于串联同一功能点在不同阶段的状态：
+
+- RFC / early proposal
+- patch v1/v2/v3
+- review 分歧和 maintainer 观点
+- rejected alternative
+- merged commit
+- follow-up fix / regression / replacement
+
+每个时间点都必须能挂证据。证据不足时标记为 `unknown` 或 `needs human review`，不让 AI 或系统自动补全历史。
+
+### 方法论 2: 证据节点
+
+邮件、patch、commit、代码位置和外部文章都应作为 evidence node 被挂到同一个 topic 下，而不是彼此孤立。邮件搜索、代码浏览和 commit 追踪的作用是帮助人找到 evidence node，不是决定知识结构。
+
+### 方法论 3: 人工结论
+
+最终结论由人维护。AI 可以建议“RSDL 可能影响 CFS 的公平性讨论”，但只有在人确认邮件、patch 和后续设计证据后，才能把它写成正式结论。
+
+### RSDL scheduler 示例
+
+RSDL scheduler 这类历史主题说明了为什么不能只从 commit 或邮件出发。它可能没有直接合入主线，但 rejected patch 和邮件讨论仍可能影响后续 CFS 设计。正确的知识入口应是 “scheduler fairness design” 或 “RSDL scheduler” 这样的 topic，然后把 RSDL patch thread、CFS announcement、相关 review、后续 commit 和 LWN / kernel doc 串成时间线。
 
 ## 为什么传统 RAG 不够
 

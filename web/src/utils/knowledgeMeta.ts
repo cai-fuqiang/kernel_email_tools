@@ -8,6 +8,7 @@
  * - `kernel_versions`: version timeline entries.
  * - `source_files`: kernel source file paths.
  * - `symbols`: identifier names (functions / structs / macros).
+ * - `timeline`: human-curated feature/topic timeline entries.
  *
  * All other keys under `meta` are preserved untouched (e.g. `meta.ask` populated
  * by the Ask draft pipeline).
@@ -30,10 +31,42 @@ export interface KernelVersionEntry {
   note?: string;
 }
 
+export const KNOWLEDGE_TIMELINE_EVENT_TYPES = [
+  'mail_thread',
+  'patch_revision',
+  'commit',
+  'code_location',
+  'external_link',
+  'annotation',
+  'decision',
+  'open_question',
+  'note',
+] as const;
+
+export type KnowledgeTimelineEventType = (typeof KNOWLEDGE_TIMELINE_EVENT_TYPES)[number];
+
+export interface KnowledgeTimelineEvent {
+  id: string;
+  event_type: KnowledgeTimelineEventType;
+  title: string;
+  date?: string;
+  summary?: string;
+  source_ref?: string;
+  url?: string;
+  thread_id?: string;
+  message_id?: string;
+  evidence_id?: string;
+  code_path?: string;
+  line_start?: number;
+  line_end?: number;
+  review_state?: 'confirmed' | 'needs_review' | 'unknown';
+}
+
 export interface KnowledgeEntityMetaSchema {
   kernel_versions: KernelVersionEntry[];
   source_files: string[];
   symbols: string[];
+  timeline: KnowledgeTimelineEvent[];
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -85,6 +118,64 @@ function asKernelVersionEntries(value: unknown): KernelVersionEntry[] {
   return out;
 }
 
+function normalizeTimelineEventType(value: unknown): KnowledgeTimelineEventType {
+  const s = String(value ?? '').trim();
+  return (KNOWLEDGE_TIMELINE_EVENT_TYPES as readonly string[]).includes(s)
+    ? (s as KnowledgeTimelineEventType)
+    : 'note';
+}
+
+function normalizeReviewState(value: unknown): KnowledgeTimelineEvent['review_state'] {
+  const s = String(value ?? '').trim();
+  if (s === 'confirmed' || s === 'needs_review' || s === 'unknown') return s;
+  return 'needs_review';
+}
+
+function optionalString(value: unknown): string | undefined {
+  const s = String(value ?? '').trim();
+  return s || undefined;
+}
+
+function optionalPositiveNumber(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+}
+
+function asTimelineEntries(value: unknown): KnowledgeTimelineEvent[] {
+  if (!Array.isArray(value)) return [];
+  const out: KnowledgeTimelineEvent[] = [];
+  value.forEach((item, index) => {
+    if (!item || typeof item !== 'object') return;
+    const rec = item as Record<string, unknown>;
+    const title = optionalString(rec.title);
+    if (!title) return;
+    const lineStart = optionalPositiveNumber(rec.line_start);
+    const lineEnd = optionalPositiveNumber(rec.line_end);
+    out.push({
+      id: optionalString(rec.id) || `timeline-${index + 1}`,
+      event_type: normalizeTimelineEventType(rec.event_type),
+      title,
+      date: optionalString(rec.date),
+      summary: optionalString(rec.summary),
+      source_ref: optionalString(rec.source_ref),
+      url: optionalString(rec.url),
+      thread_id: optionalString(rec.thread_id),
+      message_id: optionalString(rec.message_id),
+      evidence_id: optionalString(rec.evidence_id),
+      code_path: optionalString(rec.code_path),
+      line_start: lineStart,
+      line_end: lineEnd,
+      review_state: normalizeReviewState(rec.review_state),
+    });
+  });
+  return out.sort((a, b) => {
+    if (!a.date && !b.date) return 0;
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    return a.date.localeCompare(b.date);
+  });
+}
+
 /**
  * Extract the standardized knowledge-meta view from a raw `entity.meta`.
  * Returns empty arrays for missing keys. Safe to call on `undefined`.
@@ -95,6 +186,7 @@ export function extractKnowledgeMeta(meta: unknown): KnowledgeEntityMetaSchema {
     kernel_versions: asKernelVersionEntries(rec.kernel_versions),
     source_files: asStringArray(rec.source_files),
     symbols: asStringArray(rec.symbols),
+    timeline: asTimelineEntries(rec.timeline),
   };
 }
 
@@ -130,6 +222,30 @@ export function mergeKnowledgeMeta(
     merged.symbols = [...schema.symbols];
   } else {
     delete merged.symbols;
+  }
+
+  if (schema.timeline.length > 0) {
+    merged.timeline = schema.timeline.map((entry) => {
+      const item: Record<string, unknown> = {
+        id: entry.id,
+        event_type: entry.event_type,
+        title: entry.title,
+        review_state: entry.review_state || 'needs_review',
+      };
+      if (entry.date) item.date = entry.date;
+      if (entry.summary) item.summary = entry.summary;
+      if (entry.source_ref) item.source_ref = entry.source_ref;
+      if (entry.url) item.url = entry.url;
+      if (entry.thread_id) item.thread_id = entry.thread_id;
+      if (entry.message_id) item.message_id = entry.message_id;
+      if (entry.evidence_id) item.evidence_id = entry.evidence_id;
+      if (entry.code_path) item.code_path = entry.code_path;
+      if (entry.line_start) item.line_start = entry.line_start;
+      if (entry.line_end) item.line_end = entry.line_end;
+      return item;
+    });
+  } else {
+    delete merged.timeline;
   }
 
   return merged;
