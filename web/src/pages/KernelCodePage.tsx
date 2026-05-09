@@ -1989,6 +1989,13 @@ export default function KernelCodePage() {
               <code className="mt-1 block truncate text-sm font-mono text-sky-700">
                 {symbolPopover.symbol}
               </code>
+              {selectedSymbol && selectedSymbol !== symbolPopover.symbol && (
+                <div className="mt-1.5">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
+                    from <code className="font-medium">{selectedSymbol}</code>
+                  </span>
+                </div>
+              )}
             </div>
             <IconButton
               label="Close symbol search"

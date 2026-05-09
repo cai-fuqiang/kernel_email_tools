@@ -97,6 +97,22 @@ describe('detectNearestSymbol', () => {
     expect(detectNearestSymbol(src, 5)).toBe('inner');
   });
 
+  it('detects function with brace on next line (multi-line)', () => {
+    const src = lines('static int foo(int x)\n{\n  return x;\n}');
+    expect(detectNearestSymbol(src, 2)).toBe('foo');
+    expect(detectNearestSymbol(src, 3)).toBe('foo');
+  });
+
+  it('detects function with attrs on separate line before brace', () => {
+    const src = lines('static int __init foo_init(void)\n__attribute__((cold))\n{\n  return 0;\n}');
+    expect(detectNearestSymbol(src, 3)).toBe('foo_init');
+  });
+
+  it('does not confuse if/while/for with standalone brace', () => {
+    const src = lines('void foo(void)\n{\n  if (x)\n  {\n    bar();\n  }\n}');
+    expect(detectNearestSymbol(src, 4)).toBe('foo');
+  });
+
   it('returns null when no function or define found', () => {
     expect(detectNearestSymbol(lines('int x = 42;'), 1)).toBeNull();
     expect(detectNearestSymbol(lines(''), 1)).toBeNull();
