@@ -143,6 +143,7 @@ export default function KernelSymbolQuickPreviewPopover({
   const [frame, setFrame] = useState<Frame | null>(null);
   const interactionRef = useRef<Interaction | null>(null);
   const frameKeyRef = useRef<string>('');
+  const codeScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isOpen || !candidate) return;
@@ -297,21 +298,21 @@ export default function KernelSymbolQuickPreviewPopover({
     };
   }, [candidate, frame, symbol, zoom]);
 
-  const previewWindow = useMemo(() => {
-    if (!candidate || fileLines.length === 0) return null;
-    const focusLine = Math.max(1, candidate.line);
-    const context = 16;
-    return {
-      focusLine,
-      startLine: Math.max(1, focusLine - context),
-      endLine: Math.min(fileLines.length, focusLine + context),
-    };
-  }, [candidate, fileLines.length]);
-
   const containingSymbol = useMemo(
     () => detectNearestSymbol(fileLines, candidate?.line ?? null),
     [candidate?.line, fileLines],
   );
+
+  useEffect(() => {
+    if (!isOpen || !candidate || !fileLines.length) return;
+    const lineNum = Math.max(1, candidate.line);
+    const raf = window.requestAnimationFrame(() => {
+      const container = codeScrollRef.current;
+      const target = container?.querySelector<HTMLElement>(`[data-line-num="${lineNum}"]`);
+      target?.scrollIntoView({ block: 'center' });
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [candidate, fileLines.length, isOpen]);
 
   if (!isOpen || !candidate || !frame) return null;
 
@@ -457,15 +458,13 @@ export default function KernelSymbolQuickPreviewPopover({
               Code context
             </div>
             <div className="text-xs text-slate-500">
-              {previewWindow
-                ? `L${previewWindow.startLine} - L${previewWindow.endLine}`
-                : loading
-                  ? 'Loading...'
-                  : 'No preview'}
+              {loading
+                ? 'Loading...'
+                : `L${candidate.line} • full file`}
             </div>
           </div>
 
-          <div className="h-full min-h-0 overflow-auto overscroll-contain bg-slate-950/95 p-3">
+          <div ref={codeScrollRef} className="h-full min-h-0 overflow-auto overscroll-contain bg-slate-950/95 p-3">
             {!candidate.local_file_available ? (
               <div className="flex h-full items-center justify-center">
                 <div className="max-w-lg rounded-xl border border-slate-800 bg-slate-900/80 px-4 py-4 text-sm leading-6 text-slate-200">
@@ -478,30 +477,29 @@ export default function KernelSymbolQuickPreviewPopover({
               <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
                 {error}
               </div>
-            ) : previewWindow ? (
+            ) : fileLines.length > 0 ? (
               <div className="inline-block min-w-max rounded-xl border border-slate-800 bg-slate-900/80 shadow-lg">
-                {fileLines
-                  .slice(previewWindow.startLine - 1, previewWindow.endLine)
-                  .map((lineText, index) => {
-                    const lineNum = previewWindow.startLine + index;
-                    const isTarget = lineNum === previewWindow.focusLine;
-                    return (
-                      <div
-                        key={lineNum}
-                        className={`grid min-w-max grid-cols-[4.75rem_minmax(0,1fr)] border-b border-slate-800/80 ${
-                          isTarget ? 'bg-amber-400/15' : 'hover:bg-slate-800/60'
-                        }`}
-                        style={zoomStyle}
-                      >
-                        <div className="select-none border-r border-slate-800/80 px-3 py-1.5 text-right font-mono text-slate-500">
-                          {lineNum}
-                        </div>
-                        <pre className="overflow-x-auto px-3 py-1.5 font-mono text-slate-100">
-                          {renderHighlightedLine(lineText)}
-                        </pre>
+                {fileLines.map((lineText, index) => {
+                  const lineNum = index + 1;
+                  const isTarget = lineNum === candidate.line;
+                  return (
+                    <div
+                      key={lineNum}
+                      data-line-num={lineNum}
+                      className={`grid min-w-max grid-cols-[4.75rem_minmax(0,1fr)] border-b border-slate-800/80 ${
+                        isTarget ? 'bg-amber-400/15' : 'hover:bg-slate-800/60'
+                      }`}
+                      style={zoomStyle}
+                    >
+                      <div className="select-none border-r border-slate-800/80 px-3 py-1.5 text-right font-mono text-slate-500">
+                        {lineNum}
                       </div>
-                    );
-                  })}
+                      <pre className="overflow-x-auto px-3 py-1.5 font-mono text-slate-100">
+                        {renderHighlightedLine(lineText)}
+                      </pre>
+                    </div>
+                  );
+                })}
               </div>
             ) : null}
           </div>
