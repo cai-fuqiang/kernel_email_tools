@@ -38,6 +38,7 @@ import {
   acceptKnowledgeDraft,
   createAnnotation,
   createKnowledgeEntity,
+  createKnowledgeEvidence,
   createKnowledgeRelation,
   deleteKnowledgeEntity,
   deleteKnowledgeRelation,
@@ -554,6 +555,28 @@ export default function KnowledgeWorkbench() {
     }
   };
 
+  const handleCreateEvidence = async (data: {
+    source_type: string;
+    message_id: string;
+    thread_id: string;
+    claim: string;
+    quote: string;
+    confidence: string;
+    meta: Record<string, unknown>;
+  }) => {
+    if (!selectedEntity || !canWrite) return;
+    setSaving(true);
+    try {
+      await createKnowledgeEvidence(selectedEntity.entity_id, data);
+      await loadEvidence();
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : 'Failed to create evidence', 'error');
+      throw e;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleCreateRelation = async () => {
     if (!selectedEntity || !relationForm.target_entity_id || !canWrite) return;
     setSaving(true);
@@ -955,7 +978,10 @@ export default function KnowledgeWorkbench() {
                     directEvidenceCount={directEvidenceCount}
                     generatedEvidenceCount={generatedEvidenceCount}
                     lastEvidenceAt={lastEvidenceAt}
+                    canWrite={canWrite}
+                    saving={saving}
                     onOpenThread={handleOpenThread}
+                    onCreateEvidence={handleCreateEvidence}
                   />
                 </section>
 

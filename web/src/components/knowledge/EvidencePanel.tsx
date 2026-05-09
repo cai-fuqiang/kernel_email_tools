@@ -1,6 +1,8 @@
 import { ExternalLink } from 'lucide-react';
+import { useState } from 'react';
 import type { KnowledgeEntity, KnowledgeEvidence } from '../../api/types';
 import { loreUrl } from '../../utils/externalLinks';
+import { PrimaryButton, SecondaryButton } from '../ui';
 import {
   evidenceTitle,
   formatDateTime,
@@ -20,8 +22,54 @@ interface EvidencePanelProps {
   directEvidenceCount: number;
   generatedEvidenceCount: number;
   lastEvidenceAt: string;
+  canWrite: boolean;
+  saving: boolean;
   onOpenThread: (threadId: string, focusMessageId?: string) => void;
+  onCreateEvidence: (data: {
+    source_type: string;
+    message_id: string;
+    thread_id: string;
+    claim: string;
+    quote: string;
+    confidence: string;
+    meta: Record<string, unknown>;
+  }) => Promise<void>;
 }
+
+const sourceTypeOptions = [
+  ['email', 'Email message'],
+  ['mail_thread', 'Mail thread'],
+  ['patch_revision', 'Patch revision'],
+  ['commit', 'Commit'],
+  ['code_location', 'Code location'],
+  ['external_url', 'External URL'],
+  ['annotation', 'Annotation'],
+  ['manual', 'Manual note'],
+] as const;
+
+type EvidenceForm = {
+  source_type: string;
+  claim: string;
+  quote: string;
+  confidence: string;
+  message_id: string;
+  thread_id: string;
+  source_ref: string;
+  url: string;
+  code_path: string;
+};
+
+const emptyEvidenceForm: EvidenceForm = {
+  source_type: 'email',
+  claim: '',
+  quote: '',
+  confidence: 'needs_review',
+  message_id: '',
+  thread_id: '',
+  source_ref: '',
+  url: '',
+  code_path: '',
+};
 
 export default function EvidencePanel({
   selectedEntity,
@@ -30,23 +78,148 @@ export default function EvidencePanel({
   directEvidenceCount,
   generatedEvidenceCount,
   lastEvidenceAt,
+  canWrite,
+  saving,
   onOpenThread,
+  onCreateEvidence,
 }: EvidencePanelProps) {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<EvidenceForm>(emptyEvidenceForm);
+  const hasManualEvidence =
+    form.claim.trim() ||
+    form.message_id.trim() ||
+    form.thread_id.trim() ||
+    form.source_ref.trim() ||
+    form.url.trim() ||
+    form.code_path.trim();
+
+  const submitEvidence = async () => {
+    if (!hasManualEvidence) return;
+    try {
+      await onCreateEvidence({
+        source_type: form.source_type,
+        message_id: form.message_id.trim(),
+        thread_id: form.thread_id.trim(),
+        claim: form.claim.trim(),
+        quote: form.quote.trim(),
+        confidence: form.confidence.trim(),
+        meta: {
+          source_ref: form.source_ref.trim(),
+          url: form.url.trim(),
+          code_path: form.code_path.trim(),
+        },
+      });
+      setForm(emptyEvidenceForm);
+      setShowForm(false);
+    } catch {
+      // Keep the draft in place; the parent already surfaces the error.
+    }
+  };
+
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-gray-950">Source emails</h2>
+          <h2 className="text-lg font-semibold text-gray-950">Evidence</h2>
           <p className="text-sm text-gray-500">
-            Evidence kept with this item. Open a source before promoting a draft to active knowledge.
+            Claim-level evidence kept with this item, including mails, patch revisions, commits, code locations, and external references.
           </p>
         </div>
-        {evidence.generatedAt && (
-          <span className="text-xs text-gray-400">
-            Captured {formatDateTime(evidence.generatedAt)}
-          </span>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {evidence.generatedAt && (
+            <span className="text-xs text-gray-400">
+              Captured {formatDateTime(evidence.generatedAt)}
+            </span>
+          )}
+          {canWrite && (
+            <SecondaryButton type="button" onClick={() => setShowForm((value) => !value)}>
+              {showForm ? 'Close' : 'Add evidence'}
+            </SecondaryButton>
+          )}
+        </div>
       </div>
+
+      {showForm && canWrite && (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)_160px]">
+            <select
+              value={form.source_type}
+              onChange={(e) => setForm((prev) => ({ ...prev, source_type: e.target.value }))}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            >
+              {sourceTypeOptions.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <input
+              value={form.claim}
+              onChange={(e) => setForm((prev) => ({ ...prev, claim: e.target.value }))}
+              placeholder="Claim this evidence supports"
+              className="min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            />
+            <select
+              value={form.confidence}
+              onChange={(e) => setForm((prev) => ({ ...prev, confidence: e.target.value }))}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            >
+              <option value="confirmed">confirmed</option>
+              <option value="needs_review">needs_review</option>
+              <option value="unknown">unknown</option>
+            </select>
+          </div>
+          <textarea
+            value={form.quote}
+            onChange={(e) => setForm((prev) => ({ ...prev, quote: e.target.value }))}
+            rows={2}
+            placeholder="Short quote or note"
+            className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm leading-6"
+          />
+          <div className="mt-3 grid gap-2 md:grid-cols-3">
+            <input
+              value={form.thread_id}
+              onChange={(e) => setForm((prev) => ({ ...prev, thread_id: e.target.value }))}
+              placeholder="thread id"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            />
+            <input
+              value={form.message_id}
+              onChange={(e) => setForm((prev) => ({ ...prev, message_id: e.target.value }))}
+              placeholder="message id"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            />
+            <input
+              value={form.source_ref}
+              onChange={(e) => setForm((prev) => ({ ...prev, source_ref: e.target.value }))}
+              placeholder="commit / patch / evidence ref"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            />
+            <input
+              value={form.code_path}
+              onChange={(e) => setForm((prev) => ({ ...prev, code_path: e.target.value }))}
+              placeholder="kernel path"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            />
+            <input
+              value={form.url}
+              onChange={(e) => setForm((prev) => ({ ...prev, url: e.target.value }))}
+              placeholder="external url"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm md:col-span-2"
+            />
+          </div>
+          <div className="mt-3 flex justify-end">
+            <PrimaryButton
+              type="button"
+              onClick={submitEvidence}
+              disabled={saving || !hasManualEvidence}
+            >
+              Save evidence
+            </PrimaryButton>
+          </div>
+        </div>
+        )}
+
       {evidence.question && (
         <div className="mt-4 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm leading-6 text-indigo-950">
           Ask question: {evidence.question}
@@ -96,6 +269,12 @@ export default function EvidencePanel({
                   {String(row.meta?.list_name || '') && <span>{String(row.meta?.list_name || '')}</span>}
                   {row.confidence && <span>{row.confidence}</span>}
                   {row.message_id && <span className="font-mono">{row.message_id}</span>}
+                  {String(row.meta?.source_ref || '') && (
+                    <span className="font-mono">{String(row.meta?.source_ref || '')}</span>
+                  )}
+                  {String(row.meta?.code_path || '') && (
+                    <span className="font-mono">{String(row.meta?.code_path || '')}</span>
+                  )}
                   {row.message_id && (
                     <a
                       href={loreUrl(row.message_id)}
@@ -106,6 +285,17 @@ export default function EvidencePanel({
                       title="在 lore.kernel.org 查看原文"
                     >
                       lore <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                  {String(row.meta?.url || '') && (
+                    <a
+                      href={String(row.meta?.url || '')}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex items-center gap-0.5 text-indigo-600 hover:text-indigo-800"
+                    >
+                      link <ExternalLink className="h-3 w-3" />
                     </a>
                   )}
                 </div>
@@ -170,7 +360,7 @@ export default function EvidencePanel({
         </div>
       ) : (
         <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm leading-6 text-gray-500">
-          No source evidence is attached yet. The most useful path is Ask, review answer, then save knowledge draft, because that preserves the emails behind the claim.
+          No evidence is attached yet. Add the mail thread, patch revision, commit, code location, or external link that supports the next claim you want to keep.
         </div>
       )}
     </section>
