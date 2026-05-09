@@ -276,7 +276,7 @@ export default function AnnotationPanel({
         </div>
       )}
 
-      <div className="max-h-72 overflow-y-auto p-2">
+      <div className="p-2">
         {relevant.length === 0 ? (
           <p className="text-xs text-gray-400 text-center py-8">
             {selectedLines.size > 0 ? 'No annotations on selected lines' : 'Click a line number to add an annotation'}

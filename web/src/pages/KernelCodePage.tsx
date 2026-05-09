@@ -281,6 +281,23 @@ function isKernelDirectory(entry: KernelTreeEntry): boolean {
   return entry.type === 'directory' || entry.type === 'dir';
 }
 type InspectorSectionId = 'target' | 'history' | 'annotations' | 'tags' | 'threads' | 'knowledge';
+type InspectorView = 'overview' | 'history' | 'annotations' | 'links';
+
+const INSPECTOR_VIEW_LABELS: Record<InspectorView, string> = {
+  overview: 'Overview',
+  history: 'History',
+  annotations: 'Notes',
+  links: 'Links',
+};
+
+function inspectorViewCount(
+  view: InspectorView,
+  data: { annotations: number; threads: number; knowledge: number },
+): number | null {
+  if (view === 'annotations') return data.annotations;
+  if (view === 'links') return data.threads + data.knowledge;
+  return null;
+}
 
 export default function KernelCodePage() {
   const navigate = useNavigate();
@@ -316,6 +333,7 @@ export default function KernelCodePage() {
   const [inspectorCollapsed, setInspectorCollapsed] = useState(() => {
     try { return localStorage.getItem('kernel-code-insp-collapsed') === '1'; } catch { return false; }
   });
+  const [inspectorView, setInspectorView] = useState<InspectorView>('overview');
   useEffect(() => {
     try { localStorage.setItem('kernel-code-nav-collapsed', navigatorCollapsed ? '1' : '0'); } catch { /* noop */ }
   }, [navigatorCollapsed]);
@@ -325,8 +343,8 @@ export default function KernelCodePage() {
 
   const NAV_MIN = 140;
   const NAV_MAX = 440;
-  const INSP_MIN = 180;
-  const INSP_MAX = 560;
+  const INSP_MIN = 240;
+  const INSP_MAX = 720;
   const [navigatorWidth, setNavigatorWidth] = useState(() => {
     try {
       const v = localStorage.getItem('kernel-code-nav-width');
@@ -336,8 +354,8 @@ export default function KernelCodePage() {
   const [inspectorWidth, setInspectorWidth] = useState(() => {
     try {
       const v = localStorage.getItem('kernel-code-insp-width');
-      return v ? Math.max(INSP_MIN, Math.min(INSP_MAX, Number(v))) : 288;
-    } catch { return 288; }
+      return v ? Math.max(INSP_MIN, Math.min(INSP_MAX, Number(v))) : 360;
+    } catch { return 360; }
   });
   const [collapsedInspectorSections, setCollapsedInspectorSections] = useState<Set<InspectorSectionId>>(() => new Set());
   const [targetDirectTags, setTargetDirectTags] = useState<TagRead[]>([]);
@@ -1731,230 +1749,279 @@ export default function KernelCodePage() {
                     </div>
                   ) : (
                     <>
-                  <div className="border-b border-slate-200 px-4 py-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                        <BookOpenText className="h-4 w-4 text-slate-500" />
-                        Inspector
+                      <div className="border-b border-slate-200 px-4 py-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                            <BookOpenText className="h-4 w-4 text-slate-500" />
+                            Inspector
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setInspectorCollapsed(true)}
+                            className="hidden h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 xl:inline-flex"
+                            aria-label="Collapse inspector"
+                            title="Collapse inspector"
+                          >
+                            <PanelRightClose className="h-4 w-4" />
+                          </button>
+                        </div>
+                        <p className="mt-1 truncate text-xs text-slate-500">Target, notes, evidence.</p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setInspectorCollapsed(true)}
-                        className="hidden h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 xl:inline-flex"
-                        aria-label="Collapse inspector"
-                        title="Collapse inspector"
-                      >
-                        <PanelRightClose className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <p className="mt-1 truncate text-xs text-slate-500">Target, notes, evidence.</p>
-                  </div>
 
-                  <div className="min-h-0 flex-1 space-y-3 overflow-y-scroll overscroll-contain px-3 py-3">
-                  <InspectorSection
-                    title="Code Target"
-                    icon={<Pin className="h-4 w-4" />}
-                    collapsed={collapsedInspectorSections.has('target')}
-                    onToggle={() => toggleInspectorSection('target')}
-                    headerExtra={
-                      <StatusBadge tone={relatedAnnotations.length > 0 ? 'success' : 'warning'}>
-                        {targetHealthLabel}
-                      </StatusBadge>
-                    }
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="mt-1 text-xs text-slate-500">Stable target for reading and notes.</div>
-                      </div>
-                    </div>
-                    <dl className="mt-3 space-y-1.5">
-                      <MetaRow label="version" value={selectedVersion || '—'} />
-                      <MetaRow label="path" value={currentPath || '—'} />
-                      <MetaRow label="range" value={selectedRangeLabel} />
-                      <MetaRow label="symbol" value={selectedSymbol || 'Not inferred'} />
-                      <MetaRow label="repo" value="linux" />
-                      <MetaRow
-                        label="related"
-                        value={`${relatedAnnotations.length} annotations · ${selectedLines.size > 0 ? 'selection pinned' : 'browse mode'}`}
-                      />
-                    </dl>
-
-                    <div className="mt-3 grid gap-2">
-                      {selectedSymbol && (
-                        <a
-                          href={elixirIdentUrl(selectedVersion || 'latest', selectedSymbol)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          <ScrollText className="h-3.5 w-3.5" />
-                          Search symbol
-                        </a>
-                      )}
-                    </div>
-                  </InspectorSection>
-
-                    {currentFile ? (
-                      <InspectorSection
-                        title="History"
-                        icon={<GitCommitHorizontal className="h-4 w-4" />}
-                        collapsed={collapsedInspectorSections.has('history')}
-                        onToggle={() => toggleInspectorSection('history')}
-                        headerExtra={
-                          selectedRange ? (
-                            <span className="text-[10px] font-medium text-slate-400">{selectedRangeLabel}</span>
-                          ) : null
-                        }
-                      >
-                        <CodeHistoryPanel
-                          version={selectedVersion}
-                          filePath={currentPath}
-                          selectedRange={selectedRange}
-                          selectedText={selectedText}
-                        />
-                      </InspectorSection>
-                    ) : null}
-
-                    {currentFile ? (
-                      <InspectorSection
-                        title="Annotations"
-                        icon={<MessagesSquare className="h-4 w-4" />}
-                        collapsed={collapsedInspectorSections.has('annotations')}
-                        onToggle={() => toggleInspectorSection('annotations')}
-                        headerExtra={
-                          selectedLines.size > 0 ? (
-                            <span className="text-[10px] font-medium text-slate-400">{selectedRangeLabel}</span>
-                          ) : null
-                        }
-                      >
-                        <AnnotationPanel
-                          annotations={annotations}
-                          selectedLines={selectedLines}
-                          version={selectedVersion}
-                          filePath={currentPath}
-                          onAnnotationCreated={handleAnnotationCreated}
-                          hideHeader
-                        />
-                      </InspectorSection>
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-400">
-                        Load a file to inspect annotations and tags.
-                      </div>
-                    )}
-
-                    {currentFile && selectedRange && (
-                      <InspectorSection
-                        title="Tags"
-                        icon={<Layers3 className="h-4 w-4" />}
-                        collapsed={collapsedInspectorSections.has('tags')}
-                        onToggle={() => toggleInspectorSection('tags')}
-                        headerExtra={
-                          selectedTargetTags.length > 0 ? (
-                            <span className="text-[10px] font-medium text-slate-400">{selectedTargetTags.length}</span>
-                          ) : null
-                        }
-                      >
-                        <div className="flex flex-wrap gap-1.5">
-                          {targetTagsLoading ? (
-                            <span className="text-xs text-slate-500">Loading tags...</span>
-                          ) : selectedTargetTags.length > 0 ? (
-                            selectedTargetTags.map((tag) => (
-                              <span
-                                key={tag.slug}
-                                className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-800"
+                      <div className="border-b border-slate-200 px-3 py-2">
+                        <div className="flex flex-wrap gap-2">
+                          {(Object.keys(INSPECTOR_VIEW_LABELS) as InspectorView[]).map((view) => {
+                            const active = inspectorView === view;
+                            const count = inspectorViewCount(view, {
+                              annotations: annotations.length,
+                              threads: relatedThreadPreviews.length,
+                              knowledge: relatedKnowledgeEntities.length,
+                            });
+                            return (
+                              <button
+                                key={view}
+                                type="button"
+                                onClick={() => setInspectorView(view)}
+                                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                                  active
+                                    ? 'border-sky-200 bg-sky-50 text-sky-800'
+                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                                }`}
                               >
-                                {tag.name}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-xs text-slate-400">No tags on this range.</span>
-                          )}
+                                <span>{INSPECTOR_VIEW_LABELS[view]}</span>
+                                {count !== null && (
+                                  <span
+                                    className={`rounded-full px-1.5 py-0.5 text-[10px] ${
+                                      active ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-500'
+                                    }`}
+                                  >
+                                    {count}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
                         </div>
-                        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
-                          <EmailTagEditor
-                            targetType="kernel_line_range"
-                            targetRef={selectedTargetRef}
-                            anchor={selectedTargetAnchorExpanded ?? undefined}
-                            compact
-                            placeholder="Tag this code target"
-                          />
-                        </div>
-                      </InspectorSection>
-                    )}
-
-                    <InspectorSection
-                      title="Threads"
-                      icon={<MessagesSquare className="h-4 w-4" />}
-                      collapsed={collapsedInspectorSections.has('threads')}
-                      onToggle={() => toggleInspectorSection('threads')}
-                      headerExtra={
-                        relatedThreadPreviews.length > 0 ? (
-                          <span className="text-[10px] font-medium text-slate-400">{relatedThreadPreviews.length}</span>
-                        ) : null
-                      }
-                    >
-                      <div className="space-y-2">
-                        {relatedThreadsLoading ? (
-                          <div className="text-xs text-slate-500">Loading thread context...</div>
-                        ) : relatedThreadPreviews.length > 0 ? (
-                          relatedThreadPreviews.slice(0, 3).map((thread) => (
-                            <button
-                              key={thread.threadId}
-                              type="button"
-                              onClick={() =>
-                                setThreadOpen({
-                                  threadId: thread.threadId,
-                                  focusMessageId: thread.focusMessageId,
-                                })
-                              }
-                              className="block w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-left hover:border-sky-200 hover:bg-sky-50/60"
-                            >
-                              <div className="truncate text-xs font-semibold text-slate-900">{thread.subject}</div>
-                              <div className="mt-1 text-[11px] text-slate-500">
-                                {thread.emailCount} mails · {thread.annotationCount} notes · {thread.patchCount} patches
-                              </div>
-                            </button>
-                          ))
-                        ) : (
-                          <div className="text-xs leading-5 text-slate-400">No thread backlinks for this selection yet.</div>
-                        )}
                       </div>
-                    </InspectorSection>
 
-                    <InspectorSection
-                      title="Knowledge"
-                      icon={<Library className="h-4 w-4" />}
-                      collapsed={collapsedInspectorSections.has('knowledge')}
-                      onToggle={() => toggleInspectorSection('knowledge')}
-                      headerExtra={
-                        relatedKnowledgeEntities.length > 0 ? (
-                          <span className="text-[10px] font-medium text-slate-400">{relatedKnowledgeEntities.length}</span>
-                        ) : null
-                      }
-                    >
-                      <div className="space-y-2">
-                        {relatedKnowledgeLoading ? (
-                          <div className="text-xs text-slate-500">Loading linked knowledge...</div>
-                        ) : relatedKnowledgeEntities.length > 0 ? (
-                          relatedKnowledgeEntities.slice(0, 4).map((entity) => (
-                            <div
-                              key={entity.entity_id}
-                              className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2"
-                            >
-                              <div className="truncate text-xs font-semibold text-slate-900">
-                                {entity.canonical_name || entity.entity_id}
+                      <div className="min-h-0 flex-1 space-y-3 overflow-y-scroll overscroll-contain px-3 py-3">
+                        {inspectorView === 'overview' && (
+                          <div className="space-y-3">
+                            <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                                    <Pin className="h-4 w-4 text-slate-500" />
+                                    Code Target
+                                  </div>
+                                  <div className="mt-1 text-xs text-slate-500">Stable target for reading and notes.</div>
+                                </div>
+                                <StatusBadge tone={relatedAnnotations.length > 0 ? 'success' : 'warning'}>
+                                  {targetHealthLabel}
+                                </StatusBadge>
                               </div>
-                              <div className="mt-1 text-[11px] text-slate-500">
-                                {entity.entity_type} · {entity.status || 'linked evidence'}
+                              <dl className="mt-3 space-y-1.5">
+                                <MetaRow label="version" value={selectedVersion || '—'} />
+                                <MetaRow label="path" value={currentPath || '—'} />
+                                <MetaRow label="range" value={selectedRangeLabel} />
+                                <MetaRow label="symbol" value={selectedSymbol || 'Not inferred'} />
+                                <MetaRow label="repo" value="linux" />
+                                <MetaRow
+                                  label="related"
+                                  value={`${relatedAnnotations.length} annotations · ${selectedLines.size > 0 ? 'selection pinned' : 'browse mode'}`}
+                                />
+                              </dl>
+
+                              <div className="mt-3 grid gap-2">
+                                {selectedSymbol && (
+                                  <a
+                                    href={elixirIdentUrl(selectedVersion || 'latest', selectedSymbol)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                                  >
+                                    <ScrollText className="h-3.5 w-3.5" />
+                                    Search symbol
+                                  </a>
+                                )}
                               </div>
                             </div>
-                          ))
-                        ) : (
-                          <div className="text-xs leading-5 text-slate-400">No knowledge backlinks surfaced yet.</div>
+
+                            {currentFile && selectedRange && (
+                              <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div>
+                                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                                      <Layers3 className="h-4 w-4 text-slate-500" />
+                                      Tags
+                                    </div>
+                                    <div className="mt-1 text-xs text-slate-500">Labels attached to the selected range.</div>
+                                  </div>
+                                  <span className="text-[10px] font-medium text-slate-400">{selectedTargetTags.length}</span>
+                                </div>
+                                <div className="mt-3 flex flex-wrap gap-1.5">
+                                  {targetTagsLoading ? (
+                                    <span className="text-xs text-slate-500">Loading tags...</span>
+                                  ) : selectedTargetTags.length > 0 ? (
+                                    selectedTargetTags.map((tag) => (
+                                      <span
+                                        key={tag.slug}
+                                        className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-800"
+                                      >
+                                        {tag.name}
+                                      </span>
+                                    ))
+                                  ) : (
+                                    <span className="text-xs text-slate-400">No tags on this range.</span>
+                                  )}
+                                </div>
+                                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
+                                  <EmailTagEditor
+                                    targetType="kernel_line_range"
+                                    targetRef={selectedTargetRef}
+                                    anchor={selectedTargetAnchorExpanded ?? undefined}
+                                    compact
+                                    placeholder="Tag this code target"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {inspectorView === 'history' && (
+                          currentFile ? (
+                            <InspectorSection
+                              title="History"
+                              icon={<GitCommitHorizontal className="h-4 w-4" />}
+                              collapsed={collapsedInspectorSections.has('history')}
+                              onToggle={() => toggleInspectorSection('history')}
+                              headerExtra={
+                                selectedRange ? (
+                                  <span className="text-[10px] font-medium text-slate-400">{selectedRangeLabel}</span>
+                                ) : null
+                              }
+                            >
+                              <CodeHistoryPanel
+                                version={selectedVersion}
+                                filePath={currentPath}
+                                selectedRange={selectedRange}
+                                selectedText={selectedText}
+                              />
+                            </InspectorSection>
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-400">
+                              Load a file to inspect history.
+                            </div>
+                          )
+                        )}
+
+                        {inspectorView === 'annotations' && (
+                          currentFile ? (
+                            <InspectorSection
+                              title="Annotations"
+                              icon={<MessagesSquare className="h-4 w-4" />}
+                              collapsed={collapsedInspectorSections.has('annotations')}
+                              onToggle={() => toggleInspectorSection('annotations')}
+                              headerExtra={
+                                selectedLines.size > 0 ? (
+                                  <span className="text-[10px] font-medium text-slate-400">{selectedRangeLabel}</span>
+                                ) : null
+                              }
+                            >
+                              <AnnotationPanel
+                                annotations={annotations}
+                                selectedLines={selectedLines}
+                                version={selectedVersion}
+                                filePath={currentPath}
+                                onAnnotationCreated={handleAnnotationCreated}
+                                hideHeader
+                              />
+                            </InspectorSection>
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-400">
+                              Load a file to inspect annotations.
+                            </div>
+                          )
+                        )}
+
+                        {inspectorView === 'links' && (
+                          <div className="space-y-3">
+                            <InspectorSection
+                              title="Threads"
+                              icon={<MessagesSquare className="h-4 w-4" />}
+                              collapsed={collapsedInspectorSections.has('threads')}
+                              onToggle={() => toggleInspectorSection('threads')}
+                              headerExtra={
+                                relatedThreadPreviews.length > 0 ? (
+                                  <span className="text-[10px] font-medium text-slate-400">{relatedThreadPreviews.length}</span>
+                                ) : null
+                              }
+                            >
+                              <div className="space-y-2">
+                                {relatedThreadsLoading ? (
+                                  <div className="text-xs text-slate-500">Loading thread context...</div>
+                                ) : relatedThreadPreviews.length > 0 ? (
+                                  relatedThreadPreviews.slice(0, 3).map((thread) => (
+                                    <button
+                                      key={thread.threadId}
+                                      type="button"
+                                      onClick={() =>
+                                        setThreadOpen({
+                                          threadId: thread.threadId,
+                                          focusMessageId: thread.focusMessageId,
+                                        })
+                                      }
+                                      className="block w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-left hover:border-sky-200 hover:bg-sky-50/60"
+                                    >
+                                      <div className="truncate text-xs font-semibold text-slate-900">{thread.subject}</div>
+                                      <div className="mt-1 text-[11px] text-slate-500">
+                                        {thread.emailCount} mails · {thread.annotationCount} notes · {thread.patchCount} patches
+                                      </div>
+                                    </button>
+                                  ))
+                                ) : (
+                                  <div className="text-xs leading-5 text-slate-400">No thread backlinks for this selection yet.</div>
+                                )}
+                              </div>
+                            </InspectorSection>
+
+                            <InspectorSection
+                              title="Knowledge"
+                              icon={<Library className="h-4 w-4" />}
+                              collapsed={collapsedInspectorSections.has('knowledge')}
+                              onToggle={() => toggleInspectorSection('knowledge')}
+                              headerExtra={
+                                relatedKnowledgeEntities.length > 0 ? (
+                                  <span className="text-[10px] font-medium text-slate-400">{relatedKnowledgeEntities.length}</span>
+                                ) : null
+                              }
+                            >
+                              <div className="space-y-2">
+                                {relatedKnowledgeLoading ? (
+                                  <div className="text-xs text-slate-500">Loading linked knowledge...</div>
+                                ) : relatedKnowledgeEntities.length > 0 ? (
+                                  relatedKnowledgeEntities.slice(0, 4).map((entity) => (
+                                    <div
+                                      key={entity.entity_id}
+                                      className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2"
+                                    >
+                                      <div className="truncate text-xs font-semibold text-slate-900">
+                                        {entity.canonical_name || entity.entity_id}
+                                      </div>
+                                      <div className="mt-1 text-[11px] text-slate-500">
+                                        {entity.entity_type} · {entity.status || 'linked evidence'}
+                                      </div>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div className="text-xs leading-5 text-slate-400">No knowledge backlinks surfaced yet.</div>
+                                )}
+                              </div>
+                            </InspectorSection>
+                          </div>
                         )}
                       </div>
-                    </InspectorSection>
-                  </div>
                     </>
                   )}
                 </aside>
