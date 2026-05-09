@@ -5,9 +5,10 @@ import type {
   KnowledgeEvidence,
 } from '../../api/types';
 
-export const DEFAULT_ENTITY_TYPE = 'concept';
+export const DEFAULT_ENTITY_TYPE = 'feature_topic';
 
 export const ENTITY_TYPES = [
+  'feature_topic',
   'concept',
   'subsystem',
   'mechanism',

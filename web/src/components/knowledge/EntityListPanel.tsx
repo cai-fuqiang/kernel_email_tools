@@ -201,7 +201,7 @@ export default function EntityListPanel({
               className="w-full justify-start border-dashed"
             >
               <Plus className="h-4 w-4" />
-              {showCreate ? 'Hide quick capture' : 'Capture a new knowledge item'}
+              {showCreate ? 'Hide quick capture' : 'Capture a new topic'}
             </SecondaryButton>
           </div>
         )}
@@ -211,7 +211,7 @@ export default function EntityListPanel({
         <div className="border-b border-gray-200 bg-gray-50 p-4">
           <div className="text-sm font-semibold text-gray-900">Quick capture</div>
           <p className="mt-1 text-xs leading-5 text-gray-500">
-            Use this for a reviewed idea. Ask answers can still create richer drafts with source evidence.
+            Start from a feature, mechanism, or design topic. Add the timeline and evidence after capture.
           </p>
           <div className="mt-3 space-y-3">
             <input

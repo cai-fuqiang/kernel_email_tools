@@ -30,6 +30,7 @@
 - 已实现实体合并 MVP：支持把重复实体的 tags、relations、annotations、evidence 合并到目标实体，源实体标记为 `deprecated`。
 - 已实现人工主题时间线 MVP：Knowledge 详情页可在 `meta.timeline` 中维护 mail thread、patch revision、commit、code location、external link、decision 和 open question 事件。
 - 已实现人工 evidence capture MVP：Knowledge 详情页可手工新增 claim-level evidence，支持邮件、patch、commit、代码位置和外链等来源类型，继续复用 `knowledge_evidence`。
+- 已把快速创建入口默认调整为 `feature_topic`，鼓励从功能点 / 机制 / 设计主题开始沉淀知识。
 - 仍缺少：Ask 使用已有 Knowledge 作为检索上下文、relation 草稿推荐、索引/导入状态面板、全局图谱浏览。
 
 ## Current Problems
