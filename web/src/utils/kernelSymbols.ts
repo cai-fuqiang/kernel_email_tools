@@ -9,14 +9,32 @@ const CONTROL_KEYWORDS = new Set([
 // Single-line function definition: name(params) ... {
 const FN_DEF_RE = /\b([A-Za-z_]\w*)\s*\([^{};]*\)[^{};]*\{/g;
 
-// Function signature ending a line (no { on same line):
-//   static int foo(int x)
+// Function signature (without the opening brace):
+//   identifier followed by (...) with a matching closing paren
+// The $ anchor and greedy [^{};]*\) ensure we match the LAST ) on the line
+// (the function's parameter-list closing paren), not an intermediate call/macro.
 const SIG_RE = /\b([A-Za-z_]\w*)\s*\([^{};]*\)\s*$/;
 
 // Standalone opening brace (multi-line function body)
 const OPEN_BRACE_RE = /^\s*\{\s*$/;
 
 const DEFINE_RE = /^\s*#\s*define\s+([A-Za-z_]\w*)\b/;
+
+/** Collect up to `maxLines` lines before `braceIdx`, joining them into one
+ *  signature string. Stops early if a line ends with `;` (block statement). */
+function collectSignatureLines(
+  lines: string[],
+  braceIdx: number,
+  maxLines = 3,
+): string | null {
+  const parts: string[] = [];
+  for (let i = braceIdx - 1; i >= Math.max(0, braceIdx - maxLines); i -= 1) {
+    const trimmed = lines[i].trim();
+    if (/;\s*$/.test(trimmed)) break;
+    parts.unshift(trimmed);
+  }
+  return parts.length > 0 ? parts.join(' ') : null;
+}
 
 export function detectNearestSymbol(lines: string[], focusLine: number | null): string | null {
   if (!focusLine || focusLine < 1) return null;
@@ -30,16 +48,13 @@ export function detectNearestSymbol(lines: string[], focusLine: number | null): 
       if (!CONTROL_KEYWORDS.has(name)) return name;
     }
 
-    // 2) Multi-line definition: standalone { followed by signature on previous lines
+    // 2) Multi-line definition: standalone { — collect preceding lines
+    //    into a single signature string and match against that.
     if (OPEN_BRACE_RE.test(line)) {
-      for (let sigIdx = idx - 1; sigIdx >= Math.max(0, idx - 3); sigIdx -= 1) {
-        const sigLine = lines[sigIdx].trim();
-        // A semicolon at end of line means the { belongs to a block, not a function definition
-        if (/;\s*$/.test(sigLine)) break;
-        const sigMatch = sigLine.match(SIG_RE);
-        if (sigMatch?.[1] && !CONTROL_KEYWORDS.has(sigMatch[1])) {
-          return sigMatch[1];
-        }
+      const joined = collectSignatureLines(lines, idx);
+      if (joined) {
+        const m = joined.match(SIG_RE);
+        if (m?.[1] && !CONTROL_KEYWORDS.has(m[1])) return m[1];
       }
     }
 

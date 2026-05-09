@@ -108,6 +108,18 @@ describe('detectNearestSymbol', () => {
     expect(detectNearestSymbol(src, 3)).toBe('foo_init');
   });
 
+  it('handles multi-line signature spanning 2 lines (prev_badblocks pattern)', () => {
+    const src = lines(
+      'static int prev_badblocks(struct badblocks *bb, struct badblocks_context *bad,\n' +
+      '                          int hint)\n' +
+      '{\n' +
+      '  sector_t s = bad->start;\n' +
+      '}',
+    );
+    expect(detectNearestSymbol(src, 3)).toBe('prev_badblocks');
+    expect(detectNearestSymbol(src, 4)).toBe('prev_badblocks');
+  });
+
   it('does not confuse if/while/for with standalone brace', () => {
     const src = lines('void foo(void)\n{\n  if (x)\n  {\n    bar();\n  }\n}');
     expect(detectNearestSymbol(src, 4)).toBe('foo');
