@@ -40,8 +40,8 @@ const C_TYPES = new Set([
   'u8', 'u16', 'u32', 'u64', 's8', 's16', 's32', 's64', 'size_t', 'ssize_t',
 ]);
 
-const DEFAULT_SIZE = { width: 980, height: 720 };
-const MIN_SIZE = { width: 760, height: 520 };
+const DEFAULT_SIZE = { width: 720, height: 540 };
+const MIN_SIZE = { width: 560, height: 380 };
 const GAP = 14;
 const VIEWPORT_MARGIN = 12;
 const STORAGE_PREFIX = 'kernel-symbol-preview-window';
@@ -423,10 +423,15 @@ export default function KernelSymbolQuickPreviewPopover({
       </div>
 
       <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="rounded-full bg-white px-2 py-0.5 text-slate-600">v{candidate.version}</span>
           <span>L{candidate.line}</span>
-          <span>Full context</span>
+          <span className="truncate">Full context</span>
+          {containingSymbol ? (
+            <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-700">
+              in {containingSymbol}
+            </span>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <a
@@ -451,93 +456,60 @@ export default function KernelSymbolQuickPreviewPopover({
         </div>
       </div>
 
-      <div className="grid min-h-0 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="min-h-0 border-b border-slate-200 lg:border-b-0 lg:border-r">
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
-            <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-              Code context
-            </div>
-            <div className="text-xs text-slate-500">
-              {loading
-                ? 'Loading...'
-                : `L${candidate.line} • full file`}
-            </div>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/80 px-3 py-2">
+          <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+            Code context
           </div>
-
-          <div ref={codeScrollRef} className="h-full min-h-0 overflow-auto overscroll-contain bg-slate-950/95 p-3">
-            {!candidate.local_file_available ? (
-              <div className="flex h-full items-center justify-center">
-                <div className="max-w-lg rounded-xl border border-slate-800 bg-slate-900/80 px-4 py-4 text-sm leading-6 text-slate-200">
-                  This candidate is external only. The floating window can still jump upstream or open the full page.
-                </div>
-              </div>
-            ) : loading ? (
-              <div className="text-sm text-slate-300">Loading preview...</div>
-            ) : error ? (
-              <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-                {error}
-              </div>
-            ) : fileLines.length > 0 ? (
-              <div className="inline-block min-w-max rounded-xl border border-slate-800 bg-slate-900/80 shadow-lg">
-                {fileLines.map((lineText, index) => {
-                  const lineNum = index + 1;
-                  const isTarget = lineNum === candidate.line;
-                  return (
-                    <div
-                      key={lineNum}
-                      data-line-num={lineNum}
-                      className={`grid min-w-max grid-cols-[4.75rem_minmax(0,1fr)] border-b border-slate-800/80 ${
-                        isTarget ? 'bg-amber-400/15' : 'hover:bg-slate-800/60'
-                      }`}
-                      style={zoomStyle}
-                    >
-                      <div className="select-none border-r border-slate-800/80 px-3 py-1.5 text-right font-mono text-slate-500">
-                        {lineNum}
-                      </div>
-                      <pre className="overflow-x-auto px-3 py-1.5 font-mono text-slate-100">
-                        {renderHighlightedLine(lineText)}
-                      </pre>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : null}
+          <div className="text-xs text-slate-500">
+            {loading
+              ? 'Loading...'
+              : `L${candidate.line} • full file`}
           </div>
         </div>
 
-        <aside className="min-h-0 overflow-y-auto bg-slate-50/80 px-3 py-3">
-          <div className="space-y-4">
-            <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                Jump target
+        <div
+          ref={codeScrollRef}
+          className="min-h-0 flex-1 overflow-y-scroll overscroll-contain bg-slate-950/95 p-3"
+        >
+          {!candidate.local_file_available ? (
+            <div className="flex h-full items-center justify-center">
+              <div className="max-w-lg rounded-xl border border-slate-800 bg-slate-900/80 px-4 py-4 text-sm leading-6 text-slate-200">
+                This candidate is external only. The floating window can still jump upstream or open the full page.
               </div>
-              <div className="mt-2 break-words text-sm font-semibold text-slate-950">{candidate.path}</div>
-              <div className="mt-1 text-xs text-slate-500">
-                line {candidate.line}
-              </div>
-              {containingSymbol ? (
-                <div className="mt-2 text-xs text-slate-600">
-                  Containing symbol: <span className="font-semibold text-slate-900">{containingSymbol}</span>
-                </div>
-              ) : (
-                <div className="mt-2 text-xs text-slate-500">
-                  Containing symbol could not be inferred.
-                </div>
-              )}
             </div>
-
-            <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                Tips
-              </div>
-              <ul className="mt-2 space-y-2 text-sm leading-6 text-slate-600">
-                <li>Drag the title bar to move this window.</li>
-                <li>Use the lower-right corner to resize.</li>
-                <li>Double click the title bar to close the preview.</li>
-              </ul>
+          ) : loading ? (
+            <div className="text-sm text-slate-300">Loading preview...</div>
+          ) : error ? (
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+              {error}
             </div>
-          </div>
-        </aside>
+          ) : fileLines.length > 0 ? (
+            <div className="inline-block min-w-max rounded-xl border border-slate-800 bg-slate-900/80 shadow-lg">
+              {fileLines.map((lineText, index) => {
+                const lineNum = index + 1;
+                const isTarget = lineNum === candidate.line;
+                return (
+                  <div
+                    key={lineNum}
+                    data-line-num={lineNum}
+                    className={`grid min-w-max grid-cols-[4.75rem_minmax(0,1fr)] border-b border-slate-800/80 ${
+                      isTarget ? 'bg-amber-400/15' : 'hover:bg-slate-800/60'
+                    }`}
+                    style={zoomStyle}
+                  >
+                    <div className="select-none border-r border-slate-800/80 px-3 py-1.5 text-right font-mono text-slate-500">
+                      {lineNum}
+                    </div>
+                    <pre className="overflow-x-auto px-3 py-1.5 font-mono text-slate-100">
+                      {renderHighlightedLine(lineText)}
+                    </pre>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div

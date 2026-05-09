@@ -332,6 +332,7 @@ export default function KernelCodePage() {
     result: KernelSymbolResolveResponse | null;
     error: string | null;
   } | null>(null);
+  const [symbolCandidateLabels, setSymbolCandidateLabels] = useState<Record<string, string | null>>({});
   const [symbolQuickPreview, setSymbolQuickPreview] = useState<{
     candidate: KernelSymbolCandidateResponse;
     symbol: string;
@@ -1136,6 +1137,43 @@ export default function KernelCodePage() {
     };
   }, [selectedVersion, symbolPopoverSymbol]);
 
+  useEffect(() => {
+    const candidates = symbolResolve?.result?.candidates || [];
+    if (candidates.length === 0) {
+      setSymbolCandidateLabels({});
+      return undefined;
+    }
+
+    let cancelled = false;
+    setSymbolCandidateLabels({});
+
+    async function loadCandidateSymbols() {
+      const entries = await Promise.all(
+        candidates.map(async (candidate) => {
+          const key = `${candidate.version}:${candidate.path}:${candidate.line}`;
+          if (!candidate.local_file_available) return [key, null] as const;
+
+          try {
+            const file = await getKernelFile(candidate.version, candidate.path);
+            const lines = file.content.split('\n');
+            return [key, detectNearestSymbol(lines, candidate.line)] as const;
+          } catch {
+            return [key, null] as const;
+          }
+        }),
+      );
+
+      if (cancelled) return;
+      setSymbolCandidateLabels(Object.fromEntries(entries));
+    }
+
+    void loadCandidateSymbols();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [symbolResolve?.result]);
+
   async function handleCopyScript() {
     try {
       const resp = await fetch('/app/userscripts/elixir-annotate.user.js');
@@ -1866,6 +1904,13 @@ export default function KernelCodePage() {
                     </div>
                     <div className="mt-0.5 text-[11px] text-slate-500">
                       L{candidate.line}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-slate-500">
+                      {symbolCandidateLabels[`${candidate.version}:${candidate.path}:${candidate.line}`]
+                        ? `in ${symbolCandidateLabels[`${candidate.version}:${candidate.path}:${candidate.line}`]}`
+                        : candidate.local_file_available
+                          ? 'symbol pending'
+                          : 'symbol unavailable'}
                     </div>
                   </button>
                   <div className="flex shrink-0 items-center gap-2">
