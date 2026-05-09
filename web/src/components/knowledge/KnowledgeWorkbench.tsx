@@ -900,6 +900,9 @@ export default function KnowledgeWorkbench() {
                   <KnowledgeTimelinePanel
                     timeline={selectedMetaSchema.timeline}
                     canWrite={canWrite}
+                    evidenceRows={evidenceRows}
+                    evidenceSources={evidence.sources}
+                    threadIds={evidence.threadIds}
                     onOpenThread={handleOpenThread}
                     onChange={(timeline) =>
                       setSelectedEntity((prev) =>

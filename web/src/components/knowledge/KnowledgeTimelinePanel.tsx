@@ -8,17 +8,27 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import type { KnowledgeEvidence } from '../../api/types';
 import type {
   KnowledgeTimelineEvent,
   KnowledgeTimelineEventType,
 } from '../../utils/knowledgeMeta';
 import { KNOWLEDGE_TIMELINE_EVENT_TYPES } from '../../utils/knowledgeMeta';
 import { PrimaryButton, SecondaryButton, StatusBadge } from '../ui';
-import { formatDate } from './knowledgeUtils';
+import {
+  evidenceTitle,
+  formatDate,
+  sourceTitle,
+  type KnowledgeEvidenceSource,
+} from './knowledgeUtils';
 
 interface KnowledgeTimelinePanelProps {
   timeline: KnowledgeTimelineEvent[];
   canWrite: boolean;
+  evidenceRows: KnowledgeEvidence[];
+  evidenceSources: KnowledgeEvidenceSource[];
+  threadIds: string[];
   onChange: (timeline: KnowledgeTimelineEvent[]) => void;
   onOpenThread: (threadId: string, focusMessageId?: string) => void;
 }
@@ -41,7 +51,14 @@ const reviewTones = {
   unknown: 'muted',
 } as const;
 
-function newTimelineEvent(): KnowledgeTimelineEvent {
+type TimelineCandidate = {
+  key: string;
+  label: string;
+  hint: string;
+  event: KnowledgeTimelineEvent;
+};
+
+function newTimelineEvent(patch: Partial<KnowledgeTimelineEvent> = {}): KnowledgeTimelineEvent {
   return {
     id: `timeline-${Date.now()}`,
     event_type: 'mail_thread',
@@ -54,6 +71,7 @@ function newTimelineEvent(): KnowledgeTimelineEvent {
     message_id: '',
     code_path: '',
     review_state: 'needs_review',
+    ...patch,
   };
 }
 
@@ -74,12 +92,119 @@ function sortedTimeline(timeline: KnowledgeTimelineEvent[]) {
   });
 }
 
+function normalizeDate(value?: string) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toISOString().slice(0, 10);
+}
+
+function timelineTypeFromSource(sourceType: string): KnowledgeTimelineEventType {
+  if (sourceType === 'commit') return 'commit';
+  if (sourceType === 'patch_revision') return 'patch_revision';
+  if (sourceType === 'code_location') return 'code_location';
+  if (sourceType === 'annotation') return 'annotation';
+  if (sourceType === 'external_url') return 'external_link';
+  if (sourceType === 'manual') return 'note';
+  return 'mail_thread';
+}
+
+function buildEvidenceCandidate(row: KnowledgeEvidence): TimelineCandidate {
+  const meta = row.meta || {};
+  const title =
+    row.claim ||
+    evidenceTitle(row) ||
+    String(meta.subject || '') ||
+    row.message_id ||
+    row.thread_id ||
+    row.evidence_id;
+  const sourceRef = String(meta.source_ref || '');
+  const url = String(meta.url || '');
+  const codePath = String(meta.code_path || '');
+  const date = normalizeDate(String(meta.date || row.created_at || ''));
+  const sourceBits = [row.source_type, sourceRef || row.message_id || row.thread_id]
+    .filter(Boolean)
+    .join(' · ');
+
+  return {
+    key: `evidence:${row.evidence_id}`,
+    label: title,
+    hint: sourceBits || 'Evidence',
+    event: newTimelineEvent({
+      id: `timeline-${Date.now()}-${row.evidence_id}`,
+      event_type: timelineTypeFromSource(row.source_type),
+      title,
+      date,
+      summary: row.quote || '',
+      source_ref: sourceRef || row.evidence_id,
+      url,
+      thread_id: row.thread_id || '',
+      message_id: row.message_id || '',
+      evidence_id: row.evidence_id,
+      code_path: codePath,
+      review_state:
+        row.confidence === 'confirmed' || row.confidence === 'unknown'
+          ? row.confidence
+          : 'needs_review',
+    }),
+  };
+}
+
+function buildSourceCandidate(source: KnowledgeEvidenceSource, index: number): TimelineCandidate {
+  const label = source.subject || source.message_id || source.thread_id || `Mail source ${index + 1}`;
+  return {
+    key: `source:${source.message_id || source.thread_id || index}`,
+    label,
+    hint: sourceTitle(source),
+    event: newTimelineEvent({
+      id: `timeline-${Date.now()}-${source.message_id || source.thread_id || index}`,
+      event_type: 'mail_thread',
+      title: label,
+      date: normalizeDate(source.date),
+      summary: [source.sender, source.list_name].filter(Boolean).join(' · '),
+      thread_id: source.thread_id || '',
+      message_id: source.message_id || '',
+      review_state: 'needs_review',
+    }),
+  };
+}
+
 export default function KnowledgeTimelinePanel({
   timeline,
   canWrite,
+  evidenceRows,
+  evidenceSources,
+  threadIds,
   onChange,
   onOpenThread,
 }: KnowledgeTimelinePanelProps) {
+  const sourceCandidates = useMemo<TimelineCandidate[]>(() => {
+    const candidates = [
+      ...evidenceRows.map(buildEvidenceCandidate),
+      ...evidenceSources.map(buildSourceCandidate),
+      ...threadIds.map((threadId) => ({
+        key: `thread:${threadId}`,
+        label: threadId,
+        hint: 'Mail thread',
+        event: newTimelineEvent({
+          id: `timeline-${Date.now()}-${threadId}`,
+          event_type: 'mail_thread' as const,
+          title: threadId,
+          thread_id: threadId,
+          review_state: 'needs_review' as const,
+        }),
+      })),
+    ];
+    const seen = new Set<string>();
+    return candidates.filter((candidate) => {
+      if (!candidate.key || seen.has(candidate.key)) return false;
+      seen.add(candidate.key);
+      return true;
+    });
+  }, [evidenceRows, evidenceSources, threadIds]);
+  const [selectedSourceKey, setSelectedSourceKey] = useState('');
+  const selectedSource = sourceCandidates.find((candidate) => candidate.key === selectedSourceKey);
+
   const updateEvent = (id: string, patch: Partial<KnowledgeTimelineEvent>) => {
     onChange(timeline.map((event) => (event.id === id ? { ...event, ...patch } : event)));
   };
@@ -90,6 +215,12 @@ export default function KnowledgeTimelinePanel({
 
   const addEvent = () => {
     onChange([...timeline, newTimelineEvent()]);
+  };
+
+  const addSelectedSource = () => {
+    if (!selectedSource) return;
+    onChange([...timeline, { ...selectedSource.event, id: `${selectedSource.event.id}-${Date.now()}` }]);
+    setSelectedSourceKey('');
   };
 
   return (
@@ -108,6 +239,39 @@ export default function KnowledgeTimelinePanel({
           </PrimaryButton>
         )}
       </div>
+
+      {canWrite && sourceCandidates.length > 0 && (
+        <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/70 p-3">
+          <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+            <select
+              value={selectedSourceKey}
+              onChange={(e) => setSelectedSourceKey(e.target.value)}
+              className="min-w-0 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm text-slate-900"
+            >
+              <option value="">Pull a commit, mail thread, or quoted paragraph into the timeline...</option>
+              {sourceCandidates.map((candidate) => (
+                <option key={candidate.key} value={candidate.key}>
+                  {candidate.label} — {candidate.hint}
+                </option>
+              ))}
+            </select>
+            <SecondaryButton
+              type="button"
+              onClick={addSelectedSource}
+              disabled={!selectedSource}
+              className="border-indigo-200 text-indigo-700 hover:bg-white"
+            >
+              <Plus className="h-4 w-4" />
+              Pull into timeline
+            </SecondaryButton>
+          </div>
+          {selectedSource && (
+            <div className="mt-2 line-clamp-2 text-xs leading-5 text-indigo-900">
+              {selectedSource.hint}
+            </div>
+          )}
+        </div>
+      )}
 
       {timeline.length === 0 ? (
         <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm leading-6 text-slate-500">
