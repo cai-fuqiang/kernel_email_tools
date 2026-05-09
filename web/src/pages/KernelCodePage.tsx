@@ -341,6 +341,12 @@ export default function KernelCodePage() {
   } | null>(null);
 
   const codeViewRef = useRef<HTMLDivElement | null>(null);
+  const pathRequestIdRef = useRef(0);
+
+  const nextPathRequestId = useCallback(() => {
+    pathRequestIdRef.current += 1;
+    return pathRequestIdRef.current;
+  }, []);
 
   useEffect(() => {
     setVersionsLoading(true);
@@ -410,10 +416,11 @@ export default function KernelCodePage() {
   );
 
   const expandAncestors = useCallback(
-    async (path: string, includeSelf: boolean) => {
+    async (path: string, includeSelf: boolean, requestId?: number) => {
       const parts = path.split('/').filter(Boolean);
       const dirSegments = includeSelf ? parts : parts.slice(0, -1);
       if (dirSegments.length === 0) {
+        if (requestId && requestId !== pathRequestIdRef.current) return;
         setExpandedTreePaths(new Set());
         setTreePath('');
         await ensureTreeLoaded('');
@@ -423,9 +430,11 @@ export default function KernelCodePage() {
       let prefix = '';
       for (const segment of dirSegments) {
         prefix = prefix ? `${prefix}/${segment}` : segment;
+        if (requestId && requestId !== pathRequestIdRef.current) return;
         nextExpanded.add(prefix);
         await ensureTreeLoaded(prefix);
       }
+      if (requestId && requestId !== pathRequestIdRef.current) return;
       setExpandedTreePaths(nextExpanded);
       setTreePath(dirSegments[dirSegments.length - 1] ? dirSegments.join('/') : '');
       await ensureTreeLoaded('');
@@ -436,6 +445,7 @@ export default function KernelCodePage() {
   const openDirectory = useCallback(
     async (path: string) => {
       if (!selectedVersion) return;
+      const requestId = nextPathRequestId();
       setCurrentPath(path);
       setCurrentPathKind('directory');
       setCurrentFile(null);
@@ -445,11 +455,11 @@ export default function KernelCodePage() {
       setPathInput(path);
       setSearchParams({ v: selectedVersion, path }, { replace: true });
       const tree = await ensureTreeLoaded(path);
-      if (!tree) return;
+      if (!tree || requestId !== pathRequestIdRef.current) return;
       setDirectoryEntries(tree.entries);
-      await expandAncestors(path, true);
+      await expandAncestors(path, true, requestId);
     },
-    [ensureTreeLoaded, expandAncestors, selectedVersion, setSearchParams],
+    [ensureTreeLoaded, expandAncestors, nextPathRequestId, selectedVersion, setSearchParams],
   );
 
   const loadFile = useCallback(async (
@@ -458,6 +468,7 @@ export default function KernelCodePage() {
     options?: { silent?: boolean },
   ): Promise<boolean> => {
     if (!selectedVersion || !path) return false;
+    const requestId = nextPathRequestId();
     setFileLoading(true);
     setCurrentPath(path);
     setCurrentPathKind('file');
@@ -475,11 +486,13 @@ export default function KernelCodePage() {
         getKernelFile(selectedVersion, path),
         getCodeAnnotations(selectedVersion, path).catch(() => [] as CodeAnnotation[]),
       ]);
+      if (requestId !== pathRequestIdRef.current) return false;
       setCurrentFile(fileRes);
       setAnnotations(annotRes);
-      await expandAncestors(path, false);
+      await expandAncestors(path, false, requestId);
       return true;
     } catch (e: unknown) {
+      if (requestId !== pathRequestIdRef.current) return false;
       if (!options?.silent) {
         showToast(e instanceof Error ? e.message : String(e), 'error');
       }
@@ -487,17 +500,16 @@ export default function KernelCodePage() {
       setCurrentPathKind(null);
       return false;
     } finally {
-      setFileLoading(false);
+      if (requestId === pathRequestIdRef.current) {
+        setFileLoading(false);
+      }
     }
-  }, [expandAncestors, selectedVersion, setSearchParams, urlLine]);
+  }, [expandAncestors, nextPathRequestId, selectedVersion, setSearchParams, urlLine]);
 
   const openPath = useCallback(
     async (path: string, targetLine?: number | null) => {
       if (!selectedVersion || !path) return;
-      if (path === currentPath && currentPathKind === 'directory') {
-        return;
-      }
-      if (path === currentPath && currentPathKind === 'file' && currentFile?.path === path) {
+      if (path === currentPath && currentPathKind) {
         const focusTarget = targetLine ?? urlLine;
         setSelectedLines(focusTarget ? new Set([focusTarget]) : new Set());
         return;
@@ -523,7 +535,6 @@ export default function KernelCodePage() {
       await loadFile(path, targetLine);
     },
     [
-      currentFile,
       currentPath,
       currentPathKind,
       loadFile,
@@ -823,7 +834,10 @@ export default function KernelCodePage() {
   }, [relatedMessageIds]);
 
   function handleVersionSelect(tag: string) {
+    nextPathRequestId();
     setSelectedVersion(tag);
+    setFileLoading(false);
+    setTreeLoading(false);
     setCurrentFile(null);
     setCurrentPathKind(null);
     setDirectoryEntries([]);
@@ -1046,13 +1060,15 @@ export default function KernelCodePage() {
     };
   }, [symbolPopover]);
 
+  const symbolPopoverSymbol = symbolPopover?.symbol || '';
+
   useEffect(() => {
-    if (!symbolPopover || !selectedVersion) {
+    if (!symbolPopoverSymbol || !selectedVersion) {
       setSymbolResolve(null);
       return;
     }
 
-    const symbol = symbolPopover.symbol;
+    const symbol = symbolPopoverSymbol;
     let cancelled = false;
 
     setSymbolResolve({
@@ -1086,7 +1102,7 @@ export default function KernelCodePage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedVersion, symbolPopover?.symbol]);
+  }, [selectedVersion, symbolPopoverSymbol]);
 
   async function handleCopyScript() {
     try {
