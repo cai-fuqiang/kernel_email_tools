@@ -120,6 +120,19 @@ describe('detectNearestSymbol', () => {
     expect(detectNearestSymbol(src, 4)).toBe('prev_badblocks');
   });
 
+  it('finds the function at focusLine itself (own definition, single-line)', () => {
+    // focusLine is the line defining B — should return B, not the function above it
+    const src = lines('static int A(void) { return 0; }\nstatic int B(int x) { return x; }');
+    expect(detectNearestSymbol(src, 2)).toBe('B');
+  });
+
+  it('finds the function at focusLine itself (own definition, multi-line)', () => {
+    // focusLine is the signature line, { on next line
+    const src = lines('static int A(void) { return 0; }\nstatic int B(int x)\n{\n  return x;\n}');
+    expect(detectNearestSymbol(src, 2)).toBe('B');
+    expect(detectNearestSymbol(src, 3)).toBe('B');
+  });
+
   it('does not confuse if/while/for with standalone brace', () => {
     const src = lines('void foo(void)\n{\n  if (x)\n  {\n    bar();\n  }\n}');
     expect(detectNearestSymbol(src, 4)).toBe('foo');
