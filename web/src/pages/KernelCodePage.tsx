@@ -28,6 +28,7 @@ import {
   getKernelTree,
   getKernelVersions,
   getThread,
+  resolveKernelSymbol,
 } from '../api/client';
 import type {
   CodeAnnotation,
@@ -35,6 +36,7 @@ import type {
   KernelFileResponse,
   KernelTreeEntry,
   KernelVersionInfo,
+  KernelSymbolResolveResponse,
   TagRead,
 } from '../api/types';
 import EmailTagEditor from '../components/EmailTagEditor';
@@ -330,6 +332,12 @@ export default function KernelCodePage() {
     symbol: string;
     x: number;
     y: number;
+  } | null>(null);
+  const [symbolResolve, setSymbolResolve] = useState<{
+    symbol: string;
+    loading: boolean;
+    result: KernelSymbolResolveResponse | null;
+    error: string | null;
   } | null>(null);
 
   const codeViewRef = useRef<HTMLDivElement | null>(null);
@@ -1038,6 +1046,48 @@ export default function KernelCodePage() {
     };
   }, [symbolPopover]);
 
+  useEffect(() => {
+    if (!symbolPopover || !selectedVersion) {
+      setSymbolResolve(null);
+      return;
+    }
+
+    const symbol = symbolPopover.symbol;
+    let cancelled = false;
+
+    setSymbolResolve({
+      symbol,
+      loading: true,
+      result: null,
+      error: null,
+    });
+
+    resolveKernelSymbol(selectedVersion || 'latest', symbol)
+      .then((result) => {
+        if (cancelled) return;
+        setSymbolResolve({
+          symbol,
+          loading: false,
+          result,
+          error: null,
+        });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : 'Symbol lookup failed';
+        setSymbolResolve({
+          symbol,
+          loading: false,
+          result: null,
+          error: message,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedVersion, symbolPopover?.symbol]);
+
   async function handleCopyScript() {
     try {
       const resp = await fetch('/app/userscripts/elixir-annotate.user.js');
@@ -1668,33 +1718,104 @@ export default function KernelCodePage() {
           data-symbol-popover
           style={{
             position: 'fixed',
-            left: Math.min(symbolPopover.x + 8, window.innerWidth - 260),
-            top: Math.min(symbolPopover.y + 12, window.innerHeight - 60),
+            left: Math.min(symbolPopover.x + 8, window.innerWidth - 420),
+            top: Math.min(symbolPopover.y + 12, window.innerHeight - 260),
             zIndex: 50,
           }}
-          className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 shadow-lg"
+          className="w-[380px] rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-lg"
         >
-          <span className="text-xs text-slate-500">Symbol</span>
-          <code className="max-w-[140px] truncate text-xs font-mono text-sky-700">
-            {symbolPopover.symbol}
-          </code>
-          <a
-            href={elixirIdentUrl(selectedVersion || 'latest', symbolPopover.symbol)}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => setSymbolPopover(null)}
-            className="inline-flex items-center gap-1 rounded bg-sky-600 px-2 py-1 text-xs font-medium text-white hover:bg-sky-700"
-          >
-            Search
-            <ExternalLink className="h-3 w-3" />
-          </a>
-          <IconButton
-            label="Close symbol search"
-            onClick={() => setSymbolPopover(null)}
-            className="h-7 w-7 border-none"
-          >
-            <span className="text-sm">×</span>
-          </IconButton>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                Symbol
+              </div>
+              <code className="mt-1 block truncate text-sm font-mono text-sky-700">
+                {symbolPopover.symbol}
+              </code>
+            </div>
+            <IconButton
+              label="Close symbol search"
+              onClick={() => setSymbolPopover(null)}
+              className="h-7 w-7 border-none"
+            >
+              <span className="text-sm">×</span>
+            </IconButton>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {symbolResolve?.loading ? (
+              <div className="text-xs text-slate-500">Querying Elixir for matching definitions...</div>
+            ) : symbolResolve?.error ? (
+              <div className="rounded-md border border-rose-200 bg-rose-50 px-2 py-2 text-xs leading-5 text-rose-700">
+                {symbolResolve.error}
+              </div>
+            ) : null}
+
+            {symbolResolve?.result?.fallback_reason ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-2 py-2 text-xs leading-5 text-amber-800">
+                {symbolResolve.result.fallback_reason}
+              </div>
+            ) : null}
+
+            {!symbolResolve?.loading && symbolResolve?.result && symbolResolve.result.candidates.length === 0 ? (
+              <div className="text-xs leading-5 text-slate-500">
+                No Elixir candidates found for this symbol.
+              </div>
+            ) : null}
+
+            <div className="space-y-1.5">
+              {symbolResolve?.result?.candidates.map((candidate) => (
+                <a
+                  key={`${candidate.path}:${candidate.line}`}
+                  href={candidate.local_file_available ? candidate.local_url : candidate.external_url}
+                  target={candidate.local_file_available ? '_self' : '_blank'}
+                  rel={candidate.local_file_available ? undefined : 'noopener noreferrer'}
+                  onClick={() => setSymbolPopover(null)}
+                  className="flex items-center justify-between gap-3 rounded-md border border-slate-200 px-2.5 py-2 transition hover:border-sky-200 hover:bg-sky-50"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-medium text-slate-900">
+                      {candidate.path}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-slate-500">
+                      L{candidate.line}
+                    </div>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                      candidate.local_file_available
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-amber-200 bg-amber-50 text-amber-700'
+                    }`}
+                  >
+                    {candidate.local_file_available ? 'Local' : 'Elixir'}
+                  </span>
+                </a>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <a
+                href={symbolResolve?.result?.query_url || elixirIdentUrl(selectedVersion || 'latest', symbolPopover.symbol)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setSymbolPopover(null)}
+                className="inline-flex items-center gap-1 text-xs font-medium text-sky-700 hover:text-sky-800"
+              >
+                Open Elixir search
+                <ExternalLink className="h-3 w-3" />
+              </a>
+              <span className="text-[11px] text-slate-400">
+                {symbolResolve?.loading
+                  ? 'Searching'
+                  : symbolResolve?.result
+                    ? symbolResolve.result.resolved
+                      ? `${symbolResolve.result.candidates.length} matches`
+                      : 'No matches'
+                    : 'Ready'}
+              </span>
+            </div>
+          </div>
         </div>
       )}
 

@@ -40,6 +40,7 @@ import type {
   KernelVersionsResponse,
   KernelFileResponse,
   KernelResolveResponse,
+  KernelSymbolResolveResponse,
   KernelHistoryCommit,
   KernelLineHistoryResponse,
   KernelTreeResponse,
@@ -1386,6 +1387,29 @@ export async function resolveKernelSource(
     throw err;
   });
   kernelResolveCache.set(cacheKey, request);
+  return request;
+}
+
+const kernelSymbolResolveCache = new Map<string, Promise<KernelSymbolResolveResponse>>();
+
+export async function resolveKernelSymbol(
+  version: string,
+  symbol: string,
+  limit: number = 10,
+): Promise<KernelSymbolResolveResponse> {
+  const cacheKey = `${version}\n${symbol}\n${limit}`;
+  const cached = kernelSymbolResolveCache.get(cacheKey);
+  if (cached) return cached;
+
+  const params = new URLSearchParams();
+  params.set('version', version);
+  params.set('symbol', symbol);
+  params.set('limit', String(limit));
+  const request = fetchJSON<KernelSymbolResolveResponse>(`${API_BASE}/kernel/symbol-resolve?${params}`).catch((err) => {
+    kernelSymbolResolveCache.delete(cacheKey);
+    throw err;
+  });
+  kernelSymbolResolveCache.set(cacheKey, request);
   return request;
 }
 

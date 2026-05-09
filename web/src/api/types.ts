@@ -805,6 +805,26 @@ export interface KernelResolveResponse {
   fallback_reason: string | null;
 }
 
+export interface KernelSymbolCandidateResponse {
+  version: string;
+  path: string;
+  line: number;
+  local_url: string;
+  external_url: string;
+  local_file_available: boolean;
+  source: 'local' | 'elixir';
+}
+
+export interface KernelSymbolResolveResponse {
+  symbol: string;
+  version: string;
+  query_url: string;
+  source: 'elixir';
+  resolved: boolean;
+  candidates: KernelSymbolCandidateResponse[];
+  fallback_reason: string | null;
+}
+
 export interface KernelHistoryCommit {
   commit_hash: string;
   short_hash: string;

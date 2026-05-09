@@ -32,6 +32,7 @@ from src.api.schemas import (
     _annotation_to_response,
 )
 from src.kernel_source.fallback import FallbackKernelSource
+from src.kernel_source.elixir import ElixirSource
 from src.kernel_source.git_local import GitLocalSource
 from src.storage.models import AnnotationCreate, AnnotationORM, AnnotationUpdate
 
@@ -116,6 +117,13 @@ def _normalize_kernel_path(path: str) -> str:
     if not normalized_path or ".." in normalized_path.split("/"):
         raise HTTPException(status_code=400, detail="Invalid kernel source path")
     return normalized_path
+
+
+def _normalize_kernel_symbol(symbol: str) -> str:
+    normalized_symbol = symbol.strip()
+    if not normalized_symbol or not re.match(r"^[A-Za-z_][A-Za-z0-9_]{1,127}$", normalized_symbol):
+        raise HTTPException(status_code=400, detail="Invalid kernel symbol")
+    return normalized_symbol
 
 
 async def _run_local_git(source: GitLocalSource, *args: str, timeout: float = 20.0) -> str:
@@ -311,6 +319,26 @@ class CodeAnnotationUpdateRequest(BaseModel):
     body: str = Field(..., min_length=1, description="注释正文")
 
 
+class KernelSymbolCandidateResponse(BaseModel):
+    version: str
+    path: str
+    line: int
+    local_url: str
+    external_url: str
+    local_file_available: bool
+    source: str
+
+
+class KernelSymbolResolveResponse(BaseModel):
+    symbol: str
+    version: str
+    query_url: str
+    source: str
+    resolved: bool
+    candidates: list[KernelSymbolCandidateResponse]
+    fallback_reason: str | None = None
+
+
 @router.get("/api/kernel/resolve")
 async def kernel_resolve(
     version: str = Query(..., min_length=1, description="内核版本 tag"),
@@ -365,6 +393,80 @@ async def kernel_resolve(
         "line_count": None,
         "fallback_reason": local_error,
     }
+
+
+@router.get("/api/kernel/symbol-resolve", response_model=KernelSymbolResolveResponse)
+async def kernel_symbol_resolve(
+    version: str = Query(..., min_length=1, description="内核版本 tag"),
+    symbol: str = Query(..., min_length=1, description="符号名"),
+    limit: int = Query(10, ge=1, le=20, description="最多返回候选数"),
+):
+    """解析符号并返回候选源码位置。
+
+    这条路径把符号请求交给 Elixir ident 页面，再把解析出的候选行号回填给
+    本地 Code Browser。前端拿到 `local_url` 后就能直接跳到本地代码行。
+    """
+    if not state._kernel_source:
+        raise HTTPException(status_code=503, detail="Kernel source not initialized")
+
+    normalized_symbol = _normalize_kernel_symbol(symbol)
+    limit_value = limit if isinstance(limit, int) else 10
+    query_url = f"https://elixir.bootlin.com/linux/{quote(version, safe='')}/ident/{quote(normalized_symbol, safe='')}"
+
+    source = state._kernel_source
+    local_source = source._primary if isinstance(source, FallbackKernelSource) else source
+    local_available = hasattr(local_source, "get_file")
+
+    elixir_source = ElixirSource()
+    try:
+        elixir_candidates = await elixir_source.resolve_symbol(version, normalized_symbol, limit=limit_value)
+    except FileNotFoundError as e:
+        return KernelSymbolResolveResponse(
+            symbol=normalized_symbol,
+            version=version,
+            query_url=query_url,
+            source="elixir",
+            resolved=False,
+            candidates=[],
+            fallback_reason=str(e),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    candidates: list[KernelSymbolCandidateResponse] = []
+    for candidate in elixir_candidates:
+        candidate_path = _normalize_kernel_path(str(candidate.get("path", "")))
+        candidate_line = int(candidate.get("line") or 0)
+        external_url = str(candidate.get("url") or _elixir_url(version, candidate_path, candidate_line))
+        local_file_available = False
+        if local_available:
+            try:
+                await local_source.get_file(version, candidate_path)  # type: ignore[attr-defined]
+                local_file_available = True
+            except (FileNotFoundError, ValueError):
+                local_file_available = False
+
+        candidates.append(
+            KernelSymbolCandidateResponse(
+                version=str(candidate.get("version") or version),
+                path=candidate_path,
+                line=candidate_line,
+                local_url=_local_code_url(version, candidate_path, candidate_line),
+                external_url=external_url,
+                local_file_available=local_file_available,
+                source="local" if local_file_available else "elixir",
+            )
+        )
+
+    return KernelSymbolResolveResponse(
+        symbol=normalized_symbol,
+        version=version,
+        query_url=query_url,
+        source="elixir",
+        resolved=bool(candidates),
+        candidates=candidates,
+        fallback_reason=None,
+    )
 
 
 @router.get("/api/kernel/blame")

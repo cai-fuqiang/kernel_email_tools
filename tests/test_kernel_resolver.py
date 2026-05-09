@@ -4,7 +4,8 @@ import pytest
 from fastapi import HTTPException
 
 from src.api import state
-from src.api.routers.kernel import _history_entry, _normalize_commit_hash, kernel_resolve
+from src.api.routers.kernel import _history_entry, _normalize_commit_hash, kernel_resolve, kernel_symbol_resolve
+from src.kernel_source.elixir import ElixirSource
 from src.kernel_source.base import BaseKernelSource, FileContent, TreeEntry, VersionInfo
 
 
@@ -107,6 +108,73 @@ async def _test_kernel_resolve_rejects_parent_path(monkeypatch):
 
     assert exc_info.value.status_code == 400
     assert "Invalid kernel source path" in exc_info.value.detail
+
+
+def test_kernel_symbol_resolve_returns_local_jump_candidates(monkeypatch):
+    asyncio.run(_test_kernel_symbol_resolve_returns_local_jump_candidates(monkeypatch))
+
+
+async def _test_kernel_symbol_resolve_returns_local_jump_candidates(monkeypatch):
+    monkeypatch.setattr(
+        state,
+        "_kernel_source",
+        FakeKernelSource(
+            {
+                ("v6.8", "mm/vmscan.c"): FileContent(
+                    path="mm/vmscan.c",
+                    version="v6.8",
+                    content="int shrink_node(void) { return 0; }\n",
+                    line_count=1,
+                    size=35,
+                    truncated=False,
+                )
+            }
+        ),
+    )
+
+    async def fake_resolve_symbol(self, version: str, symbol: str, limit: int = 10):
+        assert version == "v6.8"
+        assert symbol == "shrink_node"
+        assert limit == 10
+        return [
+            {
+                "version": "v6.8",
+                "path": "mm/vmscan.c",
+                "line": 1234,
+                "url": "https://elixir.bootlin.com/linux/v6.8/source/mm/vmscan.c#L1234",
+            }
+        ]
+
+    monkeypatch.setattr(ElixirSource, "resolve_symbol", fake_resolve_symbol)
+
+    result = await kernel_symbol_resolve(version="v6.8", symbol="shrink_node")
+
+    assert result.resolved is True
+    assert result.query_url == "https://elixir.bootlin.com/linux/v6.8/ident/shrink_node"
+    assert result.candidates[0].path == "mm/vmscan.c"
+    assert result.candidates[0].line == 1234
+    assert result.candidates[0].local_file_available is True
+    assert result.candidates[0].local_url == "/app/kernel-code?v=v6.8&path=mm%2Fvmscan.c&line=1234"
+    assert result.candidates[0].external_url == "https://elixir.bootlin.com/linux/v6.8/source/mm/vmscan.c#L1234"
+
+
+def test_kernel_symbol_resolve_returns_empty_when_elixir_has_no_match(monkeypatch):
+    asyncio.run(_test_kernel_symbol_resolve_returns_empty_when_elixir_has_no_match(monkeypatch))
+
+
+async def _test_kernel_symbol_resolve_returns_empty_when_elixir_has_no_match(monkeypatch):
+    monkeypatch.setattr(state, "_kernel_source", FakeKernelSource())
+
+    async def fake_resolve_symbol(self, version: str, symbol: str, limit: int = 10):
+        raise FileNotFoundError(f"Symbol not found on elixir: {version}:{symbol}")
+
+    monkeypatch.setattr(ElixirSource, "resolve_symbol", fake_resolve_symbol)
+
+    result = await kernel_symbol_resolve(version="v6.8", symbol="nonexistent_symbol")
+
+    assert result.resolved is False
+    assert result.candidates == []
+    assert "Symbol not found on elixir" in (result.fallback_reason or "")
 
 
 def test_commit_hash_normalization_accepts_blame_boundary_marker():

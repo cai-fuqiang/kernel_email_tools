@@ -6,6 +6,7 @@
 
 import logging
 import re
+from urllib.parse import quote
 
 import httpx
 
@@ -33,6 +34,11 @@ _CODE_BLOCK_RE = re.compile(
 # 匹配单行代码
 _CODE_LINE_RE = re.compile(
     r'<span\s+id="codeline-\d+">(.*?)</span>', re.DOTALL
+)
+# 匹配 ident 页面里指向源码行的链接，保留 path 和行号
+_IDENT_SOURCE_LINK_RE = re.compile(
+    r'href="(?P<href>/linux/(?P<version>[^/]+)/source/(?P<path>[^"#?]+)(?:#L(?P<line>\d+))?)"',
+    re.DOTALL,
 )
 # HTML tag 剥离
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -197,6 +203,19 @@ class ElixirSource(BaseKernelSource):
             truncated=False,
         )
 
+    async def resolve_symbol(self, version: str, symbol: str, limit: int = 10) -> list[dict]:
+        """解析 ident 页面中的符号候选结果。
+
+        这个方法用于验证“把符号请求发给 Elixir，再把结果转回本地 Code Browser”的
+        可行性：如果 ident 页面里能抽出源码链接和行号，就能把它们继续喂给本地跳转。
+        """
+        url = self._build_ident_url(version, symbol)
+        html = await self._fetch(url)
+        candidates = self._parse_symbol_candidates(version, html)
+        if not candidates:
+            raise FileNotFoundError(f"Symbol not found on elixir: {version}:{symbol}")
+        return candidates[:limit]
+
     async def _fetch(self, url: str) -> str:
         """异步获取 URL 内容。
 
@@ -218,3 +237,41 @@ class ElixirSource(BaseKernelSource):
         if path:
             return f"{BASE_URL}/linux/{version}/source/{path}"
         return f"{BASE_URL}/linux/{version}/source/"
+
+    @staticmethod
+    def _build_ident_url(version: str, symbol: str) -> str:
+        """构建 elixir ident 页面 URL。"""
+        return f"{BASE_URL}/linux/{quote(version, safe='')}/ident/{quote(symbol, safe='')}"
+
+    @staticmethod
+    def _parse_symbol_candidates(version: str, html: str) -> list[dict]:
+        """从 ident 页面中提取源码候选项。
+
+        返回值保留 path 和 line，前端可以据此拼出本地 Code Browser 跳转。
+        """
+        candidates: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        for match in _IDENT_SOURCE_LINK_RE.finditer(html):
+            href_version = match.group("version")
+            if href_version != version:
+                continue
+            path = match.group("path")
+            line_text = match.group("line")
+            line = int(line_text) if line_text else 0
+            if line <= 0:
+                continue
+            key = (path, line)
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(
+                {
+                    "version": version,
+                    "path": path,
+                    "line": line,
+                    "url": f"{BASE_URL}/linux/{quote(version, safe='')}/source/{path}#L{line}",
+                }
+            )
+
+        return candidates
