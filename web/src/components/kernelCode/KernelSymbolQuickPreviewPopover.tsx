@@ -6,6 +6,7 @@ import { getKernelFile } from '../../api/client';
 import type { KernelSymbolCandidateResponse } from '../../api/types';
 import { showToast } from '../Toast';
 import { localKernelCodeUrl } from '../../utils/externalLinks';
+import { detectNearestSymbol } from '../../utils/kernelSymbols';
 
 interface KernelSymbolQuickPreviewPopoverProps {
   isOpen: boolean;
@@ -307,6 +308,11 @@ export default function KernelSymbolQuickPreviewPopover({
     };
   }, [candidate, fileLines.length]);
 
+  const containingSymbol = useMemo(
+    () => detectNearestSymbol(fileLines, candidate?.line ?? null),
+    [candidate?.line, fileLines],
+  );
+
   if (!isOpen || !candidate || !frame) return null;
 
   const zoomStyle = { fontSize: `${Math.round(12 * zoom)}px`, lineHeight: 1.45 };
@@ -356,6 +362,16 @@ export default function KernelSymbolQuickPreviewPopover({
             ) : null}
           </div>
           <div className="mt-1 truncate text-xs font-mono text-slate-700">{candidate.path}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">
+              {candidate.local_file_available ? 'Local file' : 'External only'}
+            </span>
+            {containingSymbol ? (
+              <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-700">
+                in {containingSymbol}
+              </span>
+            ) : null}
+          </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
@@ -449,7 +465,7 @@ export default function KernelSymbolQuickPreviewPopover({
             </div>
           </div>
 
-          <div className="h-full min-h-0 overflow-auto bg-slate-950/95 p-3">
+          <div className="h-full min-h-0 overflow-auto overscroll-contain bg-slate-950/95 p-3">
             {!candidate.local_file_available ? (
               <div className="flex h-full items-center justify-center">
                 <div className="max-w-lg rounded-xl border border-slate-800 bg-slate-900/80 px-4 py-4 text-sm leading-6 text-slate-200">
@@ -501,6 +517,15 @@ export default function KernelSymbolQuickPreviewPopover({
               <div className="mt-1 text-xs text-slate-500">
                 line {candidate.line}
               </div>
+              {containingSymbol ? (
+                <div className="mt-2 text-xs text-slate-600">
+                  Containing symbol: <span className="font-semibold text-slate-900">{containingSymbol}</span>
+                </div>
+              ) : (
+                <div className="mt-2 text-xs text-slate-500">
+                  Containing symbol could not be inferred.
+                </div>
+              )}
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">

@@ -11,6 +11,7 @@ import {
   pickKernelSourceUrl,
   elixirIdentUrl,
 } from '../utils/externalLinks';
+import { detectNearestSymbol } from '../utils/kernelSymbols';
 
 const C_KEYWORDS = new Set([
   'asm', 'auto', 'break', 'case', 'const', 'continue', 'default', 'do', 'else', 'enum',
@@ -120,6 +121,11 @@ export default function KernelSymbolPreviewPage() {
     };
   }, [codeLines.length, line]);
 
+  const containingSymbol = useMemo(
+    () => detectNearestSymbol(codeLines, line),
+    [codeLines, line],
+  );
+
   const sourceLink = useMemo(
     () => pickKernelSourceUrl(version || 'latest', path, line),
     [line, path, version],
@@ -151,6 +157,7 @@ export default function KernelSymbolPreviewPage() {
                 <StatusBadge tone="muted">{version || 'No version'}</StatusBadge>
                 <StatusBadge tone="info">{`L${line}`}</StatusBadge>
                 {symbol ? <StatusBadge tone="success">{symbol}</StatusBadge> : null}
+                {containingSymbol ? <StatusBadge tone="warning">{`in ${containingSymbol}`}</StatusBadge> : null}
               </div>
               <div className="mt-2 truncate text-xs text-slate-500">{path || 'No path selected'}</div>
             </div>
@@ -210,7 +217,7 @@ export default function KernelSymbolPreviewPage() {
               </div>
             </div>
 
-            <div className="h-full min-h-0 overflow-auto bg-slate-950/95 p-4">
+            <div className="h-full min-h-0 overflow-auto overscroll-contain bg-slate-950/95 p-4">
               {!version || !path ? (
                 <div className="flex h-full items-center justify-center">
                   <div className="max-w-md rounded-xl border border-slate-700 bg-slate-900/80 px-5 py-4 text-sm leading-6 text-slate-200">
@@ -279,6 +286,15 @@ export default function KernelSymbolPreviewPage() {
                   <div className="mt-1 text-xs text-slate-500">
                     line {line}
                   </div>
+                  {containingSymbol ? (
+                    <div className="mt-2 text-xs text-slate-600">
+                      Containing symbol: <span className="font-semibold text-slate-900">{containingSymbol}</span>
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-xs text-slate-500">
+                      Containing symbol could not be inferred.
+                    </div>
+                  )}
                 </div>
               </div>
 
