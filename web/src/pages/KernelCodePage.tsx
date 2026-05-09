@@ -9,6 +9,7 @@ import {
   FileCode2,
   FolderTree,
   GitBranch,
+  GitCommitHorizontal,
   Library,
   Layers3,
   MessagesSquare,
@@ -40,6 +41,7 @@ import EmailTagEditor from '../components/EmailTagEditor';
 import ThreadDrawer from '../components/ThreadDrawer';
 import { showToast } from '../components/Toast';
 import AnnotationPanel from '../components/kernelCode/AnnotationPanel';
+import CodeHistoryPanel from '../components/kernelCode/CodeHistoryPanel';
 import {
   EmptyState,
   IconButton,
@@ -272,7 +274,7 @@ type ThreadPreview = {
 };
 
 type AtlasPathKind = 'file' | 'directory' | null;
-type InspectorSectionId = 'target' | 'annotations' | 'tags' | 'threads' | 'knowledge';
+type InspectorSectionId = 'target' | 'history' | 'annotations' | 'tags' | 'threads' | 'knowledge';
 
 export default function KernelCodePage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -545,6 +547,13 @@ export default function KernelCodePage() {
       endLine: sorted[sorted.length - 1],
     };
   }, [selectedLines]);
+
+  const selectedText = useMemo(() => {
+    if (!selectedRange || codeLines.length === 0) return '';
+    return codeLines
+      .slice(selectedRange.startLine - 1, selectedRange.endLine)
+      .join('\n');
+  }, [codeLines, selectedRange]);
 
   const annotationCountByLine = useMemo(() => {
     const counts = new Map<number, number>();
@@ -1431,6 +1440,27 @@ export default function KernelCodePage() {
                       )}
                     </div>
                   </InspectorSection>
+
+                    {currentFile ? (
+                      <InspectorSection
+                        title="History"
+                        icon={<GitCommitHorizontal className="h-4 w-4" />}
+                        collapsed={collapsedInspectorSections.has('history')}
+                        onToggle={() => toggleInspectorSection('history')}
+                        headerExtra={
+                          selectedRange ? (
+                            <span className="text-[10px] font-medium text-slate-400">{selectedRangeLabel}</span>
+                          ) : null
+                        }
+                      >
+                        <CodeHistoryPanel
+                          version={selectedVersion}
+                          filePath={currentPath}
+                          selectedRange={selectedRange}
+                          selectedText={selectedText}
+                        />
+                      </InspectorSection>
+                    ) : null}
 
                     {currentFile ? (
                       <InspectorSection

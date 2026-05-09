@@ -1,5 +1,7 @@
 """kernel API routes."""
 
+import asyncio
+import re
 from datetime import datetime
 from urllib.parse import quote
 from typing import Optional
@@ -30,6 +32,7 @@ from src.api.schemas import (
     _annotation_to_response,
 )
 from src.kernel_source.fallback import FallbackKernelSource
+from src.kernel_source.git_local import GitLocalSource
 from src.storage.models import AnnotationCreate, AnnotationORM, AnnotationUpdate
 
 router = APIRouter(tags=["kernel"])
@@ -96,6 +99,89 @@ def _local_code_url(version: str, path: str, line: int | None = None) -> str:
     if line and line > 0:
         params += f"&line={line}"
     return f"/app/kernel-code?{params}"
+
+
+def _local_git_source():
+    if not state._kernel_source:
+        raise HTTPException(status_code=503, detail="Kernel source not initialized")
+    source = state._kernel_source
+    local_source = source._primary if isinstance(source, FallbackKernelSource) else source
+    if not isinstance(local_source, GitLocalSource):
+        raise HTTPException(status_code=503, detail="Local git source is not available")
+    return local_source
+
+
+def _normalize_kernel_path(path: str) -> str:
+    normalized_path = path.strip().lstrip("/")
+    if not normalized_path or ".." in normalized_path.split("/"):
+        raise HTTPException(status_code=400, detail="Invalid kernel source path")
+    return normalized_path
+
+
+async def _run_local_git(source: GitLocalSource, *args: str, timeout: float = 20.0) -> str:
+    try:
+        return await asyncio.wait_for(source._run_git(*args), timeout=timeout)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="git command timed out")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+_TRAILER_RE = re.compile(r"^([A-Za-z][A-Za-z0-9-]*):\s*(.+)$")
+_LORE_RE = re.compile(r"https?://lore\.kernel\.org/\S+")
+_URL_RE = re.compile(r"https?://[^\s>]+")
+
+
+def _parse_commit_trailers(message: str) -> dict[str, list[str]]:
+    trailers: dict[str, list[str]] = {}
+    for raw_line in message.splitlines():
+        line = raw_line.strip()
+        match = _TRAILER_RE.match(line)
+        if not match:
+            continue
+        key, value = match.group(1), match.group(2).strip()
+        trailers.setdefault(key, []).append(value)
+    return trailers
+
+
+def _extract_urls(message: str) -> list[str]:
+    urls: list[str] = []
+    seen = set()
+    for match in _URL_RE.finditer(message):
+        url = match.group(0).rstrip(".,);]")
+        if url not in seen:
+            seen.add(url)
+            urls.append(url)
+    return urls
+
+
+def _history_entry(
+    commit_hash: str,
+    short_hash: str,
+    author_name: str,
+    author_email: str,
+    author_time: str,
+    subject: str,
+    message: str = "",
+    changed_files: list[dict] | None = None,
+) -> dict:
+    trailers = _parse_commit_trailers(message)
+    urls = _extract_urls(message)
+    lore_links = [url for url in urls if _LORE_RE.match(url)]
+    return {
+        "commit_hash": commit_hash,
+        "short_hash": short_hash,
+        "author_name": author_name,
+        "author_email": author_email,
+        "author_time": author_time,
+        "subject": subject,
+        "message": message,
+        "trailers": trailers,
+        "urls": urls,
+        "lore_links": lore_links,
+        "has_lore_link": bool(lore_links or trailers.get("Link")),
+        "changed_files": changed_files or [],
+    }
 
 @router.get("/api/kernel/versions")
 async def kernel_versions(
@@ -268,6 +354,165 @@ async def kernel_resolve(
         "line_count": None,
         "fallback_reason": local_error,
     }
+
+
+@router.get("/api/kernel/blame")
+async def kernel_blame(
+    version: str = Query(..., min_length=1, description="内核版本 tag"),
+    path: str = Query(..., min_length=1, description="仓库内相对文件路径"),
+    line: int = Query(..., ge=1, description="行号"),
+):
+    """返回某行最后一次修改的 commit 摘要。"""
+    source = _local_git_source()
+    normalized_path = _normalize_kernel_path(path)
+    output = await _run_local_git(
+        source,
+        "blame",
+        "--porcelain",
+        "-L",
+        f"{line},{line}",
+        version,
+        "--",
+        normalized_path,
+    )
+    lines = output.splitlines()
+    if not lines:
+        raise HTTPException(status_code=404, detail="No blame information found")
+    commit_hash = lines[0].split()[0]
+    meta: dict[str, str] = {}
+    for raw_line in lines[1:]:
+        if raw_line.startswith("\t"):
+            break
+        key, _, value = raw_line.partition(" ")
+        if key and value:
+            meta[key] = value
+    short_hash = commit_hash[:12]
+    return _history_entry(
+        commit_hash=commit_hash,
+        short_hash=short_hash,
+        author_name=meta.get("author", ""),
+        author_email=meta.get("author-mail", "").strip("<>"),
+        author_time=meta.get("author-time", ""),
+        subject=meta.get("summary", ""),
+    )
+
+
+@router.get("/api/kernel/line-history")
+async def kernel_line_history(
+    version: str = Query(..., min_length=1, description="内核版本 tag"),
+    path: str = Query(..., min_length=1, description="仓库内相对文件路径"),
+    start_line: int = Query(..., ge=1, description="起始行号"),
+    end_line: int = Query(..., ge=1, description="结束行号"),
+    limit: int = Query(30, ge=1, le=80, description="最多返回 commit 数"),
+):
+    """返回某段代码的历史 commit 列表。
+
+    使用 `git log -L` 追踪选区历史。响应只返回 commit 元数据、trailers 和
+    URL 线索，不返回完整 patch，避免前端列表过重。
+    """
+    source = _local_git_source()
+    normalized_path = _normalize_kernel_path(path)
+    if end_line < start_line:
+        start_line, end_line = end_line, start_line
+    if end_line - start_line > 79:
+        raise HTTPException(status_code=400, detail="Line history range is limited to 80 lines")
+
+    fmt = "%x1e%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%B"
+    output = await _run_local_git(
+        source,
+        "log",
+        "--no-color",
+        f"--max-count={limit}",
+        f"--format={fmt}",
+        "-L",
+        f"{start_line},{end_line}:{normalized_path}",
+        version,
+        timeout=35.0,
+    )
+    entries = []
+    for chunk in output.split("\x1e"):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        header, _, _patch = chunk.partition("\ndiff --git")
+        parts = header.split("\x1f", 6)
+        if len(parts) < 7:
+            continue
+        commit_hash, short_hash, author_name, author_email, author_time, subject, message = parts
+        entries.append(
+            _history_entry(
+                commit_hash=commit_hash.strip(),
+                short_hash=short_hash.strip(),
+                author_name=author_name.strip(),
+                author_email=author_email.strip(),
+                author_time=author_time.strip(),
+                subject=subject.strip(),
+                message=message.strip(),
+            )
+        )
+    return {
+        "version": version,
+        "path": normalized_path,
+        "start_line": start_line,
+        "end_line": end_line,
+        "commits": entries[:limit],
+        "total": len(entries[:limit]),
+    }
+
+
+@router.get("/api/kernel/commit")
+async def kernel_commit(
+    version: str = Query(..., min_length=1, description="内核版本 tag"),
+    commit_hash: str = Query(..., min_length=7, max_length=64, description="commit hash"),
+):
+    """返回 commit 详情、trailers、URL 和 changed files。"""
+    source = _local_git_source()
+    if not re.match(r"^[0-9a-fA-F]{7,64}$", commit_hash):
+        raise HTTPException(status_code=400, detail="Invalid commit hash")
+
+    fmt = "%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%B"
+    message_output = await _run_local_git(
+        source,
+        "show",
+        "--no-patch",
+        f"--format={fmt}",
+        commit_hash,
+    )
+    parts = message_output.split("\x1f", 6)
+    if len(parts) < 7:
+        raise HTTPException(status_code=404, detail="Commit not found")
+
+    files_output = await _run_local_git(
+        source,
+        "show",
+        "--numstat",
+        "--format=",
+        commit_hash,
+    )
+    changed_files = []
+    for raw_line in files_output.splitlines():
+        fields = raw_line.split("\t")
+        if len(fields) < 3:
+            continue
+        changed_files.append({
+            "added": fields[0],
+            "deleted": fields[1],
+            "path": fields[2],
+        })
+
+    commit_hash_full, short_hash, author_name, author_email, author_time, subject, message = parts
+    entry = _history_entry(
+        commit_hash=commit_hash_full.strip(),
+        short_hash=short_hash.strip(),
+        author_name=author_name.strip(),
+        author_email=author_email.strip(),
+        author_time=author_time.strip(),
+        subject=subject.strip(),
+        message=message.strip(),
+        changed_files=changed_files,
+    )
+    entry["version"] = version
+    return entry
 
 
 @router.get("/api/kernel/annotations")

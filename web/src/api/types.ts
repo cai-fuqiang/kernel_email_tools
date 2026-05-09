@@ -805,6 +805,35 @@ export interface KernelResolveResponse {
   fallback_reason: string | null;
 }
 
+export interface KernelHistoryCommit {
+  commit_hash: string;
+  short_hash: string;
+  author_name: string;
+  author_email: string;
+  author_time: string;
+  subject: string;
+  message?: string;
+  trailers: Record<string, string[]>;
+  urls: string[];
+  lore_links: string[];
+  has_lore_link: boolean;
+  changed_files: Array<{
+    added: string;
+    deleted: string;
+    path: string;
+  }>;
+  version?: string;
+}
+
+export interface KernelLineHistoryResponse {
+  version: string;
+  path: string;
+  start_line: number;
+  end_line: number;
+  commits: KernelHistoryCommit[];
+  total: number;
+}
+
 export interface CodeAnnotation {
   annotation_id: string;
   annotation_type: string;

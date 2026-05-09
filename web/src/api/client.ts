@@ -40,6 +40,8 @@ import type {
   KernelVersionsResponse,
   KernelFileResponse,
   KernelResolveResponse,
+  KernelHistoryCommit,
+  KernelLineHistoryResponse,
   KernelTreeResponse,
   CodeAnnotation,
   CodeAnnotationCreate,
@@ -1080,6 +1082,21 @@ export async function createKnowledgeEntity(data: {
   });
 }
 
+export async function createKnowledgeDraft(data: {
+  source_type?: string;
+  source_ref?: string;
+  question?: string;
+  payload: Record<string, unknown>;
+  status?: string;
+  review_note?: string;
+}): Promise<import('./types').KnowledgeDraft> {
+  return fetchWithBody<import('./types').KnowledgeDraft>(`${API_BASE}/knowledge/drafts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
 export async function getKnowledgeStats(): Promise<import('./types').KnowledgeStats> {
   return fetchJSON<import('./types').KnowledgeStats>(`${API_BASE}/knowledge/stats`);
 }
@@ -1370,6 +1387,44 @@ export async function resolveKernelSource(
   });
   kernelResolveCache.set(cacheKey, request);
   return request;
+}
+
+export async function getKernelBlame(
+  version: string,
+  path: string,
+  line: number,
+): Promise<KernelHistoryCommit> {
+  const params = new URLSearchParams();
+  params.set('version', version);
+  params.set('path', path);
+  params.set('line', String(line));
+  return fetchJSON<KernelHistoryCommit>(`${API_BASE}/kernel/blame?${params}`);
+}
+
+export async function getKernelLineHistory(
+  version: string,
+  path: string,
+  startLine: number,
+  endLine: number,
+  limit: number = 30,
+): Promise<KernelLineHistoryResponse> {
+  const params = new URLSearchParams();
+  params.set('version', version);
+  params.set('path', path);
+  params.set('start_line', String(startLine));
+  params.set('end_line', String(endLine));
+  params.set('limit', String(limit));
+  return fetchJSON<KernelLineHistoryResponse>(`${API_BASE}/kernel/line-history?${params}`);
+}
+
+export async function getKernelCommit(
+  version: string,
+  commitHash: string,
+): Promise<KernelHistoryCommit> {
+  const params = new URLSearchParams();
+  params.set('version', version);
+  params.set('commit_hash', commitHash);
+  return fetchJSON<KernelHistoryCommit>(`${API_BASE}/kernel/commit?${params}`);
 }
 
 export async function getCodeAnnotations(

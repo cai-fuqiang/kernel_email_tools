@@ -13,7 +13,7 @@
 
 ---
 
-## 活跃 / 后续计划（6）
+## 活跃 / 后续计划（7）
 
 | PLAN | 主题 | Status | Priority | 备注 |
 |------|------|--------|----------|------|
@@ -23,6 +23,7 @@
 | [PLAN-35001](PLAN-35001-FUTURE-ai-assisted-knowledge-pipeline.md) | AI 辅助草稿 / Survey helper | future | P3 | 后置为人工工作流助手；不作为自动邮件入库主线 |
 | [PLAN-38000](PLAN-38000-my-future.md) | Evidence-driven kernel knowledge production | planned | P0/P1 | 方向性计划；按 2026-05-09 修正优先人工知识沉淀 |
 | [PLAN-39000](PLAN-39000-kernel-knowledge-research-skill.md) | Kernel knowledge research skill | future | P3 | 后续把内核知识点研究方法固化成 skill；当前不实施 |
+| [PLAN-39001](PLAN-39001-code-history-to-knowledge.md) | Code History To Knowledge | in-progress | P1 | 已完成首个 MVP：Code Browser 选区 → line history / commit evidence → Knowledge Draft |
 
 ---
 
@@ -106,10 +107,11 @@ Feature / Topic
 8. ~~**P1** PLAN-37001 Phase 1+2+3+4（产品边界清理 + Code Target Normalization + code/mail/knowledge 闭环 + cross-version context）~~ ✅ 2026-05-08
 9. **P1** 人工 Knowledge Workbench 丰富（主题、证据、关系、结论、待确认项）
 10. **P1** 人工主题时间线 MVP（先手动关联邮件 / patch / commit / code / links）
-11. **P1** PLAN-30002 Phase 6 剩余项（local-first resolver 的最小符号索引仅在闭环需要时推进）
-12. **P2** 单 thread / 单 topic Survey 或 AI 草稿 PoC（验证质量、成本和人工 review 体验）
-13. **P3** PLAN-39000 Kernel knowledge research skill（等人工研究流程稳定后再固化为 skill）
-14. **P3** VS Code / Neovim bridge、批量 Survey、AI 入库流水线、Markdown Wiki Export
+11. **P1** PLAN-39001 Code History To Knowledge（Code Browser 选区历史、commit 证据、保存到 Knowledge Draft）
+12. **P1** PLAN-30002 Phase 6 剩余项（local-first resolver 的最小符号索引仅在闭环需要时推进）
+13. **P2** 单 thread / 单 topic Survey 或 AI 草稿 PoC（验证质量、成本和人工 review 体验）
+14. **P3** PLAN-39000 Kernel knowledge research skill（等人工研究流程稳定后再固化为 skill）
+15. **P3** VS Code / Neovim bridge、批量 Survey、AI 入库流水线、Markdown Wiki Export
 
 ---
 

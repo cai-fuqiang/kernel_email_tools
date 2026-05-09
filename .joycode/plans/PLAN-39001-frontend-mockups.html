@@ -1,0 +1,906 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PLAN-39001 Frontend Mockups</title>
+    <style>
+      :root {
+        --bg: #f5f7f8;
+        --panel: #ffffff;
+        --panel-2: #f9fafb;
+        --ink: #17212b;
+        --muted: #667384;
+        --soft: #dbe2ea;
+        --line: #e6ebf0;
+        --accent: #116c5b;
+        --accent-2: #d98b2b;
+        --blue: #2f6bcb;
+        --red: #b64b4b;
+        --code: #102233;
+        --code-line: #ecf5f1;
+        --shadow: 0 18px 42px rgba(17, 36, 51, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+          sans-serif;
+      }
+
+      .page {
+        width: 1440px;
+        padding: 40px;
+      }
+
+      .mockup {
+        width: 1360px;
+        min-height: 900px;
+        margin: 0 0 48px;
+        background: var(--panel);
+        border: 1px solid var(--soft);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .mockup.compact {
+        min-height: 760px;
+      }
+
+      .titlebar {
+        height: 64px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 24px;
+        border-bottom: 1px solid var(--line);
+        background: #fbfcfd;
+      }
+
+      .titlebar h1 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .titlebar .meta {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .chip,
+      .tab,
+      .button,
+      .icon-button {
+        border: 1px solid var(--soft);
+        background: #fff;
+        border-radius: 6px;
+        color: var(--ink);
+        font-size: 13px;
+        line-height: 1;
+      }
+
+      .chip {
+        padding: 6px 9px;
+      }
+
+      .chip.green {
+        color: var(--accent);
+        background: #edf8f4;
+        border-color: #b9ded3;
+      }
+
+      .chip.orange {
+        color: #8d5516;
+        background: #fff4e6;
+        border-color: #f1c890;
+      }
+
+      .chip.blue {
+        color: var(--blue);
+        background: #eef4ff;
+        border-color: #c9d8f5;
+      }
+
+      .button {
+        height: 36px;
+        padding: 0 14px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        font-weight: 650;
+      }
+
+      .button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: white;
+      }
+
+      .button.ghost {
+        background: transparent;
+      }
+
+      .icon-button {
+        width: 30px;
+        height: 30px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .input {
+        height: 36px;
+        padding: 0 12px;
+        border: 1px solid var(--soft);
+        border-radius: 6px;
+        background: #fff;
+        color: var(--ink);
+        font-size: 13px;
+      }
+
+      .main-grid {
+        display: grid;
+        grid-template-columns: 260px 1fr 420px;
+        min-height: 836px;
+      }
+
+      .file-tree {
+        border-right: 1px solid var(--line);
+        background: #fbfcfd;
+        padding: 18px 14px;
+      }
+
+      .file-tree h2,
+      .panel h2,
+      .drawer h2,
+      .basket h2 {
+        margin: 0 0 14px;
+        font-size: 13px;
+        color: var(--muted);
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .tree-row {
+        height: 32px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 8px;
+        border-radius: 6px;
+        color: #344454;
+        font-size: 13px;
+      }
+
+      .tree-row.active {
+        background: #eaf4f0;
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .code-area {
+        background: #fff;
+        min-width: 0;
+      }
+
+      .code-header {
+        height: 50px;
+        padding: 0 18px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .code-header strong {
+        font-size: 15px;
+      }
+
+      .code {
+        margin: 0;
+        padding: 16px 0 32px;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 13px;
+        line-height: 24px;
+        color: var(--code);
+      }
+
+      .code-line {
+        display: grid;
+        grid-template-columns: 62px 1fr;
+        min-height: 24px;
+        white-space: pre;
+      }
+
+      .ln {
+        color: #8b98a7;
+        text-align: right;
+        padding-right: 18px;
+        user-select: none;
+      }
+
+      .src {
+        padding-left: 14px;
+        border-left: 1px solid #edf0f3;
+      }
+
+      .code-line.selected {
+        background: var(--code-line);
+      }
+
+      .code-line.selected .src {
+        border-left-color: var(--accent);
+      }
+
+      .inspector {
+        border-left: 1px solid var(--line);
+        background: #fbfcfd;
+        padding: 16px;
+      }
+
+      .selection-card,
+      .commit-card,
+      .note-card,
+      .evidence-row,
+      .state-card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .selection-card {
+        padding: 14px;
+        margin-bottom: 14px;
+      }
+
+      .selection-card strong {
+        display: block;
+        font-size: 15px;
+        margin-bottom: 6px;
+      }
+
+      .tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+
+      .tab {
+        height: 30px;
+        padding: 0 12px;
+        color: var(--muted);
+      }
+
+      .tab.active {
+        background: #eaf4f0;
+        border-color: #b7ded3;
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .section-label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        margin: 18px 0 8px;
+        text-transform: uppercase;
+      }
+
+      .commit-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .commit-card {
+        padding: 12px;
+      }
+
+      .commit-top {
+        display: grid;
+        grid-template-columns: 22px 1fr auto;
+        gap: 8px;
+        align-items: start;
+      }
+
+      .commit-title {
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .commit-hash {
+        font-family: "SFMono-Regular", Consolas, monospace;
+        color: var(--blue);
+        font-weight: 700;
+      }
+
+      .commit-sub {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .badges {
+        display: flex;
+        gap: 6px;
+        margin-top: 10px;
+        flex-wrap: wrap;
+      }
+
+      .drawer-layout {
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        min-height: 696px;
+      }
+
+      .drawer {
+        padding: 28px;
+      }
+
+      .commit-hero {
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 22px;
+        margin-bottom: 22px;
+      }
+
+      .commit-hero h2 {
+        color: var(--ink);
+        font-size: 24px;
+        text-transform: none;
+        margin-bottom: 10px;
+      }
+
+      .commit-hero p,
+      .copy p {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .kv {
+        display: grid;
+        grid-template-columns: 140px 1fr auto;
+        gap: 12px;
+        min-height: 42px;
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        font-size: 13px;
+      }
+
+      .kv .key {
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .side-rail {
+        border-left: 1px solid var(--line);
+        background: #fbfcfd;
+        padding: 22px;
+      }
+
+      .mini-thread {
+        padding: 14px;
+        border: 1px solid #cfe2d9;
+        border-radius: 8px;
+        background: #f3fbf8;
+      }
+
+      .mini-thread strong {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--accent);
+      }
+
+      .basket-layout {
+        display: grid;
+        grid-template-columns: 460px 1fr;
+        min-height: 696px;
+      }
+
+      .basket {
+        padding: 26px;
+        border-right: 1px solid var(--line);
+        background: #fbfcfd;
+      }
+
+      .basket-item {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        margin-bottom: 10px;
+        font-size: 13px;
+      }
+
+      .textarea {
+        width: 100%;
+        height: 112px;
+        border: 1px solid var(--soft);
+        border-radius: 8px;
+        padding: 12px;
+        resize: none;
+        font: inherit;
+        color: var(--ink);
+      }
+
+      .preview {
+        padding: 32px;
+      }
+
+      .modal-stage {
+        min-height: 696px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background:
+          linear-gradient(rgba(245, 247, 248, 0.74), rgba(245, 247, 248, 0.74)),
+          repeating-linear-gradient(0deg, #fff, #fff 32px, #f3f6f8 33px);
+      }
+
+      .modal {
+        width: 760px;
+        background: #fff;
+        border: 1px solid var(--soft);
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+      }
+
+      .modal-head,
+      .modal-foot {
+        height: 64px;
+        padding: 0 22px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .modal-foot {
+        border-top: 1px solid var(--line);
+        border-bottom: 0;
+      }
+
+      .modal-body {
+        padding: 22px;
+      }
+
+      .radio-row,
+      .check-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 40px;
+        font-size: 14px;
+      }
+
+      .knowledge-layout {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        min-height: 696px;
+      }
+
+      .entity-list {
+        border-right: 1px solid var(--line);
+        background: #fbfcfd;
+        padding: 20px;
+      }
+
+      .entity-row {
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        font-size: 13px;
+      }
+
+      .entity-row.active {
+        background: #eaf4f0;
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .knowledge-main {
+        padding: 24px 28px;
+      }
+
+      .knowledge-main h2 {
+        margin: 0 0 8px;
+        font-size: 24px;
+      }
+
+      .evidence-row {
+        display: grid;
+        grid-template-columns: 110px 1fr auto;
+        gap: 14px;
+        align-items: center;
+        padding: 14px;
+        margin-bottom: 10px;
+        font-size: 13px;
+      }
+
+      .empty-state {
+        min-height: 696px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #fbfcfd;
+      }
+
+      .state-card {
+        width: 620px;
+        padding: 34px;
+        text-align: center;
+      }
+
+      .state-icon {
+        width: 62px;
+        height: 62px;
+        margin: 0 auto 18px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: #fff4e6;
+        color: var(--accent-2);
+        font-size: 30px;
+      }
+
+      .state-card h2 {
+        margin: 0 0 10px;
+        font-size: 24px;
+      }
+
+      .state-card p {
+        margin: 0 auto 22px;
+        max-width: 460px;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      .mobile-frame {
+        width: 430px;
+        height: 820px;
+        margin: 32px auto;
+        background: #fff;
+        border: 10px solid #16212b;
+        border-radius: 32px;
+        overflow: hidden;
+        box-shadow: var(--shadow);
+        position: relative;
+      }
+
+      .mobile-top {
+        height: 58px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--line);
+        font-size: 13px;
+      }
+
+      .mobile-code {
+        height: 510px;
+        overflow: hidden;
+      }
+
+      .mobile-code .code {
+        font-size: 12px;
+        line-height: 23px;
+      }
+
+      .mobile-code .code-line {
+        grid-template-columns: 46px 1fr;
+      }
+
+      .bottom-sheet {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 310px;
+        background: #fbfcfd;
+        border-top: 1px solid var(--soft);
+        border-radius: 18px 18px 0 0;
+        padding: 16px;
+        box-shadow: 0 -12px 28px rgba(17, 36, 51, 0.14);
+      }
+
+      .sheet-handle {
+        width: 44px;
+        height: 4px;
+        border-radius: 999px;
+        background: #cad3dc;
+        margin: 0 auto 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="mockup" id="mockup-history">
+        <div class="titlebar">
+          <h1>图 1: Code Browser + History Inspector</h1>
+          <div class="meta">
+            <span class="chip">linux v6.6</span>
+            <span class="chip green">local resolver</span>
+          </div>
+        </div>
+        <div class="main-grid">
+          <aside class="file-tree">
+            <h2>Source Tree</h2>
+            <div class="tree-row">▸ arch</div>
+            <div class="tree-row">▾ mm</div>
+            <div class="tree-row active">  mmap.c</div>
+            <div class="tree-row">  memory.c</div>
+            <div class="tree-row">  page_alloc.c</div>
+            <div class="tree-row">▸ fs</div>
+            <div class="tree-row">▸ kernel</div>
+            <div class="tree-row">▸ include</div>
+          </aside>
+          <section class="code-area">
+            <div class="code-header">
+              <strong>mm/mmap.c</strong>
+              <div class="toolbar">
+                <span class="chip">lines 120-128 selected</span>
+                <button class="icon-button">↗</button>
+              </div>
+            </div>
+            <pre class="code"><span class="code-line"><span class="ln">116</span><span class="src">static int vma_expand(struct vma_iterator *vmi, struct vm_area_struct *vma,</span></span><span class="code-line"><span class="ln">117</span><span class="src">                      unsigned long start, unsigned long end, pgoff_t pgoff)</span></span><span class="code-line"><span class="ln">118</span><span class="src">{</span></span><span class="code-line"><span class="ln">119</span><span class="src">        struct vm_area_struct *next;</span></span><span class="code-line selected"><span class="ln">120</span><span class="src">        if (!vma_mergeable(vma, vm_flags, anon_vma_name(vma)))</span></span><span class="code-line selected"><span class="ln">121</span><span class="src">                return -EINVAL;</span></span><span class="code-line selected"><span class="ln">122</span><span class="src"></span></span><span class="code-line selected"><span class="ln">123</span><span class="src">        next = find_vma(mm, end);</span></span><span class="code-line selected"><span class="ln">124</span><span class="src">        if (next && next-&gt;vm_start == end)</span></span><span class="code-line selected"><span class="ln">125</span><span class="src">                return merge_vma(vmi, vma, next, start, end, pgoff);</span></span><span class="code-line"><span class="ln">126</span><span class="src"></span></span><span class="code-line"><span class="ln">127</span><span class="src">        return expand_single_vma(vmi, vma, start, end, pgoff);</span></span><span class="code-line"><span class="ln">128</span><span class="src">}</span></span></pre>
+          </section>
+          <aside class="inspector">
+            <div class="selection-card">
+              <strong>mm/mmap.c:120-125</strong>
+              <span class="chip green">6 lines selected</span>
+            </div>
+            <div class="tabs">
+              <button class="tab active">History</button>
+              <button class="tab">Annotations</button>
+              <button class="tab">Knowledge</button>
+            </div>
+            <div class="section-label">Last Touched</div>
+            <div class="commit-card">
+              <div class="commit-title"><span class="commit-hash">a1b2c3d</span> mm: fix VMA merge regression</div>
+              <div class="commit-sub">Liam Howlett · 2025-03-12</div>
+              <div class="badges"><span class="chip orange">Fixes</span><span class="chip blue">Link: lore</span></div>
+            </div>
+            <div class="section-label">Line History</div>
+            <div class="commit-list">
+              <div class="commit-card">
+                <div class="commit-top"><input type="checkbox" checked /><div><div class="commit-title"><span class="commit-hash">e4f5g6h</span> mm: introduce maple-tree VMA merge path</div><div class="commit-sub">semantic change · 2023-01-18</div></div><button class="icon-button">⌁</button></div>
+                <div class="badges"><span class="chip green">behavior</span><span class="chip blue">lore</span></div>
+              </div>
+              <div class="commit-card">
+                <div class="commit-top"><input type="checkbox" /><div><div class="commit-title"><span class="commit-hash">9a8b7c6</span> mm: refactor VMA iterator helpers</div><div class="commit-sub">refactor · 2022-10-04</div></div><button class="icon-button">⌁</button></div>
+                <div class="badges"><span class="chip">refactor</span></div>
+              </div>
+              <div class="commit-card">
+                <div class="commit-top"><input type="checkbox" checked /><div><div class="commit-title"><span class="commit-hash">1122334</span> mm: avoid merge across incompatible policy</div><div class="commit-sub">bug fix · 2021-07-29</div></div><button class="icon-button">⌁</button></div>
+                <div class="badges"><span class="chip orange">Fixes</span><span class="chip blue">lore</span></div>
+              </div>
+            </div>
+            <div style="margin-top: 18px">
+              <button class="button primary" style="width: 100%">Add selected evidence to Knowledge</button>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="mockup compact" id="mockup-commit">
+        <div class="titlebar">
+          <h1>图 2: Commit Detail Drawer</h1>
+          <div class="meta"><span class="chip blue">commit evidence</span></div>
+        </div>
+        <div class="drawer-layout">
+          <section class="drawer">
+            <div class="commit-hero">
+              <h2><span class="commit-hash">e4f5g6h</span> mm: introduce maple-tree VMA merge path</h2>
+              <p>Author: Liam Howlett · 2023-01-18 · linux v6.2-rc1</p>
+            </div>
+            <div class="copy">
+              <h2>Summary</h2>
+              <p>This commit adjusts the VMA merge path to use the new iterator state. The selected lines are where the mergeability check gates the fast path before adjacent VMAs are considered.</p>
+            </div>
+            <div class="section-label">Trailers</div>
+            <div class="kv"><span class="key">Link</span><span>https://lore.kernel.org/r/20230118-maple-vma-v4-7@example</span><button class="button">Use evidence</button></div>
+            <div class="kv"><span class="key">Fixes</span><span><span class="commit-hash">112233445566</span> mm: avoid merge across policy</span><button class="button">Open commit</button></div>
+            <div class="kv"><span class="key">Reviewed-by</span><span>Andrew Morton &lt;akpm@linux-foundation.org&gt;</span><span></span></div>
+            <div class="section-label">Changed Files</div>
+            <div class="kv"><span class="key">mm/mmap.c</span><span>+42 -18</span><button class="button">Open diff</button></div>
+            <div class="kv"><span class="key">include/linux/mm.h</span><span>+3 -1</span><button class="button">Open file</button></div>
+          </section>
+          <aside class="side-rail">
+            <h2>Local Mail Thread</h2>
+            <div class="mini-thread">
+              <strong>Found</strong>
+              <div>[PATCH v4 7/9] mm: introduce maple-tree VMA merge path</div>
+              <div class="commit-sub">18 replies · 4 patch revisions</div>
+              <div style="margin-top: 14px" class="toolbar">
+                <button class="button primary">Open thread</button>
+                <button class="button">Lore</button>
+              </div>
+            </div>
+            <div class="section-label">Actions</div>
+            <button class="button primary" style="width: 100%; margin-bottom: 10px">Select this commit</button>
+            <button class="button" style="width: 100%; margin-bottom: 10px">Add link only</button>
+            <button class="button ghost" style="width: 100%">Close</button>
+          </aside>
+        </div>
+      </section>
+
+      <section class="mockup compact" id="mockup-basket">
+        <div class="titlebar">
+          <h1>图 3: Evidence Basket</h1>
+          <div class="meta"><span class="chip green">staging before save</span></div>
+        </div>
+        <div class="basket-layout">
+          <aside class="basket">
+            <h2>Evidence Basket</h2>
+            <div class="section-label">Code Range</div>
+            <div class="basket-item"><span>mm/mmap.c:120-125 @ v6.6</span><button class="button">Remove</button></div>
+            <div class="section-label">Commits</div>
+            <div class="basket-item"><span><span class="commit-hash">e4f5g6h</span> introduce maple-tree merge path</span><button class="button">Remove</button></div>
+            <div class="basket-item"><span><span class="commit-hash">1122334</span> avoid incompatible policy merge</span><button class="button">Remove</button></div>
+            <div class="section-label">Threads / Links</div>
+            <div class="basket-item"><span>lore: [PATCH v4 7/9] mm: introduce...</span><button class="button">Remove</button></div>
+            <div class="section-label">Human Note</div>
+            <textarea class="textarea">This looks like the first semantic change where the VMA iterator became part of the merge decision.</textarea>
+            <div style="margin-top: 18px"><button class="button primary" style="width: 100%">Add to Knowledge</button></div>
+          </aside>
+          <section class="preview">
+            <h2 style="margin-top: 0">Preview</h2>
+            <div class="selection-card">
+              <strong>Claim draft</strong>
+              <p style="color: var(--muted); line-height: 1.7">The selected VMA merge path is evidence for how maple-tree iterator state changed mmap merge behavior.</p>
+            </div>
+            <div class="selection-card">
+              <strong>保存后会生成</strong>
+              <p style="color: var(--muted); line-height: 1.7">1 个 code_range evidence、2 个 commit evidence、1 个 thread/link evidence，以及 1 条人工 note。</p>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="mockup compact" id="mockup-modal">
+        <div class="titlebar">
+          <h1>图 4: Add To Knowledge Modal</h1>
+          <div class="meta"><span class="chip">default: draft</span></div>
+        </div>
+        <div class="modal-stage">
+          <div class="modal">
+            <div class="modal-head">
+              <h2 style="font-size: 18px; margin: 0">Add to Knowledge</h2>
+              <button class="icon-button">×</button>
+            </div>
+            <div class="modal-body">
+              <div class="section-label">Save Target</div>
+              <label class="radio-row"><input type="radio" checked /> Existing topic <input class="input" style="flex: 1" value="mmap VMA merge behavior" /></label>
+              <label class="radio-row"><input type="radio" /> New topic <input class="input" style="flex: 1" value="maple-tree VMA merge path" /></label>
+              <div class="section-label">Claim</div>
+              <textarea class="textarea">This selected code path shows where VMA merge compatibility is checked before the maple-tree iterator merge path proceeds.</textarea>
+              <div class="section-label">Evidence To Attach</div>
+              <label class="check-row"><input type="checkbox" checked /> Code range: mm/mmap.c:120-125</label>
+              <label class="check-row"><input type="checkbox" checked /> Commit: e4f5g6h mm: introduce maple-tree VMA merge path</label>
+              <label class="check-row"><input type="checkbox" checked /> Thread: [PATCH v4 7/9] mm: introduce...</label>
+              <div class="section-label">Save As</div>
+              <label class="radio-row"><input type="radio" checked /> Draft for review</label>
+              <label class="radio-row"><input type="radio" /> Direct evidence on active Knowledge</label>
+            </div>
+            <div class="modal-foot">
+              <button class="button">Cancel</button>
+              <button class="button primary">Save evidence</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mockup compact" id="mockup-knowledge">
+        <div class="titlebar">
+          <h1>图 5: Knowledge Evidence View</h1>
+          <div class="meta"><span class="chip green">backlinks preserved</span></div>
+        </div>
+        <div class="knowledge-layout">
+          <aside class="entity-list">
+            <h2>Knowledge Topics</h2>
+            <div class="entity-row active">mmap VMA merge behavior</div>
+            <div class="entity-row">Maple tree migration</div>
+            <div class="entity-row">Anonymous VMA naming</div>
+            <div class="entity-row">Memory policy compatibility</div>
+          </aside>
+          <section class="knowledge-main">
+            <h2>mmap VMA merge behavior</h2>
+            <div class="tabs" style="margin-top: 18px">
+              <button class="tab">Timeline</button>
+              <button class="tab">Explanation</button>
+              <button class="tab active">Evidence</button>
+              <button class="tab">Notes</button>
+              <button class="tab">Relations</button>
+            </div>
+            <div class="selection-card">
+              <strong>Claim</strong>
+              <p style="color: var(--muted); line-height: 1.7">This code path shows where VMA merge compatibility is checked before adjacent VMAs are merged.</p>
+            </div>
+            <div class="evidence-row"><span class="chip green">Code range</span><span>mm/mmap.c:120-125 @ v6.6</span><button class="button">Open in Code Browser</button></div>
+            <div class="evidence-row"><span class="chip blue">Commit</span><span><span class="commit-hash">e4f5g6h</span> mm: introduce maple-tree VMA merge path</span><button class="button">Open commit</button></div>
+            <div class="evidence-row"><span class="chip orange">Mail thread</span><span>[PATCH v4 7/9] mm: introduce maple-tree VMA merge path</span><button class="button">Open thread</button></div>
+            <div class="selection-card">
+              <strong>Human note</strong>
+              <p style="color: var(--muted); line-height: 1.7">This looks like the first semantic change where iterator state became part of the merge decision.</p>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="mockup compact" id="mockup-empty">
+        <div class="titlebar">
+          <h1>图 6: Empty / No History State</h1>
+          <div class="meta"><span class="chip orange">graceful failure</span></div>
+        </div>
+        <div class="empty-state">
+          <div class="state-card">
+            <div class="state-icon">!</div>
+            <h2>History unavailable</h2>
+            <p>Local kernel repo does not contain v2.6.12, or this file range cannot be resolved. You can still save the code range and add a human note.</p>
+            <div class="toolbar" style="justify-content: center">
+              <button class="button primary">Save code range</button>
+              <button class="button">Open external source</button>
+              <button class="button">Configure local repo</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mockup compact" id="mockup-mobile">
+        <div class="titlebar">
+          <h1>图 7: Mobile / Narrow Inspector</h1>
+          <div class="meta"><span class="chip">bottom sheet</span></div>
+        </div>
+        <div class="mobile-frame">
+          <div class="mobile-top">
+            <strong>mm/mmap.c</strong>
+            <span class="chip">v6.6</span>
+          </div>
+          <div class="mobile-code">
+            <pre class="code"><span class="code-line"><span class="ln">118</span><span class="src">{</span></span><span class="code-line"><span class="ln">119</span><span class="src">        struct vm_area_struct *next;</span></span><span class="code-line selected"><span class="ln">120</span><span class="src">        if (!vma_mergeable(vma, vm_flags,</span></span><span class="code-line selected"><span class="ln">121</span><span class="src">            anon_vma_name(vma)))</span></span><span class="code-line selected"><span class="ln">122</span><span class="src">                return -EINVAL;</span></span><span class="code-line selected"><span class="ln">123</span><span class="src">        next = find_vma(mm, end);</span></span><span class="code-line selected"><span class="ln">124</span><span class="src">        if (next && next-&gt;vm_start == end)</span></span><span class="code-line"><span class="ln">125</span><span class="src">                return merge_vma(vmi, vma, next,</span></span><span class="code-line"><span class="ln">126</span><span class="src">                                 start, end, pgoff);</span></span></pre>
+          </div>
+          <div class="bottom-sheet">
+            <div class="sheet-handle"></div>
+            <div class="selection-card" style="margin-bottom: 10px">
+              <strong>mm/mmap.c:120-124</strong>
+              <span class="chip green">History</span>
+            </div>
+            <div class="tabs">
+              <button class="tab active">History</button>
+              <button class="tab">Basket</button>
+              <button class="tab">Knowledge</button>
+            </div>
+            <div class="commit-card" style="margin-bottom: 8px">
+              <div class="commit-title"><span class="commit-hash">e4f5g6h</span> introduce merge path</div>
+              <div class="commit-sub">semantic change · lore</div>
+            </div>
+            <button class="button primary" style="width: 100%">Add to Knowledge</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
