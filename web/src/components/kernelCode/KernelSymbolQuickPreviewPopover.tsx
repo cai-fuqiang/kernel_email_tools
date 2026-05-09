@@ -471,6 +471,7 @@ export default function KernelSymbolQuickPreviewPopover({
         <div
           ref={codeScrollRef}
           className="min-h-0 flex-1 overflow-y-scroll overscroll-contain bg-slate-950/95 p-3"
+          style={{ scrollbarGutter: 'stable' }}
         >
           {!candidate.local_file_available ? (
             <div className="flex h-full items-center justify-center">

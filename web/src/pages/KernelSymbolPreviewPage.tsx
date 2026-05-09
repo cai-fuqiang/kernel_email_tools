@@ -214,7 +214,11 @@ export default function KernelSymbolPreviewPage() {
               </div>
             </div>
 
-            <div ref={codeScrollRef} className="h-full min-h-0 overflow-auto overscroll-contain bg-slate-950/95 p-4">
+            <div
+              ref={codeScrollRef}
+              className="h-full min-h-0 overflow-auto overscroll-contain bg-slate-950/95 p-4"
+              style={{ scrollbarGutter: 'stable' }}
+            >
               {!version || !path ? (
                 <div className="flex h-full items-center justify-center">
                   <div className="max-w-md rounded-xl border border-slate-700 bg-slate-900/80 px-5 py-4 text-sm leading-6 text-slate-200">
