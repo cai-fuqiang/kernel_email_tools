@@ -1,10 +1,10 @@
 # PLAN-30002: 外链代码跳转与外部站点标注闭环
 
-> **Status**: in-progress (Phase 1-5 外链闭环已完成；后续转向 local-first code resolver)
-> **Updated**: 2026-05-06
-> **Depends-on**: 无
+> **Status**: reoriented (Phase 1-5 保留；Phase 3 邮件→代码路径识别砍掉；新增 Phase 8 代码→邮件追溯链路)
+> **Updated**: 2026-05-09
+> **Depends-on**: PLAN-30003 (砍掉邮件→代码自动跳转)
 > **Supersedes**: PLAN-30000-code-definition-navigation, PLAN-10001-code-navigation
-> **Priority**: P1
+> **Priority**: P0 — 从确定版本的代码出发，沿 git blame → commit → lore link → 邮件线程追溯
 
 ## 决策背景
 
@@ -30,7 +30,42 @@
 2. **Elixir / git.kernel.org 作为 fallback 外链**：保留外链按钮和油猴脚本反向标注闭环，但不再把 Elixir 当成唯一代码导航能力。
 3. **新增统一 Code Resolver**：前端不直接拼 Elixir URL，而是先解析到本地 code target；本地不可用时再退回外部站点。
 4. **先做最小符号索引，不做完整 LSP**：优先支持路径、行号、函数/宏/struct 定义和 patch header 到文件的跳转；暂不追求完整跨版本引用分析。
-5. **Contextual Ask 依赖本地 resolver**：只有当本地代码上下文稳定后，再做“解释选中代码 / 找相关邮件 / 关联手册 / 生成 Knowledge Draft”。
+5. **Contextual Ask 依赖本地 resolver**：只有当本地代码上下文稳定后，再做”解释选中代码 / 找相关邮件 / 关联手册 / 生成 Knowledge Draft”。
+
+### 2026-05-09 方向修正：砍掉邮件→代码，改为代码→邮件追溯
+
+**原有设计的问题**（详见 PLAN-30003）：
+
+从邮件 patch diff 自动跳转到代码，这条路在根本上不可靠：
+
+- 邮件的 patch 缺少版本锚点——不知道 patch 基于哪个内核版本
+- `@@` hunk 行号是相对 patch base 的，base 不确定则行号无意义
+- 邮件标题的 `[PATCH v6.10]` 是目标版本而非 base 版本
+- 邮件中的 `mm/vmscan.c:1234` 文字引用没有版本号
+
+**修正方向：反转链路**
+
+```
+旧方向（不可靠）：邮件 patch diff → 猜测版本 + 行号 → 代码
+新方向（可靠）：  代码行 → git blame → commit → commit message 中的 lore 链接 → 邮件线程
+```
+
+新链路每一步都有明确依据：
+
+| 步骤 | 依据 | 可靠性 |
+|------|------|--------|
+| 代码行 → commit | `git blame` 精确到 commit hash | 100% |
+| commit → 邮件 | commit message 中的 `Link: https://lore.kernel.org/...` | 内核社区强惯例，绝大多数 mainline commit 都有 |
+| 邮件 → 各版本 patch | lore 的 `In-Reply-To` 线程模型 + 相同 subject 前缀搜索 | lore 线程模型完整 |
+| 邮件 → 外链 | 邮件正文中的 URL/Message-ID 提取 | 直接文本提取 |
+| 邮件 → 相关 commit | commit message 中的 `Fixes:` / `Reviewed-by:` / `Closes:` 等 tag | 结构化，可解析 |
+
+**对现有计划的影响：**
+
+- Phase 3 的”邮件正文路径识别 → 代码跳转”——砍掉，方向本身就是反的
+- Phase 6 的”patch header 优先打开本地文件”——砍掉 patch header 部分
+- Phase 6 的 local-first code resolver——保留，用于 Code Browser（版本确定时）的本地/外链 fallback
+- 新增 Phase 8：代码→邮件追溯链路
 
 ## 当前已实现的能力
 
@@ -82,7 +117,7 @@
 - [x] 文件树条目（文件类型）hover 时尾部显示 ExternalLink 图标，点击跳转外链
 - [x] 选中文本（标识符）后增加 "在 Elixir 搜索符号" 浮动按钮 → 调用 `elixirIdentUrl`（`KernelCodePage.tsx` 监听代码视图 `mouseup`，用 `isLikelyCIdentifier` 过滤，按 Esc / 点击外部关闭）
 
-### Phase 3: ThreadDrawer 邮件正文路径识别 ✅
+### Phase 3: ~~ThreadDrawer 邮件正文路径识别~~ ❌ 废弃 (2026-05-09)
 
 - [x] 新增 `web/src/utils/kernelPathRefs.ts`：
   - `parseKernelPathRefs(text)` — 用正则识别形如 `mm/vmscan.c`、`fs/ext4/inode.c:1234`、`include/linux/sched.h` 的内核路径（白名单顶级目录）
@@ -91,7 +126,9 @@
 - [x] 新增 `web/src/components/KernelPathLinkedText.tsx`：在 `<pre>`/`<span>` 中渲染带路径链接的纯文本（保留空白/换行）
 - [x] ThreadDrawer 的 LayeredEmailCard 和 TreeEmailCard 段落渲染接入 KernelPathLinkedText
 - [x] PatchDiffBlock 支持 `version` prop；`diff --git a/X b/Y`、`--- a/path`、`+++ b/path` 渲染为可点击链接
-- [x] 链接版本来源优先级：邮件主题 PATCH 版本（`extractPatchVersion`）> `latest`
+- [x] ~~链接版本来源优先级~~ — 废弃，方向反了
+
+**→ Phase 3 整体废弃，详见 PLAN-30003。由 Phase 8 代码→邮件追溯链路替代。**
 
 ### Phase 4: Knowledge entity 文件链接 ✅
 
@@ -161,6 +198,86 @@
 - 不做无证据的纯 LLM 代码解释。
 - 不把 Elixir 页面内容作为唯一 evidence。
 
+### Phase 8: 代码→邮件追溯链路（新增，P1）
+
+**2026-05-09 新增**：替代废弃的 Phase 3（邮件→代码）。链路方向反转。
+
+#### 核心链路
+
+```
+用户在 Code Browser 选中代码行
+  → git blame 获取 commit hash
+  → 解析 commit message，提取 lore 链接和关联信息
+  → 加载关联的邮件线程
+  → 展示：该 commit 对应的邮件讨论 + 历史 patch 版本 + 邮件中的外链
+```
+
+#### 每一步的依据
+
+| 步骤 | 数据来源 | 可靠性 |
+|------|----------|--------|
+| 代码行 → commit | `git blame -L <line>,<line> <file>` | 100%，git 原生能力 |
+| commit → 邮件 | commit message 中 `Link: https://lore.kernel.org/...` | 内核社区强惯例，绝大多数 mainline commit 都有 |
+| commit → 相关 commit | `Fixes:` / `Reviewed-by:` / `Closes:` / `Signed-off-by:` 等 tag | 结构化文本，可解析 |
+| 邮件 → 线程全貌 | lore 的 In-Reply-To / References header，线程重建 | lore 线程模型完整 |
+| 邮件 → 各版本 patch | 相同 subject 前缀 + 线程关系搜索 | 同一线程内通常完整 |
+| 邮件 → 外链 | 邮件正文中的 URL、Message-ID 提取 | 直接文本提取 |
+
+#### 子阶段
+
+##### 8a: git blame 集成
+
+- [ ] 后端新增 `GET /api/kernel/blame?version=...&path=...&line=...`
+  - 在本地 kernel git repo 中执行 `git blame --porcelain -L <line>,<line> <path>`
+  - 返回：`commit_hash`, `author`, `author_time`, `committer`, `committer_time`, `summary`
+- [ ] Code Browser 选中代码行时，显示 blame 信息（commit hash + summary）
+- [ ] commit hash 可点击，展开详情
+
+##### 8b: commit message 解析
+
+- [ ] 后端新增 `GET /api/kernel/commit?version=...&hash=...`
+  - 执行 `git show --format=fuller <hash>`
+  - 返回完整 commit message
+- [ ] 前端解析 commit message，提取结构化信息：
+  - `Link: <url>` — lore 链接（核心）
+  - `Fixes: <hash>` — 修复的 commit
+  - `Reported-by:` / `Suggested-by:` / `Reviewed-by:` 等 tag
+  - 其他 URL
+- [ ] 渲染为结构化的 commit 信息卡片
+
+##### 8c: lore 链接 → 邮件线程加载
+
+- [ ] 从 commit message 中提取的 lore URL 解析出 message_id
+- [ ] 用已有 API 加载该 message_id 对应的邮件线程
+- [ ] 在 Code Browser 侧面板中展示关联的邮件线程
+- [ ] 如果本系统尚未导入该线程，提供"导入此线程"按钮（调用邮件导入流程）
+
+##### 8d: 关联信息汇总视图
+
+- [ ] 在 Code Browser 中新增"追溯"面板（或扩展现有 Inspector），展示：
+  - 当前行所属 commit 信息
+  - 关联的邮件线程（如果有 lore 链接）
+  - 关联的 Fixes commit（如果有）
+  - 关联的其他 commit（Reviewed-by / Reported-by 等）
+  - 一个"在 lore 查看原文"按钮
+- [ ] 从邮件线程可以直接打开 LayeredEmailCard / ThreadDrawer
+- [ ] 知识沉淀入口：对这段代码 + commit + 邮件生成 Knowledge Draft
+
+#### 验收标准
+
+- [ ] 在 Code Browser 选中代码行，可以追溯到对应的 git commit
+- [ ] 如果 commit message 中有 lore 链接，可以加载关联的邮件线程
+- [ ] 邮件线程展示完整，包括所有 patch 版本
+- [ ] 邮件中的外链可点击
+- [ ] 覆盖不低于 20 个真实内核 commit 的样本测试
+- [ ] 对于 commit message 中没有 lore 链接的 commit，明确提示而不是静默失败
+
+#### 非目标
+
+- 不做全自动的"代码行 → 所有历史讨论"（那是 RAG 的事，见 PLAN-38002）
+- 不做跨项目/跨仓库的 blame 追溯
+- 不对 commit message 做 NLP 解析（只做结构化 tag 提取 + URL 提取）
+
 ---
 
 ## UI 规范
@@ -181,12 +298,18 @@
 
 ## 测试
 
+**外部跳转：**
 - 不同版本（`v6.8`、`v5.10`、`v2.6.32`、`master`）跳转正确
 - 文件路径含特殊字符（空格、`%`、中文）URL 转义正确
-- 邮件正文路径识别误识率（`foo/bar.txt` 等非内核路径不应匹配）
-- PATCH 头部 `a/`/`b/` 剥离正确
 - Elixir 不覆盖的版本（如 `v0.01`）自动 fallback
 - 油猴脚本在 Elixir 各种页面布局下行号注入仍然有效
+
+**Phase 8 追溯链路：**
+- git blame 在不同版本/文件上返回正确 commit
+- commit message 中 lore 链接提取正确（含不同格式变体）
+- 无 lore 链接的 commit 明确提示
+- 邮件线程加载后展示完整版本历史
+- 邮件中外链可正确提取和点击
 
 ## 风险与缓解
 
@@ -204,11 +327,18 @@
 
 ## 验收标准
 
+**已完成（保留）：**
 - ✅ 用户能在 Elixir 任意页面选中行 → 在本系统打标签/批注（已实现）
 - [x] 用户在本系统 Code Browser 一键打开 Elixir 对应位置
-- [x] ThreadDrawer 邮件正文中的文件路径自动变成可点击 Elixir 链接
 - [x] Knowledge 详情页关联文件可一键跳到 Elixir
-- [x] 切换内核版本时所有外链 URL 正确反映当前版本（邮件主题里的 `[PATCH vX.Y]` 驱动；fallback 到 `latest`）
+- [x] 切换内核版本时所有外链 URL 正确反映当前版本（来自 Code Browser 确定的 version）
 - [x] 配置 `external_links` 镜像后所有外链改用镜像（通过 `/api/system/config` 运行时注入）
-- [ ] 本地 resolver 成为代码跳转主路径，Elixir/git.kernel.org 仅作为 fallback
-- [ ] Contextual Ask 只在本地代码上下文可解析后进入实现
+
+**已废弃（2026-05-09）：**
+- [x] ~~ThreadDrawer 邮件正文中的文件路径自动变成可点击链接~~ → 方向反了，见 PLAN-30003
+
+**待实现：**
+- [ ] 本地 resolver 成为代码跳转主路径，Elixir/git.kernel.org 仅作为 fallback（Phase 6）
+- [ ] 代码行 → git blame → commit → lore 链接 → 邮件线程追溯链路可用（Phase 8）
+- [ ] Code Browser 追溯面板展示：commit 信息 + 关联邮件 + 关联 commit（Phase 8d）
+- [ ] Contextual Ask 只在本地代码上下文可解析后进入实现（Phase 7）
