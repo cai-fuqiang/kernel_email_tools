@@ -164,6 +164,7 @@ def _history_entry(
     subject: str,
     message: str = "",
     changed_files: list[dict] | None = None,
+    patch: str = "",
 ) -> dict:
     commit_hash = commit_hash.lstrip("^")
     short_hash = short_hash.lstrip("^") or commit_hash[:12]
@@ -183,6 +184,7 @@ def _history_entry(
         "lore_links": lore_links,
         "has_lore_link": bool(lore_links or trailers.get("Link")),
         "changed_files": changed_files or [],
+        "patch": patch,
     }
 
 
@@ -496,6 +498,18 @@ async def kernel_commit(
         "--format=",
         normalized_commit_hash,
     )
+    patch_output = await _run_local_git(
+        source,
+        "show",
+        "--no-ext-diff",
+        "--find-renames",
+        "--format=",
+        "--patch",
+        normalized_commit_hash,
+        timeout=20.0,
+    )
+    max_patch_chars = 180_000
+    patch_truncated = len(patch_output) > max_patch_chars
     changed_files = []
     for raw_line in files_output.splitlines():
         fields = raw_line.split("\t")
@@ -517,8 +531,10 @@ async def kernel_commit(
         subject=subject.strip(),
         message=message.strip(),
         changed_files=changed_files,
+        patch=patch_output[:max_patch_chars],
     )
     entry["version"] = version
+    entry["patch_truncated"] = patch_truncated
     return entry
 
 

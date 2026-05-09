@@ -1358,7 +1358,7 @@ export default function KernelCodePage() {
                   </div>
                 </div>
 
-                <aside className="flex min-h-0 flex-col overflow-hidden border-t border-slate-200 bg-slate-50/80 xl:border-l xl:border-t-0">
+                <aside className="flex min-h-0 max-h-[calc(100vh-8rem)] flex-col overflow-y-auto border-t border-slate-200 bg-slate-50/80 xl:overflow-hidden xl:border-l xl:border-t-0">
                   {inspectorCollapsed ? (
                     <div className="hidden min-h-0 flex-1 flex-col items-center gap-3 px-2 py-3 xl:flex">
                       <button
@@ -1397,7 +1397,7 @@ export default function KernelCodePage() {
                     <p className="mt-1 truncate text-xs text-slate-500">Target, notes, evidence.</p>
                   </div>
 
-                  <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
+                  <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 py-3">
                   <InspectorSection
                     title="Code Target"
                     icon={<Pin className="h-4 w-4" />}

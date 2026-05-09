@@ -8,6 +8,7 @@ import {
   Inbox,
   Link2,
   Loader2,
+  Maximize2,
   Plus,
   Search,
   X,
@@ -23,6 +24,7 @@ import type { KernelHistoryCommit, KnowledgeEntity } from '../../api/types';
 import { useAuth } from '../../auth';
 import { showToast } from '../Toast';
 import { SecondaryButton, StatusBadge } from '../ui';
+import InspectorDetailModal from './InspectorDetailModal';
 
 type SelectedRange = {
   startLine: number;
@@ -84,6 +86,18 @@ function buildDefaultClaim(filePath: string, range: SelectedRange | null, commit
   return `This code range in ${filePath}:${formatLineRange(range)} is relevant evidence for the implementation history${suffix}.`;
 }
 
+function diffLineClass(line: string): string {
+  const trimmed = line.trimStart();
+  if (trimmed.startsWith('diff ') || trimmed.startsWith('commit ')) return 'bg-amber-50 text-amber-800';
+  if (trimmed.startsWith('@@')) return 'bg-sky-50 text-sky-800';
+  if (trimmed.startsWith('+++') || trimmed.startsWith('---') || trimmed.startsWith('index ')) {
+    return 'bg-slate-50 text-slate-500';
+  }
+  if (trimmed.startsWith('+')) return 'bg-emerald-50 text-emerald-800';
+  if (trimmed.startsWith('-')) return 'bg-rose-50 text-rose-800';
+  return 'text-slate-700';
+}
+
 export default function CodeHistoryPanel({
   version,
   filePath,
@@ -102,6 +116,7 @@ export default function CodeHistoryPanel({
   const [history, setHistory] = useState<KernelHistoryCommit[]>([]);
   const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set());
   const [expandedHash, setExpandedHash] = useState('');
+  const [detailModalHash, setDetailModalHash] = useState('');
   const [details, setDetails] = useState<Record<string, KernelHistoryCommit>>({});
   const [claim, setClaim] = useState('');
   const [note, setNote] = useState('');
@@ -231,12 +246,7 @@ export default function CodeHistoryPanel({
     });
   }
 
-  async function toggleDetail(commit: KernelHistoryCommit) {
-    if (expandedHash === commit.commit_hash) {
-      setExpandedHash('');
-      return;
-    }
-    setExpandedHash(commit.commit_hash);
+  async function ensureCommitDetail(commit: KernelHistoryCommit) {
     if (details[commit.commit_hash]) return;
     setDetailLoadingHash(commit.commit_hash);
     setDetailErrors((current) => ({ ...current, [commit.commit_hash]: '' }));
@@ -250,6 +260,20 @@ export default function CodeHistoryPanel({
     } finally {
       setDetailLoadingHash('');
     }
+  }
+
+  async function toggleDetail(commit: KernelHistoryCommit) {
+    if (expandedHash === commit.commit_hash) {
+      setExpandedHash('');
+      return;
+    }
+    setExpandedHash(commit.commit_hash);
+    await ensureCommitDetail(commit);
+  }
+
+  async function openCommitDetail(commit: KernelHistoryCommit) {
+    setDetailModalHash(commit.commit_hash);
+    await ensureCommitDetail(commit);
   }
 
   async function handleSaveDraft() {
@@ -394,6 +418,7 @@ export default function CodeHistoryPanel({
             loadingDetail={detailLoadingHash === blame.commit_hash}
             onToggle={() => toggleCommit(blame.commit_hash)}
             onExpand={() => void toggleDetail(blame)}
+            onOpenDetail={() => void openCommitDetail(blame)}
           />
         ) : !blameLoading ? (
           <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
@@ -441,6 +466,7 @@ export default function CodeHistoryPanel({
               loadingDetail={detailLoadingHash === commit.commit_hash}
               onToggle={() => toggleCommit(commit.commit_hash)}
               onExpand={() => void toggleDetail(commit)}
+              onOpenDetail={() => void openCommitDetail(commit)}
             />
           ))}
           {historyLoaded && !historyLoading && history.length === 0 && (
@@ -573,6 +599,13 @@ export default function CodeHistoryPanel({
           </SecondaryButton>
         </div>
       </div>
+      <CommitDetailModal
+        commit={commits.find((commit) => commit.commit_hash === detailModalHash) || null}
+        detail={detailModalHash ? details[detailModalHash] : undefined}
+        detailError={detailModalHash ? detailErrors[detailModalHash] : undefined}
+        loading={detailLoadingHash === detailModalHash}
+        onClose={() => setDetailModalHash('')}
+      />
     </div>
   );
 }
@@ -586,6 +619,7 @@ function CommitRow({
   loadingDetail,
   onToggle,
   onExpand,
+  onOpenDetail,
 }: {
   commit: KernelHistoryCommit;
   selected: boolean;
@@ -595,6 +629,7 @@ function CommitRow({
   loadingDetail: boolean;
   onToggle: () => void;
   onExpand: () => void;
+  onOpenDetail: () => void;
 }) {
   const shown = detail || commit;
   return (
@@ -622,18 +657,30 @@ function CommitRow({
             {commit.trailers?.Fixes?.length ? <StatusBadge tone="warning">Fixes</StatusBadge> : null}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onExpand}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
-          aria-label="Toggle commit detail"
-        >
-          {loadingDetail ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <ChevronDown className={`h-3.5 w-3.5 transition ${expanded ? 'rotate-180' : ''}`} />
-          )}
-        </button>
+        <div className="flex flex-col gap-1">
+          <button
+            type="button"
+            onClick={onOpenDetail}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+            aria-label="Open commit detail"
+            title="Open commit detail"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={onExpand}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+            aria-label="Toggle commit detail"
+            title="Toggle commit detail"
+          >
+            {loadingDetail ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <ChevronDown className={`h-3.5 w-3.5 transition ${expanded ? 'rotate-180' : ''}`} />
+            )}
+          </button>
+        </div>
       </div>
 
       {expanded && (
@@ -687,6 +734,115 @@ function CommitRow({
         </div>
       )}
     </div>
+  );
+}
+
+function CommitDetailModal({
+  commit,
+  detail,
+  detailError,
+  loading,
+  onClose,
+}: {
+  commit: KernelHistoryCommit | null;
+  detail?: KernelHistoryCommit;
+  detailError?: string;
+  loading: boolean;
+  onClose: () => void;
+}) {
+  const shown = detail || commit;
+  return (
+    <InspectorDetailModal
+      isOpen={!!commit}
+      onClose={onClose}
+      title={shown ? `${shown.short_hash} ${shown.subject}` : 'Commit detail'}
+      subtitle={
+        shown ? (
+          <span>
+            {formatCommitTime(shown.author_time)}
+            {shown.author_name ? ` · ${shown.author_name}` : ''}
+          </span>
+        ) : null
+      }
+    >
+      {detailError ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+          {detailError}
+        </div>
+      ) : loading && !detail ? (
+        <div className="flex items-center gap-2 text-sm text-slate-500">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading commit detail...
+        </div>
+      ) : shown ? (
+        <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <section className="min-w-0 space-y-4">
+            <div>
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                Commit Message
+              </div>
+              <pre className="max-h-[56vh] overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-xs leading-5 text-slate-800">
+                {shown.message || 'No commit message available.'}
+              </pre>
+            </div>
+            {Object.keys(shown.trailers || {}).length > 0 && (
+              <div>
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                  Trailers
+                </div>
+                <div className="space-y-1 rounded-lg border border-slate-200 bg-white p-3 text-xs">
+                  {Object.entries(shown.trailers || {}).map(([key, values]) => (
+                    <div key={key} className="grid grid-cols-[90px_minmax(0,1fr)] gap-3">
+                      <span className="font-semibold text-slate-500">{key}</span>
+                      <span className="min-w-0 break-words text-slate-700">{values.join(', ')}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {shown.changed_files.length > 0 && (
+              <div>
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                  Changed Files
+                </div>
+                <div className="max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white">
+                  {shown.changed_files.map((file) => (
+                    <div
+                      key={`${file.path}-${file.added}-${file.deleted}`}
+                      className="grid grid-cols-[minmax(0,1fr)_80px] gap-3 border-b border-slate-100 px-3 py-2 text-xs last:border-b-0"
+                    >
+                      <span className="truncate font-mono text-slate-700">{file.path}</span>
+                      <span className="text-right text-slate-500">+{file.added} -{file.deleted}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+          <section className="min-w-0">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                Diff
+              </div>
+              {shown.patch_truncated && <StatusBadge tone="warning">Truncated</StatusBadge>}
+            </div>
+            {shown.patch ? (
+              <pre className="max-h-[72vh] overflow-auto rounded-lg border border-slate-200 bg-white font-mono text-xs leading-5">
+                {shown.patch.split('\n').map((line, index) => (
+                  <div key={`${index}-${line.slice(0, 16)}`} className={`px-3 ${diffLineClass(line)}`}>
+                    {line || '\u00a0'}
+                  </div>
+                ))}
+              </pre>
+            ) : (
+              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-sm text-slate-500">
+                No diff loaded for this commit.
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
+    </InspectorDetailModal>
   );
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Maximize2, X } from 'lucide-react';
 import {
   approveAnnotationPublication,
   createCodeAnnotation,
@@ -14,6 +15,7 @@ import EmailTagEditor from '../EmailTagEditor';
 import { useAuth } from '../../auth';
 import { showToast } from '../Toast';
 import ConfirmModal from '../ConfirmModal';
+import InspectorDetailModal from './InspectorDetailModal';
 
 type PendingAction =
   | { kind: 'approve'; annotationId: string }
@@ -76,6 +78,7 @@ export default function AnnotationPanel({
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [previewAnnotation, setPreviewAnnotation] = useState<CodeAnnotation | null>(null);
 
   const rootAnnotations = useMemo(() => annotations.filter(a => !a.in_reply_to), [annotations]);
   const replyCounts = useMemo(() => {
@@ -307,6 +310,15 @@ export default function AnnotationPanel({
                       </div>
                       <div className="flex items-center gap-2">
                         <PublishButton a={root} />
+                        <button
+                          type="button"
+                          onClick={() => setPreviewAnnotation(root)}
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-400 hover:bg-white hover:text-gray-700"
+                          aria-label="Open annotation detail"
+                          title="Open annotation detail"
+                        >
+                          <Maximize2 className="h-3.5 w-3.5" />
+                        </button>
                         {canManage(root) && (
                           <button onClick={() => setPendingAction({ kind: 'delete', annotationId: root.annotation_id, isReply: false })}
                             className="text-[10px] text-gray-400 hover:text-red-500">Delete</button>
@@ -338,6 +350,15 @@ export default function AnnotationPanel({
                         </div>
                         <div className="flex items-center gap-2">
                           <PublishButton a={reply} />
+                          <button
+                            type="button"
+                            onClick={() => setPreviewAnnotation(reply)}
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-400 hover:bg-white hover:text-gray-700"
+                            aria-label="Open reply detail"
+                            title="Open reply detail"
+                          >
+                            <Maximize2 className="h-3.5 w-3.5" />
+                          </button>
                           {canManage(reply) && (
                             <button onClick={() => setPendingAction({ kind: 'delete', annotationId: reply.annotation_id, isReply: true })}
                               className="text-[10px] text-gray-400 hover:text-red-500">Delete</button>
@@ -373,6 +394,102 @@ export default function AnnotationPanel({
       onConfirm={handleConfirmAction}
       onCancel={() => setPendingAction(null)}
     />
+    <AnnotationDetailModal
+      annotation={previewAnnotation}
+      replies={
+        previewAnnotation
+          ? annotations.filter((annotation) => annotation.in_reply_to === previewAnnotation.annotation_id)
+          : []
+      }
+      onClose={() => setPreviewAnnotation(null)}
+    />
     </>
+  );
+}
+
+function AnnotationDetailModal({
+  annotation,
+  replies,
+  onClose,
+}: {
+  annotation: CodeAnnotation | null;
+  replies: CodeAnnotation[];
+  onClose: () => void;
+}) {
+  if (!annotation) return null;
+  return (
+    <InspectorDetailModal
+      isOpen={!!annotation}
+      onClose={onClose}
+      title={`${formatAnnotationLineRange(annotation)} annotation`}
+      subtitle={
+        <span>
+          {annotation.visibility} · {annotation.publish_status}
+        </span>
+      }
+      footer={
+        <button
+          type="button"
+          onClick={onClose}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          <X className="h-4 w-4" />
+          Close
+        </button>
+      }
+    >
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
+        <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-4">
+          <div className="markdown-content text-sm leading-6">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{annotation.body}</ReactMarkdown>
+          </div>
+          {annotation.publish_review_comment && (
+            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Review note: {annotation.publish_review_comment}
+            </div>
+          )}
+        </section>
+        <aside className="space-y-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+              Target
+            </div>
+            <dl className="mt-2 space-y-1 text-xs">
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-500">Version</dt>
+                <dd className="font-medium text-slate-800">{annotation.version}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-500">Path</dt>
+                <dd className="min-w-0 truncate font-mono text-slate-800">{annotation.file_path}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-500">Range</dt>
+                <dd className="font-medium text-slate-800">{formatAnnotationLineRange(annotation)}</dd>
+              </div>
+            </dl>
+          </div>
+          {replies.length > 0 && (
+            <div className="rounded-lg border border-slate-200 bg-white p-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                Replies
+              </div>
+              <div className="mt-2 max-h-[50vh] space-y-2 overflow-y-auto">
+                {replies.map((reply) => (
+                  <div key={reply.annotation_id} className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                    <div className="mb-1 text-[10px] font-medium text-slate-400">
+                      {formatAnnotationLineRange(reply)} · {reply.publish_status}
+                    </div>
+                    <div className="markdown-content text-xs">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{reply.body}</ReactMarkdown>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </aside>
+      </div>
+    </InspectorDetailModal>
   );
 }

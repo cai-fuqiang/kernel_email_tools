@@ -822,6 +822,8 @@ export interface KernelHistoryCommit {
     deleted: string;
     path: string;
   }>;
+  patch?: string;
+  patch_truncated?: boolean;
   version?: string;
 }
 

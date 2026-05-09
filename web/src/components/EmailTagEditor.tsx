@@ -79,9 +79,9 @@ export default function EmailTagEditor({
         anchor: anchorValue,
       }),
     ]);
-    setDirectTags(bundle.direct_tags);
-    setAggregatedTags(bundle.aggregated_tags);
-    setDirectAssignments(assignments);
+    setDirectTags(Array.isArray(bundle.direct_tags) ? bundle.direct_tags : []);
+    setAggregatedTags(Array.isArray(bundle.aggregated_tags) ? bundle.aggregated_tags : []);
+    setDirectAssignments(Array.isArray(assignments) ? assignments : []);
   }, [resolvedAnchorKey, resolvedTargetRef, resolvedTargetType]);
 
   useEffect(() => {
