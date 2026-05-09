@@ -70,11 +70,51 @@ export function localKernelCodeUrl(
   filePath: string,
   line?: number,
 ): string {
+  return `/app${kernelCodePath(version, filePath, line)}`;
+}
+
+/**
+ * 构建 Code Browser 路径，供 react-router navigate 使用。
+ */
+export function kernelCodePath(
+  version: string,
+  filePath: string,
+  line?: number,
+): string {
   const params = new URLSearchParams();
   params.set('v', version);
   params.set('path', filePath);
   if (line && line > 0) params.set('line', String(line));
-  return `/app/kernel-code?${params.toString()}`;
+  return `/kernel-code?${params.toString()}`;
+}
+
+/**
+ * 构建内置符号预览页 URL。
+ */
+export function kernelSymbolPreviewPath(
+  version: string,
+  filePath: string,
+  line?: number,
+  symbol?: string,
+): string {
+  const params = new URLSearchParams();
+  params.set('v', version);
+  params.set('path', filePath);
+  if (line && line > 0) params.set('line', String(line));
+  if (symbol) params.set('symbol', symbol);
+  return `/kernel-code/preview?${params.toString()}`;
+}
+
+/**
+ * 构建内置符号预览页的绝对链接。
+ */
+export function localKernelSymbolPreviewUrl(
+  version: string,
+  filePath: string,
+  line?: number,
+  symbol?: string,
+): string {
+  return `/app${kernelSymbolPreviewPath(version, filePath, line, symbol)}`;
 }
 
 /**

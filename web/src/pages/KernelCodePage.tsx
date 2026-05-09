@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   BookOpenText,
   ChevronRight,
@@ -34,7 +34,6 @@ import type {
   CodeAnnotation,
   KnowledgeEntity,
   KernelFileResponse,
-  KernelSymbolCandidateResponse,
   KernelTreeEntry,
   KernelVersionInfo,
   KernelSymbolResolveResponse,
@@ -45,7 +44,6 @@ import ThreadDrawer from '../components/ThreadDrawer';
 import { showToast } from '../components/Toast';
 import AnnotationPanel from '../components/kernelCode/AnnotationPanel';
 import CodeHistoryPanel from '../components/kernelCode/CodeHistoryPanel';
-import KernelSymbolPreviewModal from '../components/kernelCode/KernelSymbolPreviewModal';
 import {
   EmptyState,
   IconButton,
@@ -58,6 +56,7 @@ import {
   elixirIdentUrl,
   isLikelyCIdentifier,
   pickKernelSourceUrl,
+  kernelSymbolPreviewPath,
 } from '../utils/externalLinks';
 
 function isValidFilePath(path: string): boolean {
@@ -293,6 +292,7 @@ function isKernelDirectory(entry: KernelTreeEntry): boolean {
 type InspectorSectionId = 'target' | 'history' | 'annotations' | 'tags' | 'threads' | 'knowledge';
 
 export default function KernelCodePage() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const urlVersion = searchParams.get('v') || '';
   const urlPath = searchParams.get('path') || '';
@@ -341,7 +341,6 @@ export default function KernelCodePage() {
     result: KernelSymbolResolveResponse | null;
     error: string | null;
   } | null>(null);
-  const [symbolPreviewCandidate, setSymbolPreviewCandidate] = useState<KernelSymbolCandidateResponse | null>(null);
 
   const codeViewRef = useRef<HTMLDivElement | null>(null);
   const pathRequestIdRef = useRef(0);
@@ -1183,11 +1182,6 @@ export default function KernelCodePage() {
     }
   }
 
-  function openSymbolPreview(candidate: KernelSymbolCandidateResponse) {
-    setSymbolPopover(null);
-    setSymbolPreviewCandidate(candidate);
-  }
-
   return (
     <PageShell wide className="bg-slate-100 px-3 py-3 md:px-4">
       <SectionPanel
@@ -1831,9 +1825,12 @@ export default function KernelCodePage() {
                 >
                   <button
                     type="button"
-                    onClick={() => openSymbolPreview(candidate)}
+                    onClick={() => {
+                      setSymbolPopover(null);
+                      navigate(kernelSymbolPreviewPath(candidate.version, candidate.path, candidate.line, symbolPopover?.symbol || undefined));
+                    }}
                     className="min-w-0 flex-1 text-left"
-                    title="Open preview"
+                    title="Open preview page"
                   >
                     <div className="truncate text-xs font-medium text-slate-900">
                       {candidate.path}
@@ -1890,12 +1887,6 @@ export default function KernelCodePage() {
           </div>
         </div>
       )}
-
-      <KernelSymbolPreviewModal
-        isOpen={!!symbolPreviewCandidate}
-        candidate={symbolPreviewCandidate}
-        onClose={() => setSymbolPreviewCandidate(null)}
-      />
 
       {threadOpen && (
         <ThreadDrawer
