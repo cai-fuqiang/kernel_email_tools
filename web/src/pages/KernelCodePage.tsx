@@ -34,6 +34,7 @@ import type {
   CodeAnnotation,
   KnowledgeEntity,
   KernelFileResponse,
+  KernelSymbolCandidateResponse,
   KernelTreeEntry,
   KernelVersionInfo,
   KernelSymbolResolveResponse,
@@ -44,6 +45,7 @@ import ThreadDrawer from '../components/ThreadDrawer';
 import { showToast } from '../components/Toast';
 import AnnotationPanel from '../components/kernelCode/AnnotationPanel';
 import CodeHistoryPanel from '../components/kernelCode/CodeHistoryPanel';
+import KernelSymbolQuickPreviewPopover from '../components/kernelCode/KernelSymbolQuickPreviewPopover';
 import {
   EmptyState,
   IconButton,
@@ -340,6 +342,11 @@ export default function KernelCodePage() {
     loading: boolean;
     result: KernelSymbolResolveResponse | null;
     error: string | null;
+  } | null>(null);
+  const [symbolQuickPreview, setSymbolQuickPreview] = useState<{
+    candidate: KernelSymbolCandidateResponse;
+    symbol: string;
+    anchorRect: DOMRect;
   } | null>(null);
 
   const codeViewRef = useRef<HTMLDivElement | null>(null);
@@ -1182,6 +1189,27 @@ export default function KernelCodePage() {
     }
   }
 
+  function handleSymbolCandidateClick(
+    candidate: KernelSymbolCandidateResponse,
+    symbol: string,
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ) {
+    const anchorRect = event.currentTarget.getBoundingClientRect();
+    if (event.detail >= 2) {
+      setSymbolQuickPreview(null);
+      setSymbolPopover(null);
+      navigate(kernelSymbolPreviewPath(candidate.version, candidate.path, candidate.line, symbol || undefined));
+      return;
+    }
+
+    setSymbolPopover(null);
+    setSymbolQuickPreview({
+      candidate,
+      symbol,
+      anchorRect,
+    });
+  }
+
   return (
     <PageShell wide className="bg-slate-100 px-3 py-3 md:px-4">
       <SectionPanel
@@ -1825,12 +1853,15 @@ export default function KernelCodePage() {
                 >
                   <button
                     type="button"
-                    onClick={() => {
-                      setSymbolPopover(null);
-                      navigate(kernelSymbolPreviewPath(candidate.version, candidate.path, candidate.line, symbolPopover?.symbol || undefined));
-                    }}
+                    onClick={(event) =>
+                      handleSymbolCandidateClick(
+                        candidate,
+                        symbolPopover?.symbol || '',
+                        event,
+                      )
+                    }
                     className="min-w-0 flex-1 text-left"
-                    title="Open preview page"
+                    title="Single click for quick preview, double click for full preview"
                   >
                     <div className="truncate text-xs font-medium text-slate-900">
                       {candidate.path}
@@ -1881,12 +1912,35 @@ export default function KernelCodePage() {
                     ? symbolResolve.result.resolved
                       ? `${symbolResolve.result.candidates.length} matches`
                       : 'No matches'
-                    : 'Ready'}
+                  : 'Ready'}
               </span>
+            </div>
+            <div className="pt-1 text-[11px] leading-5 text-slate-400">
+              Single click opens a quick preview, double click opens the full preview.
             </div>
           </div>
         </div>
       )}
+
+      <KernelSymbolQuickPreviewPopover
+        isOpen={!!symbolQuickPreview}
+        candidate={symbolQuickPreview?.candidate || null}
+        symbol={symbolQuickPreview?.symbol}
+        anchorRect={symbolQuickPreview?.anchorRect || null}
+        onClose={() => setSymbolQuickPreview(null)}
+        onOpenLarge={() => {
+          if (!symbolQuickPreview) return;
+          navigate(
+            kernelSymbolPreviewPath(
+              symbolQuickPreview.candidate.version,
+              symbolQuickPreview.candidate.path,
+              symbolQuickPreview.candidate.line,
+              symbolQuickPreview.symbol || undefined,
+            ),
+          );
+          setSymbolQuickPreview(null);
+        }}
+      />
 
       {threadOpen && (
         <ThreadDrawer
