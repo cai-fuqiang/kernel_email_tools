@@ -60,6 +60,14 @@ function isValidFilePath(path: string): boolean {
   return path.trim().length > 0;
 }
 
+function shouldTryFileBeforeTree(path: string, targetLine?: number | null): boolean {
+  if (targetLine && targetLine > 0) return true;
+  const parts = path.split('/').filter(Boolean);
+  const name = parts[parts.length - 1] || '';
+  if (name.includes('.')) return true;
+  return new Set(['Kconfig', 'Makefile', 'MAINTAINERS', 'CREDITS', 'COPYING', 'README']).has(name);
+}
+
 function formatBytes(size: number): string {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
@@ -430,8 +438,12 @@ export default function KernelCodePage() {
     [ensureTreeLoaded, expandAncestors, selectedVersion, setSearchParams],
   );
 
-  const loadFile = useCallback(async (path: string, targetLine?: number | null) => {
-    if (!selectedVersion || !path) return;
+  const loadFile = useCallback(async (
+    path: string,
+    targetLine?: number | null,
+    options?: { silent?: boolean },
+  ): Promise<boolean> => {
+    if (!selectedVersion || !path) return false;
     setFileLoading(true);
     setCurrentPath(path);
     setCurrentPathKind('file');
@@ -452,10 +464,14 @@ export default function KernelCodePage() {
       setCurrentFile(fileRes);
       setAnnotations(annotRes);
       await expandAncestors(path, false);
+      return true;
     } catch (e: unknown) {
-      showToast(e instanceof Error ? e.message : String(e), 'error');
+      if (!options?.silent) {
+        showToast(e instanceof Error ? e.message : String(e), 'error');
+      }
       setCurrentFile(null);
       setCurrentPathKind(null);
+      return false;
     } finally {
       setFileLoading(false);
     }
@@ -480,6 +496,10 @@ export default function KernelCodePage() {
       if (knownKind === 'file') {
         await loadFile(path, targetLine);
         return;
+      }
+      if (shouldTryFileBeforeTree(path, targetLine)) {
+        const loaded = await loadFile(path, targetLine, { silent: true });
+        if (loaded) return;
       }
       const tree = await loadTree(path, { silent: true });
       if (tree) {
@@ -820,13 +840,39 @@ export default function KernelCodePage() {
     void openPath(pathInput.trim());
   }
 
-  function scrollToLine(line: number) {
-    window.requestAnimationFrame(() => {
+  function scrollToLine(line: number, behavior: ScrollBehavior = 'smooth') {
+    const applyScroll = () => {
       const container = codeViewRef.current;
       const target = container?.querySelector<HTMLElement>(`[data-line="${line}"]`);
-      target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      if (!container || !target) return false;
+      const centeredTop = target.offsetTop - (container.clientHeight / 2) + (target.clientHeight / 2);
+      container.scrollTo({
+        top: Math.max(0, centeredTop),
+        left: 0,
+        behavior,
+      });
+      target.scrollIntoView({ block: 'center', behavior });
+      return true;
+    };
+    window.requestAnimationFrame(() => {
+      if (!applyScroll()) {
+        window.setTimeout(applyScroll, 50);
+      }
+      window.setTimeout(applyScroll, 250);
+      window.setTimeout(applyScroll, 750);
     });
   }
+
+  useEffect(() => {
+    if (!currentFile) return;
+    window.requestAnimationFrame(() => {
+      if (focusLine) {
+        scrollToLine(focusLine, 'auto');
+        return;
+      }
+      scrollToLine(1, 'auto');
+    });
+  }, [currentFile, focusLine]);
 
   function handleSelectRange(startLine: number, endLine: number = startLine) {
     const normalizedStart = Math.max(1, Math.min(startLine, endLine));
