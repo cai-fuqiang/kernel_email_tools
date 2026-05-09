@@ -342,11 +342,22 @@ export default function KernelCodePage() {
 
   const codeViewRef = useRef<HTMLDivElement | null>(null);
   const pathRequestIdRef = useRef(0);
+  const fileAbortRef = useRef<AbortController | null>(null);
+  const treeAbortRef = useRef<AbortController | null>(null);
 
   const nextPathRequestId = useCallback(() => {
     pathRequestIdRef.current += 1;
     return pathRequestIdRef.current;
   }, []);
+
+  const abortPathRequests = useCallback(() => {
+    fileAbortRef.current?.abort();
+    treeAbortRef.current?.abort();
+    fileAbortRef.current = null;
+    treeAbortRef.current = null;
+  }, []);
+
+  useEffect(() => () => abortPathRequests(), [abortPathRequests]);
 
   useEffect(() => {
     setVersionsLoading(true);
@@ -370,15 +381,16 @@ export default function KernelCodePage() {
     [],
   );
 
-  const loadTree = useCallback(async (path: string = '', options?: { silent?: boolean }) => {
+  const loadTree = useCallback(async (path: string = '', options?: { silent?: boolean; signal?: AbortSignal }) => {
     if (!selectedVersion) return;
     setTreeLoading(true);
     try {
-      const res = await getKernelTree(selectedVersion, path);
+      const res = await getKernelTree(selectedVersion, path, options?.signal);
       const sorted = sortEntries(res.entries);
       setTreeCache((prev) => ({ ...prev, [res.path]: sorted }));
       return { path: res.path, entries: sorted };
     } catch (e: unknown) {
+      if (options?.signal?.aborted) return null;
       if (!options?.silent) {
         showToast(e instanceof Error ? e.message : 'Failed to load file tree', 'error');
       }
@@ -389,10 +401,10 @@ export default function KernelCodePage() {
   }, [selectedVersion, sortEntries]);
 
   const ensureTreeLoaded = useCallback(
-    async (path: string = '') => {
+    async (path: string = '', signal?: AbortSignal) => {
       const cached = treeCache[path];
       if (cached) return { path, entries: cached };
-      return loadTree(path);
+      return loadTree(path, { signal });
     },
     [loadTree, treeCache],
   );
@@ -416,14 +428,14 @@ export default function KernelCodePage() {
   );
 
   const expandAncestors = useCallback(
-    async (path: string, includeSelf: boolean, requestId?: number) => {
+    async (path: string, includeSelf: boolean, requestId?: number, signal?: AbortSignal) => {
       const parts = path.split('/').filter(Boolean);
       const dirSegments = includeSelf ? parts : parts.slice(0, -1);
       if (dirSegments.length === 0) {
         if (requestId && requestId !== pathRequestIdRef.current) return;
         setExpandedTreePaths(new Set());
         setTreePath('');
-        await ensureTreeLoaded('');
+        await ensureTreeLoaded('', signal);
         return;
       }
       const nextExpanded = new Set<string>();
@@ -432,20 +444,23 @@ export default function KernelCodePage() {
         prefix = prefix ? `${prefix}/${segment}` : segment;
         if (requestId && requestId !== pathRequestIdRef.current) return;
         nextExpanded.add(prefix);
-        await ensureTreeLoaded(prefix);
+        await ensureTreeLoaded(prefix, signal);
       }
       if (requestId && requestId !== pathRequestIdRef.current) return;
       setExpandedTreePaths(nextExpanded);
       setTreePath(dirSegments[dirSegments.length - 1] ? dirSegments.join('/') : '');
-      await ensureTreeLoaded('');
+      await ensureTreeLoaded('', signal);
     },
     [ensureTreeLoaded],
   );
 
   const openDirectory = useCallback(
-    async (path: string) => {
+    async (path: string, options?: { requestId?: number }) => {
       if (!selectedVersion) return;
-      const requestId = nextPathRequestId();
+      abortPathRequests();
+      const requestId = options?.requestId ?? nextPathRequestId();
+      const treeAbort = new AbortController();
+      treeAbortRef.current = treeAbort;
       setCurrentPath(path);
       setCurrentPathKind('directory');
       setCurrentFile(null);
@@ -454,21 +469,24 @@ export default function KernelCodePage() {
       setSelectedLines(new Set());
       setPathInput(path);
       setSearchParams({ v: selectedVersion, path }, { replace: true });
-      const tree = await ensureTreeLoaded(path);
+      const tree = await ensureTreeLoaded(path, treeAbort.signal);
       if (!tree || requestId !== pathRequestIdRef.current) return;
       setDirectoryEntries(tree.entries);
-      await expandAncestors(path, true, requestId);
+      await expandAncestors(path, true, requestId, treeAbort.signal);
     },
-    [ensureTreeLoaded, expandAncestors, nextPathRequestId, selectedVersion, setSearchParams],
+    [abortPathRequests, ensureTreeLoaded, expandAncestors, nextPathRequestId, selectedVersion, setSearchParams],
   );
 
   const loadFile = useCallback(async (
     path: string,
     targetLine?: number | null,
-    options?: { silent?: boolean },
+    options?: { silent?: boolean; requestId?: number },
   ): Promise<boolean> => {
     if (!selectedVersion || !path) return false;
-    const requestId = nextPathRequestId();
+    abortPathRequests();
+    const requestId = options?.requestId ?? nextPathRequestId();
+    const fileAbort = new AbortController();
+    fileAbortRef.current = fileAbort;
     setFileLoading(true);
     setCurrentPath(path);
     setCurrentPathKind('file');
@@ -483,15 +501,16 @@ export default function KernelCodePage() {
     );
     try {
       const [fileRes, annotRes] = await Promise.all([
-        getKernelFile(selectedVersion, path),
-        getCodeAnnotations(selectedVersion, path).catch(() => [] as CodeAnnotation[]),
+        getKernelFile(selectedVersion, path, fileAbort.signal),
+        getCodeAnnotations(selectedVersion, path, fileAbort.signal).catch(() => [] as CodeAnnotation[]),
       ]);
       if (requestId !== pathRequestIdRef.current) return false;
       setCurrentFile(fileRes);
       setAnnotations(annotRes);
-      await expandAncestors(path, false, requestId);
+      await expandAncestors(path, false, requestId, fileAbort.signal);
       return true;
     } catch (e: unknown) {
+      if (fileAbort.signal.aborted) return false;
       if (requestId !== pathRequestIdRef.current) return false;
       if (!options?.silent) {
         showToast(e instanceof Error ? e.message : String(e), 'error');
@@ -504,7 +523,7 @@ export default function KernelCodePage() {
         setFileLoading(false);
       }
     }
-  }, [expandAncestors, nextPathRequestId, selectedVersion, setSearchParams, urlLine]);
+  }, [abortPathRequests, expandAncestors, nextPathRequestId, selectedVersion, setSearchParams, urlLine]);
 
   const openPath = useCallback(
     async (path: string, targetLine?: number | null) => {
@@ -514,25 +533,30 @@ export default function KernelCodePage() {
         setSelectedLines(focusTarget ? new Set([focusTarget]) : new Set());
         return;
       }
+      const requestId = nextPathRequestId();
       const knownKind = resolveKnownPathKind(path);
       if (knownKind === 'directory') {
-        await openDirectory(path);
+        await openDirectory(path, { requestId });
         return;
       }
       if (knownKind === 'file') {
-        await loadFile(path, targetLine);
+        await loadFile(path, targetLine, { requestId });
         return;
       }
       if (shouldTryFileBeforeTree(path, targetLine)) {
-        const loaded = await loadFile(path, targetLine, { silent: true });
+        const loaded = await loadFile(path, targetLine, { silent: true, requestId });
         if (loaded) return;
+        if (requestId !== pathRequestIdRef.current) return;
       }
-      const tree = await loadTree(path, { silent: true });
+      const probeAbort = new AbortController();
+      treeAbortRef.current = probeAbort;
+      const tree = await loadTree(path, { silent: true, signal: probeAbort.signal });
+      if (requestId !== pathRequestIdRef.current) return;
       if (tree) {
-        await openDirectory(path);
+        await openDirectory(path, { requestId });
         return;
       }
-      await loadFile(path, targetLine);
+      await loadFile(path, targetLine, { requestId });
     },
     [
       currentPath,
@@ -542,6 +566,7 @@ export default function KernelCodePage() {
       openDirectory,
       resolveKnownPathKind,
       selectedVersion,
+      nextPathRequestId,
       urlLine,
     ],
   );
@@ -834,6 +859,7 @@ export default function KernelCodePage() {
   }, [relatedMessageIds]);
 
   function handleVersionSelect(tag: string) {
+    abortPathRequests();
     nextPathRequestId();
     setSelectedVersion(tag);
     setFileLoading(false);

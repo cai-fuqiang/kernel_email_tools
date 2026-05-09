@@ -57,8 +57,11 @@ export type { TagAssignment, TagRead, TagStats, TagTargetBundle, TagTargetItem, 
 // 生产环境：FastAPI 挂载前端在 /app/，API 在 /api/
 const API_BASE = '/api';
 
-async function fetchJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: 'include' });
+async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    credentials: 'include',
+    ...init,
+  });
   if (!res.ok) {
     if (res.status === 401 && typeof window !== 'undefined') {
       window.dispatchEvent(new Event('auth:unauthorized'));
@@ -1341,22 +1344,26 @@ export async function getKernelVersions(
 export async function getKernelFile(
   version: string,
   path: string,
+  signal?: AbortSignal,
 ): Promise<KernelFileResponse> {
   return fetchJSON<KernelFileResponse>(
-    `${API_BASE}/kernel/file/${encodeURIComponent(version)}/${path}`
+    `${API_BASE}/kernel/file/${encodeURIComponent(version)}/${path}`,
+    signal ? { signal } : undefined,
   );
 }
 
 export async function getKernelTree(
   version: string,
   path: string = '',
+  signal?: AbortSignal,
 ): Promise<KernelTreeResponse> {
   const suffix = path ? `/${path}` : '';
   type RawKernelTreeResponse = Omit<KernelTreeResponse, 'entries'> & {
     entries: Array<Omit<KernelTreeResponse['entries'][number], 'type'> & { type: 'file' | 'directory' | 'dir' }>;
   };
   const tree = await fetchJSON<RawKernelTreeResponse>(
-    `${API_BASE}/kernel/tree/${encodeURIComponent(version)}${suffix}`
+    `${API_BASE}/kernel/tree/${encodeURIComponent(version)}${suffix}`,
+    signal ? { signal } : undefined,
   );
   return {
     ...tree,
@@ -1454,9 +1461,11 @@ export async function getKernelCommit(
 export async function getCodeAnnotations(
   version: string,
   path: string,
+  signal?: AbortSignal,
 ): Promise<CodeAnnotation[]> {
   const data = await fetchJSON<CodeAnnotation[]>(
-    `${API_BASE}/kernel/annotations/${encodeURIComponent(version)}/${path}`
+    `${API_BASE}/kernel/annotations/${encodeURIComponent(version)}/${path}`,
+    signal ? { signal } : undefined,
   );
   return normalizeAnnotations(data) as CodeAnnotation[];
 }
