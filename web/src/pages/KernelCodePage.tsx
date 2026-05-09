@@ -1389,8 +1389,8 @@ export default function KernelCodePage() {
             )}
           </aside>
 
-          <div className="min-w-0 bg-slate-50/60">
-            <div className="h-full min-h-0">
+          <div className="flex min-h-0 min-w-0 flex-col bg-slate-50/60">
+            <div className="min-h-0 flex-1">
               <div
                 className={`grid h-full min-h-0 gap-0 ${
                   inspectorCollapsed
