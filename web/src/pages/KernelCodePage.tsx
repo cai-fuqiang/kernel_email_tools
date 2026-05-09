@@ -282,6 +282,10 @@ type ThreadPreview = {
 };
 
 type AtlasPathKind = 'file' | 'directory' | null;
+
+function isKernelDirectory(entry: KernelTreeEntry): boolean {
+  return entry.type === 'directory' || entry.type === 'dir';
+}
 type InspectorSectionId = 'target' | 'history' | 'annotations' | 'tags' | 'threads' | 'knowledge';
 
 export default function KernelCodePage() {
@@ -344,7 +348,9 @@ export default function KernelCodePage() {
   const sortEntries = useCallback(
     (entries: KernelTreeEntry[]) =>
       entries.slice().sort((a, b) => {
-        if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+        const aIsDirectory = isKernelDirectory(a);
+        const bIsDirectory = isKernelDirectory(b);
+        if (aIsDirectory !== bIsDirectory) return aIsDirectory ? -1 : 1;
         return a.name.localeCompare(b.name);
       }),
     [],
@@ -390,7 +396,7 @@ export default function KernelCodePage() {
         (entry) => entry.path === path || entry.name === entryName,
       );
       if (!matchedEntry) return null;
-      return matchedEntry.type === 'directory' ? 'directory' : 'file';
+      return isKernelDirectory(matchedEntry) ? 'directory' : 'file';
     },
     [currentFile, currentPath, currentPathKind, treeCache],
   );
@@ -935,11 +941,11 @@ export default function KernelCodePage() {
     return (
       <div className="space-y-0.5">
         {entries.map((entry) => {
-          const isDirectory = entry.type === 'directory';
+          const isDirectory = isKernelDirectory(entry);
           const entryPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
           const isExpanded = expandedTreePaths.has(entryPath);
           const isActive = entryPath === currentPath;
-          const entryPicked = entry.type === 'file' ? pickKernelSourceUrl(selectedVersion, entryPath) : null;
+          const entryPicked = !isDirectory ? pickKernelSourceUrl(selectedVersion, entryPath) : null;
           return (
             <div key={entryPath}>
               <div

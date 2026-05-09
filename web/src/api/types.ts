@@ -781,7 +781,7 @@ export interface KernelFileResponse {
 export interface KernelTreeEntry {
   name: string;
   path: string;
-  type: 'file' | 'directory';
+  type: 'file' | 'directory' | 'dir';
   size: number;
 }
 
