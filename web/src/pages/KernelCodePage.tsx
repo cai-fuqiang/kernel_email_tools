@@ -34,6 +34,7 @@ import type {
   CodeAnnotation,
   KnowledgeEntity,
   KernelFileResponse,
+  KernelSymbolCandidateResponse,
   KernelTreeEntry,
   KernelVersionInfo,
   KernelSymbolResolveResponse,
@@ -44,6 +45,7 @@ import ThreadDrawer from '../components/ThreadDrawer';
 import { showToast } from '../components/Toast';
 import AnnotationPanel from '../components/kernelCode/AnnotationPanel';
 import CodeHistoryPanel from '../components/kernelCode/CodeHistoryPanel';
+import KernelSymbolPreviewModal from '../components/kernelCode/KernelSymbolPreviewModal';
 import {
   EmptyState,
   IconButton,
@@ -339,6 +341,7 @@ export default function KernelCodePage() {
     result: KernelSymbolResolveResponse | null;
     error: string | null;
   } | null>(null);
+  const [symbolPreviewCandidate, setSymbolPreviewCandidate] = useState<KernelSymbolCandidateResponse | null>(null);
 
   const codeViewRef = useRef<HTMLDivElement | null>(null);
   const pathRequestIdRef = useRef(0);
@@ -1180,6 +1183,11 @@ export default function KernelCodePage() {
     }
   }
 
+  function openSymbolPreview(candidate: KernelSymbolCandidateResponse) {
+    setSymbolPopover(null);
+    setSymbolPreviewCandidate(candidate);
+  }
+
   return (
     <PageShell wide className="bg-slate-100 px-3 py-3 md:px-4">
       <SectionPanel
@@ -1817,32 +1825,44 @@ export default function KernelCodePage() {
 
             <div className="space-y-1.5">
               {symbolResolve?.result?.candidates.map((candidate) => (
-                <a
+                <div
                   key={`${candidate.path}:${candidate.line}`}
-                  href={candidate.local_file_available ? candidate.local_url : candidate.external_url}
-                  target={candidate.local_file_available ? '_self' : '_blank'}
-                  rel={candidate.local_file_available ? undefined : 'noopener noreferrer'}
-                  onClick={() => setSymbolPopover(null)}
                   className="flex items-center justify-between gap-3 rounded-md border border-slate-200 px-2.5 py-2 transition hover:border-sky-200 hover:bg-sky-50"
                 >
-                  <div className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => openSymbolPreview(candidate)}
+                    className="min-w-0 flex-1 text-left"
+                    title="Open preview"
+                  >
                     <div className="truncate text-xs font-medium text-slate-900">
                       {candidate.path}
                     </div>
                     <div className="mt-0.5 text-[11px] text-slate-500">
                       L{candidate.line}
                     </div>
+                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                        candidate.local_file_available
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-amber-200 bg-amber-50 text-amber-700'
+                      }`}
+                    >
+                      {candidate.local_file_available ? 'Local' : 'Elixir'}
+                    </span>
+                    <a
+                      href={candidate.local_file_available ? candidate.local_url : candidate.external_url}
+                      target={candidate.local_file_available ? '_self' : '_blank'}
+                      rel={candidate.local_file_available ? undefined : 'noopener noreferrer'}
+                      onClick={() => setSymbolPopover(null)}
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 transition hover:border-sky-200 hover:text-sky-700"
+                    >
+                      跳转
+                    </a>
                   </div>
-                  <span
-                    className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
-                      candidate.local_file_available
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                        : 'border-amber-200 bg-amber-50 text-amber-700'
-                    }`}
-                  >
-                    {candidate.local_file_available ? 'Local' : 'Elixir'}
-                  </span>
-                </a>
+                </div>
               ))}
             </div>
 
@@ -1870,6 +1890,12 @@ export default function KernelCodePage() {
           </div>
         </div>
       )}
+
+      <KernelSymbolPreviewModal
+        isOpen={!!symbolPreviewCandidate}
+        candidate={symbolPreviewCandidate}
+        onClose={() => setSymbolPreviewCandidate(null)}
+      />
 
       {threadOpen && (
         <ThreadDrawer
