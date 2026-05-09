@@ -8,6 +8,7 @@ import {
   deleteCodeAnnotation,
   rejectAnnotationPublication,
   requestAnnotationPublication,
+  updateCodeAnnotation,
   withdrawAnnotationPublication,
 } from '../../api/client';
 import type { CodeAnnotation } from '../../api/types';
@@ -79,6 +80,7 @@ export default function AnnotationPanel({
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [previewAnnotation, setPreviewAnnotation] = useState<CodeAnnotation | null>(null);
+  const [previewStartEditing, setPreviewStartEditing] = useState(false);
 
   const rootAnnotations = useMemo(() => annotations.filter(a => !a.in_reply_to), [annotations]);
   const replyCounts = useMemo(() => {
@@ -310,9 +312,24 @@ export default function AnnotationPanel({
                       </div>
                       <div className="flex items-center gap-2">
                         <PublishButton a={root} />
+                        {canManage(root) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewAnnotation(root);
+                              setPreviewStartEditing(true);
+                            }}
+                            className="text-[10px] text-slate-500 hover:text-slate-800"
+                          >
+                            Edit
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => setPreviewAnnotation(root)}
+                          onClick={() => {
+                            setPreviewAnnotation(root);
+                            setPreviewStartEditing(false);
+                          }}
                           className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-400 hover:bg-white hover:text-gray-700"
                           aria-label="Open annotation detail"
                           title="Open annotation detail"
@@ -350,9 +367,24 @@ export default function AnnotationPanel({
                         </div>
                         <div className="flex items-center gap-2">
                           <PublishButton a={reply} />
+                          {canManage(reply) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPreviewAnnotation(reply);
+                                setPreviewStartEditing(true);
+                              }}
+                              className="text-[10px] text-slate-500 hover:text-slate-800"
+                            >
+                              Edit
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={() => setPreviewAnnotation(reply)}
+                            onClick={() => {
+                              setPreviewAnnotation(reply);
+                              setPreviewStartEditing(false);
+                            }}
                             className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-400 hover:bg-white hover:text-gray-700"
                             aria-label="Open reply detail"
                             title="Open reply detail"
@@ -396,12 +428,17 @@ export default function AnnotationPanel({
     />
     <AnnotationDetailModal
       annotation={previewAnnotation}
+      initialEditing={previewStartEditing}
       replies={
         previewAnnotation
           ? annotations.filter((annotation) => annotation.in_reply_to === previewAnnotation.annotation_id)
           : []
       }
-      onClose={() => setPreviewAnnotation(null)}
+      onClose={() => {
+        setPreviewAnnotation(null);
+        setPreviewStartEditing(false);
+      }}
+      onRefresh={onAnnotationCreated}
     />
     </>
   );
@@ -411,12 +448,90 @@ function AnnotationDetailModal({
   annotation,
   replies,
   onClose,
+  onRefresh,
+  initialEditing = false,
 }: {
   annotation: CodeAnnotation | null;
   replies: CodeAnnotation[];
   onClose: () => void;
+  onRefresh: () => void;
+  initialEditing?: boolean;
 }) {
+  const { currentUser, isAdmin } = useAuth();
+  const [isEditing, setIsEditing] = useState(initialEditing);
+  const [draftBody, setDraftBody] = useState(annotation?.body || '');
+  const [draftVisibility, setDraftVisibility] = useState<'public' | 'private'>(annotation?.visibility || 'private');
+  const [saving, setSaving] = useState(false);
+  const annotationId = annotation?.annotation_id || '';
+
+  useEffect(() => {
+    if (!annotation) return;
+    setDraftBody(annotation.body);
+    setDraftVisibility(annotation.visibility);
+    setIsEditing(initialEditing);
+    setSaving(false);
+  }, [annotationId, initialEditing]);
+
   if (!annotation) return null;
+
+  const canManage =
+    !!currentUser &&
+    (isAdmin ||
+      (annotation.visibility === 'private' &&
+        annotation.publish_status !== 'pending' &&
+        annotation.author_user_id === currentUser.user_id));
+  const canRequestPublish =
+    !!currentUser &&
+    !isAdmin &&
+    annotation.visibility === 'private' &&
+    annotation.author_user_id === currentUser.user_id &&
+    annotation.publish_status !== 'pending';
+  const canWithdrawPublish =
+    !!currentUser &&
+    annotation.publish_status === 'pending' &&
+    (isAdmin || annotation.author_user_id === currentUser.user_id);
+  const canEditVisibility = !!currentUser && isAdmin;
+
+  const handleSave = async () => {
+    if (!draftBody.trim() || saving) return;
+    setSaving(true);
+    try {
+      await updateCodeAnnotation(annotation.annotation_id, {
+        body: draftBody.trim(),
+        ...(canEditVisibility ? { visibility: draftVisibility } : {}),
+      });
+      showToast('Annotation updated', 'success');
+      setDraftBody(draftBody.trim());
+      setDraftVisibility(canEditVisibility ? draftVisibility : annotation.visibility);
+      setIsEditing(false);
+      onRefresh();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Update failed', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRequestPublish = async () => {
+    try {
+      await requestAnnotationPublication(annotation.annotation_id);
+      showToast('Publication requested', 'success');
+      onRefresh();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Publication request failed', 'error');
+    }
+  };
+
+  const handleWithdrawPublish = async () => {
+    try {
+      await withdrawAnnotationPublication(annotation.annotation_id);
+      showToast('Publication request withdrawn', 'success');
+      onRefresh();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Withdraw failed', 'error');
+    }
+  };
+
   return (
     <InspectorDetailModal
       isOpen={!!annotation}
@@ -428,25 +543,113 @@ function AnnotationDetailModal({
         </span>
       }
       footer={
-        <button
-          type="button"
-          onClick={onClose}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          <X className="h-4 w-4" />
-          Close
-        </button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {!isEditing && canRequestPublish && (
+            <button
+              type="button"
+              onClick={handleRequestPublish}
+              className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100"
+            >
+              Request public
+            </button>
+          )}
+          {!isEditing && canWithdrawPublish && (
+            <button
+              type="button"
+              onClick={handleWithdrawPublish}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Withdraw
+            </button>
+          )}
+          {!isEditing && canManage && (
+            <button
+              type="button"
+              onClick={() => setIsEditing(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-100"
+            >
+              Edit
+            </button>
+          )}
+          {isEditing ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setDraftBody(annotation.body);
+                  setDraftVisibility(annotation.visibility);
+                  setIsEditing(false);
+                }}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving || !draftBody.trim()}
+                className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {saving ? 'Saving...' : 'Save changes'}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              <X className="h-4 w-4" />
+              Close
+            </button>
+          )}
+        </div>
       }
     >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
         <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-4">
-          <div className="markdown-content text-sm leading-6">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{annotation.body}</ReactMarkdown>
-          </div>
-          {annotation.publish_review_comment && (
-            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-              Review note: {annotation.publish_review_comment}
+          {isEditing ? (
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                  Body
+                </label>
+                <textarea
+                  value={draftBody}
+                  onChange={(e) => setDraftBody(e.target.value)}
+                  className="min-h-[320px] w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-sky-400"
+                  placeholder="Write annotation content..."
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Visibility</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {canEditVisibility ? 'Admins can switch public/private.' : 'Only private edits are allowed here; use Request public after saving.'}
+                  </div>
+                </div>
+                <select
+                  value={draftVisibility}
+                  onChange={(e) => setDraftVisibility(e.target.value as 'public' | 'private')}
+                  disabled={!canEditVisibility}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none disabled:bg-slate-100"
+                >
+                  <option value="private">private</option>
+                  {canEditVisibility && <option value="public">public</option>}
+                </select>
+              </div>
             </div>
+          ) : (
+            <>
+              <div className="markdown-content text-sm leading-6">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{annotation.body}</ReactMarkdown>
+              </div>
+              {annotation.publish_review_comment && (
+                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  Review note: {annotation.publish_review_comment}
+                </div>
+              )}
+            </>
           )}
         </section>
         <aside className="space-y-3">
@@ -466,6 +669,14 @@ function AnnotationDetailModal({
               <div className="flex justify-between gap-3">
                 <dt className="text-slate-500">Range</dt>
                 <dd className="font-medium text-slate-800">{formatAnnotationLineRange(annotation)}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-500">Visibility</dt>
+                <dd className="font-medium text-slate-800">{annotation.visibility}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-500">Status</dt>
+                <dd className="font-medium text-slate-800">{annotation.publish_status}</dd>
               </div>
             </dl>
           </div>

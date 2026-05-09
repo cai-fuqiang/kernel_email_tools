@@ -889,6 +889,7 @@ class AnnotationUpdate(BaseModel):
     """更新批注时的输入模型。"""
 
     body: str = Field(..., min_length=1, description="批注正文（支持 Markdown）")
+    visibility: Optional[str] = Field(None, description="public | private")
 
     model_config = {"from_attributes": True}
 

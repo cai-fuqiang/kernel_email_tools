@@ -439,6 +439,8 @@ class UnifiedAnnotationStore:
                 return None
 
             orm.body = data.body
+            if data.visibility is not None:
+                orm.visibility = data.visibility
             orm.updated_at = datetime.utcnow()
             await session.commit()
             await session.refresh(orm)

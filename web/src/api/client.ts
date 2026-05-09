@@ -1505,12 +1505,15 @@ export async function createCodeAnnotation(data: CodeAnnotationCreate): Promise<
 
 export async function updateCodeAnnotation(
   annotationId: string,
-  body: string,
+  patch: {
+    body: string;
+    visibility?: 'public' | 'private';
+  },
 ): Promise<CodeAnnotation> {
   const res = await fetch(`${API_BASE}/kernel/annotations/${encodeURIComponent(annotationId)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ body }),
+    body: JSON.stringify(patch),
   });
   if (!res.ok) {
     const text = await res.text();

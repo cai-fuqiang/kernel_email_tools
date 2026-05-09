@@ -317,6 +317,7 @@ class CodeAnnotationCreateRequest(BaseModel):
 class CodeAnnotationUpdateRequest(BaseModel):
     """更新代码注释请求。"""
     body: str = Field(..., min_length=1, description="注释正文")
+    visibility: Optional[str] = Field(None, description="public | private")
 
 
 class KernelSymbolCandidateResponse(BaseModel):
@@ -761,10 +762,12 @@ async def update_code_annotation(
     if not state._annotation_store:
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
     await _ensure_annotation_manage_access(annotation_id, current_user)
+    if request.visibility is not None:
+        _ensure_public_write_allowed(request.visibility, current_user)
 
     updated = await state._annotation_store.update(
         annotation_id,
-        AnnotationUpdate(body=request.body),
+        AnnotationUpdate(body=request.body, visibility=request.visibility),
     )
     if not updated:
         raise HTTPException(status_code=404, detail=f"Annotation {annotation_id} not found")
