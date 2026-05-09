@@ -11,11 +11,9 @@ interface KernelSymbolQuickPreviewPopoverProps {
   isOpen: boolean;
   candidate: KernelSymbolCandidateResponse | null;
   symbol?: string;
-  mode: 'quick' | 'large';
   anchorRect: DOMRect | null;
   avoidRect: DOMRect | null;
   onClose: () => void;
-  onToggleMode: () => void;
   onOpenPage: () => void;
 }
 
@@ -41,10 +39,8 @@ const C_TYPES = new Set([
   'u8', 'u16', 'u32', 'u64', 's8', 's16', 's32', 's64', 'size_t', 'ssize_t',
 ]);
 
-const QUICK_DEFAULT = { width: 660, height: 480 };
-const LARGE_DEFAULT = { width: 980, height: 720 };
-const QUICK_MIN = { width: 560, height: 380 };
-const LARGE_MIN = { width: 760, height: 520 };
+const DEFAULT_SIZE = { width: 980, height: 720 };
+const MIN_SIZE = { width: 760, height: 520 };
 const GAP = 14;
 const VIEWPORT_MARGIN = 12;
 const STORAGE_PREFIX = 'kernel-symbol-preview-window';
@@ -86,27 +82,18 @@ function clampZoom(value: number): number {
 function clampFrame(frame: Frame): Frame {
   const maxWidth = Math.max(240, window.innerWidth - VIEWPORT_MARGIN * 2);
   const maxHeight = Math.max(200, window.innerHeight - VIEWPORT_MARGIN * 2);
-  const width = Math.min(Math.max(frame.width, 240), maxWidth);
-  const height = Math.min(Math.max(frame.height, 200), maxHeight);
+  const width = Math.min(Math.max(frame.width, MIN_SIZE.width), maxWidth);
+  const height = Math.min(Math.max(frame.height, MIN_SIZE.height), maxHeight);
   const x = Math.min(Math.max(frame.x, VIEWPORT_MARGIN), window.innerWidth - VIEWPORT_MARGIN - width);
   const y = Math.min(Math.max(frame.y, VIEWPORT_MARGIN), window.innerHeight - VIEWPORT_MARGIN - height);
   return { x, y, width, height };
 }
 
-function getModeDefaults(mode: 'quick' | 'large') {
-  return mode === 'large' ? { defaults: LARGE_DEFAULT, mins: LARGE_MIN } : { defaults: QUICK_DEFAULT, mins: QUICK_MIN };
-}
-
-function buildInitialFrame(
-  mode: 'quick' | 'large',
-  anchorRect: DOMRect | null,
-  avoidRect: DOMRect | null,
-): Frame {
-  const { defaults } = getModeDefaults(mode);
+function buildInitialFrame(anchorRect: DOMRect | null, avoidRect: DOMRect | null): Frame {
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
-  const width = Math.min(defaults.width, viewportWidth - VIEWPORT_MARGIN * 2);
-  const height = Math.min(defaults.height, viewportHeight - VIEWPORT_MARGIN * 2);
+  const width = Math.min(DEFAULT_SIZE.width, viewportWidth - VIEWPORT_MARGIN * 2);
+  const height = Math.min(DEFAULT_SIZE.height, viewportHeight - VIEWPORT_MARGIN * 2);
   const availableRight = avoidRect ? viewportWidth - avoidRect.right - GAP : 0;
   const availableLeft = avoidRect ? avoidRect.left - GAP : 0;
   const availableBelow = avoidRect ? viewportHeight - avoidRect.bottom - GAP : 0;
@@ -117,62 +104,35 @@ function buildInitialFrame(
 
   if (avoidRect && availableLeft >= width) {
     x = Math.max(VIEWPORT_MARGIN, avoidRect.left - GAP - width);
-    y = Math.min(
-      Math.max(VIEWPORT_MARGIN, avoidRect.top),
-      viewportHeight - VIEWPORT_MARGIN - height,
-    );
+    y = Math.min(Math.max(VIEWPORT_MARGIN, avoidRect.top), viewportHeight - VIEWPORT_MARGIN - height);
   } else if (avoidRect && availableRight >= width) {
     x = Math.min(avoidRect.right + GAP, viewportWidth - VIEWPORT_MARGIN - width);
-    y = Math.min(
-      Math.max(VIEWPORT_MARGIN, avoidRect.top),
-      viewportHeight - VIEWPORT_MARGIN - height,
-    );
+    y = Math.min(Math.max(VIEWPORT_MARGIN, avoidRect.top), viewportHeight - VIEWPORT_MARGIN - height);
   } else if (avoidRect && availableBelow >= height) {
-    x = Math.min(
-      Math.max(VIEWPORT_MARGIN, avoidRect.left),
-      viewportWidth - VIEWPORT_MARGIN - width,
-    );
+    x = Math.min(Math.max(VIEWPORT_MARGIN, avoidRect.left), viewportWidth - VIEWPORT_MARGIN - width);
     y = Math.min(avoidRect.bottom + GAP, viewportHeight - VIEWPORT_MARGIN - height);
   } else if (avoidRect && availableAbove >= height) {
-    x = Math.min(
-      Math.max(VIEWPORT_MARGIN, avoidRect.left),
-      viewportWidth - VIEWPORT_MARGIN - width,
-    );
+    x = Math.min(Math.max(VIEWPORT_MARGIN, avoidRect.left), viewportWidth - VIEWPORT_MARGIN - width);
     y = Math.max(VIEWPORT_MARGIN, avoidRect.top - GAP - height);
   } else if (anchorRect) {
-    x = Math.min(
-      Math.max(VIEWPORT_MARGIN, anchorRect.left + 18),
-      viewportWidth - VIEWPORT_MARGIN - width,
-    );
-    y = Math.min(
-      Math.max(VIEWPORT_MARGIN, anchorRect.bottom + 12),
-      viewportHeight - VIEWPORT_MARGIN - height,
-    );
+    x = Math.min(Math.max(VIEWPORT_MARGIN, anchorRect.left + 18), viewportWidth - VIEWPORT_MARGIN - width);
+    y = Math.min(Math.max(VIEWPORT_MARGIN, anchorRect.bottom + 12), viewportHeight - VIEWPORT_MARGIN - height);
   }
 
   return clampFrame({ x, y, width, height });
 }
 
-function frameKey(candidate: KernelSymbolCandidateResponse, symbol: string | undefined, mode: 'quick' | 'large'): string {
-  return [
-    STORAGE_PREFIX,
-    candidate.version,
-    candidate.path,
-    candidate.line,
-    symbol || '',
-    mode,
-  ].join(':');
+function frameKey(candidate: KernelSymbolCandidateResponse, symbol: string | undefined): string {
+  return [STORAGE_PREFIX, candidate.version, candidate.path, candidate.line, symbol || ''].join(':');
 }
 
 export default function KernelSymbolQuickPreviewPopover({
   isOpen,
   candidate,
   symbol,
-  mode,
   anchorRect,
   avoidRect,
   onClose,
-  onToggleMode,
   onOpenPage,
 }: KernelSymbolQuickPreviewPopoverProps) {
   const [fileLines, setFileLines] = useState<string[]>([]);
@@ -191,28 +151,29 @@ export default function KernelSymbolQuickPreviewPopover({
 
     if (!candidate.local_file_available) {
       setFileLines([]);
-    } else {
-      let cancelled = false;
-      setLoading(true);
-      getKernelFile(candidate.version, candidate.path)
-        .then((file) => {
-          if (!cancelled) setFileLines(file.content.split('\n'));
-        })
-        .catch((err: unknown) => {
-          if (cancelled) return;
-          const message = err instanceof Error ? err.message : 'Failed to load preview';
-          setError(message);
-          setFileLines([]);
-          showToast(message, 'error');
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-
-      return () => {
-        cancelled = true;
-      };
+      return undefined;
     }
+
+    let cancelled = false;
+    setLoading(true);
+    getKernelFile(candidate.version, candidate.path)
+      .then((file) => {
+        if (!cancelled) setFileLines(file.content.split('\n'));
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : 'Failed to load preview';
+        setError(message);
+        setFileLines([]);
+        showToast(message, 'error');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [candidate, isOpen]);
 
   useEffect(() => {
@@ -226,7 +187,7 @@ export default function KernelSymbolQuickPreviewPopover({
       return;
     }
 
-    const key = frameKey(candidate, symbol, mode);
+    const key = frameKey(candidate, symbol);
     if (frameKeyRef.current === key && frame) return;
     frameKeyRef.current = key;
 
@@ -245,21 +206,21 @@ export default function KernelSymbolQuickPreviewPopover({
           width: stored.width,
           height: stored.height,
         })
-      : buildInitialFrame(mode, anchorRect, avoidRect);
+      : buildInitialFrame(anchorRect, avoidRect);
 
     setFrame(initial);
     setZoom(stored?.zoom ? clampZoom(stored.zoom) : 1);
-  }, [anchorRect, avoidRect, candidate, frame, isOpen, mode, symbol]);
+  }, [anchorRect, avoidRect, candidate, frame, isOpen, symbol]);
 
   useEffect(() => {
     if (!isOpen || !candidate || !frame) return;
-    const key = frameKey(candidate, symbol, mode);
+    const key = frameKey(candidate, symbol);
     try {
       window.localStorage.setItem(key, JSON.stringify({ ...frame, zoom }));
     } catch {
       // ignore storage failures
     }
-  }, [candidate, frame, isOpen, mode, symbol, zoom]);
+  }, [candidate, frame, isOpen, symbol, zoom]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -304,17 +265,10 @@ export default function KernelSymbolQuickPreviewPopover({
             y: startFrame.y + (event.clientY - interaction.startY),
           });
         }
-        const { mins } = getModeDefaults(mode);
         return clampFrame({
           ...current,
-          width: Math.max(
-            mins.width,
-            startFrame.width + (event.clientX - interaction.startX),
-          ),
-          height: Math.max(
-            mins.height,
-            startFrame.height + (event.clientY - interaction.startY),
-          ),
+          width: Math.max(MIN_SIZE.width, startFrame.width + (event.clientX - interaction.startX)),
+          height: Math.max(MIN_SIZE.height, startFrame.height + (event.clientY - interaction.startY)),
         });
       });
     }
@@ -323,7 +277,7 @@ export default function KernelSymbolQuickPreviewPopover({
       if (!interactionRef.current) return;
       interactionRef.current = null;
       if (candidate && frame) {
-        const key = frameKey(candidate, symbol, mode);
+        const key = frameKey(candidate, symbol);
         try {
           window.localStorage.setItem(key, JSON.stringify({ ...frame, zoom }));
         } catch {
@@ -340,18 +294,18 @@ export default function KernelSymbolQuickPreviewPopover({
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
     };
-  }, [candidate, frame, mode, symbol, zoom]);
+  }, [candidate, frame, symbol, zoom]);
 
   const previewWindow = useMemo(() => {
     if (!candidate || fileLines.length === 0) return null;
     const focusLine = Math.max(1, candidate.line);
-    const context = mode === 'large' ? 16 : 8;
+    const context = 16;
     return {
       focusLine,
       startLine: Math.max(1, focusLine - context),
       endLine: Math.min(fileLines.length, focusLine + context),
     };
-  }, [candidate, fileLines.length, mode]);
+  }, [candidate, fileLines.length]);
 
   if (!isOpen || !candidate || !frame) return null;
 
@@ -363,7 +317,7 @@ export default function KernelSymbolQuickPreviewPopover({
   return createPortal(
     <div
       data-symbol-quick-preview
-      className="fixed z-40 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.24)]"
+      className="fixed z-[70] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.24)]"
       style={{
         left: frame.x,
         top: frame.y,
@@ -373,6 +327,11 @@ export default function KernelSymbolQuickPreviewPopover({
     >
       <div
         className="flex cursor-move items-start justify-between gap-3 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white px-3 py-2"
+        onDoubleClick={(event) => {
+          const target = event.target as HTMLElement | null;
+          if (target?.closest?.('button,a')) return;
+          onClose();
+        }}
         onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
           if (event.target instanceof HTMLElement && event.target.closest('button,a')) return;
           if (!frame) return;
@@ -390,9 +349,6 @@ export default function KernelSymbolQuickPreviewPopover({
             <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
               Symbol Preview
             </div>
-            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
-              {mode === 'large' ? 'Large' : 'Quick'}
-            </span>
             {symbol ? (
               <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700">
                 {symbol}
@@ -432,13 +388,6 @@ export default function KernelSymbolQuickPreviewPopover({
           </button>
           <button
             type="button"
-            onClick={onToggleMode}
-            className="ml-1 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-          >
-            {mode === 'quick' ? 'Expand' : 'Compact'}
-          </button>
-          <button
-            type="button"
             onClick={onOpenPage}
             className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
           >
@@ -460,7 +409,7 @@ export default function KernelSymbolQuickPreviewPopover({
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-white px-2 py-0.5 text-slate-600">v{candidate.version}</span>
           <span>L{candidate.line}</span>
-          {mode === 'large' ? <span>Full context</span> : <span>Compact context</span>}
+          <span>Full context</span>
         </div>
         <div className="flex items-center gap-2">
           <a
@@ -485,7 +434,7 @@ export default function KernelSymbolQuickPreviewPopover({
         </div>
       </div>
 
-      <div className={`grid min-h-0 ${mode === 'large' ? 'lg:grid-cols-[minmax(0,1fr)_22rem]' : 'grid-cols-1 xl:grid-cols-[minmax(0,1fr)_18rem]'}`}>
+      <div className="grid min-h-0 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-h-0 border-b border-slate-200 lg:border-b-0 lg:border-r">
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
             <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
@@ -561,7 +510,7 @@ export default function KernelSymbolQuickPreviewPopover({
               <ul className="mt-2 space-y-2 text-sm leading-6 text-slate-600">
                 <li>Drag the title bar to move this window.</li>
                 <li>Use the lower-right corner to resize.</li>
-                <li>Double click a symbol candidate to open the large floating preview.</li>
+                <li>Double click the title bar to close the preview.</li>
               </ul>
             </div>
           </div>

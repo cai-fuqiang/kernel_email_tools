@@ -348,9 +348,7 @@ export default function KernelCodePage() {
     symbol: string;
     anchorRect: DOMRect;
     avoidRect: DOMRect | null;
-    mode: 'quick' | 'large';
   } | null>(null);
-  const symbolQuickPreviewTimerRef = useRef<number | null>(null);
 
   const codeViewRef = useRef<HTMLDivElement | null>(null);
   const pathRequestIdRef = useRef(0);
@@ -370,15 +368,6 @@ export default function KernelCodePage() {
   }, []);
 
   useEffect(() => () => abortPathRequests(), [abortPathRequests]);
-  useEffect(
-    () => () => {
-      if (symbolQuickPreviewTimerRef.current) {
-        window.clearTimeout(symbolQuickPreviewTimerRef.current);
-        symbolQuickPreviewTimerRef.current = null;
-      }
-    },
-    [],
-  );
 
   useEffect(() => {
     setVersionsLoading(true);
@@ -1210,51 +1199,11 @@ export default function KernelCodePage() {
     if (event.detail !== 1) return;
     const anchorRect = event.currentTarget.getBoundingClientRect();
     const avoidRect = event.currentTarget.closest('[data-symbol-popover]')?.getBoundingClientRect() || null;
-
-    if (symbolQuickPreviewTimerRef.current) {
-      window.clearTimeout(symbolQuickPreviewTimerRef.current);
-    }
-
-    symbolQuickPreviewTimerRef.current = window.setTimeout(() => {
-      setSymbolQuickPreview({
-        candidate,
-        symbol,
-        anchorRect,
-        avoidRect,
-        mode: 'quick',
-      });
-      symbolQuickPreviewTimerRef.current = null;
-    }, 140);
-  }
-
-  function handleSymbolCandidateDoubleClick(
-    candidate: KernelSymbolCandidateResponse,
-    symbol: string,
-    event: ReactMouseEvent<HTMLButtonElement>,
-  ) {
-    event.preventDefault();
-    const anchorRect = event.currentTarget.getBoundingClientRect();
-    const avoidRect = event.currentTarget.closest('[data-symbol-popover]')?.getBoundingClientRect() || null;
-    if (symbolQuickPreviewTimerRef.current) {
-      window.clearTimeout(symbolQuickPreviewTimerRef.current);
-      symbolQuickPreviewTimerRef.current = null;
-    }
     setSymbolQuickPreview({
       candidate,
       symbol,
       anchorRect,
       avoidRect,
-      mode: 'large',
-    });
-  }
-
-  function handlePreviewModeToggle() {
-    setSymbolQuickPreview((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        mode: current.mode === 'quick' ? 'large' : 'quick',
-      };
     });
   }
 
@@ -1920,15 +1869,8 @@ export default function KernelCodePage() {
                         event,
                       )
                     }
-                    onDoubleClick={(event) =>
-                      handleSymbolCandidateDoubleClick(
-                        candidate,
-                        symbolPopover?.symbol || '',
-                        event,
-                      )
-                    }
                     className="min-w-0 flex-1 text-left"
-                    title="Single click for quick preview, double click for large preview"
+                    title="Single click for floating preview"
                   >
                     <div className="truncate text-xs font-medium text-slate-900">
                       {candidate.path}
@@ -1983,7 +1925,7 @@ export default function KernelCodePage() {
               </span>
             </div>
             <div className="pt-1 text-[11px] leading-5 text-slate-400">
-              Single click opens a quick preview, double click opens the full preview.
+              Single click opens the floating preview. Click outside the preview or double click its title bar to close it.
             </div>
           </div>
         </div>
@@ -1993,11 +1935,9 @@ export default function KernelCodePage() {
         isOpen={!!symbolQuickPreview}
         candidate={symbolQuickPreview?.candidate || null}
         symbol={symbolQuickPreview?.symbol}
-        mode={symbolQuickPreview?.mode || 'quick'}
         anchorRect={symbolQuickPreview?.anchorRect || null}
         avoidRect={symbolQuickPreview?.avoidRect || null}
         onClose={() => setSymbolQuickPreview(null)}
-        onToggleMode={handlePreviewModeToggle}
         onOpenPage={handlePreviewOpenPage}
       />
 
