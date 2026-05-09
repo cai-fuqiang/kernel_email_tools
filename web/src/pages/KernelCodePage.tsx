@@ -1348,7 +1348,7 @@ export default function KernelCodePage() {
                 <div className="border-b border-slate-200 px-3 py-2">
                   <div className="text-sm font-semibold text-slate-900">Path Browser</div>
                 </div>
-                <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+                <div className="min-h-0 flex-1 overflow-y-scroll px-2 py-2">
                   <div className="mb-2 flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -1445,7 +1445,7 @@ export default function KernelCodePage() {
                   <div
                     ref={codeViewRef}
                     onMouseUp={handleCodeMouseUp}
-                    className="relative min-h-0 flex-1 overflow-auto bg-white"
+                    className="relative min-h-0 flex-1 overflow-y-scroll bg-white"
                   >
                   {fileLoading ? (
                     <div className="px-6 py-12 text-sm text-slate-500">Opening file…</div>
@@ -1551,7 +1551,7 @@ export default function KernelCodePage() {
                     <p className="mt-1 truncate text-xs text-slate-500">Target, notes, evidence.</p>
                   </div>
 
-                  <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 py-3">
+                  <div className="min-h-0 flex-1 space-y-3 overflow-y-scroll overscroll-contain px-3 py-3">
                   <InspectorSection
                     title="Code Target"
                     icon={<Pin className="h-4 w-4" />}

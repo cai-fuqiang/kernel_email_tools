@@ -234,7 +234,7 @@ export default function MainLayout() {
         <SidebarContent collapsed={desktopNavCollapsed} />
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-auto">
+      <main className="min-h-0 min-w-0 flex-1 overflow-auto">
         <Outlet />
       </main>
     </div>
