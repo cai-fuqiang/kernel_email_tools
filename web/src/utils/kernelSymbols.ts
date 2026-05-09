@@ -22,16 +22,25 @@ const DEFINE_RE = /^\s*#\s*define\s+([A-Za-z_]\w*)\b/;
 
 /** Collect up to `maxLines` lines before `braceIdx`, joining them into one
  *  signature string. Stops early if a line ends with `;` (block statement). */
-function collectSignatureLines(
-  lines: string[],
-  braceIdx: number,
-  maxLines = 3,
-): string | null {
+function collectLinesBefore(lines: string[], braceIdx: number, maxLines = 3): string | null {
   const parts: string[] = [];
   for (let i = braceIdx - 1; i >= Math.max(0, braceIdx - maxLines); i -= 1) {
     const trimmed = lines[i].trim();
     if (/;\s*$/.test(trimmed)) break;
     parts.unshift(trimmed);
+  }
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
+/** Collect lines from `startIdx` forward until a bare `{` or `maxLines` lines.
+ *  Returns the joined signature string (without the `{` line). */
+function collectLinesForward(lines: string[], startIdx: number, maxLines = 4): string | null {
+  const parts: string[] = [];
+  for (let i = startIdx; i < Math.min(startIdx + maxLines, lines.length); i += 1) {
+    const t = lines[i].trim();
+    if (OPEN_BRACE_RE.test(t)) break;
+    if (/;\s*$/.test(t)) return null; // statement, not a function sig
+    parts.push(t);
   }
   return parts.length > 0 ? parts.join(' ') : null;
 }
@@ -47,11 +56,14 @@ function braceFollowsSoon(lines: string[], lineIdx: number, lookAhead = 2): bool
   return false;
 }
 
+function tryMatchSignature(joined: string): string | null {
+  const m = joined.match(SIG_RE);
+  return m?.[1] && !CONTROL_KEYWORDS.has(m[1]) ? m[1] : null;
+}
+
 export function detectNearestSymbol(lines: string[], focusLine: number | null): string | null {
   if (!focusLine || focusLine < 1) return null;
 
-  // Start from focusLine (not focusLine-1) so that a symbol defined at
-  // focusLine itself can match (the definition IS the containing function).
   for (let idx = Math.min(focusLine, lines.length - 1); idx >= 0; idx -= 1) {
     const line = lines[idx].trim();
 
@@ -61,31 +73,39 @@ export function detectNearestSymbol(lines: string[], focusLine: number | null): 
       if (!CONTROL_KEYWORDS.has(name)) return name;
     }
 
-    // 2) Multi-line definition: standalone { — collect preceding lines
-    //    into a single signature string and match against that.
+    // 2) Multi-line: standalone { — collect preceding lines backward
     if (OPEN_BRACE_RE.test(line)) {
-      const joined = collectSignatureLines(lines, idx);
+      const joined = collectLinesBefore(lines, idx);
       if (joined) {
-        const m = joined.match(SIG_RE);
-        if (m?.[1] && !CONTROL_KEYWORDS.has(m[1])) return m[1];
+        const name = tryMatchSignature(joined);
+        if (name) return name;
       }
     }
 
-    // 3) Signature line where { is on the following line:
-    //      static int B(int x)
-    //      {
-    //    Not matched by (1) (no {) nor (2) (not a bare {). Use SIG_RE
-    //    and verify a bare { appears within the next 2 non-empty lines.
+    // 3) Complete signature on one line (has both ( and )) + { follows
     const sigMatch = line.match(SIG_RE);
     if (sigMatch?.[1] && !CONTROL_KEYWORDS.has(sigMatch[1])) {
-      // Bail if this looks like a function call in an assignment / comma-expr
       const prefix = line.slice(0, sigMatch.index);
       if (!/[=,]\s*$/.test(prefix) && braceFollowsSoon(lines, idx)) {
         return sigMatch[1];
       }
     }
 
-    // 4) #define macro
+    // 4) Start of split signature: line has ( but no ) and no {.
+    //    The function name is on this line but the closing paren and
+    //    opening brace are below.  E.g.:
+    //      int dpll_pre_doit(const struct genl_split_ops *ops, ...
+    //                        struct genl_info *info)
+    //      {
+    if (line.includes('(') && !line.includes(')') && !/\{\s*$/.test(line)) {
+      const joined = collectLinesForward(lines, idx);
+      if (joined) {
+        const name = tryMatchSignature(joined);
+        if (name) return name;
+      }
+    }
+
+    // 5) #define macro
     const defineMatch = line.match(DEFINE_RE);
     if (defineMatch?.[1]) return defineMatch[1];
   }

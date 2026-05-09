@@ -133,6 +133,25 @@ describe('detectNearestSymbol', () => {
     expect(detectNearestSymbol(src, 3)).toBe('B');
   });
 
+  it('finds function when focusLine is on split-signature first line (dpll_pre_doit pattern)', () => {
+    // Signature split across 2 lines, { on 3rd line, focusLine on the FIRST signature line
+    const src = lines(
+      'static int dpll_nl_device_get_dumpit(struct sk_buff *skb, struct netlink_callback *cb)\n' +
+      '{\n' +
+      '  return 0;\n' +
+      '}\n' +
+      '\n' +
+      'int dpll_pre_doit(const struct genl_split_ops *ops, struct sk_buff *skb,\n' +
+      '                  struct genl_info *info)\n' +
+      '{\n' +
+      '  return 0;\n' +
+      '}\n',
+    );
+    expect(detectNearestSymbol(src, 6)).toBe('dpll_pre_doit');
+    expect(detectNearestSymbol(src, 7)).toBe('dpll_pre_doit');
+    expect(detectNearestSymbol(src, 8)).toBe('dpll_pre_doit');
+  });
+
   it('does not confuse if/while/for with standalone brace', () => {
     const src = lines('void foo(void)\n{\n  if (x)\n  {\n    bar();\n  }\n}');
     expect(detectNearestSymbol(src, 4)).toBe('foo');
