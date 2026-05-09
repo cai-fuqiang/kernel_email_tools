@@ -91,10 +91,13 @@ export default function CodeHistoryPanel({
   selectedText,
 }: CodeHistoryPanelProps) {
   const { canWrite } = useAuth();
-  const [loading, setLoading] = useState(false);
+  const [blameLoading, setBlameLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [detailLoadingHash, setDetailLoadingHash] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [detailErrors, setDetailErrors] = useState<Record<string, string>>({});
   const [blame, setBlame] = useState<KernelHistoryCommit | null>(null);
   const [history, setHistory] = useState<KernelHistoryCommit[]>([]);
   const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set());
@@ -135,40 +138,68 @@ export default function CodeHistoryPanel({
     if (!version || !filePath || !selectedRange) {
       setBlame(null);
       setHistory([]);
+      setHistoryLoaded(false);
       setError('');
       return;
     }
 
     let cancelled = false;
-    setLoading(true);
+    setBlameLoading(true);
     setError('');
-    Promise.allSettled([
-      getKernelBlame(version, filePath, selectedRange.startLine),
-      getKernelLineHistory(version, filePath, selectedRange.startLine, selectedRange.endLine, 30),
-    ])
-      .then((results) => {
+    setHistory([]);
+    setHistoryLoaded(false);
+    setExpandedHash('');
+    getKernelBlame(version, filePath, selectedRange.startLine)
+      .then((nextBlame) => {
         if (cancelled) return;
-        const nextBlame = results[0].status === 'fulfilled' ? results[0].value : null;
-        const nextHistory = results[1].status === 'fulfilled' ? results[1].value.commits : [];
         setBlame(nextBlame);
-        setHistory(nextHistory);
-        const lead = uniqueCommits([...(nextBlame ? [nextBlame] : []), ...nextHistory])[0];
-        setSelectedHashes(lead ? new Set([lead.commit_hash]) : new Set());
+        setSelectedHashes(nextBlame ? new Set([nextBlame.commit_hash]) : new Set());
         const defaultTitle = `${filePath}:${formatLineRange(selectedRange)} history`;
-        setTopicTitle((current) => current || defaultTitle);
-        setClaim(buildDefaultClaim(filePath, selectedRange, lead ? [lead] : []));
-        if (results[0].status === 'rejected' && results[1].status === 'rejected') {
-          setError(results[1].reason instanceof Error ? results[1].reason.message : 'History unavailable');
+        setTopicTitle(defaultTitle);
+        setClaim(buildDefaultClaim(filePath, selectedRange, nextBlame ? [nextBlame] : []));
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setBlame(null);
+          setSelectedHashes(new Set());
+          setError(e instanceof Error ? e.message : 'Blame unavailable');
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setBlameLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
   }, [filePath, rangeKey, selectedRange, version]);
+
+  async function loadLineHistory() {
+    if (!selectedRange || historyLoading) return;
+    setHistoryLoading(true);
+    setError('');
+    try {
+      const result = await getKernelLineHistory(
+        version,
+        filePath,
+        selectedRange.startLine,
+        selectedRange.endLine,
+        12,
+      );
+      setHistory(result.commits);
+      setHistoryLoaded(true);
+      const lead = uniqueCommits([...(blame ? [blame] : []), ...result.commits])[0];
+      if (lead) {
+        setSelectedHashes((current) => (current.size > 0 ? current : new Set([lead.commit_hash])));
+        setClaim((current) => current || buildDefaultClaim(filePath, selectedRange, [lead]));
+      }
+    } catch (e) {
+      setHistoryLoaded(true);
+      setError(e instanceof Error ? e.message : 'Line history unavailable');
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!entityQuery.trim() || targetMode !== 'existing') {
@@ -208,11 +239,14 @@ export default function CodeHistoryPanel({
     setExpandedHash(commit.commit_hash);
     if (details[commit.commit_hash]) return;
     setDetailLoadingHash(commit.commit_hash);
+    setDetailErrors((current) => ({ ...current, [commit.commit_hash]: '' }));
     try {
       const detail = await getKernelCommit(version, commit.commit_hash);
       setDetails((current) => ({ ...current, [commit.commit_hash]: detail }));
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Failed to load commit detail', 'error');
+      const message = e instanceof Error ? e.message : 'Failed to load commit detail';
+      setDetailErrors((current) => ({ ...current, [commit.commit_hash]: message }));
+      showToast(message, 'error');
     } finally {
       setDetailLoadingHash('');
     }
@@ -329,10 +363,10 @@ export default function CodeHistoryPanel({
         </div>
       </div>
 
-      {loading && (
+      {blameLoading && (
         <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm text-slate-500">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Loading git history…
+          Loading last touched commit…
         </div>
       )}
 
@@ -356,11 +390,12 @@ export default function CodeHistoryPanel({
             selected={selectedHashes.has(blame.commit_hash)}
             expanded={expandedHash === blame.commit_hash}
             detail={details[blame.commit_hash]}
+            detailError={detailErrors[blame.commit_hash]}
             loadingDetail={detailLoadingHash === blame.commit_hash}
             onToggle={() => toggleCommit(blame.commit_hash)}
             onExpand={() => void toggleDetail(blame)}
           />
-        ) : !loading ? (
+        ) : !blameLoading ? (
           <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
             No blame result for this line.
           </div>
@@ -372,9 +407,29 @@ export default function CodeHistoryPanel({
           <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
             Line history
           </div>
-          <StatusBadge tone="info">{history.length} commits</StatusBadge>
+          <div className="flex items-center gap-2">
+            {historyLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+            <StatusBadge tone={historyLoaded ? 'info' : 'muted'}>
+              {historyLoaded ? `${history.length} commits` : 'on demand'}
+            </StatusBadge>
+          </div>
         </div>
         <div className="space-y-2">
+          {!historyLoaded && (
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+              <div className="text-xs leading-5 text-slate-500">
+                Full line history uses <code className="rounded bg-slate-100 px-1">git log -L</code> and can be slow on kernel files.
+              </div>
+              <SecondaryButton
+                onClick={() => void loadLineHistory()}
+                disabled={historyLoading}
+                className="mt-2 w-full justify-center px-3 py-2 text-xs"
+              >
+                {historyLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                Load line history
+              </SecondaryButton>
+            </div>
+          )}
           {history.map((commit) => (
             <CommitRow
               key={commit.commit_hash}
@@ -382,12 +437,13 @@ export default function CodeHistoryPanel({
               selected={selectedHashes.has(commit.commit_hash)}
               expanded={expandedHash === commit.commit_hash}
               detail={details[commit.commit_hash]}
+              detailError={detailErrors[commit.commit_hash]}
               loadingDetail={detailLoadingHash === commit.commit_hash}
               onToggle={() => toggleCommit(commit.commit_hash)}
               onExpand={() => void toggleDetail(commit)}
             />
           ))}
-          {!loading && history.length === 0 && (
+          {historyLoaded && !historyLoading && history.length === 0 && (
             <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
               No line history returned for this selection.
             </div>
@@ -526,6 +582,7 @@ function CommitRow({
   selected,
   expanded,
   detail,
+  detailError,
   loadingDetail,
   onToggle,
   onExpand,
@@ -534,6 +591,7 @@ function CommitRow({
   selected: boolean;
   expanded: boolean;
   detail?: KernelHistoryCommit;
+  detailError?: string;
   loadingDetail: boolean;
   onToggle: () => void;
   onExpand: () => void;
@@ -580,10 +638,16 @@ function CommitRow({
 
       {expanded && (
         <div className="mt-3 space-y-2 border-t border-slate-100 pt-3 text-xs">
-          {shown.message ? (
+          {detailError ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-2 text-amber-800">
+              {detailError}
+            </div>
+          ) : shown.message ? (
             <p className="line-clamp-5 whitespace-pre-line text-slate-600">{shown.message}</p>
           ) : (
-            <div className="text-slate-400">No commit message loaded.</div>
+            <div className="text-slate-400">
+              {loadingDetail ? 'Loading commit message…' : 'No commit message loaded.'}
+            </div>
           )}
           <div className="space-y-1">
             {Object.entries(shown.trailers || {}).slice(0, 6).map(([key, values]) => (

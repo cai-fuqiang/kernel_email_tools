@@ -4,7 +4,7 @@ import pytest
 from fastapi import HTTPException
 
 from src.api import state
-from src.api.routers.kernel import kernel_resolve
+from src.api.routers.kernel import _history_entry, _normalize_commit_hash, kernel_resolve
 from src.kernel_source.base import BaseKernelSource, FileContent, TreeEntry, VersionInfo
 
 
@@ -107,3 +107,23 @@ async def _test_kernel_resolve_rejects_parent_path(monkeypatch):
 
     assert exc_info.value.status_code == 400
     assert "Invalid kernel source path" in exc_info.value.detail
+
+
+def test_commit_hash_normalization_accepts_blame_boundary_marker():
+    normalized = _normalize_commit_hash("^1a2b3c4d5e6f")
+
+    assert normalized == "1a2b3c4d5e6f"
+
+
+def test_history_entry_strips_blame_boundary_marker():
+    entry = _history_entry(
+        commit_hash="^1a2b3c4d5e6f",
+        short_hash="^1a2b3c4d5e6f",
+        author_name="Author",
+        author_email="author@example.com",
+        author_time="0",
+        subject="initial import",
+    )
+
+    assert entry["commit_hash"] == "1a2b3c4d5e6f"
+    assert entry["short_hash"] == "1a2b3c4d5e6f"

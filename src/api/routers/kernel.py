@@ -165,6 +165,8 @@ def _history_entry(
     message: str = "",
     changed_files: list[dict] | None = None,
 ) -> dict:
+    commit_hash = commit_hash.lstrip("^")
+    short_hash = short_hash.lstrip("^") or commit_hash[:12]
     trailers = _parse_commit_trailers(message)
     urls = _extract_urls(message)
     lore_links = [url for url in urls if _LORE_RE.match(url)]
@@ -182,6 +184,13 @@ def _history_entry(
         "has_lore_link": bool(lore_links or trailers.get("Link")),
         "changed_files": changed_files or [],
     }
+
+
+def _normalize_commit_hash(commit_hash: str) -> str:
+    normalized = commit_hash.strip().lstrip("^")
+    if not re.match(r"^[0-9a-fA-F]{7,64}$", normalized):
+        raise HTTPException(status_code=400, detail="Invalid commit hash")
+    return normalized
 
 @router.get("/api/kernel/versions")
 async def kernel_versions(
@@ -378,7 +387,7 @@ async def kernel_blame(
     lines = output.splitlines()
     if not lines:
         raise HTTPException(status_code=404, detail="No blame information found")
-    commit_hash = lines[0].split()[0]
+    commit_hash = lines[0].split()[0].lstrip("^")
     meta: dict[str, str] = {}
     for raw_line in lines[1:]:
         if raw_line.startswith("\t"):
@@ -386,10 +395,9 @@ async def kernel_blame(
         key, _, value = raw_line.partition(" ")
         if key and value:
             meta[key] = value
-    short_hash = commit_hash[:12]
     return _history_entry(
         commit_hash=commit_hash,
-        short_hash=short_hash,
+        short_hash=commit_hash[:12],
         author_name=meta.get("author", ""),
         author_email=meta.get("author-mail", "").strip("<>"),
         author_time=meta.get("author-time", ""),
@@ -403,7 +411,7 @@ async def kernel_line_history(
     path: str = Query(..., min_length=1, description="仓库内相对文件路径"),
     start_line: int = Query(..., ge=1, description="起始行号"),
     end_line: int = Query(..., ge=1, description="结束行号"),
-    limit: int = Query(30, ge=1, le=80, description="最多返回 commit 数"),
+    limit: int = Query(12, ge=1, le=40, description="最多返回 commit 数"),
 ):
     """返回某段代码的历史 commit 列表。
 
@@ -467,8 +475,7 @@ async def kernel_commit(
 ):
     """返回 commit 详情、trailers、URL 和 changed files。"""
     source = _local_git_source()
-    if not re.match(r"^[0-9a-fA-F]{7,64}$", commit_hash):
-        raise HTTPException(status_code=400, detail="Invalid commit hash")
+    normalized_commit_hash = _normalize_commit_hash(commit_hash)
 
     fmt = "%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%B"
     message_output = await _run_local_git(
@@ -476,7 +483,7 @@ async def kernel_commit(
         "show",
         "--no-patch",
         f"--format={fmt}",
-        commit_hash,
+        normalized_commit_hash,
     )
     parts = message_output.split("\x1f", 6)
     if len(parts) < 7:
@@ -487,7 +494,7 @@ async def kernel_commit(
         "show",
         "--numstat",
         "--format=",
-        commit_hash,
+        normalized_commit_hash,
     )
     changed_files = []
     for raw_line in files_output.splitlines():
