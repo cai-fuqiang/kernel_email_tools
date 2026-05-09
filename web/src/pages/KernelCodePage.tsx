@@ -310,8 +310,19 @@ export default function KernelCodePage() {
   const [expandedTreePaths, setExpandedTreePaths] = useState<Set<string>>(new Set());
   const [treeLoading, setTreeLoading] = useState(false);
   const [showAllVersions, setShowAllVersions] = useState(false);
-  const [navigatorCollapsed, setNavigatorCollapsed] = useState(false);
-  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [navigatorCollapsed, setNavigatorCollapsed] = useState(() => {
+    try { return localStorage.getItem('kernel-code-nav-collapsed') === '1'; } catch { return false; }
+  });
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(() => {
+    try { return localStorage.getItem('kernel-code-insp-collapsed') === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('kernel-code-nav-collapsed', navigatorCollapsed ? '1' : '0'); } catch { /* noop */ }
+  }, [navigatorCollapsed]);
+  useEffect(() => {
+    try { localStorage.setItem('kernel-code-insp-collapsed', inspectorCollapsed ? '1' : '0'); } catch { /* noop */ }
+  }, [inspectorCollapsed]);
+
   const NAV_MIN = 140;
   const NAV_MAX = 440;
   const INSP_MIN = 180;
