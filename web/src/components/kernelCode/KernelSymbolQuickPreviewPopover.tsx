@@ -146,15 +146,15 @@ export default function KernelSymbolQuickPreviewPopover({
   const codeScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!isOpen || !candidate) return;
-
-    setError(null);
-    setLoading(false);
-
-    if (!candidate.local_file_available) {
+    if (!isOpen || !candidate) {
       setFileLines([]);
       return undefined;
     }
+
+    setError(null);
+    setFileLines([]);
+
+    if (!candidate.local_file_available) return undefined;
 
     let cancelled = false;
     setLoading(true);
@@ -306,13 +306,18 @@ export default function KernelSymbolQuickPreviewPopover({
   useEffect(() => {
     if (!isOpen || !candidate || !fileLines.length) return;
     const lineNum = Math.max(1, candidate.line);
-    const raf = window.requestAnimationFrame(() => {
-      const container = codeScrollRef.current;
-      const target = container?.querySelector<HTMLElement>(`[data-line-num="${lineNum}"]`);
-      target?.scrollIntoView({ block: 'center' });
+    // Double rAF ensures the flex layout has settled before we query
+    // the scroll container and call scrollIntoView.
+    const raf1 = window.requestAnimationFrame(() => {
+      const raf2 = window.requestAnimationFrame(() => {
+        const container = codeScrollRef.current;
+        const target = container?.querySelector<HTMLElement>(`[data-line-num="${lineNum}"]`);
+        target?.scrollIntoView({ block: 'center' });
+      });
+      return () => window.cancelAnimationFrame(raf2);
     });
-    return () => window.cancelAnimationFrame(raf);
-  }, [candidate, fileLines.length, isOpen]);
+    return () => window.cancelAnimationFrame(raf1);
+  }, [candidate, fileLines, isOpen]);
 
   if (!isOpen || !candidate || !frame) return null;
 
@@ -324,7 +329,7 @@ export default function KernelSymbolQuickPreviewPopover({
   return createPortal(
     <div
       data-symbol-quick-preview
-      className="fixed z-[70] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.24)]"
+      className="fixed z-[70] flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.24)]"
       style={{
         left: frame.x,
         top: frame.y,

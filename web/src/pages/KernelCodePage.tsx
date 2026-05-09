@@ -341,6 +341,7 @@ export default function KernelCodePage() {
   } | null>(null);
 
   const codeViewRef = useRef<HTMLDivElement | null>(null);
+  const popoverDragRef = useRef<{ startX: number; startY: number; popoverX: number; popoverY: number } | null>(null);
   const pathRequestIdRef = useRef(0);
   const fileAbortRef = useRef<AbortController | null>(null);
   const treeAbortRef = useRef<AbortController | null>(null);
@@ -1071,7 +1072,7 @@ export default function KernelCodePage() {
       setSymbolPopover(null);
       return;
     }
-    setSymbolPopover({ symbol: text, x: e.clientX, y: e.clientY });
+    setSymbolPopover({ symbol: text, x: e.clientX + 8, y: e.clientY + 12 });
   }
 
   useEffect(() => {
@@ -1090,6 +1091,37 @@ export default function KernelCodePage() {
     return () => {
       document.removeEventListener('mousedown', onDocDown);
       document.removeEventListener('keydown', onKey);
+    };
+  }, [symbolPopover]);
+
+  useEffect(() => {
+    if (!symbolPopover) return undefined;
+
+    function onPointerMove(e: PointerEvent) {
+      const drag = popoverDragRef.current;
+      if (!drag) return;
+      e.preventDefault();
+      setSymbolPopover((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          x: Math.max(0, Math.min(drag.popoverX + (e.clientX - drag.startX), window.innerWidth - 420)),
+          y: Math.max(0, Math.min(drag.popoverY + (e.clientY - drag.startY), window.innerHeight - 48)),
+        };
+      });
+    }
+
+    function onPointerUp() {
+      popoverDragRef.current = null;
+    }
+
+    window.addEventListener('pointermove', onPointerMove, { passive: false });
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
     };
   }, [symbolPopover]);
 
@@ -1831,18 +1863,35 @@ export default function KernelCodePage() {
         </div>
       </SectionPanel>
 
-      {symbolPopover && (
+      {symbolPopover && (() => {
+        const popoverTop = Math.min(symbolPopover.y, window.innerHeight - 48);
+        const popoverLeft = Math.min(symbolPopover.x, window.innerWidth - 420);
+        const maxCandidateHeight = Math.max(120, window.innerHeight - popoverTop - 160);
+
+        return (
         <div
           data-symbol-popover
           style={{
             position: 'fixed',
-            left: Math.min(symbolPopover.x + 8, window.innerWidth - 420),
-            top: Math.min(symbolPopover.y + 12, window.innerHeight - 260),
+            left: popoverLeft,
+            top: popoverTop,
             zIndex: 50,
           }}
-          className="w-[380px] rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-lg"
+          className="w-[380px] select-none rounded-lg border border-slate-200 bg-white shadow-lg"
         >
-          <div className="flex items-start justify-between gap-3">
+          <div
+            className="flex cursor-move items-start justify-between gap-3 rounded-t-lg bg-gradient-to-r from-slate-50 to-white px-3 pt-3"
+            onPointerDown={(e) => {
+              if (!symbolPopover) return;
+              popoverDragRef.current = {
+                startX: e.clientX,
+                startY: e.clientY,
+                popoverX: symbolPopover.x,
+                popoverY: symbolPopover.y,
+              };
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            }}
+          >
             <div className="min-w-0">
               <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                 Symbol
@@ -1860,7 +1909,7 @@ export default function KernelCodePage() {
             </IconButton>
           </div>
 
-          <div className="mt-3 space-y-2">
+          <div className="px-3 pb-3 pt-2">
             {symbolResolve?.loading ? (
               <div className="text-xs text-slate-500">Querying Elixir for matching definitions...</div>
             ) : symbolResolve?.error ? (
@@ -1881,7 +1930,10 @@ export default function KernelCodePage() {
               </div>
             ) : null}
 
-            <div className="space-y-1.5">
+            <div
+              className="space-y-1.5"
+              style={{ maxHeight: maxCandidateHeight, overflowY: 'auto' }}
+            >
               {symbolResolve?.result?.candidates.map((candidate) => (
                 <div
                   key={`${candidate.path}:${candidate.line}`}
@@ -1963,7 +2015,8 @@ export default function KernelCodePage() {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       <KernelSymbolQuickPreviewPopover
         isOpen={!!symbolQuickPreview}
