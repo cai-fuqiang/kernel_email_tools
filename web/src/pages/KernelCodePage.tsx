@@ -571,11 +571,17 @@ export default function KernelCodePage() {
     ],
   );
 
+  const openPathRef = useRef(openPath);
+
+  useEffect(() => {
+    openPathRef.current = openPath;
+  }, [openPath]);
+
   useEffect(() => {
     if (urlPath && selectedVersion) {
-      void openPath(urlPath, urlLine);
+      void openPathRef.current(urlPath, urlLine);
     }
-  }, [openPath, selectedVersion, urlPath, urlLine]);
+  }, [selectedVersion, urlPath, urlLine]);
 
   useEffect(() => {
     if (selectedVersion) {
