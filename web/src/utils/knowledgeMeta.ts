@@ -147,8 +147,7 @@ function asTimelineEntries(value: unknown): KnowledgeTimelineEvent[] {
   value.forEach((item, index) => {
     if (!item || typeof item !== 'object') return;
     const rec = item as Record<string, unknown>;
-    const title = optionalString(rec.title);
-    if (!title) return;
+    const title = String(rec.title ?? '').trim();
     const lineStart = optionalPositiveNumber(rec.line_start);
     const lineEnd = optionalPositiveNumber(rec.line_end);
     out.push({
