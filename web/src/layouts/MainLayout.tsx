@@ -74,7 +74,13 @@ function NavSection({ title, items, collapsed = false }: { title: string; items:
 export default function MainLayout() {
   const [totalEmails, setTotalEmails] = useState<number | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [desktopNavCollapsed, setDesktopNavCollapsed] = useState(false);
+  const [desktopNavCollapsed, setDesktopNavCollapsed] = useState(() => {
+    try { return localStorage.getItem('kernel-code-global-nav-collapsed') === '1'; } catch { return false; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem('kernel-code-global-nav-collapsed', desktopNavCollapsed ? '1' : '0'); } catch { /* noop */ }
+  }, [desktopNavCollapsed]);
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser, loading: authLoading, isAdmin, canWrite, error: authError, logout } = useAuth();
