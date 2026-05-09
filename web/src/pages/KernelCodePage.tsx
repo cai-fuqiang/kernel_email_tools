@@ -312,6 +312,22 @@ export default function KernelCodePage() {
   const [showAllVersions, setShowAllVersions] = useState(false);
   const [navigatorCollapsed, setNavigatorCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const NAV_MIN = 140;
+  const NAV_MAX = 440;
+  const INSP_MIN = 180;
+  const INSP_MAX = 560;
+  const [navigatorWidth, setNavigatorWidth] = useState(() => {
+    try {
+      const v = localStorage.getItem('kernel-code-nav-width');
+      return v ? Math.max(NAV_MIN, Math.min(NAV_MAX, Number(v))) : 200;
+    } catch { return 200; }
+  });
+  const [inspectorWidth, setInspectorWidth] = useState(() => {
+    try {
+      const v = localStorage.getItem('kernel-code-insp-width');
+      return v ? Math.max(INSP_MIN, Math.min(INSP_MAX, Number(v))) : 288;
+    } catch { return 288; }
+  });
   const [collapsedInspectorSections, setCollapsedInspectorSections] = useState<Set<InspectorSectionId>>(() => new Set());
   const [targetDirectTags, setTargetDirectTags] = useState<TagRead[]>([]);
   const [targetAggregatedTags, setTargetAggregatedTags] = useState<TagRead[]>([]);
@@ -343,6 +359,12 @@ export default function KernelCodePage() {
   const codeViewRef = useRef<HTMLDivElement | null>(null);
   const popoverDragRef = useRef<{ startX: number; startY: number; popoverX: number; popoverY: number } | null>(null);
   const pathRequestIdRef = useRef(0);
+  const navResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const inspResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const currentNavWidthRef = useRef(navigatorWidth);
+  currentNavWidthRef.current = navigatorWidth;
+  const currentInspWidthRef = useRef(inspectorWidth);
+  currentInspWidthRef.current = inspectorWidth;
   const fileAbortRef = useRef<AbortController | null>(null);
   const treeAbortRef = useRef<AbortController | null>(null);
 
@@ -1125,6 +1147,49 @@ export default function KernelCodePage() {
     };
   }, [symbolPopover]);
 
+  useEffect(() => {
+    function onPointerMove(e: PointerEvent) {
+      if (navResizeRef.current) {
+        e.preventDefault();
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        const delta = e.clientX - navResizeRef.current.startX;
+        const newWidth = Math.max(NAV_MIN, Math.min(NAV_MAX, navResizeRef.current.startWidth + delta));
+        setNavigatorWidth(newWidth);
+      }
+      if (inspResizeRef.current) {
+        e.preventDefault();
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        const delta = inspResizeRef.current.startX - e.clientX;
+        const newWidth = Math.max(INSP_MIN, Math.min(INSP_MAX, inspResizeRef.current.startWidth + delta));
+        setInspectorWidth(newWidth);
+      }
+    }
+
+    function onPointerUp() {
+      if (navResizeRef.current) {
+        try { localStorage.setItem('kernel-code-nav-width', String(currentNavWidthRef.current)); } catch { /* noop */ }
+        navResizeRef.current = null;
+      }
+      if (inspResizeRef.current) {
+        try { localStorage.setItem('kernel-code-insp-width', String(currentInspWidthRef.current)); } catch { /* noop */ }
+        inspResizeRef.current = null;
+      }
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    window.addEventListener('pointermove', onPointerMove, { passive: false });
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+    };
+  }, []);
+
   const symbolPopoverSymbol = symbolPopover?.symbol || '';
 
   useEffect(() => {
@@ -1387,10 +1452,11 @@ export default function KernelCodePage() {
         </div>
 
         <div
+          style={{ '--nav-width': `${navigatorWidth}px`, '--insp-width': `${inspectorWidth}px` } as React.CSSProperties}
           className={`grid min-h-[calc(100vh-8rem)] gap-0 xl:h-[calc(100vh-8rem)] ${
             navigatorCollapsed
-              ? 'xl:grid-cols-[3rem_minmax(0,1fr)] 2xl:grid-cols-[3rem_minmax(0,1fr)]'
-              : 'xl:grid-cols-[12.5rem_minmax(0,1fr)] 2xl:grid-cols-[13.5rem_minmax(0,1fr)]'
+              ? 'xl:grid-cols-[3rem_minmax(0,1fr)]'
+              : 'xl:grid-cols-[var(--nav-width)_6px_minmax(0,1fr)]'
           }`}
         >
           <aside className="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/80 xl:border-b-0 xl:border-r">
@@ -1487,13 +1553,25 @@ export default function KernelCodePage() {
             )}
           </aside>
 
+          {!navigatorCollapsed && (
+            <div
+              className="hidden cursor-col-resize bg-slate-200 transition-colors hover:bg-sky-400 xl:block"
+              onPointerDown={(e) => {
+                navResizeRef.current = { startX: e.clientX, startWidth: navigatorWidth };
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+              }}
+            />
+          )}
+
           <div className="flex min-h-0 min-w-0 flex-col bg-slate-50/60">
             <div className="min-h-0 flex-1">
               <div
                 className={`grid h-full min-h-0 gap-0 ${
                   inspectorCollapsed
-                    ? 'xl:grid-cols-[minmax(0,1fr)_3rem] 2xl:grid-cols-[minmax(0,1fr)_3rem]'
-                    : 'xl:grid-cols-[minmax(0,1fr)_18rem] 2xl:grid-cols-[minmax(0,1fr)_19rem]'
+                    ? 'xl:grid-cols-[minmax(0,1fr)_3rem]'
+                    : 'xl:grid-cols-[minmax(0,1fr)_6px_var(--insp-width)]'
                 }`}
               >
                 <div className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
@@ -1609,6 +1687,18 @@ export default function KernelCodePage() {
                   )}
                   </div>
                 </div>
+
+                {!inspectorCollapsed && (
+                  <div
+                    className="hidden cursor-col-resize bg-slate-200 transition-colors hover:bg-sky-400 xl:block"
+                    onPointerDown={(e) => {
+                      inspResizeRef.current = { startX: e.clientX, startWidth: inspectorWidth };
+                      document.body.style.cursor = 'col-resize';
+                      document.body.style.userSelect = 'none';
+                      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                    }}
+                  />
+                )}
 
                 <aside className="flex min-h-0 max-h-[calc(100vh-8rem)] flex-col overflow-y-auto border-t border-slate-200 bg-slate-50/80 xl:overflow-hidden xl:border-l xl:border-t-0">
                   {inspectorCollapsed ? (
