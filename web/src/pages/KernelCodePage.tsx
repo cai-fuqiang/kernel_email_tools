@@ -947,7 +947,7 @@ export default function KernelCodePage() {
     scrollToLine(normalizedStart);
   }
 
-  function handleLineClick(line: number, event?: ReactMouseEvent<HTMLDivElement>) {
+  function handleLineClick(line: number, event?: ReactMouseEvent<HTMLElement>) {
     if (event?.shiftKey && selectedLines.size > 0) {
       handleSelectRange(focusLine || line, line);
       return;
@@ -1465,8 +1465,7 @@ export default function KernelCodePage() {
                           <div
                             key={lineNum}
                             data-line={lineNum}
-                            onClick={(e) => handleLineClick(lineNum, e)}
-                            className={`group grid w-max cursor-pointer grid-cols-[12px_44px_max-content_22px] border-b border-slate-100/70 px-2 ${
+                            className={`group grid w-max grid-cols-[12px_44px_max-content_22px] border-b border-slate-100/70 px-2 ${
                               isSelected ? 'bg-amber-50' : 'hover:bg-slate-50'
                             }`}
                           >
@@ -1477,9 +1476,14 @@ export default function KernelCodePage() {
                                 }`}
                               />
                             </div>
-                            <span className="select-none py-0.5 pr-2 text-right text-[11px] text-slate-400">
+                            <button
+                              type="button"
+                              onClick={(e) => handleLineClick(lineNum, e)}
+                              className="select-none border-0 bg-transparent py-0.5 pr-2 text-right text-[11px] text-slate-400 transition hover:text-slate-700 focus:outline-none"
+                              title={`Select line ${lineNum}`}
+                            >
                               {lineNum}
-                            </span>
+                            </button>
                             <div className="whitespace-pre py-0.5 pr-8 text-slate-800">
                               {renderHighlightedLine(line)}
                             </div>

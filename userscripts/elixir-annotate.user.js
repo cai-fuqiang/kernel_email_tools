@@ -489,7 +489,7 @@
 
   // ---------- init ----------
   function init() {
-    // intercept clicks on line number links
+    // intercept clicks on line number links only
     document.addEventListener('click', (e) => {
       const target = e.target.closest('a[id^="L"], [name^="L"], .elixir-lineno a, .lineno a');
       if (target) {
