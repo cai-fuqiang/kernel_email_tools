@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Clock3, FileClock, Search, ShieldCheck } from 'lucide-react';
 import type { KnowledgeDraft, KnowledgeEntity, KnowledgeStats } from '../../api/types';
 import { PrimaryButton, SecondaryButton } from '../ui';
@@ -37,6 +38,9 @@ interface KnowledgeRightRailProps {
   onCreateEntity: () => void;
   onOpenSupportPanel: (panel: SupportPanelId) => void;
   onOpenDraftQueue: () => void;
+  isAdmin?: boolean;
+  onExport?: () => void;
+  onImport?: (file: File) => void;
 }
 
 export default function KnowledgeRightRail({
@@ -65,7 +69,12 @@ export default function KnowledgeRightRail({
   onCreateEntity,
   onOpenSupportPanel,
   onOpenDraftQueue,
+  isAdmin,
+  onExport,
+  onImport,
 }: KnowledgeRightRailProps) {
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+
   return (
     <aside className="flex h-full min-h-0 flex-col border-l border-slate-200 bg-white xl:w-[340px]">
       <div className="border-b border-slate-200 p-4">
@@ -214,6 +223,45 @@ export default function KnowledgeRightRail({
                 </PrimaryButton>
               </div>
             )}
+          </section>
+        )}
+
+        {isAdmin && (onExport || onImport) && (
+          <section className="rounded-lg border border-slate-200 bg-white p-3">
+            <h2 className="text-sm font-semibold text-slate-950">Admin transfer</h2>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {onExport && (
+                <button
+                  type="button"
+                  onClick={onExport}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  Export
+                </button>
+              )}
+              {onImport && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => importInputRef.current?.click()}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Import
+                  </button>
+                  <input
+                    ref={importInputRef}
+                    type="file"
+                    accept=".json,application/json"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) onImport(file);
+                      if (importInputRef.current) importInputRef.current.value = '';
+                    }}
+                  />
+                </>
+              )}
+            </div>
           </section>
         )}
 

@@ -5,14 +5,13 @@ import ThreadDrawer from '../ThreadDrawer';
 import DraftReviewPanel from '../DraftReviewPanel';
 import KnowledgeEntityMetaPanel from '../KnowledgeEntityMetaPanel';
 import DraftInboxPanel from './DraftInboxPanel';
-import EntityListPanel, {
-  type NewEntityForm,
-} from './EntityListPanel';
+import type { NewEntityForm } from './EntityListPanel';
 import EntityDetailHeader, {
   DeleteConfirmModal,
 } from './EntityDetailHeader';
-import EntityMetricsCards from './EntityMetricsCards';
-import EntityExplanationEditor from './EntityExplanationEditor';
+import KnowledgeDocumentSections from './KnowledgeDocumentSections';
+import KnowledgeRightRail from './KnowledgeRightRail';
+import KnowledgeSupportDrawer from './KnowledgeSupportDrawer';
 import KnowledgeTimelinePanel from './KnowledgeTimelinePanel';
 import EntityRelationsPanel, {
   type RelationForm,
@@ -21,7 +20,10 @@ import EntityRelationsPanel, {
 import EvidencePanel from './EvidencePanel';
 import HumanNotesPanel from './HumanNotesPanel';
 import EntityHistoryPanel from './EntityHistoryPanel';
-import KnowledgeInspectorDock from './KnowledgeInspectorDock';
+import {
+  buildSupportPanelItems,
+  type SupportPanelId,
+} from './knowledgeLayout';
 import {
   DEFAULT_ENTITY_TYPE,
   extractKnowledgeEvidence,
@@ -130,15 +132,9 @@ export default function KnowledgeWorkbench() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedThread, setSelectedThread] = useState<ThreadFocus | null>(null);
   const [mergeTargetId, setMergeTargetId] = useState('');
-  const sectionLinks = [
-    ['#knowledge-overview', 'Overview'],
-    ['#knowledge-timeline', 'Timeline'],
-    ['#knowledge-explanation', 'Explanation'],
-    ['#knowledge-relations-panel', 'Relations'],
-    ['#knowledge-evidence', 'Evidence'],
-    ['#knowledge-notes', 'Notes'],
-    ['#knowledge-history', 'History'],
-  ];
+  const [activeSupportPanel, setActiveSupportPanel] = useState<SupportPanelId | null>(null);
+  const [railOpen, setRailOpen] = useState(false);
+  const [draftReviewOpen, setDraftReviewOpen] = useState(false);
 
   const loadEntities = useCallback(async (opts?: { append?: boolean; page?: number }) => {
     const targetPage = opts?.page ?? 1;
@@ -397,11 +393,17 @@ export default function KnowledgeWorkbench() {
     () => entities.filter((entity) => entity.entity_id !== selectedEntityId),
     [entities, selectedEntityId],
   );
-  const activeDraftCounts = activeDraftPayload
-    ? activeDraftPayload.knowledge_drafts.length +
-      activeDraftPayload.annotation_drafts.length +
-      activeDraftPayload.tag_assignment_drafts.length
-    : 0;
+  const supportItems = useMemo(
+    () =>
+      buildSupportPanelItems({
+        evidenceCount: selectedEvidenceCount,
+        notesCount: annotations.length,
+        historyCount: selectedEntity ? 1 : 0,
+        relationCount,
+        timelineCount,
+      }),
+    [annotations.length, relationCount, selectedEntity, selectedEvidenceCount, timelineCount],
+  );
 
   const handleCreateEntity = async () => {
     if (!newEntity.canonical_name.trim()) return;
@@ -675,36 +677,6 @@ export default function KnowledgeWorkbench() {
 
   return (
     <div className="min-h-screen min-w-0 overflow-x-hidden bg-slate-50 xl:flex xl:h-screen">
-      <EntityListPanel
-        entities={entities}
-        selectedEntityId={selectedEntityId}
-        loading={loading}
-        stats={stats}
-        query={query}
-        canWrite={canWrite}
-        showCreate={showCreate}
-        newEntity={newEntity}
-        saving={saving}
-        total={entityTotal}
-        searchMode={entitySearchMode}
-        isAdmin={isAdmin}
-        onExport={isAdmin ? handleExportKnowledge : undefined}
-        onImport={isAdmin ? handleImportKnowledge : undefined}
-        onSearchModeChange={(mode) => {
-          setEntitySearchMode(mode);
-          setEntityPage(1);
-          // 用 setTimeout 延后到 state 更新后再触发，否则 loadEntities 拿到的还是旧值
-          setTimeout(() => loadEntities(), 0);
-        }}
-        onLoadMore={loadMoreEntities}
-        onQueryChange={setQuery}
-        onSearch={() => loadEntities()}
-        onToggleCreate={() => setShowCreate((value) => !value)}
-        onNewEntityChange={setNewEntity}
-        onCreateEntity={handleCreateEntity}
-        onSelectEntity={handleSelectEntity}
-      />
-
       <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
         {!selectedEntity ? (
           <div className="mx-auto flex h-full max-w-3xl items-center px-4 md:px-8">
@@ -728,10 +700,13 @@ export default function KnowledgeWorkbench() {
                   </div>
                 ))}
               </div>
+              <SecondaryButton type="button" onClick={() => setRailOpen(true)} className="mt-6 xl:hidden">
+                Open work rail
+              </SecondaryButton>
             </div>
           </div>
         ) : (
-          <div className="relative mx-auto max-w-6xl min-w-0 space-y-5 overflow-x-hidden p-4 md:p-6">
+          <div className="mx-auto max-w-5xl space-y-5 px-4 py-5 md:px-6 lg:px-8">
             <StickyContextBar
               title={selectedEntity.canonical_name}
               subtitle={`${readableType(selectedEntity.entity_type)} · ${selectedEvidenceCount} evidence · ${timelineCount} timeline events · ${relationCount} relations`}
@@ -754,70 +729,316 @@ export default function KnowledgeWorkbench() {
               actions={
                 <>
                   <SecondaryButton
-                    onClick={() => {
-                      setViewMode('graph');
-                      document.getElementById('knowledge-relations-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }}
+                    type="button"
+                    onClick={() => setRailOpen(true)}
+                    className="xl:hidden"
                   >
-                    View graph
+                    Work rail
+                  </SecondaryButton>
+                  <SecondaryButton
+                    type="button"
+                    onClick={() => setActiveSupportPanel('evidence')}
+                  >
+                    Evidence
                   </SecondaryButton>
                   {canWrite && (
-                    <>
-                      <SecondaryButton onClick={() => setShowDeleteConfirm(true)} disabled={saving}>
-                        Delete
-                      </SecondaryButton>
-                      <PrimaryButton onClick={handleSaveEntity} disabled={saving}>
-                        Save
-                      </PrimaryButton>
-                    </>
+                    <PrimaryButton type="button" onClick={handleSaveEntity} disabled={saving}>
+                      Save
+                    </PrimaryButton>
                   )}
                 </>
               }
             />
 
-            <KnowledgeInspectorDock
-              entity={selectedEntity}
-              annotations={annotations}
-              annotationBody={annotationBody}
+            <EntityDetailHeader
+              selectedEntity={selectedEntity}
+              selectedAliases={selectedAliases}
               canWrite={canWrite}
               saving={saving}
-              onAnnotationBodyChange={setAnnotationBody}
-              onCreateAnnotation={handleCreateAnnotation}
+              relationTargets={relationTargets}
+              mergeTargetId={mergeTargetId}
+              onMergeTargetChange={setMergeTargetId}
+              onMerge={handleMergeEntity}
+              onShowDelete={() => setShowDeleteConfirm(true)}
+              onUpdateName={(value) =>
+                setSelectedEntity((prev) => (prev ? { ...prev, canonical_name: value } : prev))
+              }
+              onUpdateAliases={(value) =>
+                setSelectedEntity((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        aliases: value
+                          .split(',')
+                          .map((item) => item.trim())
+                          .filter(Boolean),
+                      }
+                    : prev,
+                )
+              }
             />
 
-            <div className="sticky top-[73px] z-10 flex max-w-full gap-2 overflow-x-auto border-b border-slate-200 bg-slate-50/95 py-2 backdrop-blur">
-              {sectionLinks.map(([href, label]) => (
-                <a key={href} href={href} className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:border-slate-300 hover:text-slate-950">
-                  {label}
-                </a>
-              ))}
-            </div>
+            {showDeleteConfirm && (
+              <DeleteConfirmModal
+                entityName={selectedEntity.canonical_name}
+                relationCount={relationCount}
+                saving={saving}
+                onCancel={() => setShowDeleteConfirm(false)}
+                onDelete={handleDeleteEntity}
+              />
+            )}
 
-            {activeDraft && activeDraftPayload ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                <div className="mb-3 flex items-start justify-between gap-4">
-                  <div>
-                    <div className="text-sm font-semibold text-gray-950">
-                      Review draft from {activeDraft.source_type}
-                    </div>
-                    <div className="mt-1 text-xs leading-5 text-gray-500">
-                      {activeDraft.question || activeDraft.source_ref || activeDraft.draft_id}
-                      {activeDraftCounts > 0 && <span> · {activeDraftCounts} candidate items</span>}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveDraft(null);
-                      setActiveDraftPayload(null);
-                      setDraftSaved(null);
-                      setDraftError('');
-                    }}
-                    className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-medium text-amber-700"
-                  >
-                    Close
-                  </button>
-                </div>
+            <KnowledgeDocumentSections
+              selectedEntity={selectedEntity}
+              selectedMetaSchema={selectedMetaSchema}
+              relations={relations}
+              canWrite={canWrite}
+              saving={saving}
+              onSave={handleSaveEntity}
+              onOpenSupportPanel={setActiveSupportPanel}
+              onUpdateSummary={(value) =>
+                setSelectedEntity((prev) => (prev ? { ...prev, summary: value } : prev))
+              }
+              onUpdateDescription={(value) =>
+                setSelectedEntity((prev) => (prev ? { ...prev, description: value } : prev))
+              }
+            />
+
+            <KnowledgeEntityMetaPanel
+              meta={selectedMetaSchema}
+              canEdit={canWrite}
+              onChange={(next) =>
+                setSelectedEntity((prev) =>
+                  prev ? { ...prev, meta: mergeKnowledgeMeta(prev.meta, next) } : prev,
+                )
+              }
+            />
+          </div>
+        )}
+      </main>
+
+      <div className="hidden xl:block xl:h-screen">
+        <KnowledgeRightRail
+          entities={entities}
+          selectedEntity={selectedEntity}
+          selectedEntityId={selectedEntityId}
+          stats={stats}
+          query={query}
+          searchMode={entitySearchMode}
+          loading={loading}
+          total={entityTotal}
+          canWrite={canWrite}
+          showCreate={showCreate}
+          newEntity={newEntity}
+          saving={saving}
+          drafts={drafts}
+          draftLoading={draftLoading}
+          supportItems={supportItems}
+          isAdmin={isAdmin}
+          onExport={isAdmin ? handleExportKnowledge : undefined}
+          onImport={isAdmin ? handleImportKnowledge : undefined}
+          onQueryChange={setQuery}
+          onSearchModeChange={(mode) => {
+            setEntitySearchMode(mode);
+            setEntityPage(1);
+            setTimeout(() => loadEntities(), 0);
+          }}
+          onSearch={() => loadEntities()}
+          onSelectEntity={handleSelectEntity}
+          onLoadMore={loadMoreEntities}
+          onToggleCreate={() => setShowCreate((value) => !value)}
+          onNewEntityChange={setNewEntity}
+          onCreateEntity={handleCreateEntity}
+          onOpenSupportPanel={setActiveSupportPanel}
+          onOpenDraftQueue={() => setDraftReviewOpen(true)}
+        />
+      </div>
+
+      {railOpen && (
+        <div className="fixed inset-0 z-40 xl:hidden">
+          <button
+            type="button"
+            aria-label="Close work rail"
+            className="absolute inset-0 bg-slate-950/30"
+            onClick={() => setRailOpen(false)}
+          />
+          <div className="absolute right-0 top-0 h-full w-full max-w-sm bg-white shadow-2xl">
+            <KnowledgeRightRail
+              entities={entities}
+              selectedEntity={selectedEntity}
+              selectedEntityId={selectedEntityId}
+              stats={stats}
+              query={query}
+              searchMode={entitySearchMode}
+              loading={loading}
+              total={entityTotal}
+              canWrite={canWrite}
+              showCreate={showCreate}
+              newEntity={newEntity}
+              saving={saving}
+              drafts={drafts}
+              draftLoading={draftLoading}
+              supportItems={supportItems}
+              isAdmin={isAdmin}
+              onExport={isAdmin ? handleExportKnowledge : undefined}
+              onImport={isAdmin ? handleImportKnowledge : undefined}
+              onQueryChange={setQuery}
+              onSearchModeChange={(mode) => {
+                setEntitySearchMode(mode);
+                setEntityPage(1);
+                setTimeout(() => loadEntities(), 0);
+              }}
+              onSearch={() => loadEntities()}
+              onSelectEntity={(entityId) => {
+                setRailOpen(false);
+                handleSelectEntity(entityId);
+              }}
+              onLoadMore={loadMoreEntities}
+              onToggleCreate={() => setShowCreate((value) => !value)}
+              onNewEntityChange={setNewEntity}
+              onCreateEntity={handleCreateEntity}
+              onOpenSupportPanel={(panel) => {
+                setRailOpen(false);
+                setActiveSupportPanel(panel);
+              }}
+              onOpenDraftQueue={() => {
+                setRailOpen(false);
+                setDraftReviewOpen(true);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      <KnowledgeSupportDrawer
+        panel={selectedEntity ? activeSupportPanel : null}
+        onClose={() => setActiveSupportPanel(null)}
+      >
+        {selectedEntity && activeSupportPanel === 'evidence' && (
+          <EvidencePanel
+            selectedEntity={selectedEntity}
+            evidence={evidence}
+            evidenceRows={evidenceRows}
+            directEvidenceCount={directEvidenceCount}
+            generatedEvidenceCount={generatedEvidenceCount}
+            lastEvidenceAt={lastEvidenceAt}
+            canWrite={canWrite}
+            saving={saving}
+            onOpenThread={handleOpenThread}
+            onCreateEvidence={handleCreateEvidence}
+          />
+        )}
+        {selectedEntity && activeSupportPanel === 'notes' && (
+          <HumanNotesPanel
+            annotations={annotations}
+            annotationLoading={annotationLoading}
+            annotationBody={annotationBody}
+            canWrite={canWrite}
+            saving={saving}
+            onAnnotationBodyChange={setAnnotationBody}
+            onCreateAnnotation={handleCreateAnnotation}
+          />
+        )}
+        {selectedEntity && activeSupportPanel === 'history' && (
+          <EntityHistoryPanel entityId={selectedEntityId} />
+        )}
+        {selectedEntity && activeSupportPanel === 'relations' && (
+          <EntityRelationsPanel
+            selectedEntity={selectedEntity}
+            relations={relations}
+            relationLoading={relationLoading}
+            relationCount={relationCount}
+            relationTargets={relationTargets}
+            relationDrafts={relationDrafts}
+            relationForm={relationForm}
+            viewMode={viewMode}
+            graphDepth={graphDepth}
+            graphData={graphData}
+            graphLoading={graphLoading}
+            canWrite={canWrite}
+            saving={saving}
+            onSetViewMode={setViewMode}
+            onSetGraphDepth={setGraphDepth}
+            onSelectEntity={handleSelectEntity}
+            onRelationFormChange={setRelationForm}
+            onCreateRelation={handleCreateRelation}
+            onRelationDraftChange={(relationId, value) =>
+              setRelationDrafts((prev) => ({ ...prev, [relationId]: value }))
+            }
+            onSaveRelationDescription={handleSaveRelationDescription}
+            onDeleteRelation={handleDeleteRelation}
+          />
+        )}
+        {selectedEntity && activeSupportPanel === 'timeline' && (
+          <KnowledgeTimelinePanel
+            timeline={selectedMetaSchema.timeline}
+            canWrite={canWrite}
+            evidenceRows={evidenceRows}
+            evidenceSources={evidence.sources}
+            threadIds={evidence.threadIds}
+            onOpenThread={handleOpenThread}
+            onChange={(timeline) =>
+              setSelectedEntity((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      meta: mergeKnowledgeMeta(prev.meta, {
+                        ...extractKnowledgeMeta(prev.meta),
+                        timeline,
+                      }),
+                    }
+                  : prev,
+              )
+            }
+          />
+        )}
+      </KnowledgeSupportDrawer>
+
+      {draftReviewOpen && (
+        <div className="fixed inset-0 z-40">
+          <button
+            type="button"
+            aria-label="Close draft review"
+            className="absolute inset-0 bg-slate-950/30"
+            onClick={() => {
+              setDraftReviewOpen(false);
+              setActiveDraft(null);
+              setActiveDraftPayload(null);
+              setDraftSaved(null);
+              setDraftError('');
+            }}
+          />
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="knowledge-draft-review-title"
+            className="absolute inset-x-3 bottom-3 top-6 flex flex-col overflow-hidden rounded-xl border border-amber-200 bg-white shadow-2xl md:inset-x-8 xl:inset-x-20"
+          >
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-amber-200 bg-amber-50 px-5 py-4">
+              <div>
+                <h2 id="knowledge-draft-review-title" className="text-base font-semibold text-amber-950">
+                  Draft review
+                </h2>
+                <p className="mt-1 text-sm leading-5 text-amber-700">
+                  Review agent drafts without crowding the knowledge document.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDraftReviewOpen(false);
+                  setActiveDraft(null);
+                  setActiveDraftPayload(null);
+                  setDraftSaved(null);
+                  setDraftError('');
+                }}
+                className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800"
+              >
+                Close
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              {activeDraft && activeDraftPayload ? (
                 <DraftReviewPanel
                   draft={activeDraftPayload}
                   onChange={setActiveDraftPayload}
@@ -827,186 +1048,24 @@ export default function KnowledgeWorkbench() {
                   error={draftError}
                   compact
                 />
-              </div>
-            ) : (
-              <DraftInboxPanel
-                drafts={drafts}
-                draftLoading={draftLoading}
-                draftFilter={draftFilter}
-                draftError={draftError}
-                draftSaving={draftSaving}
-                onRefresh={loadDrafts}
-                onFilterChange={setDraftFilter}
-                onOpenDraft={handleOpenDraft}
-                onRejectDraft={handleRejectDraft}
-                className="rounded-xl border border-amber-200"
-              />
-            )}
-
-            <div className="min-w-0 max-w-full space-y-5 overflow-x-hidden">
-                <section id="knowledge-overview" className="scroll-mt-24 space-y-5">
-                  <EntityDetailHeader
-                    selectedEntity={selectedEntity}
-                    selectedAliases={selectedAliases}
-                    canWrite={canWrite}
-                    saving={saving}
-                    relationTargets={relationTargets}
-                    mergeTargetId={mergeTargetId}
-                    onMergeTargetChange={setMergeTargetId}
-                    onMerge={handleMergeEntity}
-                    onShowDelete={() => setShowDeleteConfirm(true)}
-                    onUpdateName={(value) =>
-                      setSelectedEntity((prev) => (prev ? { ...prev, canonical_name: value } : prev))
-                    }
-                    onUpdateAliases={(value) =>
-                      setSelectedEntity((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              aliases: value
-                                .split(',')
-                                .map((item) => item.trim())
-                                .filter(Boolean),
-                            }
-                          : prev,
-                      )
-                    }
-                  />
-
-                  {showDeleteConfirm && (
-                    <DeleteConfirmModal
-                      entityName={selectedEntity.canonical_name}
-                      relationCount={relationCount}
-                      saving={saving}
-                      onCancel={() => setShowDeleteConfirm(false)}
-                      onDelete={handleDeleteEntity}
-                    />
-                  )}
-
-                  <EntityMetricsCards
-                    selectedEntity={selectedEntity}
-                    evidenceCount={selectedEvidenceCount}
-                    annotationCount={annotations.length}
-                    relationCount={relationCount}
-                    timelineCount={timelineCount}
-                    canWrite={canWrite}
-                    onStatusChange={(value) =>
-                      setSelectedEntity((prev) => (prev ? { ...prev, status: value } : prev))
-                    }
-                  />
-                </section>
-
-                <section id="knowledge-timeline" className="scroll-mt-24">
-                  <KnowledgeTimelinePanel
-                    timeline={selectedMetaSchema.timeline}
-                    canWrite={canWrite}
-                    evidenceRows={evidenceRows}
-                    evidenceSources={evidence.sources}
-                    threadIds={evidence.threadIds}
-                    onOpenThread={handleOpenThread}
-                    onChange={(timeline) =>
-                      setSelectedEntity((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              meta: mergeKnowledgeMeta(prev.meta, {
-                                ...extractKnowledgeMeta(prev.meta),
-                                timeline,
-                              }),
-                            }
-                          : prev,
-                      )
-                    }
-                  />
-                </section>
-
-                <section id="knowledge-explanation" className="scroll-mt-24 space-y-5">
-                  <EntityExplanationEditor
-                    selectedEntity={selectedEntity}
-                    canWrite={canWrite}
-                    saving={saving}
-                    onSave={handleSaveEntity}
-                    onUpdateSummary={(value) =>
-                      setSelectedEntity((prev) => (prev ? { ...prev, summary: value } : prev))
-                    }
-                    onUpdateDescription={(value) =>
-                      setSelectedEntity((prev) => (prev ? { ...prev, description: value } : prev))
-                    }
-                  />
-
-                  <KnowledgeEntityMetaPanel
-                    meta={selectedMetaSchema}
-                    canEdit={canWrite}
-                    onChange={(next) =>
-                      setSelectedEntity((prev) =>
-                        prev ? { ...prev, meta: mergeKnowledgeMeta(prev.meta, next) } : prev,
-                      )
-                    }
-                  />
-                </section>
-
-                <section id="knowledge-relations-panel" className="scroll-mt-24">
-                  <EntityRelationsPanel
-                    selectedEntity={selectedEntity}
-                    relations={relations}
-                    relationLoading={relationLoading}
-                    relationCount={relationCount}
-                    relationTargets={relationTargets}
-                    relationDrafts={relationDrafts}
-                    relationForm={relationForm}
-                    viewMode={viewMode}
-                    graphDepth={graphDepth}
-                    graphData={graphData}
-                    graphLoading={graphLoading}
-                    canWrite={canWrite}
-                    saving={saving}
-                    onSetViewMode={setViewMode}
-                    onSetGraphDepth={setGraphDepth}
-                    onSelectEntity={handleSelectEntity}
-                    onRelationFormChange={setRelationForm}
-                    onCreateRelation={handleCreateRelation}
-                    onRelationDraftChange={(relationId, value) =>
-                      setRelationDrafts((prev) => ({ ...prev, [relationId]: value }))
-                    }
-                    onSaveRelationDescription={handleSaveRelationDescription}
-                    onDeleteRelation={handleDeleteRelation}
-                  />
-                </section>
-
-                <section id="knowledge-evidence" className="scroll-mt-24">
-                  <EvidencePanel
-                    selectedEntity={selectedEntity}
-                    evidence={evidence}
-                    evidenceRows={evidenceRows}
-                    directEvidenceCount={directEvidenceCount}
-                    generatedEvidenceCount={generatedEvidenceCount}
-                    lastEvidenceAt={lastEvidenceAt}
-                    canWrite={canWrite}
-                    saving={saving}
-                    onOpenThread={handleOpenThread}
-                    onCreateEvidence={handleCreateEvidence}
-                  />
-                </section>
-
-                <section id="knowledge-notes" className="scroll-mt-24">
-                  <HumanNotesPanel
-                    annotations={annotations}
-                    annotationLoading={annotationLoading}
-                    annotationBody={annotationBody}
-                    canWrite={canWrite}
-                    saving={saving}
-                    onAnnotationBodyChange={setAnnotationBody}
-                    onCreateAnnotation={handleCreateAnnotation}
-                  />
-                </section>
-
-                <section id="knowledge-history" className="scroll-mt-24">
-                  <EntityHistoryPanel entityId={selectedEntityId} />
-                </section>
+              ) : (
+                <DraftInboxPanel
+                  drafts={drafts}
+                  draftLoading={draftLoading}
+                  draftFilter={draftFilter}
+                  draftError={draftError}
+                  draftSaving={draftSaving}
+                  onRefresh={loadDrafts}
+                  onFilterChange={setDraftFilter}
+                  onOpenDraft={handleOpenDraft}
+                  onRejectDraft={handleRejectDraft}
+                  className="border border-amber-200"
+                />
+              )}
             </div>
-          </div>
-        )}
-      </main>
+          </section>
+        </div>
+      )}
 
       {selectedThread && (
         <ThreadDrawer
