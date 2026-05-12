@@ -49,6 +49,7 @@ import KernelSymbolQuickPreviewPopover from '../components/kernelCode/KernelSymb
 import {
   EmptyState,
   IconButton,
+  InspectorSection,
   PageShell,
   SecondaryButton,
   SectionPanel,
@@ -86,9 +87,9 @@ function parentKernelPath(path: string): string {
 
 function MetaRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 text-xs">
-      <dt className="font-medium uppercase tracking-[0.16em] text-slate-400">{label}</dt>
-      <dd className="min-w-0 break-words text-slate-700">{value}</dd>
+    <div className="grid grid-cols-[80px_minmax(0,1fr)] gap-3 text-xs">
+      <dt className="font-medium uppercase tracking-[0.16em] text-slate-500">{label}</dt>
+      <dd className="min-w-0 break-words text-slate-200">{value}</dd>
     </div>
   );
 }
@@ -103,12 +104,12 @@ function AtlasMetric({
   tone?: 'muted' | 'info' | 'success' | 'warning';
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+    <div className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2.5">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
         {label}
       </div>
       <div className="mt-1 flex items-center gap-2">
-        <div className="text-sm font-semibold text-slate-950">{value}</div>
+        <div className="text-sm font-semibold text-slate-50">{value}</div>
         <StatusBadge tone={tone}>{label}</StatusBadge>
       </div>
     </div>
@@ -127,19 +128,19 @@ const C_TYPES = new Set([
 ]);
 
 function highlightedTokenClass(token: string): string {
-  if (token.startsWith('//') || token.startsWith('/*')) return 'text-emerald-600';
-  if (token.startsWith('"') || token.startsWith("'")) return 'text-amber-700';
-  if (/^(?:0x[\da-fA-F]+|\d)/.test(token)) return 'text-violet-700';
-  if (C_KEYWORDS.has(token)) return 'font-medium text-sky-700';
-  if (C_TYPES.has(token)) return 'font-medium text-indigo-700';
-  if (/^[A-Z][A-Z0-9_]+$/.test(token) && token.length > 1) return 'text-fuchsia-700';
+  if (token.startsWith('//') || token.startsWith('/*')) return 'text-emerald-400';
+  if (token.startsWith('"') || token.startsWith("'")) return 'text-amber-300';
+  if (/^(?:0x[\da-fA-F]+|\d)/.test(token)) return 'text-violet-400';
+  if (C_KEYWORDS.has(token)) return 'font-medium text-sky-400';
+  if (C_TYPES.has(token)) return 'font-medium text-indigo-400';
+  if (/^[A-Z][A-Z0-9_]+$/.test(token) && token.length > 1) return 'text-fuchsia-400';
   return '';
 }
 
 function renderHighlightedLine(line: string): ReactNode {
   if (!line) return '\u00a0';
   if (line.trimStart().startsWith('#')) {
-    return <span className="text-fuchsia-700">{line}</span>;
+    return <span className="text-fuchsia-400">{line}</span>;
   }
   const tokenPattern = /(\/\/.*|\/\*.*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b0x[\da-fA-F]+[uUlL]*\b|\b\d+(?:\.\d+)?[uUlLfF]*\b|\b[A-Za-z_]\w*\b)/g;
   const parts: ReactNode[] = [];
@@ -154,43 +155,6 @@ function renderHighlightedLine(line: string): ReactNode {
   }
   if (lastIndex < line.length) parts.push(line.slice(lastIndex));
   return parts;
-}
-
-function InspectorSection({
-  title,
-  icon,
-  collapsed,
-  onToggle,
-  children,
-  headerExtra,
-}: {
-  title: string;
-  icon: ReactNode;
-  collapsed: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-  headerExtra?: ReactNode;
-}) {
-  return (
-    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left transition hover:bg-slate-50"
-        aria-expanded={!collapsed}
-      >
-        <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-900">
-          <span className="text-slate-500">{icon}</span>
-          <span className="truncate">{title}</span>
-        </span>
-        <span className="flex shrink-0 items-center gap-2">
-          {headerExtra}
-          <ChevronRight className={`h-4 w-4 text-slate-400 transition ${collapsed ? '' : 'rotate-90'}`} />
-        </span>
-      </button>
-      {!collapsed && <div className="border-t border-slate-100 px-3 py-3">{children}</div>}
-    </section>
-  );
 }
 
 function mergeTags(...groups: TagRead[][]): TagRead[] {
@@ -1055,10 +1019,10 @@ export default function KernelCodePage() {
           return (
             <div key={entryPath}>
               <div
-                className={`group flex items-center justify-between rounded-md border px-1.5 py-1.5 text-xs ${
+                className={`group flex items-center justify-between rounded-md border px-1.5 py-1.5 text-xs transition ${
                   isActive
-                    ? 'border-sky-200 bg-sky-50 text-sky-800'
-                    : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50'
+                    ? 'border-sky-800 bg-sky-950/40 text-sky-300'
+                    : 'border-transparent text-slate-400 hover:border-slate-700 hover:bg-slate-800/50'
                 }`}
                 style={{ paddingLeft: `${depth * 14 + 8}px` }}
               >
@@ -1073,14 +1037,14 @@ export default function KernelCodePage() {
                   }}
                   className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                 >
-                  <span className="text-slate-400">
+                  <span className="text-slate-500">
                     {isDirectory ? (
-                      <ChevronRight className={`h-3 w-3 transition ${isExpanded ? 'rotate-90 text-sky-600' : ''}`} />
+                      <ChevronRight className={`h-3 w-3 transition ${isExpanded ? 'rotate-90 text-sky-400' : ''}`} />
                     ) : (
                       <FileCode2 className="h-3 w-3" />
                     )}
                   </span>
-                  <span className={isDirectory ? 'text-sky-600' : 'text-slate-400'}>
+                  <span className={isDirectory ? 'text-sky-400' : 'text-slate-500'}>
                     {isDirectory ? <FolderTree className="h-3 w-3" /> : <FileCode2 className="h-3 w-3" />}
                   </span>
                   <span className="truncate">{isDirectory ? `${entry.name}/` : entry.name}</span>
@@ -1091,7 +1055,7 @@ export default function KernelCodePage() {
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className="opacity-0 transition group-hover:opacity-100 hover:text-sky-700"
+                    className="text-slate-600 opacity-0 transition hover:text-sky-400 group-hover:opacity-100"
                     title="Open upstream"
                   >
                     <ExternalLink className="h-3 w-3" />
@@ -1373,22 +1337,22 @@ export default function KernelCodePage() {
   }
 
   return (
-    <PageShell wide className="bg-slate-100 px-3 py-3 md:px-4">
+    <PageShell wide className="px-3 py-3 md:px-4">
       <SectionPanel
-        className="overflow-hidden border-slate-200/90 bg-white p-0 shadow-[0_18px_44px_rgba(15,23,42,0.08)]"
+        className="overflow-hidden border-slate-800 bg-slate-900 p-0"
       >
-        <div className="border-b border-slate-200 px-4 py-3">
+        <div className="border-b border-slate-800 px-5 py-4">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
-                <FileCode2 className="h-4 w-4 text-slate-500" />
+              <div className="flex items-center gap-2.5 text-sm font-semibold text-slate-50">
+                <FileCode2 className="h-4 w-4 text-sky-400" />
                 Code Atlas
               </div>
-              <div className="hidden items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 xl:flex">
+              <div className="hidden items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 p-1 xl:flex">
                 <button
                   type="button"
                   onClick={() => setNavigatorCollapsed((value) => !value)}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition hover:bg-white hover:text-slate-900"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-700 hover:text-slate-200"
                   aria-label={navigatorCollapsed ? 'Expand navigator' : 'Collapse navigator'}
                   title={navigatorCollapsed ? 'Expand navigator' : 'Collapse navigator'}
                 >
@@ -1397,7 +1361,7 @@ export default function KernelCodePage() {
                 <button
                   type="button"
                   onClick={() => setInspectorCollapsed((value) => !value)}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition hover:bg-white hover:text-slate-900"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-700 hover:text-slate-200"
                   aria-label={inspectorCollapsed ? 'Expand inspector' : 'Collapse inspector'}
                   title={inspectorCollapsed ? 'Expand inspector' : 'Collapse inspector'}
                 >
@@ -1405,15 +1369,15 @@ export default function KernelCodePage() {
                 </button>
               </div>
               {versionsLoading ? (
-                <div className="text-sm text-slate-500">Loading versions...</div>
+                <div className="text-sm text-slate-400">Loading versions...</div>
               ) : (
                 <>
-                  <label className="flex items-center gap-2 text-sm text-slate-600">
-                    <GitBranch className="h-4 w-4 text-slate-400" />
+                  <label className="flex items-center gap-2 text-sm text-slate-300">
+                    <GitBranch className="h-4 w-4 text-slate-500" />
                     <select
                       value={selectedVersion}
                       onChange={(e) => handleVersionSelect(e.target.value)}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none transition focus:border-sky-400"
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 outline-none transition focus:border-sky-500"
                     >
                       {filteredVersions.map((version) => (
                         <option key={version.tag} value={version.tag}>
@@ -1422,12 +1386,12 @@ export default function KernelCodePage() {
                       ))}
                     </select>
                   </label>
-                  <label className="flex items-center gap-2 text-xs text-slate-500">
+                  <label className="flex items-center gap-2 text-xs text-slate-400">
                     <input
                       type="checkbox"
                       checked={showAllVersions}
                       onChange={(e) => setShowAllVersions(e.target.checked)}
-                      className="rounded border-slate-300"
+                      className="rounded border-slate-600 bg-slate-800"
                     />
                     Show all versions
                   </label>
@@ -1444,7 +1408,7 @@ export default function KernelCodePage() {
                   if (e.key === 'Enter') handleLoadFile();
                 }}
                 placeholder="Open a kernel path, for example mm/mmap.c"
-                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-400"
+                className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-sky-500"
               />
               <SecondaryButton className="px-3 py-2" onClick={handleLoadFile} disabled={!isValidFilePath(pathInput) || fileLoading}>
                 {fileLoading ? 'Opening...' : 'Open file'}
@@ -1454,7 +1418,7 @@ export default function KernelCodePage() {
                   href={currentExternal.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-slate-600 hover:bg-slate-700"
                 >
                   <ExternalLink className="h-4 w-4" />
                   Source
@@ -1482,49 +1446,49 @@ export default function KernelCodePage() {
 
         <div
           style={{ '--nav-width': `${navigatorWidth}px`, '--insp-width': `${inspectorWidth}px` } as React.CSSProperties}
-          className={`grid min-h-[calc(100vh-8rem)] gap-0 xl:h-[calc(100vh-8rem)] ${
+          className={`grid min-h-[calc(100vh-8rem)] gap-0 transition-[grid-template-columns] duration-300 ease-in-out xl:h-[calc(100vh-8rem)] ${
             navigatorCollapsed
               ? 'xl:grid-cols-[3rem_minmax(0,1fr)]'
-              : 'xl:grid-cols-[var(--nav-width)_6px_minmax(0,1fr)]'
+              : 'xl:grid-cols-[var(--nav-width)_4px_minmax(0,1fr)]'
           }`}
         >
-          <aside className="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/80 xl:border-b-0 xl:border-r">
+          <aside className="flex min-h-0 flex-col border-b border-slate-800 bg-slate-950/60 xl:border-b-0 xl:border-r">
             {navigatorCollapsed ? (
-              <div className="hidden min-h-0 flex-1 flex-col items-center gap-3 px-2 py-3 xl:flex">
+              <div className="hidden min-h-0 flex-1 flex-col items-center gap-3 px-2 py-4 xl:flex">
                 <button
                   type="button"
                   onClick={() => setNavigatorCollapsed(false)}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-slate-400 transition hover:border-slate-600 hover:text-slate-200"
                   aria-label="Expand navigator"
                   title="Expand navigator"
                 >
                   <PanelLeftOpen className="h-4 w-4" />
                 </button>
-                <FolderTree className="h-4 w-4 text-slate-400" />
-                <div className="h-px w-full bg-slate-200" />
-                <div className="[writing-mode:vertical-rl] text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                <FolderTree className="h-4 w-4 text-slate-500" />
+                <div className="h-px w-5 bg-slate-700" />
+                <div className="[writing-mode:vertical-rl] text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Navigator
                 </div>
               </div>
             ) : (
               <>
-            <div className="border-b border-slate-200 px-4 py-3">
+            <div className="border-b border-slate-800 px-4 py-3">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <FolderTree className="h-4 w-4 text-slate-500" />
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                <FolderTree className="h-4 w-4 text-slate-400" />
                 Navigator
                 </div>
                 <button
                   type="button"
                   onClick={() => setNavigatorCollapsed(true)}
-                  className="hidden h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 xl:inline-flex"
+                  className="hidden h-7 w-7 items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-slate-400 transition hover:border-slate-600 hover:text-slate-200 xl:inline-flex"
                   aria-label="Collapse navigator"
                   title="Collapse navigator"
                 >
                   <PanelLeftClose className="h-4 w-4" />
                 </button>
               </div>
-              <p className="mt-1 truncate text-xs text-slate-500">{treePath || 'root'}</p>
+              <p className="mt-1 truncate text-xs text-slate-400">{treePath || 'root'}</p>
             </div>
 
             <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 py-3">
@@ -1537,9 +1501,9 @@ export default function KernelCodePage() {
                 />
               </div>
 
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 px-3 py-2">
-                  <div className="text-sm font-semibold text-slate-900">Path Browser</div>
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
+                <div className="border-b border-slate-800 px-3 py-2">
+                  <div className="text-sm font-semibold text-slate-100">Path Browser</div>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-scroll px-2 py-2">
                   <div className="mb-2 flex flex-wrap gap-2">
@@ -1549,7 +1513,7 @@ export default function KernelCodePage() {
                         setTreePath('');
                         void ensureTreeLoaded('');
                       }}
-                      className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-xs font-medium text-slate-300 transition hover:border-slate-600 hover:bg-slate-700"
                     >
                       /
                     </button>
@@ -1561,7 +1525,7 @@ export default function KernelCodePage() {
                           setTreePath(parentPath);
                           void ensureTreeLoaded(parentPath);
                         }}
-                        className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                        className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-xs font-medium text-slate-300 transition hover:border-slate-600 hover:bg-slate-700"
                       >
                         ..
                       </button>
@@ -1569,11 +1533,11 @@ export default function KernelCodePage() {
                   </div>
 
                   {treeLoading && Object.keys(treeCache).length === 0 ? (
-                    <div className="text-xs text-slate-500">Loading tree…</div>
+                    <div className="text-xs text-slate-400">Loading tree...</div>
                   ) : treeCache['']?.length ? (
                     renderTreeEntries('')
                   ) : (
-                    <div className="text-xs text-slate-400">No entries here.</div>
+                    <div className="text-xs text-slate-500">No entries here.</div>
                   )}
                 </div>
               </div>
@@ -1584,7 +1548,7 @@ export default function KernelCodePage() {
 
           {!navigatorCollapsed && (
             <div
-              className="hidden cursor-col-resize bg-slate-200 transition-colors hover:bg-sky-400 xl:block"
+              className="hidden cursor-col-resize bg-slate-800 transition-colors hover:bg-sky-500 xl:block"
               onPointerDown={(e) => {
                 navResizeRef.current = { startX: e.clientX, startWidth: navigatorWidth };
                 document.body.style.cursor = 'col-resize';
@@ -1594,25 +1558,25 @@ export default function KernelCodePage() {
             />
           )}
 
-          <div className="flex min-h-0 min-w-0 flex-col bg-slate-50/60">
+          <div className="flex min-h-0 min-w-0 flex-col bg-slate-950/60">
             <div className="min-h-0 flex-1">
               <div
-                className={`grid h-full min-h-0 gap-0 ${
+                className={`grid h-full min-h-0 gap-0 transition-[grid-template-columns] duration-300 ease-in-out ${
                   inspectorCollapsed
                     ? 'xl:grid-cols-[minmax(0,1fr)_3rem]'
-                    : 'xl:grid-cols-[minmax(0,1fr)_6px_var(--insp-width)]'
+                    : 'xl:grid-cols-[minmax(0,1fr)_4px_var(--insp-width)]'
                 }`}
               >
-                <div className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
-                  <div className="border-b border-slate-200 px-3 py-2">
+                <div className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-slate-950">
+                  <div className="border-b border-slate-800 px-4 py-3">
                   <div className="flex flex-col gap-2 xl:flex-row xl:items-start xl:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
-                        <span className="font-medium uppercase tracking-[0.16em] text-slate-400">Code Target</span>
+                        <span className="font-medium uppercase tracking-[0.16em] text-slate-500">Code Target</span>
                         {pathSegments.length > 0 && <ChevronRight className="h-3.5 w-3.5" />}
                         {pathSegments.map((segment, index) => (
                           <div key={`${segment}-${index}`} className="flex items-center gap-1">
-                            <span className={index === pathSegments.length - 1 ? 'font-medium text-slate-800' : ''}>
+                            <span className={index === pathSegments.length - 1 ? 'font-medium text-slate-200' : ''}>
                               {segment}
                             </span>
                             {index < pathSegments.length - 1 && <ChevronRight className="h-3.5 w-3.5" />}
@@ -1620,14 +1584,14 @@ export default function KernelCodePage() {
                         ))}
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <h2 className="truncate text-sm font-semibold text-slate-950">
+                        <h2 className="truncate text-sm font-semibold text-slate-50">
                           {currentPath || 'Select a file to start reading'}
                         </h2>
                         <StatusBadge tone="muted">{selectedVersion || 'No version'}</StatusBadge>
                         <StatusBadge tone="info">{selectedRangeLabel}</StatusBadge>
                         {selectedSymbol && <StatusBadge tone="success">{selectedSymbol}</StatusBadge>}
                       </div>
-                      <div className="mt-0.5 text-xs text-slate-500">
+                      <div className="mt-0.5 text-xs text-slate-400">
                         {fileFacts}
                         {selectedSymbol ? ` · symbol ${selectedSymbol}` : ''}
                       </div>
@@ -1638,7 +1602,7 @@ export default function KernelCodePage() {
                         href={currentExternal.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                        className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-slate-200 transition hover:border-slate-600 hover:bg-slate-700"
                       >
                         <ExternalLink className="h-3.5 w-3.5" />
                         Open source
@@ -1650,17 +1614,17 @@ export default function KernelCodePage() {
                   <div
                     ref={codeViewRef}
                     onMouseUp={handleCodeMouseUp}
-                    className="relative min-h-0 flex-1 overflow-y-scroll bg-white"
+                    className="relative min-h-0 flex-1 overflow-y-scroll bg-slate-950"
                   >
                   {fileLoading ? (
-                    <div className="px-6 py-12 text-sm text-slate-500">Opening file…</div>
+                    <div className="px-6 py-12 text-sm text-slate-400">Opening file...</div>
                   ) : isDirectoryView ? (
                     <EmptyState
                       title="Directory expanded in navigator"
                       description="Use the left tree to browse directories, then choose a file to open it here."
                     />
                   ) : currentFile ? (
-                    <div className="inline-block min-w-max font-mono text-[12px] leading-[18px]">
+                    <div className="inline-block min-w-max font-mono text-[13px] leading-[20px]">
                       {codeLines.map((line, index) => {
                         const lineNum = index + 1;
                         const isSelected = selectedLines.has(lineNum);
@@ -1670,26 +1634,26 @@ export default function KernelCodePage() {
                           <div
                             key={lineNum}
                             data-line={lineNum}
-                            className={`group grid w-max grid-cols-[12px_44px_max-content_22px] border-b border-slate-100/70 px-2 ${
-                              isSelected ? 'bg-amber-50' : 'hover:bg-slate-50'
+                            className={`group grid w-max grid-cols-[14px_52px_max-content_24px] border-b border-slate-800/60 px-3 ${
+                              isSelected ? 'bg-sky-950/40 border-l-2 border-l-sky-500' : 'hover:bg-slate-900/50'
                             }`}
                           >
                             <div className="flex items-center justify-center">
                               <span
                                 className={`h-1.5 w-1.5 rounded-full ${
-                                  annotationCount > 0 ? 'bg-sky-500' : isSelected ? 'bg-amber-500' : 'bg-transparent'
+                                  annotationCount > 0 ? 'bg-sky-400' : isSelected ? 'bg-sky-400' : 'bg-transparent'
                                 }`}
                               />
                             </div>
                             <button
                               type="button"
                               onClick={(e) => handleLineClick(lineNum, e)}
-                              className="select-none border-0 bg-transparent py-0.5 pr-2 text-right text-[11px] text-slate-400 transition hover:text-slate-700 focus:outline-none"
+                              className="select-none border-0 bg-transparent py-0.5 pr-3 text-right text-[11px] text-slate-600 transition hover:text-slate-300 focus:outline-none"
                               title={`Select line ${lineNum}`}
                             >
                               {lineNum}
                             </button>
-                            <div className="whitespace-pre py-0.5 pr-8 text-slate-800">
+                            <div className="whitespace-pre py-0.5 pr-8 text-slate-200">
                               {renderHighlightedLine(line)}
                             </div>
                             <a
@@ -1697,7 +1661,7 @@ export default function KernelCodePage() {
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="flex items-center justify-center text-slate-300 opacity-0 transition hover:text-sky-700 group-hover:opacity-100"
+                              className="flex items-center justify-center text-slate-600 opacity-0 transition hover:text-sky-400 group-hover:opacity-100"
                               title={`Open line ${lineNum} upstream`}
                             >
                               <ExternalLink className="h-3 w-3" />
@@ -1719,7 +1683,7 @@ export default function KernelCodePage() {
 
                 {!inspectorCollapsed && (
                   <div
-                    className="hidden cursor-col-resize bg-slate-200 transition-colors hover:bg-sky-400 xl:block"
+                    className="hidden cursor-col-resize bg-slate-800 transition-colors hover:bg-sky-500 xl:block"
                     onPointerDown={(e) => {
                       inspResizeRef.current = { startX: e.clientX, startWidth: inspectorWidth };
                       document.body.style.cursor = 'col-resize';
@@ -1729,46 +1693,46 @@ export default function KernelCodePage() {
                   />
                 )}
 
-                <aside className="flex min-h-0 max-h-[calc(100vh-8rem)] flex-col overflow-y-auto border-t border-slate-200 bg-slate-50/80 xl:overflow-hidden xl:border-l xl:border-t-0">
+                <aside className="flex min-h-0 max-h-[calc(100vh-8rem)] flex-col overflow-y-auto border-t border-slate-800 bg-slate-950/60 xl:overflow-hidden xl:border-l xl:border-t-0">
                   {inspectorCollapsed ? (
-                    <div className="hidden min-h-0 flex-1 flex-col items-center gap-3 px-2 py-3 xl:flex">
+                    <div className="hidden min-h-0 flex-1 flex-col items-center gap-3 px-2 py-4 xl:flex">
                       <button
                         type="button"
                         onClick={() => setInspectorCollapsed(false)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-slate-400 transition hover:border-slate-600 hover:text-slate-200"
                         aria-label="Expand inspector"
                         title="Expand inspector"
                       >
                         <PanelRightOpen className="h-4 w-4" />
                       </button>
-                      <BookOpenText className="h-4 w-4 text-slate-400" />
-                      <div className="h-px w-full bg-slate-200" />
-                      <div className="[writing-mode:vertical-rl] text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      <BookOpenText className="h-4 w-4 text-slate-500" />
+                      <div className="h-px w-5 bg-slate-700" />
+                      <div className="[writing-mode:vertical-rl] text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                         Inspector
                       </div>
                     </div>
                   ) : (
                     <>
-                      <div className="border-b border-slate-200 px-4 py-3">
+                      <div className="border-b border-slate-800 px-4 py-3">
                         <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                            <BookOpenText className="h-4 w-4 text-slate-500" />
+                          <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                            <BookOpenText className="h-4 w-4 text-slate-400" />
                             Inspector
                           </div>
                           <button
                             type="button"
                             onClick={() => setInspectorCollapsed(true)}
-                            className="hidden h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 xl:inline-flex"
+                            className="hidden h-7 w-7 items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-slate-400 transition hover:border-slate-600 hover:text-slate-200 xl:inline-flex"
                             aria-label="Collapse inspector"
                             title="Collapse inspector"
                           >
                             <PanelRightClose className="h-4 w-4" />
                           </button>
                         </div>
-                        <p className="mt-1 truncate text-xs text-slate-500">Target, notes, evidence.</p>
+                        <p className="mt-1 truncate text-xs text-slate-400">Target, notes, evidence.</p>
                       </div>
 
-                      <div className="border-b border-slate-200 px-3 py-2">
+                      <div className="border-b border-slate-800 px-4 py-2">
                         <div className="flex flex-wrap gap-2">
                           {(Object.keys(INSPECTOR_VIEW_LABELS) as InspectorView[]).map((view) => {
                             const active = inspectorView === view;
@@ -1784,15 +1748,15 @@ export default function KernelCodePage() {
                                 onClick={() => setInspectorView(view)}
                                 className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                                   active
-                                    ? 'border-sky-200 bg-sky-50 text-sky-800'
-                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                                    ? 'border-sky-800 bg-sky-950 text-sky-300'
+                                    : 'border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200'
                                 }`}
                               >
                                 <span>{INSPECTOR_VIEW_LABELS[view]}</span>
                                 {count !== null && (
                                   <span
                                     className={`rounded-full px-1.5 py-0.5 text-[10px] ${
-                                      active ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-500'
+                                      active ? 'bg-sky-900 text-sky-300' : 'bg-slate-700 text-slate-400'
                                     }`}
                                   >
                                     {count}
@@ -1804,23 +1768,23 @@ export default function KernelCodePage() {
                         </div>
                       </div>
 
-                      <div className="min-h-0 flex-1 space-y-3 overflow-y-scroll overscroll-contain px-3 py-3">
+                      <div className="min-h-0 flex-1 space-y-3 overflow-y-scroll overscroll-contain px-4 py-4">
                         {inspectorView === 'overview' && (
                           <div className="space-y-3">
-                            <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                            <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
-                                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                                    <Pin className="h-4 w-4 text-slate-500" />
+                                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                                    <Pin className="h-4 w-4 text-slate-400" />
                                     Code Target
                                   </div>
-                                  <div className="mt-1 text-xs text-slate-500">Stable target for reading and notes.</div>
+                                  <div className="mt-1 text-xs text-slate-400">Stable target for reading and notes.</div>
                                 </div>
                                 <StatusBadge tone={relatedAnnotations.length > 0 ? 'success' : 'warning'}>
                                   {targetHealthLabel}
                                 </StatusBadge>
                               </div>
-                              <dl className="mt-3 space-y-1.5">
+                              <dl className="mt-4 space-y-2">
                                 <MetaRow label="version" value={selectedVersion || '—'} />
                                 <MetaRow label="path" value={currentPath || '—'} />
                                 <MetaRow label="range" value={selectedRangeLabel} />
@@ -1832,13 +1796,13 @@ export default function KernelCodePage() {
                                 />
                               </dl>
 
-                              <div className="mt-3 grid gap-2">
+                              <div className="mt-4 grid gap-2">
                                 {selectedSymbol && (
                                   <a
                                     href={elixirIdentUrl(selectedVersion || 'latest', selectedSymbol)}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                                    className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-200 transition hover:border-slate-600 hover:bg-slate-700"
                                   >
                                     <ScrollText className="h-3.5 w-3.5" />
                                     Search symbol
@@ -1848,34 +1812,34 @@ export default function KernelCodePage() {
                             </div>
 
                             {currentFile && selectedRange && (
-                              <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                              <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
                                 <div className="flex items-center justify-between gap-2">
                                   <div>
-                                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                                      <Layers3 className="h-4 w-4 text-slate-500" />
+                                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                                      <Layers3 className="h-4 w-4 text-slate-400" />
                                       Tags
                                     </div>
-                                    <div className="mt-1 text-xs text-slate-500">Labels attached to the selected range.</div>
+                                    <div className="mt-1 text-xs text-slate-400">Labels attached to the selected range.</div>
                                   </div>
-                                  <span className="text-[10px] font-medium text-slate-400">{selectedTargetTags.length}</span>
+                                  <span className="text-[10px] font-medium text-slate-500">{selectedTargetTags.length}</span>
                                 </div>
                                 <div className="mt-3 flex flex-wrap gap-1.5">
                                   {targetTagsLoading ? (
-                                    <span className="text-xs text-slate-500">Loading tags...</span>
+                                    <span className="text-xs text-slate-400">Loading tags...</span>
                                   ) : selectedTargetTags.length > 0 ? (
                                     selectedTargetTags.map((tag) => (
                                       <span
                                         key={tag.slug}
-                                        className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-800"
+                                        className="rounded-full border border-sky-800 bg-sky-950 px-2 py-0.5 text-[11px] font-medium text-sky-300"
                                       >
                                         {tag.name}
                                       </span>
                                     ))
                                   ) : (
-                                    <span className="text-xs text-slate-400">No tags on this range.</span>
+                                    <span className="text-xs text-slate-500">No tags on this range.</span>
                                   )}
                                 </div>
-                                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
+                                <div className="mt-3 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2">
                                   <EmailTagEditor
                                     targetType="kernel_line_range"
                                     targetRef={selectedTargetRef}
@@ -1910,7 +1874,7 @@ export default function KernelCodePage() {
                               />
                             </InspectorSection>
                           ) : (
-                            <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-400">
+                            <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/50 px-4 py-8 text-center text-sm text-slate-500">
                               Load a file to inspect history.
                             </div>
                           )
@@ -1939,7 +1903,7 @@ export default function KernelCodePage() {
                               />
                             </InspectorSection>
                           ) : (
-                            <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-400">
+                            <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/50 px-4 py-8 text-center text-sm text-slate-500">
                               Load a file to inspect annotations.
                             </div>
                           )
@@ -1960,7 +1924,7 @@ export default function KernelCodePage() {
                             >
                               <div className="space-y-2">
                                 {relatedThreadsLoading ? (
-                                  <div className="text-xs text-slate-500">Loading thread context...</div>
+                                  <div className="text-xs text-slate-400">Loading thread context...</div>
                                 ) : relatedThreadPreviews.length > 0 ? (
                                   relatedThreadPreviews.slice(0, 3).map((thread) => (
                                     <button
@@ -1972,16 +1936,16 @@ export default function KernelCodePage() {
                                           focusMessageId: thread.focusMessageId,
                                         })
                                       }
-                                      className="block w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-left hover:border-sky-200 hover:bg-sky-50/60"
+                                      className="block w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-left transition hover:border-sky-700 hover:bg-sky-950/30"
                                     >
-                                      <div className="truncate text-xs font-semibold text-slate-900">{thread.subject}</div>
-                                      <div className="mt-1 text-[11px] text-slate-500">
+                                      <div className="truncate text-xs font-semibold text-slate-100">{thread.subject}</div>
+                                      <div className="mt-1 text-[11px] text-slate-400">
                                         {thread.emailCount} mails · {thread.annotationCount} notes · {thread.patchCount} patches
                                       </div>
                                     </button>
                                   ))
                                 ) : (
-                                  <div className="text-xs leading-5 text-slate-400">No thread backlinks for this selection yet.</div>
+                                  <div className="text-xs leading-5 text-slate-500">No thread backlinks for this selection yet.</div>
                                 )}
                               </div>
                             </InspectorSection>
@@ -1999,23 +1963,23 @@ export default function KernelCodePage() {
                             >
                               <div className="space-y-2">
                                 {relatedKnowledgeLoading ? (
-                                  <div className="text-xs text-slate-500">Loading linked knowledge...</div>
+                                  <div className="text-xs text-slate-400">Loading linked knowledge...</div>
                                 ) : relatedKnowledgeEntities.length > 0 ? (
                                   relatedKnowledgeEntities.slice(0, 4).map((entity) => (
                                     <div
                                       key={entity.entity_id}
-                                      className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2"
+                                      className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2"
                                     >
-                                      <div className="truncate text-xs font-semibold text-slate-900">
+                                      <div className="truncate text-xs font-semibold text-slate-100">
                                         {entity.canonical_name || entity.entity_id}
                                       </div>
-                                      <div className="mt-1 text-[11px] text-slate-500">
+                                      <div className="mt-1 text-[11px] text-slate-400">
                                         {entity.entity_type} · {entity.status || 'linked evidence'}
                                       </div>
                                     </div>
                                   ))
                                 ) : (
-                                  <div className="text-xs leading-5 text-slate-400">No knowledge backlinks surfaced yet.</div>
+                                  <div className="text-xs leading-5 text-slate-500">No knowledge backlinks surfaced yet.</div>
                                 )}
                               </div>
                             </InspectorSection>
@@ -2045,10 +2009,10 @@ export default function KernelCodePage() {
             top: popoverTop,
             zIndex: 50,
           }}
-          className="w-[380px] select-none rounded-lg border border-slate-200 bg-white shadow-lg"
+          className="w-[380px] select-none rounded-lg border border-slate-700 bg-slate-900 shadow-2xl shadow-black/50"
         >
           <div
-            className="flex cursor-move items-start justify-between gap-3 rounded-t-lg bg-gradient-to-r from-slate-50 to-white px-3 pt-3"
+            className="flex cursor-move items-start justify-between gap-3 rounded-t-lg bg-gradient-to-r from-slate-800 to-slate-900 px-4 pt-4"
             onPointerDown={(e) => {
               if (!symbolPopover) return;
               popoverDragRef.current = {
@@ -2061,15 +2025,15 @@ export default function KernelCodePage() {
             }}
           >
             <div className="min-w-0">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                 Symbol
               </div>
-              <code className="mt-1 block truncate text-sm font-mono text-sky-700">
+              <code className="mt-1 block truncate text-sm font-mono text-sky-400">
                 {symbolPopover.symbol}
               </code>
               {selectedSymbol && selectedSymbol !== symbolPopover.symbol && (
                 <div className="mt-1.5">
-                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-800 bg-amber-950 px-2 py-0.5 text-[11px] text-amber-300">
                     from <code className="font-medium">{selectedSymbol}</code>
                   </span>
                 </div>
@@ -2086,21 +2050,21 @@ export default function KernelCodePage() {
 
           <div className="px-3 pb-3 pt-2">
             {symbolResolve?.loading ? (
-              <div className="text-xs text-slate-500">Querying Elixir for matching definitions...</div>
+              <div className="text-xs text-slate-400">Querying Elixir for matching definitions...</div>
             ) : symbolResolve?.error ? (
-              <div className="rounded-md border border-rose-200 bg-rose-50 px-2 py-2 text-xs leading-5 text-rose-700">
+              <div className="rounded-md border border-rose-800 bg-rose-950 px-3 py-2 text-xs leading-5 text-rose-200">
                 {symbolResolve.error}
               </div>
             ) : null}
 
             {symbolResolve?.result?.fallback_reason ? (
-              <div className="rounded-md border border-amber-200 bg-amber-50 px-2 py-2 text-xs leading-5 text-amber-800">
+              <div className="rounded-md border border-amber-800 bg-amber-950 px-3 py-2 text-xs leading-5 text-amber-200">
                 {symbolResolve.result.fallback_reason}
               </div>
             ) : null}
 
             {!symbolResolve?.loading && symbolResolve?.result && symbolResolve.result.candidates.length === 0 ? (
-              <div className="text-xs leading-5 text-slate-500">
+              <div className="text-xs leading-5 text-slate-400">
                 No Elixir candidates found for this symbol.
               </div>
             ) : null}
@@ -2112,7 +2076,7 @@ export default function KernelCodePage() {
               {symbolResolve?.result?.candidates.map((candidate) => (
                 <div
                   key={`${candidate.path}:${candidate.line}`}
-                  className="flex items-center justify-between gap-3 rounded-md border border-slate-200 px-2.5 py-2 transition hover:border-sky-200 hover:bg-sky-50"
+                  className="flex items-center justify-between gap-3 rounded-md border border-slate-700 px-3 py-2 transition hover:border-sky-700 hover:bg-sky-950/20"
                 >
                   <button
                     type="button"
@@ -2126,13 +2090,13 @@ export default function KernelCodePage() {
                     className="min-w-0 flex-1 text-left"
                     title="Single click for floating preview"
                   >
-                    <div className="truncate text-xs font-medium text-slate-900">
+                    <div className="truncate text-xs font-medium text-slate-100">
                       {candidate.path}
                     </div>
-                    <div className="mt-0.5 text-[11px] text-slate-500">
+                    <div className="mt-0.5 text-[11px] text-slate-400">
                       L{candidate.line}
                     </div>
-                    <div className="mt-0.5 text-[11px] text-slate-500">
+                    <div className="mt-0.5 text-[11px] text-slate-400">
                       {symbolCandidateLabels[`${candidate.version}:${candidate.path}:${candidate.line}`]
                         ? `in ${symbolCandidateLabels[`${candidate.version}:${candidate.path}:${candidate.line}`]}`
                         : candidate.local_file_available
@@ -2144,8 +2108,8 @@ export default function KernelCodePage() {
                     <span
                       className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${
                         candidate.local_file_available
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                          : 'border-amber-200 bg-amber-50 text-amber-700'
+                          ? 'border-emerald-800 bg-emerald-950 text-emerald-300'
+                          : 'border-amber-800 bg-amber-950 text-amber-300'
                       }`}
                     >
                       {candidate.local_file_available ? 'Local' : 'Elixir'}
@@ -2155,7 +2119,7 @@ export default function KernelCodePage() {
                       target={candidate.local_file_available ? '_self' : '_blank'}
                       rel={candidate.local_file_available ? undefined : 'noopener noreferrer'}
                       onClick={() => setSymbolPopover(null)}
-                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 transition hover:border-sky-200 hover:text-sky-700"
+                      className="rounded-md border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] font-medium text-slate-300 transition hover:border-sky-600 hover:text-sky-400"
                     >
                       跳转
                     </a>
@@ -2170,12 +2134,12 @@ export default function KernelCodePage() {
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => setSymbolPopover(null)}
-                className="inline-flex items-center gap-1 text-xs font-medium text-sky-700 hover:text-sky-800"
+                className="inline-flex items-center gap-1 text-xs font-medium text-sky-400 transition hover:text-sky-300"
               >
                 Open Elixir search
                 <ExternalLink className="h-3 w-3" />
               </a>
-              <span className="text-[11px] text-slate-400">
+              <span className="text-[11px] text-slate-500">
                 {symbolResolve?.loading
                   ? 'Searching'
                   : symbolResolve?.result
@@ -2185,7 +2149,7 @@ export default function KernelCodePage() {
                   : 'Ready'}
               </span>
             </div>
-            <div className="pt-1 text-[11px] leading-5 text-slate-400">
+            <div className="pt-1 text-[11px] leading-5 text-slate-500">
               Single click opens the floating preview. Click outside the preview or double click its title bar to close it.
             </div>
           </div>

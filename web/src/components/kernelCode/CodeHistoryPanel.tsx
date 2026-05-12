@@ -88,14 +88,14 @@ function buildDefaultClaim(filePath: string, range: SelectedRange | null, commit
 
 function diffLineClass(line: string): string {
   const trimmed = line.trimStart();
-  if (trimmed.startsWith('diff ') || trimmed.startsWith('commit ')) return 'bg-amber-50 text-amber-800';
-  if (trimmed.startsWith('@@')) return 'bg-sky-50 text-sky-800';
+  if (trimmed.startsWith('diff ') || trimmed.startsWith('commit ')) return 'bg-amber-950 text-amber-200';
+  if (trimmed.startsWith('@@')) return 'bg-sky-950 text-sky-200';
   if (trimmed.startsWith('+++') || trimmed.startsWith('---') || trimmed.startsWith('index ')) {
-    return 'bg-slate-50 text-slate-500';
+    return 'bg-slate-800 text-slate-400';
   }
-  if (trimmed.startsWith('+')) return 'bg-emerald-50 text-emerald-800';
-  if (trimmed.startsWith('-')) return 'bg-rose-50 text-rose-800';
-  return 'text-slate-700';
+  if (trimmed.startsWith('+')) return 'bg-emerald-50 text-emerald-200';
+  if (trimmed.startsWith('-')) return 'bg-rose-950 text-rose-200';
+  return 'text-slate-200';
 }
 
 export default function CodeHistoryPanel({
@@ -365,7 +365,7 @@ export default function CodeHistoryPanel({
 
   if (!selectedRange) {
     return (
-      <div className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-4 text-sm text-slate-500">
+      <div className="rounded-lg border border-dashed border-slate-700 bg-slate-900 px-3 py-4 text-sm text-slate-400">
         Select a line or Shift-select a range to inspect commit history and capture evidence.
       </div>
     );
@@ -373,13 +373,13 @@ export default function CodeHistoryPanel({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 p-3">
+      <div className="rounded-lg border border-emerald-800 bg-emerald-950/40 p-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-slate-950">
               {filePath}:{formatLineRange(selectedRange)}
             </div>
-            <div className="mt-1 text-xs text-slate-600">
+            <div className="mt-1 text-xs text-slate-300">
               {selectedText ? `${selectedText.split('\n').length} selected lines` : 'Code range selected'}
             </div>
           </div>
@@ -388,16 +388,16 @@ export default function CodeHistoryPanel({
       </div>
 
       {blameLoading && (
-        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm text-slate-500">
+        <div className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-3 text-sm text-slate-400">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading last touched commit…
         </div>
       )}
 
       {error && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-800">
+        <div className="rounded-lg border border-amber-800 bg-amber-950 px-3 py-3 text-xs text-amber-200">
           {error}
-          <div className="mt-1 text-amber-700">You can still save the code range and a human note.</div>
+          <div className="mt-1 text-amber-300">You can still save the code range and a human note.</div>
         </div>
       )}
 
@@ -421,7 +421,7 @@ export default function CodeHistoryPanel({
             onOpenDetail={() => void openCommitDetail(blame)}
           />
         ) : !blameLoading ? (
-          <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
+          <div className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-3 text-xs text-slate-400">
             No blame result for this line.
           </div>
         ) : null}
@@ -441,9 +441,9 @@ export default function CodeHistoryPanel({
         </div>
         <div className="space-y-2">
           {!historyLoaded && (
-            <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
-              <div className="text-xs leading-5 text-slate-500">
-                Full line history uses <code className="rounded bg-slate-100 px-1">git log -L</code> and can be slow on kernel files.
+            <div className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-3">
+              <div className="text-xs leading-5 text-slate-400">
+                Full line history uses <code className="rounded bg-slate-700 px-1">git log -L</code> and can be slow on kernel files.
               </div>
               <SecondaryButton
                 onClick={() => void loadLineHistory()}
@@ -470,17 +470,17 @@ export default function CodeHistoryPanel({
             />
           ))}
           {historyLoaded && !historyLoading && history.length === 0 && (
-            <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
+            <div className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-3 text-xs text-slate-400">
               No line history returned for this selection.
             </div>
           )}
         </div>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <div className="rounded-lg border border-slate-700 bg-slate-900 p-3">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-            <Inbox className="h-4 w-4 text-slate-500" />
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+            <Inbox className="h-4 w-4 text-slate-400" />
             Evidence basket
           </div>
           <StatusBadge tone={selectedCommits.length ? 'success' : 'warning'}>
@@ -513,8 +513,8 @@ export default function CodeHistoryPanel({
               onClick={() => setTargetMode('new')}
               className={`rounded-lg border px-2 py-1.5 text-xs font-medium ${
                 targetMode === 'new'
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                  : 'border-slate-200 bg-white text-slate-600'
+                  ? 'border-emerald-800 bg-emerald-50 text-emerald-300'
+                  : 'border-slate-700 bg-slate-900 text-slate-300'
               }`}
             >
               New topic
@@ -524,8 +524,8 @@ export default function CodeHistoryPanel({
               onClick={() => setTargetMode('existing')}
               className={`rounded-lg border px-2 py-1.5 text-xs font-medium ${
                 targetMode === 'existing'
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                  : 'border-slate-200 bg-white text-slate-600'
+                  ? 'border-emerald-800 bg-emerald-50 text-emerald-300'
+                  : 'border-slate-700 bg-slate-900 text-slate-300'
               }`}
             >
               Existing
@@ -536,7 +536,7 @@ export default function CodeHistoryPanel({
             <input
               value={topicTitle}
               onChange={(e) => setTopicTitle(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-emerald-400"
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs outline-none focus:border-emerald-400"
               placeholder="Knowledge topic title"
             />
           ) : (
@@ -546,12 +546,12 @@ export default function CodeHistoryPanel({
                 <input
                   value={entityQuery}
                   onChange={(e) => setEntityQuery(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-3 text-xs outline-none focus:border-emerald-400"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900 py-2 pl-8 pr-3 text-xs outline-none focus:border-emerald-400"
                   placeholder="Search Knowledge topic"
                 />
               </div>
               {selectedEntity && (
-                <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-800">
+                <div className="flex items-center justify-between rounded-lg border border-emerald-800 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-200">
                   <span className="truncate">{selectedEntity.canonical_name}</span>
                   <button type="button" onClick={() => setSelectedEntity(null)}>
                     <X className="h-3.5 w-3.5" />
@@ -567,7 +567,7 @@ export default function CodeHistoryPanel({
                       setSelectedEntity(entity);
                       setEntityQuery(entity.canonical_name);
                     }}
-                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-left text-xs text-slate-700 hover:border-emerald-200 hover:bg-emerald-50"
+                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-left text-xs text-slate-200 hover:border-emerald-800 hover:bg-emerald-950/30"
                   >
                     <span className="truncate">{entity.canonical_name}</span>
                     <Plus className="h-3.5 w-3.5 text-slate-400" />
@@ -580,19 +580,19 @@ export default function CodeHistoryPanel({
           <textarea
             value={claim}
             onChange={(e) => setClaim(e.target.value)}
-            className="min-h-[72px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-emerald-400"
+            className="min-h-[72px] rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs outline-none focus:border-emerald-400"
             placeholder="Claim this evidence supports"
           />
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="min-h-[64px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-emerald-400"
+            className="min-h-[64px] rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs outline-none focus:border-emerald-400"
             placeholder="Human note (optional)"
           />
           <SecondaryButton
             onClick={() => void handleSaveDraft()}
             disabled={!canWrite || saving}
-            className="justify-center border-emerald-200 bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700 disabled:opacity-60"
+            className="justify-center border-emerald-800 bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700 disabled:opacity-60"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
             {canWrite ? 'Save Knowledge draft' : 'Sign in as editor to save'}
@@ -633,20 +633,20 @@ function CommitRow({
 }) {
   const shown = detail || commit;
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-2.5">
+    <div className="rounded-lg border border-slate-700 bg-slate-900 p-2.5">
       <div className="grid grid-cols-[20px_minmax(0,1fr)_24px] gap-2">
         <input
           type="checkbox"
           checked={selected}
           onChange={onToggle}
-          className="mt-1 rounded border-slate-300"
+          className="mt-1 rounded border-slate-600"
           aria-label={`Select ${commit.short_hash}`}
         />
         <div className="min-w-0">
-          <div className="text-xs font-semibold leading-5 text-slate-900">
-            <span className="font-mono text-sky-700">{commit.short_hash}</span> {commit.subject}
+          <div className="text-xs font-semibold leading-5 text-slate-100">
+            <span className="font-mono text-sky-300">{commit.short_hash}</span> {commit.subject}
           </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
             <Clock3 className="h-3 w-3" />
             <span>{formatCommitTime(commit.author_time)}</span>
             {commit.author_name && <span>· {commit.author_name}</span>}
@@ -661,7 +661,7 @@ function CommitRow({
           <button
             type="button"
             onClick={onOpenDetail}
-            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-700 text-slate-400 hover:bg-slate-800"
             aria-label="Open commit detail"
             title="Open commit detail"
           >
@@ -670,7 +670,7 @@ function CommitRow({
           <button
             type="button"
             onClick={onExpand}
-            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-700 text-slate-400 hover:bg-slate-800"
             aria-label="Toggle commit detail"
             title="Toggle commit detail"
           >
@@ -684,13 +684,13 @@ function CommitRow({
       </div>
 
       {expanded && (
-        <div className="mt-3 space-y-2 border-t border-slate-100 pt-3 text-xs">
+        <div className="mt-3 space-y-2 border-t border-slate-700 pt-3 text-xs">
           {detailError ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-2 text-amber-800">
+            <div className="rounded-lg border border-amber-800 bg-amber-950 px-2 py-2 text-amber-200">
               {detailError}
             </div>
           ) : shown.message ? (
-            <p className="line-clamp-5 whitespace-pre-line text-slate-600">{shown.message}</p>
+            <p className="line-clamp-5 whitespace-pre-line text-slate-300">{shown.message}</p>
           ) : (
             <div className="text-slate-400">
               {loadingDetail ? 'Loading commit message…' : 'No commit message loaded.'}
@@ -699,8 +699,8 @@ function CommitRow({
           <div className="space-y-1">
             {Object.entries(shown.trailers || {}).slice(0, 6).map(([key, values]) => (
               <div key={key} className="grid grid-cols-[70px_minmax(0,1fr)] gap-2">
-                <span className="font-semibold text-slate-500">{key}</span>
-                <span className="min-w-0 break-words text-slate-700">{values.join(', ')}</span>
+                <span className="font-semibold text-slate-400">{key}</span>
+                <span className="min-w-0 break-words text-slate-200">{values.join(', ')}</span>
               </div>
             ))}
           </div>
@@ -712,7 +712,7 @@ function CommitRow({
                   href={link}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex min-w-0 items-center gap-1.5 text-sky-700 hover:text-sky-900"
+                  className="flex min-w-0 items-center gap-1.5 text-sky-300 hover:text-sky-900"
                 >
                   <ExternalLink className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate">{link}</span>
@@ -723,7 +723,7 @@ function CommitRow({
           {shown.changed_files.length > 0 && (
             <div className="space-y-1">
               {shown.changed_files.slice(0, 5).map((file) => (
-                <div key={`${file.path}-${file.added}-${file.deleted}`} className="flex items-center gap-2 text-slate-600">
+                <div key={`${file.path}-${file.added}-${file.deleted}`} className="flex items-center gap-2 text-slate-300">
                   <GitCommitHorizontal className="h-3.5 w-3.5 text-slate-400" />
                   <span className="truncate">{file.path}</span>
                   <span className="ml-auto shrink-0 text-slate-400">+{file.added} -{file.deleted}</span>
@@ -766,11 +766,11 @@ function CommitDetailModal({
       }
     >
       {detailError ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+        <div className="rounded-lg border border-amber-800 bg-amber-950 px-3 py-3 text-sm text-amber-200">
           {detailError}
         </div>
       ) : loading && !detail ? (
-        <div className="flex items-center gap-2 text-sm text-slate-500">
+        <div className="flex items-center gap-2 text-sm text-slate-400">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading commit detail...
         </div>
@@ -781,7 +781,7 @@ function CommitDetailModal({
               <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                 Commit Message
               </div>
-              <pre className="max-h-[56vh] overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-xs leading-5 text-slate-800">
+              <pre className="max-h-[56vh] overflow-auto whitespace-pre-wrap rounded-lg border border-slate-700 bg-slate-800 p-3 font-mono text-xs leading-5 text-slate-100">
                 {shown.message || 'No commit message available.'}
               </pre>
             </div>
@@ -790,11 +790,11 @@ function CommitDetailModal({
                 <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                   Trailers
                 </div>
-                <div className="space-y-1 rounded-lg border border-slate-200 bg-white p-3 text-xs">
+                <div className="space-y-1 rounded-lg border border-slate-700 bg-slate-900 p-3 text-xs">
                   {Object.entries(shown.trailers || {}).map(([key, values]) => (
                     <div key={key} className="grid grid-cols-[90px_minmax(0,1fr)] gap-3">
-                      <span className="font-semibold text-slate-500">{key}</span>
-                      <span className="min-w-0 break-words text-slate-700">{values.join(', ')}</span>
+                      <span className="font-semibold text-slate-400">{key}</span>
+                      <span className="min-w-0 break-words text-slate-200">{values.join(', ')}</span>
                     </div>
                   ))}
                 </div>
@@ -805,14 +805,14 @@ function CommitDetailModal({
                 <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                   Changed Files
                 </div>
-                <div className="max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white">
+                <div className="max-h-56 overflow-auto rounded-lg border border-slate-700 bg-slate-900">
                   {shown.changed_files.map((file) => (
                     <div
                       key={`${file.path}-${file.added}-${file.deleted}`}
-                      className="grid grid-cols-[minmax(0,1fr)_80px] gap-3 border-b border-slate-100 px-3 py-2 text-xs last:border-b-0"
+                      className="grid grid-cols-[minmax(0,1fr)_80px] gap-3 border-b border-slate-700 px-3 py-2 text-xs last:border-b-0"
                     >
-                      <span className="truncate font-mono text-slate-700">{file.path}</span>
-                      <span className="text-right text-slate-500">+{file.added} -{file.deleted}</span>
+                      <span className="truncate font-mono text-slate-200">{file.path}</span>
+                      <span className="text-right text-slate-400">+{file.added} -{file.deleted}</span>
                     </div>
                   ))}
                 </div>
@@ -827,7 +827,7 @@ function CommitDetailModal({
               {shown.patch_truncated && <StatusBadge tone="warning">Truncated</StatusBadge>}
             </div>
             {shown.patch ? (
-              <pre className="max-h-[72vh] overflow-auto rounded-lg border border-slate-200 bg-white font-mono text-xs leading-5">
+              <pre className="max-h-[72vh] overflow-auto rounded-lg border border-slate-700 bg-slate-900 font-mono text-xs leading-5">
                 {shown.patch.split('\n').map((line, index) => (
                   <div key={`${index}-${line.slice(0, 16)}`} className={`px-3 ${diffLineClass(line)}`}>
                     {line || '\u00a0'}
@@ -835,7 +835,7 @@ function CommitDetailModal({
                 ))}
               </pre>
             ) : (
-              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-sm text-slate-500">
+              <div className="rounded-lg border border-dashed border-slate-600 bg-slate-800 px-4 py-8 text-sm text-slate-400">
                 No diff loaded for this commit.
               </div>
             )}
@@ -856,11 +856,11 @@ function EvidencePill({
   onRemove?: () => void;
 }) {
   return (
-    <div className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
-      <span className="shrink-0 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+    <div className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5">
+      <span className="shrink-0 rounded-md bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
         {label}
       </span>
-      <span className="min-w-0 flex-1 truncate text-slate-700">{value}</span>
+      <span className="min-w-0 flex-1 truncate text-slate-200">{value}</span>
       {onRemove ? (
         <button type="button" onClick={onRemove} className="shrink-0 text-slate-400 hover:text-rose-600">
           <X className="h-3.5 w-3.5" />

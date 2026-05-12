@@ -220,7 +220,7 @@ export default function EmailTagEditor({
       {!hideTags && aggregatedOnly.map((tag) => (
         <span
           key={`agg-${tag.slug}`}
-          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-xs"
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-slate-700 text-slate-300 rounded text-xs"
           title="Aggregated from related targets"
         >
           {tag.name}
@@ -233,7 +233,7 @@ export default function EmailTagEditor({
           if (!canWrite) return;
           setShowPopover((prev) => !prev);
         }}
-        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs rounded transition-colors ${canWrite ? 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-50' : 'text-gray-300 cursor-not-allowed'} ${compact ? '' : ''}`}
+        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs rounded transition-colors ${canWrite ? 'text-slate-400 hover:text-indigo-400 hover:bg-indigo-950/30' : 'text-slate-500 cursor-not-allowed'} ${compact ? '' : ''}`}
       >
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -244,7 +244,7 @@ export default function EmailTagEditor({
       {showPopover && (
         <div
           ref={popoverRef}
-          className="absolute top-full left-0 mt-1 z-50 w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-2"
+          className="absolute top-full left-0 mt-1 z-50 w-64 bg-slate-900 border border-slate-700 rounded-lg shadow-lg shadow-black/50 p-2"
         >
           <input
             type="text"
@@ -254,17 +254,17 @@ export default function EmailTagEditor({
               if (e.key === 'Enter' && inputValue.trim()) handleAdd(inputValue);
             }}
             placeholder={placeholder}
-            className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded mb-1.5 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+            className="w-full px-2 py-1.5 text-xs border border-slate-700 rounded mb-1.5 focus:ring-1 focus:ring-indigo-600 focus:border-indigo-500"
             autoFocus
             disabled={!canWrite}
           />
 
           {aggregatedOnly.length > 0 && (
             <div className="mb-2">
-              <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">Aggregated</div>
+              <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Aggregated</div>
               <div className="flex flex-wrap gap-1">
                 {aggregatedOnly.map((tag) => (
-                  <span key={tag.slug} className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px]">
+                  <span key={tag.slug} className="px-1.5 py-0.5 bg-slate-700 text-slate-300 rounded text-[10px]">
                     {tag.name}
                   </span>
                 ))}
@@ -276,7 +276,7 @@ export default function EmailTagEditor({
             {isAdmin && suggestions.length === 0 && inputValue.trim() && (
               <button
                 onClick={() => handleAdd(inputValue)}
-                className="w-full text-left px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded"
+                className="w-full text-left px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-950/30 rounded"
               >
                 Create "{inputValue.trim()}"
               </button>
@@ -285,7 +285,7 @@ export default function EmailTagEditor({
               <button
                 key={tag.id}
                 onClick={() => handleAdd(tag.name)}
-                className="w-full text-left px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 rounded"
+                className="w-full text-left px-2 py-1 text-xs text-slate-200 hover:bg-slate-700 rounded"
               >
                 {tag.name}
               </button>
