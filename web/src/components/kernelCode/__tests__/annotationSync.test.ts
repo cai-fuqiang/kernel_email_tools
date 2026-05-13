@@ -5,6 +5,7 @@ import {
   getAnnotationLineRange,
   lineDistanceToRange,
   pickActiveAnnotation,
+  pickRollerActiveAnnotationId,
   rankRollerItems,
   shouldAllowSync,
 } from '../annotationSync';
@@ -146,6 +147,51 @@ describe('annotation sync helpers', () => {
       ['b', 1, false],
     ]);
     expect(rankRollerItems(annotations, 'missing').map((item) => item.active)).toEqual([false, false]);
+  });
+
+  it('selects the first roller item at the scroll top boundary', () => {
+    expect(
+      pickRollerActiveAnnotationId({
+        scrollTop: 0,
+        clientHeight: 200,
+        scrollHeight: 900,
+        cards: [
+          { id: 'first', top: 0, height: 80 },
+          { id: 'middle', top: 260, height: 80 },
+          { id: 'last', top: 800, height: 80 },
+        ],
+      }),
+    ).toBe('first');
+  });
+
+  it('selects the last roller item at the scroll bottom boundary', () => {
+    expect(
+      pickRollerActiveAnnotationId({
+        scrollTop: 700,
+        clientHeight: 200,
+        scrollHeight: 900,
+        cards: [
+          { id: 'first', top: 0, height: 80 },
+          { id: 'middle', top: 260, height: 80 },
+          { id: 'last', top: 800, height: 80 },
+        ],
+      }),
+    ).toBe('last');
+  });
+
+  it('selects the nearest roller item to the viewport center away from boundaries', () => {
+    expect(
+      pickRollerActiveAnnotationId({
+        scrollTop: 170,
+        clientHeight: 200,
+        scrollHeight: 900,
+        cards: [
+          { id: 'first', top: 0, height: 80 },
+          { id: 'middle', top: 260, height: 80 },
+          { id: 'last', top: 800, height: 80 },
+        ],
+      }),
+    ).toBe('middle');
   });
 
   it('uses a dot for single-line annotation markers', () => {

@@ -16,6 +16,12 @@ export type LineMarker = {
   annotationCount: number;
 };
 
+export type RollerCardPosition = {
+  id: string;
+  top: number;
+  height: number;
+};
+
 function numericField(source: Record<string, unknown> | undefined, key: string): number {
   const value = source?.[key];
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -96,6 +102,34 @@ export function rankRollerItems(annotations: CodeAnnotation[], activeAnnotationI
     position: index - activeIndex,
     active: annotation.annotation_id === activeAnnotationId,
   }));
+}
+
+export function pickRollerActiveAnnotationId({
+  scrollTop,
+  clientHeight,
+  scrollHeight,
+  cards,
+  edgeThreshold = 2,
+}: {
+  scrollTop: number;
+  clientHeight: number;
+  scrollHeight: number;
+  cards: RollerCardPosition[];
+  edgeThreshold?: number;
+}): string | null {
+  const validCards = cards.filter((card) => card.id && card.height > 0);
+  if (validCards.length === 0) return null;
+  if (scrollTop <= edgeThreshold) return validCards[0].id;
+  if (scrollTop + clientHeight >= scrollHeight - edgeThreshold) return validCards[validCards.length - 1].id;
+
+  const center = scrollTop + clientHeight / 2;
+  return validCards
+    .slice()
+    .sort((a, b) => {
+      const aDistance = Math.abs(a.top + a.height / 2 - center);
+      const bDistance = Math.abs(b.top + b.height / 2 - center);
+      return aDistance - bDistance;
+    })[0].id;
 }
 
 export function buildLineMarker({

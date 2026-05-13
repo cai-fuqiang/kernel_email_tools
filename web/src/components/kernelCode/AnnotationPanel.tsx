@@ -17,7 +17,7 @@ import { useAuth } from '../../auth';
 import { showToast } from '../Toast';
 import ConfirmModal from '../ConfirmModal';
 import InspectorDetailModal from './InspectorDetailModal';
-import { getAnnotationLineRange, rankRollerItems } from './annotationSync';
+import { getAnnotationLineRange, pickRollerActiveAnnotationId, rankRollerItems } from './annotationSync';
 
 type PendingAction =
   | { kind: 'approve'; annotationId: string }
@@ -28,6 +28,13 @@ function formatAnnotationLineRange(annotation: CodeAnnotation): string {
   const { start, end } = getAnnotationLineRange(annotation);
   if (start <= 0) return 'Line unknown';
   return `L${start}${end !== start ? `-${end}` : ''}`;
+}
+
+function shouldIgnoreAnnotationCardClick(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return true;
+  return Boolean(
+    target.closest('button, a, input, textarea, select, label, [contenteditable="true"], [data-no-annotation-select]'),
+  );
 }
 
 interface AnnotationPanelProps {
@@ -334,7 +341,15 @@ export default function AnnotationPanel({
     const sc = statusColors[root.publish_status] || 'bg-slate-200 text-slate-900';
 
     return (
-      <div key={root.annotation_id} data-annotation-id={root.annotation_id} className="space-y-1">
+      <div
+        key={root.annotation_id}
+        data-annotation-id={root.annotation_id}
+        className={`space-y-1 ${onJumpToAnnotation ? 'cursor-pointer' : ''}`}
+        onClick={(event) => {
+          if (!onJumpToAnnotation || shouldIgnoreAnnotationCardClick(event.target)) return;
+          onJumpToAnnotation(root, { pin: true });
+        }}
+      >
         <div className={rootCardClasses(options)}>
           <div className={`px-3 py-2 flex items-center justify-between border-b border-slate-300 ${options.active || options.pinned ? 'bg-sky-50' : 'bg-slate-100'}`}>
             <div className="flex items-center gap-2">
@@ -347,7 +362,7 @@ export default function AnnotationPanel({
               {replyCount > 0 && <span className="text-[10px] text-slate-600">({replyCount})</span>}
               <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${sc}`}>{root.publish_status}</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" data-no-annotation-select>
               {renderJumpButton(root)}
               <PublishButton a={root} />
               {canManage(root) && (
@@ -389,7 +404,7 @@ export default function AnnotationPanel({
                 Review note: {root.publish_review_comment}
               </div>
             )}
-            <div className="mt-2">
+            <div className="mt-2" data-no-annotation-select>
               <EmailTagEditor targetType="annotation" targetRef={root.annotation_id} compact />
             </div>
           </div>
@@ -498,16 +513,19 @@ export default function AnnotationPanel({
             onScroll={(event) => {
               if (!onRollerCenteredAnnotationChange) return;
               const container = event.currentTarget;
-              const cards = Array.from(container.querySelectorAll<HTMLElement>('[data-annotation-id]'));
-              const center = container.getBoundingClientRect().top + container.clientHeight / 2;
-              const nearest = cards
-                .map((card) => ({
+              const containerRect = container.getBoundingClientRect();
+              const id = pickRollerActiveAnnotationId({
+                scrollTop: container.scrollTop,
+                clientHeight: container.clientHeight,
+                scrollHeight: container.scrollHeight,
+                cards: Array.from(container.querySelectorAll<HTMLElement>('[data-annotation-id]')).map((card) => ({
                   id: card.dataset.annotationId || '',
-                  distance: Math.abs(card.getBoundingClientRect().top + card.offsetHeight / 2 - center),
-                }))
-                .sort((a, b) => a.distance - b.distance)[0];
-              if (!nearest?.id || nearest.id === activeAnnotationId) return;
-              const annotation = rootAnnotations.find((item) => item.annotation_id === nearest.id);
+                  top: card.getBoundingClientRect().top - containerRect.top + container.scrollTop,
+                  height: card.offsetHeight,
+                })),
+              });
+              if (!id || id === activeAnnotationId) return;
+              const annotation = rootAnnotations.find((item) => item.annotation_id === id);
               if (annotation) onRollerCenteredAnnotationChange(annotation);
             }}
           >
