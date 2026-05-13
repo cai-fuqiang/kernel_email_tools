@@ -1013,7 +1013,12 @@ export default function KernelCodePage() {
     });
   }, [currentFile, focusLine]);
 
-  function handleSelectRange(startLine: number, endLine: number = startLine) {
+  function handleSelectRange(
+    startLine: number,
+    endLine: number = startLine,
+    options: { pinRelated?: boolean } = {},
+  ) {
+    const pinRelated = options.pinRelated ?? true;
     const normalizedStart = Math.max(1, Math.min(startLine, endLine));
     const normalizedEnd = Math.max(normalizedStart, Math.max(startLine, endLine));
     const next = new Set<number>();
@@ -1032,8 +1037,8 @@ export default function KernelCodePage() {
         return a.range.start - b.range.start;
       })[0]?.annotation || null;
     setSelectedLines(next);
-    setPinnedAnnotationId(pinned?.annotation_id || null);
-    if (pinned) {
+    if (pinRelated) setPinnedAnnotationId(pinned?.annotation_id || null);
+    if (pinRelated && pinned) {
       syncLockRef.current = { source: 'code', until: Date.now() + 350 };
       setActiveAnnotationId(pinned.annotation_id);
     }
@@ -1050,10 +1055,19 @@ export default function KernelCodePage() {
     syncLockRef.current = { source: 'jump', until: now + 650 };
     setActiveAnnotationId(annotation.annotation_id);
     if (options?.pin) setPinnedAnnotationId(annotation.annotation_id);
-    handleSelectRange(range.start, range.end);
+    handleSelectRange(range.start, range.end, { pinRelated: Boolean(options?.pin) });
     if (shouldScrollPeer({ followEnabled: annotationFollowEnabled, action: 'explicit-jump', source: 'annotation' })) {
       scrollToLine(range.start);
     }
+  }
+
+  function handleToggleAnnotationPin(annotation: CodeAnnotation) {
+    const range = getAnnotationLineRange(annotation);
+    setActiveAnnotationId(annotation.annotation_id);
+    handleSelectRange(range.start, range.end, { pinRelated: false });
+    setPinnedAnnotationId((current) =>
+      current === annotation.annotation_id ? null : annotation.annotation_id,
+    );
   }
 
   function handleRollerCenteredAnnotationChange(annotation: CodeAnnotation) {
@@ -2086,7 +2100,7 @@ export default function KernelCodePage() {
                                 pinnedAnnotationId={pinnedAnnotation?.annotation_id || null}
                                 rollerContainerRef={annotationPanelRef}
                                 onJumpToAnnotation={handleJumpToAnnotation}
-                                onClearSelection={clearLineSelection}
+                                onTogglePinAnnotation={handleToggleAnnotationPin}
                                 onRollerCenteredAnnotationChange={handleRollerCenteredAnnotationChange}
                               />
                             </InspectorSection>

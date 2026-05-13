@@ -47,7 +47,7 @@ interface AnnotationPanelProps {
   activeAnnotationId?: string | null;
   pinnedAnnotationId?: string | null;
   onJumpToAnnotation?: (annotation: CodeAnnotation, options?: { pin?: boolean }) => void;
-  onClearSelection?: () => void;
+  onTogglePinAnnotation?: (annotation: CodeAnnotation) => void;
   onRollerCenteredAnnotationChange?: (annotation: CodeAnnotation) => void;
   rollerContainerRef?: RefObject<HTMLDivElement>;
 }
@@ -62,7 +62,7 @@ export default function AnnotationPanel({
   activeAnnotationId = null,
   pinnedAnnotationId = null,
   onJumpToAnnotation,
-  onClearSelection,
+  onTogglePinAnnotation,
   onRollerCenteredAnnotationChange,
   rollerContainerRef,
 }: AnnotationPanelProps) {
@@ -237,7 +237,7 @@ export default function AnnotationPanel({
     return (
       <button
         type="button"
-        onClick={() => onJumpToAnnotation(annotation, { pin: true })}
+        onClick={() => onJumpToAnnotation(annotation, { pin: false })}
         className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-white hover:text-sky-700"
         aria-label={label}
         title={label}
@@ -349,13 +349,13 @@ export default function AnnotationPanel({
         className={`space-y-1 ${onJumpToAnnotation ? 'cursor-pointer' : ''}`}
         onClick={(event) => {
           if (!onJumpToAnnotation || shouldIgnoreAnnotationCardClick(event.target)) return;
-          onJumpToAnnotation(root, { pin: true });
+          onJumpToAnnotation(root, { pin: false });
         }}
         onDoubleClick={(event) => {
-          if (!onClearSelection || shouldIgnoreAnnotationCardClick(event.target)) return;
+          if (!onTogglePinAnnotation || shouldIgnoreAnnotationCardClick(event.target)) return;
           event.preventDefault();
           event.stopPropagation();
-          onClearSelection();
+          onTogglePinAnnotation(root);
         }}
       >
         <div className={rootCardClasses(options)}>
