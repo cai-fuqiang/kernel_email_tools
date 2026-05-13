@@ -212,6 +212,17 @@ describe('annotation sync helpers', () => {
     ).toMatchObject({ kind: 'dot', selected: false, active: true, annotationCount: 1 });
   });
 
+  it('ignores invalid annotation ranges in line markers', () => {
+    expect(
+      buildLineMarker({
+        line: 3,
+        annotations: [annotation({ start_line: 0, end_line: 5 })],
+        selectedLines: new Set<number>(),
+        activeAnnotationId: null,
+      }),
+    ).toEqual({ kind: 'none', selected: false, active: false, annotationCount: 0 });
+  });
+
   it('blocks immediate reverse sync from the same source lock', () => {
     expect(shouldAllowSync({ source: 'code', requestedBy: 'annotation', now: 1000, lockedUntil: 1300 })).toBe(false);
     expect(shouldAllowSync({ source: 'code', requestedBy: 'annotation', now: 1400, lockedUntil: 1300 })).toBe(true);

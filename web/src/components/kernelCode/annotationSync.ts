@@ -30,8 +30,12 @@ function isRootAnnotation(annotation: CodeAnnotation): boolean {
   return !annotation.in_reply_to;
 }
 
+function isValidAnnotationRange(range: AnnotationRange): boolean {
+  return range.start > 0;
+}
+
 function hasValidRange(annotation: CodeAnnotation): boolean {
-  return getAnnotationLineRange(annotation).start > 0;
+  return isValidAnnotationRange(getAnnotationLineRange(annotation));
 }
 
 export function getAnnotationLineRange(annotation: CodeAnnotation): AnnotationRange {
@@ -110,6 +114,7 @@ export function buildLineMarker({
   const matching = annotations.filter((annotation) => {
     if (!isRootAnnotation(annotation)) return false;
     const range = getAnnotationLineRange(annotation);
+    if (!isValidAnnotationRange(range)) return false;
     return range.start <= line && line <= range.end;
   });
   const hasMultiLineAnnotation = matching.some((annotation) => {
