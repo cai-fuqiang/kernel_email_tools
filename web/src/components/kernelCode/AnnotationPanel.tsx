@@ -47,6 +47,7 @@ interface AnnotationPanelProps {
   activeAnnotationId?: string | null;
   pinnedAnnotationId?: string | null;
   onJumpToAnnotation?: (annotation: CodeAnnotation, options?: { pin?: boolean }) => void;
+  onClearSelection?: () => void;
   onRollerCenteredAnnotationChange?: (annotation: CodeAnnotation) => void;
   rollerContainerRef?: RefObject<HTMLDivElement>;
 }
@@ -61,6 +62,7 @@ export default function AnnotationPanel({
   activeAnnotationId = null,
   pinnedAnnotationId = null,
   onJumpToAnnotation,
+  onClearSelection,
   onRollerCenteredAnnotationChange,
   rollerContainerRef,
 }: AnnotationPanelProps) {
@@ -348,6 +350,12 @@ export default function AnnotationPanel({
         onClick={(event) => {
           if (!onJumpToAnnotation || shouldIgnoreAnnotationCardClick(event.target)) return;
           onJumpToAnnotation(root, { pin: true });
+        }}
+        onDoubleClick={(event) => {
+          if (!onClearSelection || shouldIgnoreAnnotationCardClick(event.target)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          onClearSelection();
         }}
       >
         <div className={rootCardClasses(options)}>

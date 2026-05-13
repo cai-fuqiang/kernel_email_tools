@@ -1068,6 +1068,15 @@ export default function KernelCodePage() {
     scrollToLine(range.start);
   }
 
+  function clearLineSelection() {
+    setSelectedLines(new Set<number>());
+    setPinnedAnnotationId(null);
+    setSearchParams(
+      { v: selectedVersion, path: currentPath },
+      { replace: true },
+    );
+  }
+
   useEffect(() => {
     if (!activeAnnotationId) return;
     const container = annotationPanelRef.current;
@@ -1096,12 +1105,7 @@ export default function KernelCodePage() {
       return;
     }
     if (selectedLines.size === 1 && selectedLines.has(line)) {
-      setSelectedLines(new Set<number>());
-      setPinnedAnnotationId(null);
-      setSearchParams(
-        { v: selectedVersion, path: currentPath },
-        { replace: true },
-      );
+      clearLineSelection();
       return;
     }
     handleSelectRange(line);
@@ -2082,6 +2086,7 @@ export default function KernelCodePage() {
                                 pinnedAnnotationId={pinnedAnnotation?.annotation_id || null}
                                 rollerContainerRef={annotationPanelRef}
                                 onJumpToAnnotation={handleJumpToAnnotation}
+                                onClearSelection={clearLineSelection}
                                 onRollerCenteredAnnotationChange={handleRollerCenteredAnnotationChange}
                               />
                             </InspectorSection>
