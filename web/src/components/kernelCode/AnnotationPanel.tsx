@@ -65,6 +65,15 @@ export default function AnnotationPanel({
   const [previewStartEditing, setPreviewStartEditing] = useState(false);
 
   const rootAnnotations = useMemo(() => annotations.filter(a => !a.in_reply_to), [annotations]);
+  const repliesByParentId = useMemo(() => {
+    const acc: Record<string, CodeAnnotation[]> = {};
+    for (const annotation of annotations) {
+      if (!annotation.in_reply_to) continue;
+      if (!acc[annotation.in_reply_to]) acc[annotation.in_reply_to] = [];
+      acc[annotation.in_reply_to].push(annotation);
+    }
+    return acc;
+  }, [annotations]);
   const pinnedAnnotation = useMemo(
     () => rootAnnotations.find((annotation) => annotation.annotation_id === pinnedAnnotationId) || null,
     [pinnedAnnotationId, rootAnnotations],
@@ -75,11 +84,11 @@ export default function AnnotationPanel({
   );
   const replyCounts = useMemo(() => {
     const acc: Record<string, number> = {};
-    annotations.forEach(a => {
-      if (a.in_reply_to) acc[a.in_reply_to] = (acc[a.in_reply_to] || 0) + 1;
-    });
+    for (const [parentId, replies] of Object.entries(repliesByParentId)) {
+      acc[parentId] = replies.length;
+    }
     return acc;
-  }, [annotations]);
+  }, [repliesByParentId]);
 
   const canManage = (a: CodeAnnotation) =>
     !!currentUser && (isAdmin || (a.visibility === 'private' && a.publish_status !== 'pending' && a.author_user_id === currentUser.user_id));
@@ -255,7 +264,6 @@ export default function AnnotationPanel({
           <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${statusColors[reply.publish_status] || 'bg-slate-200 text-slate-900'}`}>{reply.publish_status}</span>
         </div>
         <div className="flex items-center gap-2">
-          {renderJumpButton(reply)}
           <PublishButton a={reply} />
           {canManage(reply) && (
             <button
@@ -303,7 +311,7 @@ export default function AnnotationPanel({
     options: { active?: boolean; pinned?: boolean } = {},
   ) => {
     const isExpanded = expandedIds.has(root.annotation_id);
-    const replies = annotations.filter(a => a.in_reply_to === root.annotation_id);
+    const replies = repliesByParentId[root.annotation_id] || [];
     const replyCount = replyCounts[root.annotation_id] || 0;
     const sc = statusColors[root.publish_status] || 'bg-slate-200 text-slate-900';
 
@@ -376,7 +384,7 @@ export default function AnnotationPanel({
 
   return (
     <>
-    <div className="flex w-full flex-col overflow-hidden bg-slate-100">
+    <div className="flex w-full flex-col bg-slate-100">
       {!hideHeader && <div className="flex items-center justify-between border-b border-slate-300 bg-white p-2.5">
         <h3 className="text-sm font-semibold text-slate-900">Annotations</h3>
         <div className="flex items-center gap-1.5">
@@ -462,7 +470,7 @@ export default function AnnotationPanel({
 
         {rollerItems.length === 0 ? (
           <p className="text-xs text-slate-600 text-center py-8">
-            {selectedLines.size > 0 ? 'No annotations on selected lines' : 'Click a line number to add an annotation'}
+            No annotations in this file yet
           </p>
         ) : (
           <section ref={rollerContainerRef} aria-label="Annotation roller" className="[perspective:900px]">
