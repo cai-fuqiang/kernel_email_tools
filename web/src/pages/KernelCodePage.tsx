@@ -380,6 +380,8 @@ export default function KernelCodePage() {
   const syncLockRef = useRef<{ source: SyncSource; until: number }>({ source: null, until: 0 });
   const annotationAutoScrollUntilRef = useRef(0);
   const forceCenteredAnnotationRef = useRef<string | null>(null);
+  const deferredAnnotationCenterRef = useRef<string | null>(null);
+  const deferredAnnotationCenterTimerRef = useRef<number | null>(null);
   const activeFileIdentityRef = useRef<string | null>(null);
   const codeAutoScrollFileIdentityRef = useRef<string | null>(null);
   const popoverDragRef = useRef<{ startX: number; startY: number; popoverX: number; popoverY: number } | null>(null);
@@ -396,6 +398,12 @@ export default function KernelCodePage() {
   const nextPathRequestId = useCallback(() => {
     pathRequestIdRef.current += 1;
     return pathRequestIdRef.current;
+  }, []);
+
+  useEffect(() => () => {
+    if (deferredAnnotationCenterTimerRef.current !== null) {
+      window.clearTimeout(deferredAnnotationCenterTimerRef.current);
+    }
   }, []);
 
   const abortPathRequests = useCallback(() => {
@@ -1068,6 +1076,7 @@ export default function KernelCodePage() {
   }
 
   function handleJumpToAnnotation(annotation: CodeAnnotation, options?: { pin?: boolean }) {
+    clearDeferredAnnotationCenter();
     const range = getAnnotationLineRange(annotation);
     const now = Date.now();
     syncLockRef.current = { source: 'jump', until: now + 650 };
@@ -1080,11 +1089,19 @@ export default function KernelCodePage() {
   }
 
   function handleFocusAnnotation(annotation: CodeAnnotation) {
-    forceCenteredAnnotationRef.current = annotation.annotation_id;
+    clearDeferredAnnotationCenter();
+    deferredAnnotationCenterRef.current = annotation.annotation_id;
     setActiveAnnotationId(annotation.annotation_id);
+    deferredAnnotationCenterTimerRef.current = window.setTimeout(() => {
+      deferredAnnotationCenterTimerRef.current = null;
+      if (deferredAnnotationCenterRef.current !== annotation.annotation_id) return;
+      deferredAnnotationCenterRef.current = null;
+      scrollAnnotationCardIntoCenter(annotation.annotation_id, 'smooth');
+    }, 220);
   }
 
   function handleToggleAnnotationPin(annotation: CodeAnnotation) {
+    clearDeferredAnnotationCenter();
     const range = getAnnotationLineRange(annotation);
     setActiveAnnotationId(annotation.annotation_id);
     handleSelectRange(range.start, range.end, { pinRelated: false });
@@ -1105,6 +1122,35 @@ export default function KernelCodePage() {
     scrollToLine(range.start);
   }
 
+  function clearDeferredAnnotationCenter() {
+    deferredAnnotationCenterRef.current = null;
+    if (deferredAnnotationCenterTimerRef.current !== null) {
+      window.clearTimeout(deferredAnnotationCenterTimerRef.current);
+      deferredAnnotationCenterTimerRef.current = null;
+    }
+  }
+
+  function scrollAnnotationCardIntoCenter(annotationId: string, behavior: ScrollBehavior) {
+    const container = annotationPanelRef.current;
+    const target = container?.querySelector<HTMLElement>(`[data-annotation-id="${annotationId}"]`);
+    if (!container || !target) return;
+    const now = Date.now();
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const centeredTop = calculateCenteredRollerScrollTop({
+      containerScrollTop: container.scrollTop,
+      containerHeight: container.clientHeight,
+      scrollHeight: container.scrollHeight,
+      targetTop: targetRect.top - containerRect.top,
+      targetHeight: targetRect.height,
+    });
+    annotationAutoScrollUntilRef.current = now + 700;
+    container.scrollTo({
+      top: centeredTop,
+      behavior,
+    });
+  }
+
   function clearLineSelection() {
     setSelectedLines(new Set<number>());
     setPinnedAnnotationId(null);
@@ -1116,28 +1162,13 @@ export default function KernelCodePage() {
 
   useEffect(() => {
     if (!activeAnnotationId) return;
-    const container = annotationPanelRef.current;
-    const target = container?.querySelector<HTMLElement>(`[data-annotation-id="${activeAnnotationId}"]`);
-    if (!container || !target) return;
+    if (deferredAnnotationCenterRef.current === activeAnnotationId) return;
     const now = Date.now();
     const lock = syncLockRef.current;
     const isForcedCenter = forceCenteredAnnotationRef.current === activeAnnotationId;
     if (!isForcedCenter && lock.source && lock.source !== 'code' && now < lock.until) return;
-    const containerRect = container.getBoundingClientRect();
-    const targetRect = target.getBoundingClientRect();
-    const centeredTop = calculateCenteredRollerScrollTop({
-      containerScrollTop: container.scrollTop,
-      containerHeight: container.clientHeight,
-      scrollHeight: container.scrollHeight,
-      targetTop: targetRect.top - containerRect.top,
-      targetHeight: targetRect.height,
-    });
     if (isForcedCenter) forceCenteredAnnotationRef.current = null;
-    annotationAutoScrollUntilRef.current = now + 700;
-    container.scrollTo({
-      top: centeredTop,
-      behavior: isForcedCenter ? 'smooth' : 'auto',
-    });
+    scrollAnnotationCardIntoCenter(activeAnnotationId, isForcedCenter ? 'smooth' : 'auto');
   }, [activeAnnotationId, annotationFollowEnabled]);
 
   function handleLineClick(line: number, event?: ReactMouseEvent<HTMLElement>) {
