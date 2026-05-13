@@ -22,6 +22,8 @@ export type RollerCardPosition = {
   height: number;
 };
 
+export type PeerScrollAction = 'passive-scroll' | 'explicit-jump';
+
 function numericField(source: Record<string, unknown> | undefined, key: string): number {
   const value = source?.[key];
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -180,4 +182,14 @@ export function shouldAllowSync({
   if (!source) return true;
   if (now >= lockedUntil) return true;
   return source === requestedBy;
+}
+
+export function shouldScrollPeer({
+  followEnabled,
+  action,
+}: {
+  followEnabled: boolean;
+  action: PeerScrollAction;
+}): boolean {
+  return action === 'explicit-jump' || followEnabled;
 }

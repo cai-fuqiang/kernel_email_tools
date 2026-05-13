@@ -50,6 +50,7 @@ import {
   buildLineMarker,
   getAnnotationLineRange,
   pickActiveAnnotation,
+  shouldScrollPeer,
   type SyncSource,
 } from '../components/kernelCode/annotationSync';
 import {
@@ -289,6 +290,7 @@ export default function KernelCodePage() {
   const [activeCenterLine, setActiveCenterLine] = useState<number | null>(null);
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
   const [pinnedAnnotationId, setPinnedAnnotationId] = useState<string | null>(null);
+  const [annotationFollowEnabled, setAnnotationFollowEnabled] = useState(false);
   const [selectedLines, setSelectedLines] = useState<Set<number>>(() => {
     const set = new Set<number>();
     if (urlLine) set.add(urlLine);
@@ -976,11 +978,13 @@ export default function KernelCodePage() {
       const centerLine = computeCenterLineFromScroll();
       setActiveCenterLine(centerLine);
       const now = Date.now();
-      const lock = syncLockRef.current;
-      if (lock.source && lock.source !== 'code' && now < lock.until) return;
       const nextActive = pickActiveAnnotation(annotations, centerLine);
       setActiveAnnotationId(nextActive?.annotation_id || null);
-      syncLockRef.current = { source: 'code', until: now + 350 };
+      if (shouldScrollPeer({ followEnabled: annotationFollowEnabled, action: 'passive-scroll' })) {
+        const lock = syncLockRef.current;
+        if (lock.source && lock.source !== 'code' && now < lock.until) return;
+        syncLockRef.current = { source: 'code', until: now + 350 };
+      }
     });
   }
 
@@ -1043,20 +1047,24 @@ export default function KernelCodePage() {
     setActiveAnnotationId(annotation.annotation_id);
     if (options?.pin) setPinnedAnnotationId(annotation.annotation_id);
     handleSelectRange(range.start, range.end);
-    scrollToLine(range.start);
+    if (shouldScrollPeer({ followEnabled: annotationFollowEnabled, action: 'explicit-jump' })) {
+      scrollToLine(range.start);
+    }
   }
 
   function handleRollerCenteredAnnotationChange(annotation: CodeAnnotation) {
     const now = Date.now();
+    const range = getAnnotationLineRange(annotation);
+    setActiveAnnotationId(annotation.annotation_id);
+    if (!shouldScrollPeer({ followEnabled: annotationFollowEnabled, action: 'passive-scroll' })) return;
     const lock = syncLockRef.current;
     if (lock.source && lock.source !== 'annotation' && now < lock.until) return;
-    const range = getAnnotationLineRange(annotation);
     syncLockRef.current = { source: 'annotation', until: now + 650 };
-    setActiveAnnotationId(annotation.annotation_id);
     scrollToLine(range.start);
   }
 
   useEffect(() => {
+    if (!shouldScrollPeer({ followEnabled: annotationFollowEnabled, action: 'passive-scroll' })) return;
     if (!activeAnnotationId) return;
     const container = annotationPanelRef.current;
     const target = container?.querySelector<HTMLElement>(`[data-annotation-id="${activeAnnotationId}"]`);
@@ -1075,7 +1083,7 @@ export default function KernelCodePage() {
       top: Math.max(0, centeredTop),
       behavior: 'smooth',
     });
-  }, [activeAnnotationId]);
+  }, [activeAnnotationId, annotationFollowEnabled]);
 
   function handleLineClick(line: number, event?: ReactMouseEvent<HTMLElement>) {
     if (event?.shiftKey && selectedLines.size > 0) {
@@ -2039,9 +2047,20 @@ export default function KernelCodePage() {
                               collapsed={collapsedInspectorSections.has('annotations')}
                               onToggle={() => toggleInspectorSection('annotations')}
                               headerExtra={
-                                selectedLines.size > 0 ? (
-                                  <span className="text-[10px] font-medium text-slate-600">{selectedRangeLabel}</span>
-                                ) : null
+                                <div className="flex items-center gap-2">
+                                  {selectedLines.size > 0 && (
+                                    <span className="text-[10px] font-medium text-slate-600">{selectedRangeLabel}</span>
+                                  )}
+                                  <label className="inline-flex items-center gap-1.5 text-[10px] font-medium text-slate-600">
+                                    <input
+                                      type="checkbox"
+                                      checked={annotationFollowEnabled}
+                                      onChange={(event) => setAnnotationFollowEnabled(event.target.checked)}
+                                      className="h-3 w-3 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                                    />
+                                    <span>Follow</span>
+                                  </label>
+                                </div>
                               }
                             >
                               <AnnotationPanel

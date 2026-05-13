@@ -8,6 +8,7 @@ import {
   pickRollerActiveAnnotationId,
   rankRollerItems,
   shouldAllowSync,
+  shouldScrollPeer,
 } from '../annotationSync';
 
 function annotation(patch: Partial<CodeAnnotation>): CodeAnnotation {
@@ -272,5 +273,15 @@ describe('annotation sync helpers', () => {
   it('blocks immediate reverse sync from the same source lock', () => {
     expect(shouldAllowSync({ source: 'code', requestedBy: 'annotation', now: 1000, lockedUntil: 1300 })).toBe(false);
     expect(shouldAllowSync({ source: 'code', requestedBy: 'annotation', now: 1400, lockedUntil: 1300 })).toBe(true);
+  });
+
+  it('keeps passive scrolls local unless follow mode is enabled', () => {
+    expect(shouldScrollPeer({ followEnabled: false, action: 'passive-scroll' })).toBe(false);
+    expect(shouldScrollPeer({ followEnabled: true, action: 'passive-scroll' })).toBe(true);
+  });
+
+  it('always allows explicit annotation jumps to scroll the peer pane', () => {
+    expect(shouldScrollPeer({ followEnabled: false, action: 'explicit-jump' })).toBe(true);
+    expect(shouldScrollPeer({ followEnabled: true, action: 'explicit-jump' })).toBe(true);
   });
 });
