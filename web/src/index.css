@@ -11,19 +11,30 @@
 
   body {
     margin: 0;
-    @apply bg-slate-950 text-slate-100 antialiased;
+    @apply bg-slate-50 text-slate-900 antialiased;
   }
 
-  /* Dark scrollbar */
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    color-scheme: light;
+    @apply border-slate-300 bg-white text-slate-900 placeholder:text-slate-500;
+  }
+
+  option {
+    @apply bg-white text-slate-900;
+  }
+
+  /* Light scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
   ::-webkit-scrollbar-track {
-    background: #1E293B;
+    background: #E2E8F0;
   }
   ::-webkit-scrollbar-thumb {
-    background: #475569;
+    background: #94A3B8;
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {

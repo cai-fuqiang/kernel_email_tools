@@ -433,7 +433,7 @@ export default function AgentResearchPage() {
                           </div>
                         </div>
                         {usage && usage.total_tokens > 0 && (
-                          <div className="mt-1 text-[11px] text-slate-400">
+                          <div className="mt-1 text-[11px] font-medium text-slate-600">
                             Tokens: {usage.total_tokens.toLocaleString()} (prompt {usage.prompt_tokens?.toLocaleString() || 0}, completion {usage.completion_tokens?.toLocaleString() || 0})
                           </div>
                         )}

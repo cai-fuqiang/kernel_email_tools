@@ -85,7 +85,7 @@ export default function KnowledgeRightRail({
             onChange={(event) => onQueryChange(event.target.value)}
             onKeyDown={(event) => event.key === 'Enter' && onSearch()}
             placeholder="Find knowledge..."
-            className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 focus-visible:ring-2 focus-visible:ring-slate-200"
+            className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-500 focus-visible:ring-2 focus-visible:ring-slate-200"
           />
           <PrimaryButton type="button" onClick={onSearch} className="px-3">
             Search
@@ -141,21 +141,21 @@ export default function KnowledgeRightRail({
                     onClick={() => onSelectEntity(entity.entity_id)}
                     className={`w-full rounded-lg border px-3 py-2 text-left transition ${
                       selected
-                        ? 'border-slate-900 bg-slate-950 text-white'
+                        ? 'border-sky-300 bg-sky-50 text-slate-950 shadow-sm'
                         : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
                     }`}
                   >
                     <div className="truncate text-sm font-semibold">{entity.canonical_name}</div>
                     <div
                       className={`mt-1 line-clamp-2 text-xs leading-5 ${
-                        selected ? 'text-slate-200' : 'text-slate-600'
+                        selected ? 'text-slate-700' : 'text-slate-600'
                       }`}
                     >
                       {entity.summary || 'No summary yet'}
                     </div>
                     <div
                       className={`mt-2 flex items-center justify-between text-[11px] ${
-                        selected ? 'text-slate-300' : 'text-slate-600'
+                        selected ? 'text-slate-600' : 'text-slate-600'
                       }`}
                     >
                       <span>{readableType(entity.entity_type)}</span>
@@ -194,14 +194,14 @@ export default function KnowledgeRightRail({
                     onNewEntityChange({ ...newEntity, canonical_name: event.target.value })
                   }
                   placeholder="Name"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                 />
                 <select
                   value={newEntity.entity_type}
                   onChange={(event) =>
                     onNewEntityChange({ ...newEntity, entity_type: event.target.value })
                   }
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                 >
                   {ENTITY_TYPES.map((type) => (
                     <option key={type} value={type}>
@@ -215,7 +215,7 @@ export default function KnowledgeRightRail({
                     onNewEntityChange({ ...newEntity, summary: event.target.value })
                   }
                   placeholder="Short answer"
-                  className="min-h-20 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className="min-h-20 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                 />
                 <PrimaryButton
                   type="button"

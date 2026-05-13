@@ -96,12 +96,12 @@ function ActionTile({
       to={to}
       className="group flex min-h-28 items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:bg-slate-50"
     >
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white">
         <Icon className="h-5 w-5" />
       </div>
       <div className="min-w-0">
         <div className="text-sm font-semibold text-slate-950 group-hover:text-slate-700">{title}</div>
-        <p className="mt-1 text-sm leading-5 text-slate-500">{description}</p>
+        <p className="mt-1 text-sm leading-5 text-slate-600">{description}</p>
       </div>
     </Link>
   );

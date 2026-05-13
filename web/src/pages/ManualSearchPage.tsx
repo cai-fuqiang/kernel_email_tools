@@ -53,7 +53,7 @@ export default function ManualSearchPage() {
             placeholder="Search manuals... e.g. MOV instruction encoding"
             className="w-full px-4 py-3 pl-11 bg-white border border-gray-300 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
           />
-          <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-gray-400" />
+          <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-gray-600" />
         </div>
         <PrimaryButton
           onClick={handleSearch}

@@ -93,7 +93,7 @@ export default function KnowledgeInspectorDock({
           {activePanel === 'tags' && (
             <div className="space-y-3">
               <div>
-                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Direct tags</div>
+                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">Direct tags</div>
                 {directTags.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
                     {directTags.slice(0, 8).map((tag) => (
@@ -115,7 +115,7 @@ export default function KnowledgeInspectorDock({
 
               {aggregatedOnly.length > 0 && (
                 <div>
-                  <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Aggregated</div>
+                  <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">Aggregated</div>
                   <div className="flex flex-wrap gap-1.5">
                     {aggregatedOnly.slice(0, 8).map((tag) => (
                       <span key={tag.slug} className="rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-500">
@@ -144,7 +144,7 @@ export default function KnowledgeInspectorDock({
                     value={annotationBody}
                     onChange={(event) => onAnnotationBodyChange(event.target.value)}
                     placeholder="Add a reviewer note..."
-                    className="min-h-20 w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-xs leading-5"
+                    className="min-h-20 w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs leading-5 text-slate-900"
                   />
                   <div className="mt-2 flex justify-end">
                     <button

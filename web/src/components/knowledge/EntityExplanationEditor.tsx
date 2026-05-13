@@ -34,7 +34,7 @@ export default function EntityExplanationEditor({
               type="button"
               onClick={onSave}
               disabled={!canWrite || saving}
-              className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
+              className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-500 disabled:opacity-50"
             >
               {saving ? 'Saving...' : 'Save'}
             </button>
@@ -79,7 +79,7 @@ export default function EntityExplanationEditor({
         <button
           onClick={onSave}
           disabled={!canWrite || saving}
-          className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
         >
           {saving ? 'Saving...' : 'Save changes'}
         </button>

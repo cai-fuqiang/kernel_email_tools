@@ -168,7 +168,7 @@ function UserSection({
           <tbody className="divide-y divide-gray-100">
             {users.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">{emptyText}</td>
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-600">{emptyText}</td>
               </tr>
             ) : (
               users.map((user) => (
@@ -322,7 +322,7 @@ export default function UsersPage() {
       </section>
 
       {loading ? (
-        <div className="rounded-xl border border-gray-200 bg-white px-6 py-10 text-center text-gray-400">Loading users...</div>
+        <div className="rounded-xl border border-gray-200 bg-white px-6 py-10 text-center text-gray-600">Loading users...</div>
       ) : (
         <>
           <UserSection title="Pending Approval" users={pendingUsers} emptyText="No pending users." onRefresh={loadUsers} />

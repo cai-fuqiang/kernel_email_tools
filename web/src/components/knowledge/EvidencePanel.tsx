@@ -149,7 +149,7 @@ export default function EvidencePanel({
             <select
               value={form.source_type}
               onChange={(e) => setForm((prev) => ({ ...prev, source_type: e.target.value }))}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
             >
               {sourceTypeOptions.map(([value, label]) => (
                 <option key={value} value={value}>
@@ -161,12 +161,12 @@ export default function EvidencePanel({
               value={form.claim}
               onChange={(e) => setForm((prev) => ({ ...prev, claim: e.target.value }))}
               placeholder="Claim this evidence supports"
-              className="min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              className="min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
             />
             <select
               value={form.confidence}
               onChange={(e) => setForm((prev) => ({ ...prev, confidence: e.target.value }))}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
             >
               <option value="confirmed">confirmed</option>
               <option value="needs_review">needs_review</option>
@@ -178,38 +178,38 @@ export default function EvidencePanel({
             onChange={(e) => setForm((prev) => ({ ...prev, quote: e.target.value }))}
             rows={2}
             placeholder="Short quote or note"
-            className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm leading-6"
+            className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm leading-6 text-slate-900"
           />
           <div className="mt-3 grid gap-2 md:grid-cols-3">
             <input
               value={form.thread_id}
               onChange={(e) => setForm((prev) => ({ ...prev, thread_id: e.target.value }))}
               placeholder="thread id"
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
             />
             <input
               value={form.message_id}
               onChange={(e) => setForm((prev) => ({ ...prev, message_id: e.target.value }))}
               placeholder="message id"
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
             />
             <input
               value={form.source_ref}
               onChange={(e) => setForm((prev) => ({ ...prev, source_ref: e.target.value }))}
               placeholder="commit / patch / evidence ref"
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
             />
             <input
               value={form.code_path}
               onChange={(e) => setForm((prev) => ({ ...prev, code_path: e.target.value }))}
               placeholder="kernel path"
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
             />
             <input
               value={form.url}
               onChange={(e) => setForm((prev) => ({ ...prev, url: e.target.value }))}
               placeholder="external url"
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm md:col-span-2"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 md:col-span-2"
             />
           </div>
           <div className="mt-3 flex justify-end">

@@ -118,7 +118,7 @@ export default function KnowledgeEntityMetaPanel({
     <section className="space-y-5 rounded-xl border border-gray-200 bg-white p-5">
       <div>
         <h2 className="text-lg font-semibold text-gray-950">Kernel references</h2>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-gray-600">
           Link this knowledge to specific kernel versions, source files, and symbols. Files and
           symbols become jump-to-code links (Elixir / git.kernel.org).
         </p>
@@ -128,7 +128,7 @@ export default function KnowledgeEntityMetaPanel({
       <div>
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-gray-900">Kernel versions</h3>
-          <span className="text-xs text-gray-400">
+          <span className="text-xs font-medium text-gray-600">
             Primary version for links: <code className="text-gray-600">{primaryVersion}</code>
           </span>
         </div>
@@ -149,7 +149,7 @@ export default function KnowledgeEntityMetaPanel({
                     onChange={(e) =>
                       updateVersionRelationship(idx, e.target.value as KernelVersionRelationship)
                     }
-                    className="rounded border border-transparent bg-transparent text-xs font-semibold uppercase focus:border-gray-300 focus:bg-white"
+                    className="rounded border border-transparent bg-transparent text-xs font-semibold uppercase text-slate-900 focus:border-gray-300 focus:bg-white"
                   >
                     {KERNEL_VERSION_RELATIONSHIPS.map((r) => (
                       <option key={r} value={r}>
@@ -187,7 +187,7 @@ export default function KnowledgeEntityMetaPanel({
               onChange={(e) =>
                 setNewVersionRelationship(e.target.value as KernelVersionRelationship)
               }
-              className="rounded-lg border border-gray-300 px-2 py-1.5 text-xs"
+              className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs text-slate-900"
             >
               {KERNEL_VERSION_RELATIONSHIPS.map((r) => (
                 <option key={r} value={r}>
@@ -200,12 +200,12 @@ export default function KnowledgeEntityMetaPanel({
               onChange={(e) => setNewVersion(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addVersion())}
               placeholder="v6.8"
-              className="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
+              className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-slate-900"
             />
             <button
               type="button"
               onClick={addVersion}
-              className="inline-flex items-center gap-1 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
+              className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
             >
               <Plus className="h-3.5 w-3.5" />
               Add
@@ -255,12 +255,12 @@ export default function KnowledgeEntityMetaPanel({
               onChange={(e) => setNewFile(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addFile())}
               placeholder="mm/vmscan.c"
-              className="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-mono"
+              className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-slate-900 font-mono"
             />
             <button
               type="button"
               onClick={addFile}
-              className="inline-flex items-center gap-1 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
+              className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
             >
               <Plus className="h-3.5 w-3.5" />
               Add file
@@ -312,12 +312,12 @@ export default function KnowledgeEntityMetaPanel({
               onChange={(e) => setNewSymbol(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addSymbol())}
               placeholder="shrink_node"
-              className="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-mono"
+              className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-slate-900 font-mono"
             />
             <button
               type="button"
               onClick={addSymbol}
-              className="inline-flex items-center gap-1 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
+              className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
             >
               <Plus className="h-3.5 w-3.5" />
               Add symbol

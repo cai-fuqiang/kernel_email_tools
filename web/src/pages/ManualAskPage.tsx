@@ -99,7 +99,7 @@ export default function ManualAskPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               Answer
-              <span className="text-xs font-normal text-gray-400 ml-auto">{answer.retrieval_mode} mode</span>
+              <span className="ml-auto text-xs font-medium text-gray-600">{answer.retrieval_mode} mode</span>
             </h3>
             <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
               {answer.answer}
@@ -134,7 +134,7 @@ export default function ManualAskPage() {
       )}
 
       {!answer && !loading && (
-        <div className="text-center py-20 text-gray-400">
+        <div className="py-20 text-center text-gray-600">
           <p>Ask a question about processor architecture and instruction sets</p>
         </div>
       )}

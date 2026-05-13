@@ -228,7 +228,7 @@ export default function KnowledgeTimelinePanel({
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-950">Topic timeline</h2>
-          <p className="mt-1 text-sm leading-5 text-slate-500">
+          <p className="mt-1 text-sm leading-5 text-slate-600">
             Manually connect the important mails, patch revisions, commits, code points, and decisions behind this topic.
           </p>
         </div>
@@ -274,7 +274,7 @@ export default function KnowledgeTimelinePanel({
       )}
 
       {timeline.length === 0 ? (
-        <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm leading-6 text-slate-500">
+        <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm leading-6 text-slate-600">
           No timeline yet. Start with the first proposal, an important review thread, a rejected alternative, the merged commit, or an open question that still needs evidence.
         </div>
       ) : (
@@ -294,7 +294,7 @@ export default function KnowledgeTimelinePanel({
                     <StatusBadge tone={reviewTones[event.review_state || 'needs_review']}>
                       {event.review_state || 'needs_review'}
                     </StatusBadge>
-                    <span className="text-xs text-slate-400">{formatDate(event.date)}</span>
+                    <span className="text-xs font-medium text-slate-600">{formatDate(event.date)}</span>
                   </div>
 
                   {canWrite ? (
@@ -307,7 +307,7 @@ export default function KnowledgeTimelinePanel({
                               event_type: e.target.value as KnowledgeTimelineEventType,
                             })
                           }
-                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                         >
                           {KNOWLEDGE_TIMELINE_EVENT_TYPES.map((type) => (
                             <option key={type} value={type}>
@@ -319,13 +319,13 @@ export default function KnowledgeTimelinePanel({
                           value={event.title}
                           onChange={(e) => updateEvent(event.id, { title: e.target.value })}
                           placeholder="What happened?"
-                          className="min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                          className="min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                         />
                         <input
                           value={event.date || ''}
                           onChange={(e) => updateEvent(event.id, { date: e.target.value })}
                           placeholder="YYYY-MM-DD"
-                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                         />
                       </div>
                       <textarea
@@ -333,38 +333,38 @@ export default function KnowledgeTimelinePanel({
                         onChange={(e) => updateEvent(event.id, { summary: e.target.value })}
                         rows={2}
                         placeholder="Why this event matters, what changed, or what still needs review."
-                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm leading-6"
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm leading-6 text-slate-900"
                       />
                       <div className="grid gap-2 md:grid-cols-3">
                         <input
                           value={event.thread_id || ''}
                           onChange={(e) => updateEvent(event.id, { thread_id: e.target.value })}
                           placeholder="thread id"
-                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                         />
                         <input
                           value={event.message_id || ''}
                           onChange={(e) => updateEvent(event.id, { message_id: e.target.value })}
                           placeholder="message id"
-                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                         />
                         <input
                           value={event.url || ''}
                           onChange={(e) => updateEvent(event.id, { url: e.target.value })}
                           placeholder="external url"
-                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                         />
                         <input
                           value={event.source_ref || ''}
                           onChange={(e) => updateEvent(event.id, { source_ref: e.target.value })}
                           placeholder="commit / evidence / source ref"
-                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                         />
                         <input
                           value={event.code_path || ''}
                           onChange={(e) => updateEvent(event.id, { code_path: e.target.value })}
                           placeholder="kernel path"
-                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                         />
                         <select
                           value={event.review_state || 'needs_review'}
@@ -373,7 +373,7 @@ export default function KnowledgeTimelinePanel({
                               review_state: e.target.value as KnowledgeTimelineEvent['review_state'],
                             })
                           }
-                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                         >
                           <option value="confirmed">confirmed</option>
                           <option value="needs_review">needs_review</option>
@@ -390,7 +390,7 @@ export default function KnowledgeTimelinePanel({
                     </div>
                   )}
 
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
                     {event.source_ref && <span className="font-mono">{event.source_ref}</span>}
                     {event.code_path && <span className="font-mono">{event.code_path}</span>}
                     {event.thread_id && (

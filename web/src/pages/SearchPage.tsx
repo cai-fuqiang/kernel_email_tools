@@ -424,7 +424,7 @@ export default function SearchPage() {
             Found <span className="font-semibold text-gray-900">{result.total}</span> results
             {selectedChannel && (
               <span className="ml-2">
-                <span className="text-gray-400">in channel:</span>
+                <span className="text-gray-600">in channel:</span>
                 <span className="ml-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-xs font-medium">
                   {selectedChannel}
                 </span>
@@ -432,7 +432,7 @@ export default function SearchPage() {
             )}
             {selectedTags.length > 0 && (
               <span className="ml-2">
-                <span className="text-gray-400">in tags:</span>
+                <span className="text-gray-600">in tags:</span>
                 {selectedTags.map((t) => (
                   <span
                     key={t}

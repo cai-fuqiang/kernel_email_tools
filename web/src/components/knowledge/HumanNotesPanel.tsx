@@ -38,7 +38,7 @@ export default function HumanNotesPanel({
             value={annotationBody}
             onChange={(e) => onAnnotationBodyChange(e.target.value)}
             placeholder="Add a reviewer note, correction, or follow-up question..."
-            className="min-h-[96px] w-full rounded-lg border border-gray-300 px-3 py-2 text-sm leading-6"
+            className="min-h-[96px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm leading-6 text-slate-900"
           />
           <div className="mt-3 flex justify-end">
             <button

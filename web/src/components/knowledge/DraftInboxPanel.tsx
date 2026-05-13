@@ -56,7 +56,7 @@ export default function DraftInboxPanel({
             <Inbox className="h-4 w-4 text-amber-600" />
             Draft Inbox
           </div>
-          <p className="mt-1 text-xs leading-5 text-gray-500">
+          <p className="mt-1 text-xs leading-5 text-gray-600">
             Ask/Search drafts waiting for human review.
           </p>
         </div>
@@ -92,9 +92,9 @@ export default function DraftInboxPanel({
       )}
       <div className="mt-3 space-y-2">
         {draftLoading ? (
-          <div className="text-xs text-gray-500">Loading drafts...</div>
+          <div className="text-xs text-gray-600">Loading drafts...</div>
         ) : drafts.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-amber-200 bg-white/70 px-3 py-3 text-xs leading-5 text-gray-500">
+          <div className="rounded-lg border border-dashed border-amber-200 bg-white/70 px-3 py-3 text-xs leading-5 text-gray-600">
             No drafts for this filter. Ask or Search can generate candidates here.
           </div>
         ) : (
@@ -156,7 +156,7 @@ export default function DraftInboxPanel({
                       {draft.source_type}
                     </span>
                   </div>
-                  <div className="mt-1 text-[11px] text-gray-400">
+                  <div className="mt-1 text-[11px] font-medium text-gray-600">
                     Created {formatDateTime(draft.created_at)}
                   </div>
                 </button>
@@ -164,7 +164,7 @@ export default function DraftInboxPanel({
                   <button
                     type="button"
                     onClick={() => onOpenDraft(draft)}
-                    className="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white"
+                    className="rounded-md bg-sky-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-sky-500"
                   >
                     Review
                   </button>

@@ -71,7 +71,7 @@ export default function EntityDetailHeader({
                 <select
                   value={mergeTargetId}
                   onChange={(e) => onMergeTargetChange(e.target.value)}
-                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs"
+                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs text-slate-900"
                 >
                   <option value="">Choose target...</option>
                   {relationTargets.map((entity) => (
@@ -84,7 +84,7 @@ export default function EntityDetailHeader({
                   type="button"
                   onClick={onMerge}
                   disabled={saving || !mergeTargetId}
-                  className="mt-2 w-full rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                  className="mt-2 w-full rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500 disabled:opacity-50"
                 >
                   Merge into target
                 </button>

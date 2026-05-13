@@ -161,7 +161,7 @@ export default function EntityListPanel({
               Full-text
             </button>
             {typeof total === 'number' && (
-              <span className="ml-auto text-[10px] text-slate-400">
+              <span className="ml-auto text-[10px] font-medium text-slate-600">
                 {entities.length} / {total}
               </span>
             )}
@@ -172,23 +172,23 @@ export default function EntityListPanel({
           <div className="mt-3 grid grid-cols-4 gap-1.5">
             <div className="rounded-md bg-gray-50 px-2 py-1.5 text-center">
               <div className="text-xs font-semibold text-gray-800">{stats.total_entities}</div>
-              <div className="text-[9px] text-gray-400">entities</div>
+              <div className="text-[9px] font-medium text-gray-600">entities</div>
             </div>
             <div className="rounded-md bg-gray-50 px-2 py-1.5 text-center">
               <div className="text-xs font-semibold text-gray-800">{stats.total_relations}</div>
-              <div className="text-[9px] text-gray-400">relations</div>
+              <div className="text-[9px] font-medium text-gray-600">relations</div>
             </div>
             <div className="rounded-md bg-gray-50 px-2 py-1.5 text-center">
               <div className="text-xs font-semibold text-gray-800">
                 {Object.keys(stats.by_type).length}
               </div>
-              <div className="text-[9px] text-gray-400">types</div>
+              <div className="text-[9px] font-medium text-gray-600">types</div>
             </div>
             <div className="rounded-md bg-gray-50 px-2 py-1.5 text-center">
               <div className="text-xs font-semibold text-gray-800">
                 {stats.by_status.active || 0}
               </div>
-              <div className="text-[9px] text-gray-400">active</div>
+              <div className="text-[9px] font-medium text-gray-600">active</div>
             </div>
           </div>
         )}
@@ -220,12 +220,12 @@ export default function EntityListPanel({
                 onNewEntityChange({ ...newEntity, canonical_name: e.target.value })
               }
               placeholder="Name, for example O(1) scheduler"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900"
             />
             <select
               value={newEntity.entity_type}
               onChange={(e) => onNewEntityChange({ ...newEntity, entity_type: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900"
             >
               {ENTITY_TYPES.map((type) => (
                 <option key={type} value={type}>
@@ -237,13 +237,13 @@ export default function EntityListPanel({
               value={newEntity.aliases}
               onChange={(e) => onNewEntityChange({ ...newEntity, aliases: e.target.value })}
               placeholder="Aliases, comma-separated"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900"
             />
             <textarea
               value={newEntity.summary}
               onChange={(e) => onNewEntityChange({ ...newEntity, summary: e.target.value })}
               placeholder="One or two sentences that explain why this matters"
-              className="min-h-[76px] w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="min-h-[76px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900"
             />
             <button
               onClick={onCreateEntity}
@@ -291,13 +291,13 @@ export default function EntityListPanel({
                   {entity.canonical_name}
                 </div>
                 {entity.summary ? (
-                  <div className="mt-1 line-clamp-2 text-xs leading-5 text-gray-500">
+                  <div className="mt-1 line-clamp-2 text-xs leading-5 text-gray-600">
                     {entity.summary}
                   </div>
                 ) : (
-                  <div className="mt-1 text-xs text-gray-400">No summary yet</div>
+                  <div className="mt-1 text-xs text-gray-600">No summary yet</div>
                 )}
-                <div className="mt-2 flex items-center justify-between text-[11px] text-gray-400">
+                <div className="mt-2 flex items-center justify-between text-[11px] font-medium text-gray-600">
                   <span>
                     {count ? `${count} source${count > 1 ? 's' : ''}` : 'No source evidence'}
                   </span>

@@ -103,7 +103,7 @@ export default function EntityRelationsPanel({
           onChange={(e) => onRelationDraftChange(relation.relation_id, e.target.value)}
           disabled={!canWrite}
           placeholder="No relationship note yet."
-          className="mt-2 min-h-[64px] w-full rounded-lg border border-gray-300 px-3 py-2 text-sm leading-6"
+          className="mt-2 min-h-[64px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm leading-6 text-slate-900"
         />
         {canWrite && (
           <div className="mt-2 flex justify-end">
@@ -111,7 +111,7 @@ export default function EntityRelationsPanel({
               type="button"
               onClick={() => onSaveRelationDescription(relation)}
               disabled={saving}
-              className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+              className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500 disabled:opacity-50"
             >
               Save note
             </button>
@@ -126,12 +126,12 @@ export default function EntityRelationsPanel({
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <h2 className="text-lg font-semibold text-gray-950">Local knowledge graph</h2>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-600">
             Explore this item's immediate neighborhood, then switch to List to edit the reviewed relations.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          <div className="text-sm text-gray-400">
+          <div className="text-sm font-medium text-gray-600">
             {relationLoading ? 'Loading...' : `${relationCount} relations`}
           </div>
           <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
@@ -141,7 +141,7 @@ export default function EntityRelationsPanel({
               className={`rounded-md px-3 py-1.5 text-xs font-medium ${
                 viewMode === 'list'
                   ? 'bg-white text-gray-950 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
+                  : 'text-gray-700 hover:text-gray-900'
               }`}
             >
               List
@@ -152,7 +152,7 @@ export default function EntityRelationsPanel({
               className={`rounded-md px-3 py-1.5 text-xs font-medium ${
                 viewMode === 'graph'
                   ? 'bg-white text-gray-950 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
+                  : 'text-gray-700 hover:text-gray-900'
               }`}
             >
               Graph
@@ -164,7 +164,7 @@ export default function EntityRelationsPanel({
       {viewMode === 'graph' ? (
         <div className="mt-4 min-w-0">
           <div className="mb-3 flex flex-wrap items-center gap-3">
-            <span className="text-xs font-medium text-gray-500">Neighborhood depth:</span>
+            <span className="text-xs font-medium text-gray-600">Neighborhood depth:</span>
             {[1, 2, 3].map((d) => (
               <button
                 key={d}
@@ -179,14 +179,14 @@ export default function EntityRelationsPanel({
                 {d} hop{d > 1 ? 's' : ''}
               </button>
             ))}
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-gray-600">
               Click a node to open that knowledge item.
             </span>
           </div>
           {relationCount === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-10 text-center">
               <div className="text-sm font-semibold text-gray-900">No graph relations yet</div>
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-500">
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-600">
                 A useful graph starts with explicit relationships. Add a relation in List view, then return here to see the local map.
               </p>
               <button
@@ -198,13 +198,13 @@ export default function EntityRelationsPanel({
               </button>
             </div>
           ) : graphLoading ? (
-            <div className="flex h-[520px] items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-500">
+            <div className="flex h-[520px] items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-600">
               Loading graph...
             </div>
           ) : graphData && graphData.edges.length > 0 ? (
             <Suspense
               fallback={
-                <div className="flex h-[520px] items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-500">
+                <div className="flex h-[520px] items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-600">
                   Loading graph view...
                 </div>
               }
@@ -217,7 +217,7 @@ export default function EntityRelationsPanel({
               />
             </Suspense>
           ) : (
-            <div className="flex h-[200px] items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-500">
+            <div className="flex h-[200px] items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-600">
               No graph data available for the selected depth.
             </div>
           )}
@@ -227,7 +227,7 @@ export default function EntityRelationsPanel({
           {canWrite && (
             <div className="mt-4 min-w-0 rounded-xl border border-gray-200 bg-gray-50 p-4">
               <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-gray-600">
-                <span className="font-semibold uppercase tracking-wide text-[10px] text-gray-500">
+                  <span className="font-semibold uppercase tracking-wide text-[10px] text-gray-600">
                   Direction
                 </span>
                 <button
@@ -238,7 +238,7 @@ export default function EntityRelationsPanel({
                   className={`rounded-full border px-2 py-0.5 ${
                     (relationForm.direction ?? 'outgoing') === 'outgoing'
                       ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
-                      : 'border-gray-300 text-gray-500 hover:bg-gray-100'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-100'
                   }`}
                 >
                   This → Target
@@ -251,12 +251,12 @@ export default function EntityRelationsPanel({
                   className={`rounded-full border px-2 py-0.5 ${
                     relationForm.direction === 'incoming'
                       ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
-                      : 'border-gray-300 text-gray-500 hover:bg-gray-100'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-100'
                   }`}
                 >
                   Target → This
                 </button>
-                <span className="text-[10px] text-gray-400 md:ml-auto">
+                <span className="text-[10px] font-medium text-gray-600 md:ml-auto">
                   {(relationForm.direction ?? 'outgoing') === 'outgoing'
                     ? 'Add an outgoing relation'
                     : 'Add an incoming relation'}
@@ -268,7 +268,7 @@ export default function EntityRelationsPanel({
                   onChange={(e) =>
                     onRelationFormChange({ ...relationForm, relation_type: e.target.value })
                   }
-                  className="min-w-0 rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  className="min-w-0 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900"
                 >
                   {RELATION_TYPES.map((type) => (
                     <option key={type} value={type}>
@@ -281,7 +281,7 @@ export default function EntityRelationsPanel({
                   onChange={(e) =>
                     onRelationFormChange({ ...relationForm, target_entity_id: e.target.value })
                   }
-                  className="min-w-0 rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  className="min-w-0 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900"
                 >
                   <option value="">Choose related knowledge...</option>
                   {relationTargets.map((entity) => (
@@ -297,7 +297,7 @@ export default function EntityRelationsPanel({
                   onRelationFormChange({ ...relationForm, description: e.target.value })
                 }
                 placeholder="Explain the relationship, for example: CFS superseded the O(1) scheduler in the 2.6 era."
-                className="mt-3 min-h-[72px] w-full rounded-lg border border-gray-300 px-3 py-2 text-sm leading-6"
+                className="mt-3 min-h-[72px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm leading-6 text-slate-900"
               />
               <div className="mt-3 flex justify-end">
                 <button
@@ -316,7 +316,7 @@ export default function EntityRelationsPanel({
               <div className="text-sm font-semibold text-gray-900">This item points to</div>
               <div className="mt-2 space-y-2">
                 {relations.outgoing.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-5 text-sm text-gray-500">
+                  <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-5 text-sm text-gray-600">
                     No outgoing relations yet.
                   </div>
                 ) : (
@@ -331,7 +331,7 @@ export default function EntityRelationsPanel({
               </div>
               <div className="mt-2 space-y-2">
                 {relations.incoming.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-5 text-sm text-gray-500">
+                  <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-5 text-sm text-gray-600">
                     No incoming relations yet.
                   </div>
                 ) : (

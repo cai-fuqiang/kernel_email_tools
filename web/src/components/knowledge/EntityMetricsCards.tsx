@@ -23,41 +23,41 @@ export default function EntityMetricsCards({
   return (
     <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
       <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <div className="text-xs font-medium uppercase tracking-wide text-gray-400">Sources</div>
+        <div className="text-xs font-medium uppercase tracking-wide text-gray-600">Sources</div>
         <div className="mt-2 text-2xl font-semibold text-gray-950">{evidenceCount}</div>
-        <div className="mt-1 text-xs text-gray-500">linked emails or threads</div>
+        <div className="mt-1 text-xs text-gray-600">linked emails or threads</div>
       </div>
       <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <div className="text-xs font-medium uppercase tracking-wide text-gray-400">Notes</div>
+        <div className="text-xs font-medium uppercase tracking-wide text-gray-600">Notes</div>
         <div className="mt-2 text-2xl font-semibold text-gray-950">{annotationCount}</div>
-        <div className="mt-1 text-xs text-gray-500">human review comments</div>
+        <div className="mt-1 text-xs text-gray-600">human review comments</div>
       </div>
       <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <div className="text-xs font-medium uppercase tracking-wide text-gray-400">Relations</div>
+        <div className="text-xs font-medium uppercase tracking-wide text-gray-600">Relations</div>
         <div className="mt-2 text-2xl font-semibold text-gray-950">{relationCount}</div>
-        <div className="mt-1 text-xs text-gray-500">linked knowledge items</div>
+        <div className="mt-1 text-xs text-gray-600">linked knowledge items</div>
       </div>
       <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <div className="text-xs font-medium uppercase tracking-wide text-gray-400">Timeline</div>
+        <div className="text-xs font-medium uppercase tracking-wide text-gray-600">Timeline</div>
         <div className="mt-2 text-2xl font-semibold text-gray-950">{timelineCount}</div>
-        <div className="mt-1 text-xs text-gray-500">curated topic events</div>
+        <div className="mt-1 text-xs text-gray-600">curated topic events</div>
       </div>
       <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <div className="text-xs font-medium uppercase tracking-wide text-gray-400">Type</div>
+        <div className="text-xs font-medium uppercase tracking-wide text-gray-600">Type</div>
         <div className="mt-2 text-sm font-semibold capitalize text-gray-950">
           {readableType(selectedEntity.entity_type)}
         </div>
-        <div className="mt-1 text-xs text-gray-500">what this item represents</div>
+        <div className="mt-1 text-xs text-gray-600">what this item represents</div>
       </div>
       <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <div className="text-xs font-medium uppercase tracking-wide text-gray-400">
+        <div className="text-xs font-medium uppercase tracking-wide text-gray-600">
           Review state
         </div>
         <select
           value={selectedEntity.status}
           onChange={(e) => onStatusChange(e.target.value)}
           disabled={!canWrite}
-          className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900"
         >
           <option value="draft">draft</option>
           <option value="active">active</option>
