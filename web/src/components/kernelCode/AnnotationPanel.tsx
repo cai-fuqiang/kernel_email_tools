@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type RefObject } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Maximize2, X } from 'lucide-react';
+import { LocateFixed, Maximize2, X } from 'lucide-react';
 import {
   approveAnnotationPublication,
   createCodeAnnotation,
@@ -17,38 +17,12 @@ import { useAuth } from '../../auth';
 import { showToast } from '../Toast';
 import ConfirmModal from '../ConfirmModal';
 import InspectorDetailModal from './InspectorDetailModal';
+import { getAnnotationLineRange, rankRollerItems } from './annotationSync';
 
 type PendingAction =
   | { kind: 'approve'; annotationId: string }
   | { kind: 'reject'; annotationId: string }
   | { kind: 'delete'; annotationId: string; isReply: boolean };
-
-function numericField(source: Record<string, unknown> | undefined, key: string): number {
-  const value = source?.[key];
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return 0;
-}
-
-function getAnnotationLineRange(annotation: CodeAnnotation): { start: number; end: number } {
-  const codeTarget = annotation.code_target as Record<string, unknown> | undefined;
-  const metaCodeTarget = annotation.meta?.code_target as Record<string, unknown> | undefined;
-  const start =
-    annotation.start_line ||
-    numericField(annotation.anchor, 'start_line') ||
-    numericField(codeTarget, 'start_line') ||
-    numericField(metaCodeTarget, 'start_line');
-  const end =
-    annotation.end_line ||
-    numericField(annotation.anchor, 'end_line') ||
-    numericField(codeTarget, 'end_line') ||
-    numericField(metaCodeTarget, 'end_line') ||
-    start;
-  return { start, end: end > 0 ? Math.max(start, end) : start };
-}
 
 function formatAnnotationLineRange(annotation: CodeAnnotation): string {
   const { start, end } = getAnnotationLineRange(annotation);
@@ -63,6 +37,10 @@ interface AnnotationPanelProps {
   filePath: string;
   onAnnotationCreated: () => void;
   hideHeader?: boolean;
+  activeAnnotationId?: string | null;
+  pinnedAnnotationId?: string | null;
+  onJumpToAnnotation?: (annotation: CodeAnnotation, options?: { pin?: boolean }) => void;
+  rollerContainerRef?: RefObject<HTMLDivElement>;
 }
 
 export default function AnnotationPanel({
@@ -72,6 +50,10 @@ export default function AnnotationPanel({
   filePath,
   onAnnotationCreated,
   hideHeader = false,
+  activeAnnotationId = null,
+  pinnedAnnotationId = null,
+  onJumpToAnnotation,
+  rollerContainerRef,
 }: AnnotationPanelProps) {
   const { canWrite, currentUser, isAdmin } = useAuth();
   const [body, setBody] = useState('');
@@ -83,6 +65,14 @@ export default function AnnotationPanel({
   const [previewStartEditing, setPreviewStartEditing] = useState(false);
 
   const rootAnnotations = useMemo(() => annotations.filter(a => !a.in_reply_to), [annotations]);
+  const pinnedAnnotation = useMemo(
+    () => rootAnnotations.find((annotation) => annotation.annotation_id === pinnedAnnotationId) || null,
+    [pinnedAnnotationId, rootAnnotations],
+  );
+  const rollerItems = useMemo(
+    () => rankRollerItems(rootAnnotations, activeAnnotationId),
+    [activeAnnotationId, rootAnnotations],
+  );
   const replyCounts = useMemo(() => {
     const acc: Record<string, number> = {};
     annotations.forEach(a => {
@@ -128,13 +118,6 @@ export default function AnnotationPanel({
 
   const lineInfo = selectedLines.size > 0
     ? `L${Array.from(selectedLines).sort((a, b) => a - b).join(', ')}` : '';
-
-  const relevant = annotations.filter(a => {
-    if (a.in_reply_to) return true;
-    if (selectedLines.size === 0) return true;
-    const { start, end } = getAnnotationLineRange(a);
-    return Array.from(selectedLines).some(l => start <= l && end >= l);
-  });
 
   const PublishButton = ({ a }: { a: CodeAnnotation }) => {
     if (isAdmin && a.publish_status === 'pending') return (
@@ -212,6 +195,185 @@ export default function AnnotationPanel({
     },
   }[pendingAction.kind];
 
+  const statusColors: Record<string, string> = {
+    pending: 'bg-amber-100 text-amber-800',
+    approved: 'bg-emerald-100 text-emerald-800',
+    rejected: 'bg-rose-100 text-rose-800',
+  };
+
+  const renderJumpButton = (annotation: CodeAnnotation) => {
+    if (!onJumpToAnnotation) return null;
+    const lineRange = formatAnnotationLineRange(annotation);
+    const label = `Jump to ${lineRange}`;
+    return (
+      <button
+        type="button"
+        onClick={() => onJumpToAnnotation(annotation, { pin: true })}
+        className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-white hover:text-sky-700"
+        aria-label={label}
+        title={label}
+      >
+        <LocateFixed className="h-3.5 w-3.5" />
+      </button>
+    );
+  };
+
+  const rollerStyleFor = (position: number, active: boolean) => {
+    const clamped = Math.max(-4, Math.min(4, position));
+    const distance = Math.min(Math.abs(position), 4);
+    const scale = active ? 1 : Math.max(0.9, 1 - distance * 0.045);
+    const opacity = active ? 1 : Math.max(0.48, 1 - distance * 0.16);
+    return {
+      opacity,
+      transform: `translateZ(${-distance * 24}px) rotateX(${-clamped * 2.5}deg) scale(${scale})`,
+      transformStyle: 'preserve-3d',
+    } as const;
+  };
+
+  const rootCardClasses = ({
+    active = false,
+    pinned = false,
+  }: {
+    active?: boolean;
+    pinned?: boolean;
+  }) =>
+    [
+      'bg-white border rounded-lg overflow-hidden transition-all duration-200',
+      pinned
+        ? 'border-sky-300 shadow-md ring-1 ring-sky-100'
+        : active
+          ? 'border-sky-300 shadow-md ring-1 ring-sky-100'
+          : 'border-slate-300 shadow-sm',
+    ].join(' ');
+
+  const renderReplyCard = (reply: CodeAnnotation) => (
+    <div key={reply.annotation_id} className="ml-4 bg-white border border-slate-300 border-l-4 border-l-green-500 rounded-lg overflow-hidden shadow-sm">
+      <div className="px-3 py-2 bg-slate-100 flex items-center justify-between border-b border-slate-300">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-green-700 bg-green-50 px-1.5 py-0.5 rounded">Reply</span>
+          <span className="text-xs text-slate-600">{formatAnnotationLineRange(reply)}</span>
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${statusColors[reply.publish_status] || 'bg-slate-200 text-slate-900'}`}>{reply.publish_status}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {renderJumpButton(reply)}
+          <PublishButton a={reply} />
+          {canManage(reply) && (
+            <button
+              type="button"
+              onClick={() => {
+                setPreviewAnnotation(reply);
+                setPreviewStartEditing(true);
+              }}
+              className="text-[10px] text-slate-600 hover:text-slate-950"
+            >
+              Edit
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setPreviewAnnotation(reply);
+              setPreviewStartEditing(false);
+            }}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-white hover:text-slate-900"
+            aria-label="Open reply detail"
+            title="Open reply detail"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
+          {canManage(reply) && (
+            <button onClick={() => setPendingAction({ kind: 'delete', annotationId: reply.annotation_id, isReply: true })}
+              className="text-[10px] text-slate-600 hover:text-red-500">Delete</button>
+          )}
+        </div>
+      </div>
+      <div className="px-3 py-2">
+        <div className="markdown-content text-xs">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{reply.body}</ReactMarkdown>
+        </div>
+        <div className="mt-2">
+          <EmailTagEditor targetType="annotation" targetRef={reply.annotation_id} compact />
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderRootCard = (
+    root: CodeAnnotation,
+    options: { active?: boolean; pinned?: boolean } = {},
+  ) => {
+    const isExpanded = expandedIds.has(root.annotation_id);
+    const replies = annotations.filter(a => a.in_reply_to === root.annotation_id);
+    const replyCount = replyCounts[root.annotation_id] || 0;
+    const sc = statusColors[root.publish_status] || 'bg-slate-200 text-slate-900';
+
+    return (
+      <div key={root.annotation_id} className="space-y-1">
+        <div className={rootCardClasses(options)}>
+          <div className={`px-3 py-2 flex items-center justify-between border-b border-slate-300 ${options.active || options.pinned ? 'bg-sky-50' : 'bg-slate-100'}`}>
+            <div className="flex items-center gap-2">
+              {replyCount > 0 && (
+                <button onClick={() => toggleExpand(root.annotation_id)} className="text-[10px] text-slate-600 w-4">
+                  {isExpanded ? '▼' : '▶'}
+                </button>
+              )}
+              <span className="text-xs text-slate-600">{formatAnnotationLineRange(root)}</span>
+              {replyCount > 0 && <span className="text-[10px] text-slate-600">({replyCount})</span>}
+              <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${sc}`}>{root.publish_status}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {renderJumpButton(root)}
+              <PublishButton a={root} />
+              {canManage(root) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPreviewAnnotation(root);
+                    setPreviewStartEditing(true);
+                  }}
+                  className="text-[10px] text-slate-600 hover:text-slate-950"
+                >
+                  Edit
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setPreviewAnnotation(root);
+                  setPreviewStartEditing(false);
+                }}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-white hover:text-slate-900"
+                aria-label="Open annotation detail"
+                title="Open annotation detail"
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+              </button>
+              {canManage(root) && (
+                <button onClick={() => setPendingAction({ kind: 'delete', annotationId: root.annotation_id, isReply: false })}
+                  className="text-[10px] text-slate-600 hover:text-red-500">Delete</button>
+              )}
+            </div>
+          </div>
+          <div className="px-3 py-2">
+            <div className="markdown-content text-xs">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{root.body}</ReactMarkdown>
+            </div>
+            {root.publish_review_comment && (
+              <div className="mt-2 rounded border border-slate-300 bg-slate-100 px-2 py-1 text-[10px] text-slate-700">
+                Review note: {root.publish_review_comment}
+              </div>
+            )}
+            <div className="mt-2">
+              <EmailTagEditor targetType="annotation" targetRef={root.annotation_id} compact />
+            </div>
+          </div>
+        </div>
+
+        {isExpanded && replies.map(reply => renderReplyCard(reply))}
+      </div>
+    );
+  };
+
   return (
     <>
     <div className="flex w-full flex-col overflow-hidden bg-slate-100">
@@ -278,138 +440,43 @@ export default function AnnotationPanel({
         </div>
       )}
 
-      <div className="p-2">
-        {relevant.length === 0 ? (
+      <div ref={rollerContainerRef} className="p-2">
+        {pinnedAnnotation && (
+          <div className="sticky top-0 z-20 mb-3 rounded-lg border border-sky-200 bg-sky-50/95 p-2 shadow-sm backdrop-blur">
+            <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-800">Pinned</span>
+              <span className="text-[10px] font-medium text-sky-700">{formatAnnotationLineRange(pinnedAnnotation)}</span>
+            </div>
+            {renderRootCard(pinnedAnnotation, {
+              active: pinnedAnnotation.annotation_id === activeAnnotationId,
+              pinned: true,
+            })}
+          </div>
+        )}
+
+        {!pinnedAnnotation && selectedLines.size > 0 && (
+          <div className="sticky top-0 z-20 mb-3 rounded-lg border border-dashed border-slate-300 bg-white/95 px-3 py-2 text-xs text-slate-600 shadow-sm backdrop-blur">
+            Selected {lineInfo}; choose an annotation to pin it here.
+          </div>
+        )}
+
+        {rollerItems.length === 0 ? (
           <p className="text-xs text-slate-600 text-center py-8">
             {selectedLines.size > 0 ? 'No annotations on selected lines' : 'Click a line number to add an annotation'}
           </p>
         ) : (
-          <div className="space-y-2">
-            {rootAnnotations.filter(a => relevant.includes(a)).map(root => {
-              const isExpanded = expandedIds.has(root.annotation_id);
-              const replies = annotations.filter(a => a.in_reply_to === root.annotation_id);
-              const replyCount = replyCounts[root.annotation_id] || 0;
-              const statusColors: Record<string, string> = {
-                pending: 'bg-amber-100 text-amber-800',
-                approved: 'bg-emerald-100 text-emerald-800',
-                rejected: 'bg-rose-100 text-rose-800',
-              };
-              const sc = statusColors[root.publish_status] || 'bg-slate-200 text-slate-900';
-
-              return (
-                <div key={root.annotation_id} className="space-y-1">
-                  <div className="bg-white border border-slate-300 rounded-lg overflow-hidden shadow-sm">
-                    <div className="px-3 py-2 bg-slate-100 flex items-center justify-between border-b border-slate-300">
-                      <div className="flex items-center gap-2">
-                        {replyCount > 0 && (
-                          <button onClick={() => toggleExpand(root.annotation_id)} className="text-[10px] text-slate-600 w-4">
-                            {isExpanded ? '▼' : '▶'}
-                          </button>
-                        )}
-                        <span className="text-xs text-slate-600">{formatAnnotationLineRange(root)}</span>
-                        {replyCount > 0 && <span className="text-[10px] text-slate-600">({replyCount})</span>}
-                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${sc}`}>{root.publish_status}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <PublishButton a={root} />
-                        {canManage(root) && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPreviewAnnotation(root);
-                              setPreviewStartEditing(true);
-                            }}
-                            className="text-[10px] text-slate-600 hover:text-slate-950"
-                          >
-                            Edit
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewAnnotation(root);
-                            setPreviewStartEditing(false);
-                          }}
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-white hover:text-slate-900"
-                          aria-label="Open annotation detail"
-                          title="Open annotation detail"
-                        >
-                          <Maximize2 className="h-3.5 w-3.5" />
-                        </button>
-                        {canManage(root) && (
-                          <button onClick={() => setPendingAction({ kind: 'delete', annotationId: root.annotation_id, isReply: false })}
-                            className="text-[10px] text-slate-600 hover:text-red-500">Delete</button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="px-3 py-2">
-                      <div className="markdown-content text-xs">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{root.body}</ReactMarkdown>
-                      </div>
-                      {root.publish_review_comment && (
-                        <div className="mt-2 rounded border border-slate-300 bg-slate-100 px-2 py-1 text-[10px] text-slate-700">
-                          Review note: {root.publish_review_comment}
-                        </div>
-                      )}
-                      <div className="mt-2">
-                        <EmailTagEditor targetType="annotation" targetRef={root.annotation_id} compact />
-                      </div>
-                    </div>
-                  </div>
-
-                  {isExpanded && replies.map(reply => (
-                    <div key={reply.annotation_id} className="ml-4 bg-white border border-slate-300 border-l-4 border-l-green-500 rounded-lg overflow-hidden shadow-sm">
-                      <div className="px-3 py-2 bg-slate-100 flex items-center justify-between border-b border-slate-300">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-green-700 bg-green-50 px-1.5 py-0.5 rounded">Reply</span>
-                          <span className="text-xs text-slate-600">{formatAnnotationLineRange(reply)}</span>
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${statusColors[reply.publish_status] || 'bg-slate-200 text-slate-900'}`}>{reply.publish_status}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <PublishButton a={reply} />
-                          {canManage(reply) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPreviewAnnotation(reply);
-                                setPreviewStartEditing(true);
-                              }}
-                              className="text-[10px] text-slate-600 hover:text-slate-950"
-                            >
-                              Edit
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPreviewAnnotation(reply);
-                              setPreviewStartEditing(false);
-                            }}
-                            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-white hover:text-slate-900"
-                            aria-label="Open reply detail"
-                            title="Open reply detail"
-                          >
-                            <Maximize2 className="h-3.5 w-3.5" />
-                          </button>
-                          {canManage(reply) && (
-                            <button onClick={() => setPendingAction({ kind: 'delete', annotationId: reply.annotation_id, isReply: true })}
-                              className="text-[10px] text-slate-600 hover:text-red-500">Delete</button>
-                          )}
-                        </div>
-                      </div>
-                      <div className="px-3 py-2">
-                        <div className="markdown-content text-xs">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{reply.body}</ReactMarkdown>
-                        </div>
-                        <div className="mt-2">
-                          <EmailTagEditor targetType="annotation" targetRef={reply.annotation_id} compact />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+          <div className="[perspective:900px]">
+            <div className="space-y-2 [transform-style:preserve-3d]">
+              {rollerItems.map(({ annotation, position, active }) => (
+                <div
+                  key={annotation.annotation_id}
+                  className="origin-center transition-all duration-200 ease-out"
+                  style={rollerStyleFor(position, active)}
+                >
+                  {renderRootCard(annotation, { active })}
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
         )}
       </div>

@@ -1832,10 +1832,7 @@ export default function KernelCodePage() {
                         </div>
                       </div>
 
-                      <div
-                        ref={annotationPanelRef}
-                        className="min-h-0 flex-1 space-y-3 overflow-y-scroll overscroll-contain px-4 py-4"
-                      >
+                      <div className="min-h-0 flex-1 space-y-3 overflow-y-scroll overscroll-contain px-4 py-4">
                         {inspectorView === 'overview' && (
                           <div className="space-y-3">
                             <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -1967,6 +1964,9 @@ export default function KernelCodePage() {
                                 filePath={currentPath}
                                 onAnnotationCreated={handleAnnotationCreated}
                                 hideHeader
+                                activeAnnotationId={activeAnnotation?.annotation_id || null}
+                                pinnedAnnotationId={pinnedAnnotation?.annotation_id || null}
+                                rollerContainerRef={annotationPanelRef}
                               />
                             </InspectorSection>
                           ) : (
