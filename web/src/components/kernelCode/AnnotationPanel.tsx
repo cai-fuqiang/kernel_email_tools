@@ -440,7 +440,7 @@ export default function AnnotationPanel({
         </div>
       )}
 
-      <div ref={rollerContainerRef} className="p-2">
+      <div className="p-2">
         {pinnedAnnotation && (
           <div className="sticky top-0 z-20 mb-3 rounded-lg border border-sky-200 bg-sky-50/95 p-2 shadow-sm backdrop-blur">
             <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
@@ -465,7 +465,7 @@ export default function AnnotationPanel({
             {selectedLines.size > 0 ? 'No annotations on selected lines' : 'Click a line number to add an annotation'}
           </p>
         ) : (
-          <div className="[perspective:900px]">
+          <section ref={rollerContainerRef} aria-label="Annotation roller" className="[perspective:900px]">
             <div className="space-y-2 [transform-style:preserve-3d]">
               {rollerItems.map(({ annotation, position, active }) => (
                 <div
@@ -477,7 +477,7 @@ export default function AnnotationPanel({
                 </div>
               ))}
             </div>
-          </div>
+          </section>
         )}
       </div>
     </div>
