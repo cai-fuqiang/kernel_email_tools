@@ -281,12 +281,12 @@ export default function AnnotationPanel({
   const rollerStyleFor = (position: number, active: boolean) => {
     const clamped = Math.max(-4, Math.min(4, position));
     const distance = Math.min(Math.abs(position), 4);
-    const scale = active ? 1.06 : Math.max(0.84, 0.96 - distance * 0.06);
+    const scale = active ? 1.03 : Math.max(0.9, 0.97 - distance * 0.045);
     const opacity = active ? 1 : Math.max(0.48, 1 - distance * 0.16);
     if (prefersReducedMotion) {
       return {
         opacity,
-        transform: active ? 'scale(1.02)' : 'none',
+        transform: active ? 'scale(1.01)' : 'none',
         transformStyle: 'flat',
       } as const;
     }
@@ -307,9 +307,9 @@ export default function AnnotationPanel({
     [
       'bg-white border rounded-lg overflow-hidden transition-all duration-200',
       pinned
-        ? 'border-sky-400 shadow-lg ring-2 ring-sky-200'
+        ? 'border-sky-400 shadow-md ring-1 ring-sky-200'
         : active
-          ? 'border-sky-400 shadow-xl ring-2 ring-sky-200'
+          ? 'border-sky-400 shadow-lg ring-1 ring-sky-200'
           : 'border-slate-300 shadow-sm',
     ].join(' ');
 
@@ -382,6 +382,11 @@ export default function AnnotationPanel({
         title={resolveAnnotationCardClickAction({ active: Boolean(options.active), pinned: Boolean(options.pinned) }) === 'jump'
           ? 'Click to jump to code. Double-click to pin.'
           : 'Click to focus this annotation. Double-click to pin.'}
+        onClickCapture={(event) => {
+          if (!onFocusAnnotation || options.active || options.pinned) return;
+          if (event.button !== 0 || event.detail > 1) return;
+          onFocusAnnotation(root);
+        }}
         onClick={(event) => {
           if ((!onJumpToAnnotation && !onFocusAnnotation) || shouldIgnoreAnnotationCardClick(event.target)) return;
           if (event.detail > 1) return;
@@ -592,7 +597,7 @@ export default function AnnotationPanel({
               if (annotation) onRollerCenteredAnnotationChange(annotation);
             }}
           >
-            <div className="space-y-2 py-[24vh] [transform-style:preserve-3d]">
+            <div className="space-y-2 py-[14vh] [transform-style:preserve-3d]">
               {rollerItems.map(({ annotation, position, active }) => (
                 <div
                   key={annotation.annotation_id}
