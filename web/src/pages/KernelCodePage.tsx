@@ -47,6 +47,7 @@ import AnnotationPanel from '../components/kernelCode/AnnotationPanel';
 import CodeHistoryPanel from '../components/kernelCode/CodeHistoryPanel';
 import KernelSymbolQuickPreviewPopover from '../components/kernelCode/KernelSymbolQuickPreviewPopover';
 import {
+  buildLineMarker,
   getAnnotationLineRange,
   pickActiveAnnotation,
   type SyncSource,
@@ -665,16 +666,6 @@ export default function KernelCodePage() {
       .slice(selectedRange.startLine - 1, selectedRange.endLine)
       .join('\n');
   }, [codeLines, selectedRange]);
-
-  const annotationCountByLine = useMemo(() => {
-    const counts = new Map<number, number>();
-    for (const annotation of annotations) {
-      for (let line = annotation.start_line; line <= annotation.end_line; line += 1) {
-        counts.set(line, (counts.get(line) || 0) + 1);
-      }
-    }
-    return counts;
-  }, [annotations]);
 
   const relatedAnnotations = useMemo(() => {
     if (selectedLines.size === 0) return annotations;
@@ -1727,22 +1718,54 @@ export default function KernelCodePage() {
                       {codeLines.map((line, index) => {
                         const lineNum = index + 1;
                         const isSelected = selectedLines.has(lineNum);
-                        const annotationCount = annotationCountByLine.get(lineNum) || 0;
+                        const marker = buildLineMarker({
+                          line: lineNum,
+                          annotations,
+                          selectedLines,
+                          activeAnnotationId,
+                        });
+                        const isActiveAnnotationLine = marker.active;
                         const linePicked = pickKernelSourceUrl(selectedVersion, currentPath, lineNum);
                         return (
                           <div
                             key={lineNum}
                             data-line={lineNum}
                             className={`group grid w-max grid-cols-[14px_52px_max-content_24px] border-b border-slate-200 px-3 ${
-                              isSelected ? 'bg-sky-50 border-l-2 border-l-sky-500' : 'hover:bg-slate-50'
+                              isSelected
+                                ? 'border-l-2 border-l-sky-500 bg-sky-50'
+                                : isActiveAnnotationLine
+                                  ? 'bg-indigo-50/70'
+                                  : 'hover:bg-slate-50'
                             }`}
                           >
-                            <div className="flex items-center justify-center">
-                              <span
-                                className={`h-1.5 w-1.5 rounded-full ${
-                                  annotationCount > 0 ? 'bg-sky-400' : isSelected ? 'bg-sky-400' : 'bg-transparent'
-                                }`}
-                              />
+                            <div className="flex items-stretch justify-center py-0.5">
+                              {marker.kind === 'range' ? (
+                                <span
+                                  className={`w-1 rounded-full ${
+                                    marker.selected
+                                      ? 'bg-sky-600'
+                                      : marker.active
+                                        ? 'bg-indigo-500'
+                                        : marker.annotationCount > 0
+                                          ? 'bg-sky-300'
+                                          : 'bg-transparent'
+                                  }`}
+                                  title={marker.annotationCount > 0 ? `${marker.annotationCount} annotation(s)` : undefined}
+                                />
+                              ) : (
+                                <span
+                                  className={`mt-2 h-1.5 w-1.5 rounded-full ${
+                                    marker.selected
+                                      ? 'bg-sky-600'
+                                      : marker.active
+                                        ? 'bg-indigo-500'
+                                        : marker.annotationCount > 0
+                                          ? 'bg-sky-400'
+                                          : 'bg-transparent'
+                                  }`}
+                                  title={marker.annotationCount > 0 ? `${marker.annotationCount} annotation(s)` : undefined}
+                                />
+                              )}
                             </div>
                             <button
                               type="button"
