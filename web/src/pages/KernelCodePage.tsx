@@ -357,6 +357,7 @@ export default function KernelCodePage() {
   const annotationPanelRef = useRef<HTMLDivElement | null>(null);
   const codeScrollRafRef = useRef<number | null>(null);
   const syncLockRef = useRef<{ source: SyncSource; until: number }>({ source: null, until: 0 });
+  const activeFileIdentityRef = useRef<string | null>(null);
   const popoverDragRef = useRef<{ startX: number; startY: number; popoverX: number; popoverY: number } | null>(null);
   const pathRequestIdRef = useRef(0);
   const navResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -989,11 +990,17 @@ export default function KernelCodePage() {
   }
 
   useEffect(() => {
-    if (!currentFile) return;
-    setActiveCenterLine(focusLine || 1);
+    const fileIdentity = currentFile ? `${currentFile.version}:${currentFile.path}` : null;
+    if (activeFileIdentityRef.current === fileIdentity) return;
+    activeFileIdentityRef.current = fileIdentity;
+    setActiveCenterLine(fileIdentity ? focusLine || 1 : null);
     setActiveAnnotationId(null);
     setPinnedAnnotationId(null);
     syncLockRef.current = { source: null, until: 0 };
+  }, [currentFile, focusLine]);
+
+  useEffect(() => {
+    if (!currentFile) return;
     window.requestAnimationFrame(() => {
       if (focusLine) {
         scrollToLine(focusLine, 'auto');
