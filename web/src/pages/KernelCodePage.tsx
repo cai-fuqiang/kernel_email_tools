@@ -44,8 +44,13 @@ import EmailTagEditor from '../components/EmailTagEditor';
 import ThreadDrawer from '../components/ThreadDrawer';
 import { showToast } from '../components/Toast';
 import AnnotationPanel from '../components/kernelCode/AnnotationPanel';
+import AnnotationQuickPreviewPopover from '../components/kernelCode/AnnotationQuickPreviewPopover';
 import CodeHistoryPanel from '../components/kernelCode/CodeHistoryPanel';
 import KernelSymbolQuickPreviewPopover from '../components/kernelCode/KernelSymbolQuickPreviewPopover';
+import {
+  annotationPreviewStartLine,
+  resolveAnnotationPreviewState,
+} from '../components/kernelCode/annotationPreview';
 import {
   buildLineMarker,
   getAnnotationLineRange,
@@ -66,6 +71,8 @@ import {
 import {
   elixirIdentUrl,
   isLikelyCIdentifier,
+  kernelAnnotationPreviewPath,
+  kernelCodePath,
   pickKernelSourceUrl,
   kernelSymbolPreviewPath,
 } from '../utils/externalLinks';
@@ -360,6 +367,11 @@ export default function KernelCodePage() {
     anchorRect: DOMRect;
     avoidRect: DOMRect | null;
   } | null>(null);
+  const [annotationQuickPreview, setAnnotationQuickPreview] = useState<{
+    annotation: CodeAnnotation;
+    anchorRect: DOMRect;
+    avoidRect: DOMRect | null;
+  } | null>(null);
 
   const codeViewRef = useRef<HTMLDivElement | null>(null);
   const annotationPanelRef = useRef<HTMLDivElement | null>(null);
@@ -399,6 +411,10 @@ export default function KernelCodePage() {
       codeScrollRafRef.current = null;
     }
   }, []);
+
+  useEffect(() => {
+    setAnnotationQuickPreview(null);
+  }, [currentPath, selectedVersion]);
 
   useEffect(() => {
     setVersionsLoading(true);
@@ -1482,6 +1498,49 @@ export default function KernelCodePage() {
     );
   }
 
+  function handlePreviewAnnotation(
+    annotation: CodeAnnotation,
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ) {
+    const anchorRect = event.currentTarget.getBoundingClientRect();
+    const avoidRect =
+      event.currentTarget.closest('[data-annotation-id]')?.getBoundingClientRect() ||
+      annotationPanelRef.current?.getBoundingClientRect() ||
+      null;
+    setAnnotationQuickPreview({
+      annotation,
+      anchorRect,
+      avoidRect,
+    });
+  }
+
+  function handleAnnotationPreviewOpenPage() {
+    if (!annotationQuickPreview) return;
+    navigate(
+      kernelAnnotationPreviewPath(
+        annotationQuickPreview.annotation.version || selectedVersion,
+        annotationQuickPreview.annotation.file_path || currentPath,
+        annotationQuickPreview.annotation.annotation_id,
+      ),
+    );
+  }
+
+  function handleAnnotationPreviewOpenInAtlas() {
+    if (!annotationQuickPreview) return;
+    const annotation = annotationQuickPreview.annotation;
+    navigate(
+      kernelCodePath(
+        annotation.version || selectedVersion,
+        annotation.file_path || currentPath,
+        annotationPreviewStartLine(annotation) || undefined,
+      ),
+    );
+  }
+
+  const annotationPreviewState = annotationQuickPreview
+    ? resolveAnnotationPreviewState(annotations, annotationQuickPreview.annotation.annotation_id)
+    : { target: null, replies: [], missing: false };
+
   return (
     <PageShell wide className="px-3 py-3 md:px-4">
       <SectionPanel
@@ -2101,6 +2160,7 @@ export default function KernelCodePage() {
                                 rollerContainerRef={annotationPanelRef}
                                 onJumpToAnnotation={handleJumpToAnnotation}
                                 onTogglePinAnnotation={handleToggleAnnotationPin}
+                                onPreviewAnnotation={handlePreviewAnnotation}
                                 onRollerCenteredAnnotationChange={handleRollerCenteredAnnotationChange}
                               />
                             </InspectorSection>
@@ -2367,6 +2427,17 @@ export default function KernelCodePage() {
         avoidRect={symbolQuickPreview?.avoidRect || null}
         onClose={() => setSymbolQuickPreview(null)}
         onOpenPage={handlePreviewOpenPage}
+      />
+
+      <AnnotationQuickPreviewPopover
+        isOpen={!!annotationQuickPreview}
+        annotation={annotationPreviewState.target || annotationQuickPreview?.annotation || null}
+        replies={annotationPreviewState.replies}
+        anchorRect={annotationQuickPreview?.anchorRect || null}
+        avoidRect={annotationQuickPreview?.avoidRect || null}
+        onClose={() => setAnnotationQuickPreview(null)}
+        onOpenFullPreview={handleAnnotationPreviewOpenPage}
+        onOpenInAtlas={handleAnnotationPreviewOpenInAtlas}
       />
 
       {threadOpen && (

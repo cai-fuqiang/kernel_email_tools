@@ -118,6 +118,32 @@ export function localKernelSymbolPreviewUrl(
 }
 
 /**
+ * 构建内置代码批注预览页 URL。
+ */
+export function kernelAnnotationPreviewPath(
+  version: string,
+  filePath: string,
+  annotationId: string,
+): string {
+  const params = new URLSearchParams();
+  params.set('v', version);
+  params.set('path', filePath);
+  params.set('annotation', annotationId);
+  return `/kernel-code/annotation-preview?${params.toString()}`;
+}
+
+/**
+ * 构建内置代码批注预览页的绝对链接。
+ */
+export function localKernelAnnotationPreviewUrl(
+  version: string,
+  filePath: string,
+  annotationId: string,
+): string {
+  return `/app${kernelAnnotationPreviewPath(version, filePath, annotationId)}`;
+}
+
+/**
  * 判断 Elixir 是否覆盖给定版本。Elixir 通常覆盖 v2.6.12 及以后的 release/rc tag，
  * 也支持 `latest` / `master`。对于过旧或异常 tag 我们 fallback 到 git.kernel.org。
  *

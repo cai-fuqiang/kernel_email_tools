@@ -16,6 +16,7 @@ const ManualSearchPage = lazy(() => import('./pages/ManualSearchPage'));
 const ManualAskPage = lazy(() => import('./pages/ManualAskPage'));
 const KernelCodePage = lazy(() => import('./pages/KernelCodePage'));
 const KernelSymbolPreviewPage = lazy(() => import('./pages/KernelSymbolPreviewPage'));
+const KernelAnnotationPreviewPage = lazy(() => import('./pages/KernelAnnotationPreviewPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
@@ -84,6 +85,7 @@ export default function App() {
                 <Route path="/manual/ask" element={<ManualAskPage />} />
                 <Route path="/kernel-code" element={<KernelCodePage />} />
                 <Route path="/kernel-code/preview" element={<KernelSymbolPreviewPage />} />
+                <Route path="/kernel-code/annotation-preview" element={<KernelAnnotationPreviewPage />} />
                 <Route path="/users" element={<UsersPage />} />
                 <Route path="/admin/annotation-review" element={<AnnotationReviewPage />} />
               </Route>

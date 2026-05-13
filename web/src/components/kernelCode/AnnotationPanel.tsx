@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type RefObject } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { LocateFixed, Maximize2, X } from 'lucide-react';
+import { LocateFixed, Maximize2, PanelRightOpen, X } from 'lucide-react';
 import {
   approveAnnotationPublication,
   createCodeAnnotation,
@@ -17,7 +17,12 @@ import { useAuth } from '../../auth';
 import { showToast } from '../Toast';
 import ConfirmModal from '../ConfirmModal';
 import InspectorDetailModal from './InspectorDetailModal';
-import { getAnnotationLineRange, pickRollerActiveAnnotationId, rankRollerItems } from './annotationSync';
+import { pickRollerActiveAnnotationId, rankRollerItems } from './annotationSync';
+import {
+  formatAnnotationPreviewLineRange,
+  handleAnnotationPreviewButtonClick,
+  shouldIgnoreAnnotationCardClick,
+} from './annotationPreview';
 
 type PendingAction =
   | { kind: 'approve'; annotationId: string }
@@ -25,16 +30,7 @@ type PendingAction =
   | { kind: 'delete'; annotationId: string; isReply: boolean };
 
 function formatAnnotationLineRange(annotation: CodeAnnotation): string {
-  const { start, end } = getAnnotationLineRange(annotation);
-  if (start <= 0) return 'Line unknown';
-  return `L${start}${end !== start ? `-${end}` : ''}`;
-}
-
-function shouldIgnoreAnnotationCardClick(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return true;
-  return Boolean(
-    target.closest('button, a, input, textarea, select, label, [contenteditable="true"], [data-no-annotation-select]'),
-  );
+  return formatAnnotationPreviewLineRange(annotation);
 }
 
 interface AnnotationPanelProps {
@@ -48,6 +44,7 @@ interface AnnotationPanelProps {
   pinnedAnnotationId?: string | null;
   onJumpToAnnotation?: (annotation: CodeAnnotation, options?: { pin?: boolean }) => void;
   onTogglePinAnnotation?: (annotation: CodeAnnotation) => void;
+  onPreviewAnnotation?: (annotation: CodeAnnotation, event: ReactMouseEvent<HTMLButtonElement>) => void;
   onRollerCenteredAnnotationChange?: (annotation: CodeAnnotation) => void;
   rollerContainerRef?: RefObject<HTMLDivElement>;
 }
@@ -63,6 +60,7 @@ export default function AnnotationPanel({
   pinnedAnnotationId = null,
   onJumpToAnnotation,
   onTogglePinAnnotation,
+  onPreviewAnnotation,
   onRollerCenteredAnnotationChange,
   rollerContainerRef,
 }: AnnotationPanelProps) {
@@ -75,6 +73,7 @@ export default function AnnotationPanel({
   const [previewAnnotation, setPreviewAnnotation] = useState<CodeAnnotation | null>(null);
   const [previewStartEditing, setPreviewStartEditing] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const cardClickTimerRef = useRef<number | null>(null);
 
   const rootAnnotations = useMemo(() => annotations.filter(a => !a.in_reply_to), [annotations]);
   const repliesByParentId = useMemo(() => {
@@ -125,6 +124,13 @@ export default function AnnotationPanel({
     updateMotionPreference();
     query.addEventListener('change', updateMotionPreference);
     return () => query.removeEventListener('change', updateMotionPreference);
+  }, []);
+
+  useEffect(() => () => {
+    if (cardClickTimerRef.current !== null) {
+      window.clearTimeout(cardClickTimerRef.current);
+      cardClickTimerRef.current = null;
+    }
   }, []);
 
   const handleCreate = async () => {
@@ -247,6 +253,28 @@ export default function AnnotationPanel({
     );
   };
 
+  const renderPreviewButton = (annotation: CodeAnnotation) => {
+    if (!onPreviewAnnotation) return null;
+    const lineRange = formatAnnotationLineRange(annotation);
+    const label = `Preview annotation for ${lineRange}`;
+    return (
+      <button
+        type="button"
+        data-no-annotation-select
+        onClick={(event) => {
+          handleAnnotationPreviewButtonClick(annotation, event, (selected) => {
+            onPreviewAnnotation(selected, event);
+          });
+        }}
+        className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-slate-300 text-slate-600 transition hover:bg-white hover:text-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-400"
+        aria-label={label}
+        title={label}
+      >
+        <PanelRightOpen className="h-3.5 w-3.5" />
+      </button>
+    );
+  };
+
   const rollerStyleFor = (position: number, active: boolean) => {
     const clamped = Math.max(-4, Math.min(4, position));
     const distance = Math.min(Math.abs(position), 4);
@@ -291,6 +319,7 @@ export default function AnnotationPanel({
           <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${statusColors[reply.publish_status] || 'bg-slate-200 text-slate-900'}`}>{reply.publish_status}</span>
         </div>
         <div className="flex items-center gap-2">
+          {renderPreviewButton(reply)}
           <PublishButton a={reply} />
           {canManage(reply) && (
             <button
@@ -349,12 +378,23 @@ export default function AnnotationPanel({
         className={`space-y-1 ${onJumpToAnnotation ? 'cursor-pointer' : ''}`}
         onClick={(event) => {
           if (!onJumpToAnnotation || shouldIgnoreAnnotationCardClick(event.target)) return;
-          onJumpToAnnotation(root, { pin: false });
+          if (event.detail > 1) return;
+          if (cardClickTimerRef.current !== null) {
+            window.clearTimeout(cardClickTimerRef.current);
+          }
+          cardClickTimerRef.current = window.setTimeout(() => {
+            cardClickTimerRef.current = null;
+            onJumpToAnnotation(root, { pin: false });
+          }, 180);
         }}
         onDoubleClick={(event) => {
           if (!onTogglePinAnnotation || shouldIgnoreAnnotationCardClick(event.target)) return;
           event.preventDefault();
           event.stopPropagation();
+          if (cardClickTimerRef.current !== null) {
+            window.clearTimeout(cardClickTimerRef.current);
+            cardClickTimerRef.current = null;
+          }
           onTogglePinAnnotation(root);
         }}
       >
@@ -371,6 +411,7 @@ export default function AnnotationPanel({
               <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${sc}`}>{root.publish_status}</span>
             </div>
             <div className="flex items-center gap-2" data-no-annotation-select>
+              {renderPreviewButton(root)}
               {renderJumpButton(root)}
               <PublishButton a={root} />
               {canManage(root) && (
@@ -600,7 +641,6 @@ function AnnotationDetailModal({
   const [draftBody, setDraftBody] = useState(annotation?.body || '');
   const [draftVisibility, setDraftVisibility] = useState<'public' | 'private'>(annotation?.visibility || 'private');
   const [saving, setSaving] = useState(false);
-  const annotationId = annotation?.annotation_id || '';
 
   useEffect(() => {
     if (!annotation) return;
@@ -608,7 +648,7 @@ function AnnotationDetailModal({
     setDraftVisibility(annotation.visibility);
     setIsEditing(initialEditing);
     setSaving(false);
-  }, [annotationId, initialEditing]);
+  }, [annotation, initialEditing]);
 
   if (!annotation) return null;
 
