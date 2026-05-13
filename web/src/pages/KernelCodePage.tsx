@@ -1025,7 +1025,10 @@ export default function KernelCodePage() {
       })[0]?.annotation || null;
     setSelectedLines(next);
     setPinnedAnnotationId(pinned?.annotation_id || null);
-    if (pinned) setActiveAnnotationId(pinned.annotation_id);
+    if (pinned) {
+      syncLockRef.current = { source: 'code', until: Date.now() + 350 };
+      setActiveAnnotationId(pinned.annotation_id);
+    }
     setSearchParams(
       { v: selectedVersion, path: currentPath, line: String(normalizedStart) },
       { replace: true },
@@ -1061,7 +1064,17 @@ export default function KernelCodePage() {
     const now = Date.now();
     const lock = syncLockRef.current;
     if (lock.source && lock.source !== 'code' && now < lock.until) return;
-    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const centeredTop =
+      container.scrollTop +
+      (targetRect.top - containerRect.top) -
+      (container.clientHeight / 2) +
+      (targetRect.height / 2);
+    container.scrollTo({
+      top: Math.max(0, centeredTop),
+      behavior: 'smooth',
+    });
   }, [activeAnnotationId]);
 
   function handleLineClick(line: number, event?: ReactMouseEvent<HTMLElement>) {

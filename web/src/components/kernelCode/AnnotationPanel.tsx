@@ -334,7 +334,7 @@ export default function AnnotationPanel({
     const sc = statusColors[root.publish_status] || 'bg-slate-200 text-slate-900';
 
     return (
-      <div key={root.annotation_id} className="space-y-1">
+      <div key={root.annotation_id} data-annotation-id={root.annotation_id} className="space-y-1">
         <div className={rootCardClasses(options)}>
           <div className={`px-3 py-2 flex items-center justify-between border-b border-slate-300 ${options.active || options.pinned ? 'bg-sky-50' : 'bg-slate-100'}`}>
             <div className="flex items-center gap-2">
