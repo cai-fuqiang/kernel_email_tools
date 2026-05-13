@@ -1,0 +1,120 @@
+<h2>方案 C 细化：知识文档阅读器</h2>
+<p class="subtitle">这张图是我基于现有组件整理出来的重排方案。核心目标是：中间像读一篇结构化知识文档，右边像“工作队列 + 证据抽屉”，而不是所有信息都挤成一条长滚动页。</p>
+
+<div class="mockup">
+  <div class="mockup-header">Desktop layout</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:14px;min-height:560px">
+      <div style="display:grid;gap:12px">
+        <div style="border:1px solid #d8dee8;background:#fff;border-radius:10px;padding:16px">
+          <div class="label">Document Header</div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-top:8px">
+            <div style="flex:1">
+              <div style="height:16px;width:92px;background:#dbeafe;border-radius:999px"></div>
+              <div style="height:30px;width:72%;background:#0f172a;border-radius:6px;margin-top:10px"></div>
+              <div style="height:18px;width:58%;background:#e2e8f0;border-radius:5px;margin-top:10px"></div>
+            </div>
+            <div style="display:grid;gap:8px;width:112px">
+              <div style="height:34px;background:#0f172a;border-radius:7px"></div>
+              <div style="height:34px;background:#e2e8f0;border-radius:7px"></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="border:1px solid #d8dee8;background:#fff;border-radius:10px;padding:16px">
+          <div class="label">Summary</div>
+          <div style="margin-top:10px;display:grid;gap:8px">
+            <div style="height:24px;background:#f1f5f9;border-radius:6px"></div>
+            <div style="height:24px;background:#f1f5f9;border-radius:6px"></div>
+            <div style="height:24px;background:#f1f5f9;border-radius:6px;width:82%"></div>
+          </div>
+        </div>
+
+        <div style="border:1px solid #d8dee8;background:#fff;border-radius:10px;padding:16px">
+          <div class="label">Main Explanation</div>
+          <div style="margin-top:10px;display:grid;gap:10px">
+            <div style="height:22px;background:#eef2f7;border-radius:6px;width:36%"></div>
+            <div style="height:26px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px"></div>
+            <div style="height:26px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px"></div>
+            <div style="height:26px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;width:88%"></div>
+            <div style="height:22px;background:#eef2f7;border-radius:6px;width:28%;margin-top:6px"></div>
+            <div style="height:26px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px"></div>
+            <div style="height:26px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;width:91%"></div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div style="border:1px solid #d8dee8;background:#fff;border-radius:10px;padding:16px">
+            <div class="label">Timeline Inline</div>
+            <div style="margin-top:10px;display:grid;gap:8px">
+              <div style="height:42px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px"></div>
+              <div style="height:42px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px"></div>
+              <div style="height:42px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px"></div>
+            </div>
+          </div>
+          <div style="border:1px solid #d8dee8;background:#fff;border-radius:10px;padding:16px">
+            <div class="label">Relations Snapshot</div>
+            <div style="margin-top:10px;display:grid;gap:8px">
+              <div style="height:34px;background:#eef2ff;border-radius:7px"></div>
+              <div style="height:34px;background:#eef2ff;border-radius:7px"></div>
+              <div style="height:34px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside style="display:grid;gap:12px">
+        <div style="border:1px solid #d8dee8;background:#fff;border-radius:10px;padding:14px">
+          <div class="label">Right Rail: Search + Queue</div>
+          <div style="margin-top:10px;height:36px;background:#e2e8f0;border-radius:7px"></div>
+          <div style="margin-top:10px;display:grid;gap:8px">
+            <div style="height:54px;background:#eef2ff;border-radius:8px"></div>
+            <div style="height:54px;background:#fef3c7;border-radius:8px"></div>
+            <div style="height:54px;background:#ecfeff;border-radius:8px"></div>
+          </div>
+        </div>
+        <div style="border:1px solid #d8dee8;background:#fff;border-radius:10px;padding:14px">
+          <div class="label">Entity Meta</div>
+          <div style="margin-top:10px;display:grid;gap:8px">
+            <div style="height:32px;background:#f1f5f9;border-radius:7px"></div>
+            <div style="height:32px;background:#f1f5f9;border-radius:7px"></div>
+            <div style="height:32px;background:#f1f5f9;border-radius:7px"></div>
+          </div>
+        </div>
+        <div style="border:1px solid #d8dee8;background:#fff;border-radius:10px;padding:14px">
+          <div class="label">Evidence Drawer Trigger</div>
+          <div style="margin-top:10px;height:40px;background:#dbeafe;border-radius:8px"></div>
+          <div style="margin-top:10px;height:40px;background:#e0f2fe;border-radius:8px"></div>
+          <p style="margin:10px 0 0;color:#64748b;font-size:12px;line-height:1.5">点击后展开完整 Evidence / Notes / Draft Review，不默认占主阅读区。</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>重排规则</h3>
+  <div class="options" data-multiselect>
+    <div class="option" data-choice="rule-main" onclick="toggleSelect(this)">
+      <div class="letter">1</div>
+      <div class="content">
+        <h3>主区只保留“可连续阅读”的内容</h3>
+        <p>Header、Summary、Explanation、Timeline 摘要、Relations 摘要放中间，形成像文档一样的阅读顺序。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="rule-rail" onclick="toggleSelect(this)">
+      <div class="letter">2</div>
+      <div class="content">
+        <h3>右栏负责“找、切、审、证”</h3>
+        <p>Entity 切换、Draft Inbox、Meta、Evidence 入口都进右栏，减少对正文阅读的干扰。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="rule-drawer" onclick="toggleSelect(this)">
+      <div class="letter">3</div>
+      <div class="content">
+        <h3>重内容模块改成按需展开</h3>
+        <p>Evidence、Notes、History 不再默认整段展开，而是通过抽屉/展开面板进入。</p>
+      </div>
+    </div>
+  </div>
+</div>

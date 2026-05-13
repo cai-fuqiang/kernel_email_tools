@@ -1,0 +1,112 @@
+<h2>阅读/编辑优先的三个布局方案</h2>
+<p class="subtitle">请看三个方向的空间分配。我的推荐是 A：把实体详情做成“文章式编辑台”，同时保留证据和关系的快速侧栏入口。</p>
+
+<div class="cards">
+  <div class="card" data-choice="article-workbench" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="display:grid;grid-template-columns:180px minmax(0,1fr) 220px;gap:10px;height:260px;background:#f8fafc;padding:10px">
+        <div style="border:1px solid #d8dee8;background:white;border-radius:8px;padding:8px">
+          <div class="label">Navigator</div>
+          <div style="margin-top:8px;height:30px;background:#e2e8f0;border-radius:6px"></div>
+          <div style="margin-top:8px;display:grid;gap:6px">
+            <div style="height:36px;background:#cbd5e1;border-radius:6px"></div>
+            <div style="height:36px;background:#eef2f7;border-radius:6px"></div>
+            <div style="height:36px;background:#eef2f7;border-radius:6px"></div>
+            <div style="height:36px;background:#eef2f7;border-radius:6px"></div>
+          </div>
+        </div>
+        <div style="border:1px solid #d8dee8;background:white;border-radius:8px;padding:12px">
+          <div style="display:flex;justify-content:space-between;gap:8px">
+            <div style="width:70%;height:18px;background:#0f172a;border-radius:4px"></div>
+            <div style="width:54px;height:22px;background:#2563eb;border-radius:6px"></div>
+          </div>
+          <div style="margin-top:12px;height:34px;background:#e2e8f0;border-radius:7px"></div>
+          <div style="margin-top:14px;height:92px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px"></div>
+          <div style="margin-top:10px;height:48px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px"></div>
+        </div>
+        <div style="border:1px solid #d8dee8;background:white;border-radius:8px;padding:8px">
+          <div class="label">Context Rail</div>
+          <div style="margin-top:8px;height:40px;background:#eef2ff;border-radius:7px"></div>
+          <div style="margin-top:8px;height:40px;background:#ecfeff;border-radius:7px"></div>
+          <div style="margin-top:8px;height:40px;background:#fef3c7;border-radius:7px"></div>
+          <div style="margin-top:8px;height:40px;background:#f1f5f9;border-radius:7px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. 文章式编辑台（推荐）</h3>
+      <p>左侧列表变窄，只负责找实体；中间是宽阅读/编辑面板；右侧常驻上下文栏放标签、状态、关系摘要、证据入口和保存动作。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>阅读宽度稳定</li><li>编辑动作不迷路</li><li>和现有组件改动较吻合</li></ul></div>
+        <div class="cons"><h4>代价</h4><ul><li>小屏需要把右栏折叠成抽屉</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="tabbed-editor" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="display:grid;grid-template-columns:190px minmax(0,1fr);gap:10px;height:260px;background:#f8fafc;padding:10px">
+        <div style="border:1px solid #d8dee8;background:white;border-radius:8px;padding:8px">
+          <div class="label">Navigator</div>
+          <div style="margin-top:8px;height:30px;background:#e2e8f0;border-radius:6px"></div>
+          <div style="margin-top:8px;display:grid;gap:6px">
+            <div style="height:38px;background:#cbd5e1;border-radius:6px"></div>
+            <div style="height:38px;background:#eef2f7;border-radius:6px"></div>
+            <div style="height:38px;background:#eef2f7;border-radius:6px"></div>
+            <div style="height:38px;background:#eef2f7;border-radius:6px"></div>
+          </div>
+        </div>
+        <div style="border:1px solid #d8dee8;background:white;border-radius:8px;padding:12px">
+          <div style="height:24px;background:#0f172a;border-radius:5px;width:55%"></div>
+          <div style="margin-top:12px;display:flex;gap:6px">
+            <div style="height:26px;width:72px;background:#2563eb;border-radius:6px"></div>
+            <div style="height:26px;width:72px;background:#e2e8f0;border-radius:6px"></div>
+            <div style="height:26px;width:72px;background:#e2e8f0;border-radius:6px"></div>
+            <div style="height:26px;width:72px;background:#e2e8f0;border-radius:6px"></div>
+          </div>
+          <div style="margin-top:14px;height:122px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Tabbed 编辑器</h3>
+      <p>把 Overview、Explanation、Relations、Evidence、History 都变成页签，减少长滚动，让用户只看当前任务。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>页面更短</li><li>任务切换清楚</li><li>适合单点编辑</li></ul></div>
+        <div class="cons"><h4>代价</h4><ul><li>证据和关系容易被隐藏</li><li>跨区对照成本更高</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="document-reader" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:10px;height:260px;background:#f8fafc;padding:10px">
+        <div style="border:1px solid #d8dee8;background:white;border-radius:8px;padding:14px">
+          <div style="height:24px;background:#0f172a;border-radius:5px;width:60%"></div>
+          <div style="margin-top:12px;height:22px;background:#e2e8f0;border-radius:6px;width:80%"></div>
+          <div style="margin-top:14px;display:grid;gap:8px">
+            <div style="height:28px;background:#f1f5f9;border-radius:6px"></div>
+            <div style="height:28px;background:#f1f5f9;border-radius:6px"></div>
+            <div style="height:28px;background:#f1f5f9;border-radius:6px;width:85%"></div>
+            <div style="height:28px;background:#f1f5f9;border-radius:6px;width:92%"></div>
+          </div>
+        </div>
+        <div style="border:1px solid #d8dee8;background:white;border-radius:8px;padding:10px">
+          <div class="label">Search + Queue</div>
+          <div style="margin-top:8px;height:34px;background:#e2e8f0;border-radius:7px"></div>
+          <div style="margin-top:10px;height:48px;background:#eef2ff;border-radius:7px"></div>
+          <div style="margin-top:8px;height:48px;background:#fef3c7;border-radius:7px"></div>
+          <div style="margin-top:8px;height:48px;background:#ecfeff;border-radius:7px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. 文档阅读器</h3>
+      <p>把知识库当成文档集合，主区域几乎全给阅读内容；搜索、实体队列、草稿和元信息全部放到可展开右栏。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>阅读最沉浸</li><li>适合长解释</li><li>视觉最安静</li></ul></div>
+        <div class="cons"><h4>代价</h4><ul><li>实体切换变慢</li><li>管理型操作入口更深</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
