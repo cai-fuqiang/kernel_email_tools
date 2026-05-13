@@ -7,6 +7,7 @@ import {
   pickActiveAnnotation,
   pickRollerActiveAnnotationId,
   rankRollerItems,
+  resolveCodeAutoScrollLine,
   shouldAllowSync,
   shouldScrollPeer,
 } from '../annotationSync';
@@ -288,5 +289,17 @@ describe('annotation sync helpers', () => {
   it('always allows explicit annotation jumps to scroll the peer pane', () => {
     expect(shouldScrollPeer({ followEnabled: false, action: 'explicit-jump', source: 'annotation' })).toBe(true);
     expect(shouldScrollPeer({ followEnabled: true, action: 'explicit-jump', source: 'annotation' })).toBe(true);
+  });
+
+  it('scrolls to the first line only when opening a file without a focused line', () => {
+    expect(resolveCodeAutoScrollLine({ fileChanged: true, focusLine: null })).toBe(1);
+  });
+
+  it('does not auto-scroll when clearing the focused line in the same file', () => {
+    expect(resolveCodeAutoScrollLine({ fileChanged: false, focusLine: null })).toBeNull();
+  });
+
+  it('scrolls to the focused line even when the file is unchanged', () => {
+    expect(resolveCodeAutoScrollLine({ fileChanged: false, focusLine: 181 })).toBe(181);
   });
 });

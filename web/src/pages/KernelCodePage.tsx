@@ -50,6 +50,7 @@ import {
   buildLineMarker,
   getAnnotationLineRange,
   pickActiveAnnotation,
+  resolveCodeAutoScrollLine,
   shouldScrollPeer,
   type SyncSource,
 } from '../components/kernelCode/annotationSync';
@@ -366,6 +367,7 @@ export default function KernelCodePage() {
   const syncLockRef = useRef<{ source: SyncSource; until: number }>({ source: null, until: 0 });
   const annotationAutoScrollUntilRef = useRef(0);
   const activeFileIdentityRef = useRef<string | null>(null);
+  const codeAutoScrollFileIdentityRef = useRef<string | null>(null);
   const popoverDragRef = useRef<{ startX: number; startY: number; popoverX: number; popoverY: number } | null>(null);
   const pathRequestIdRef = useRef(0);
   const navResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -1001,12 +1003,13 @@ export default function KernelCodePage() {
 
   useEffect(() => {
     if (!currentFile) return;
+    const fileIdentity = `${currentFile.version}:${currentFile.path}`;
+    const fileChanged = codeAutoScrollFileIdentityRef.current !== fileIdentity;
+    codeAutoScrollFileIdentityRef.current = fileIdentity;
+    const targetLine = resolveCodeAutoScrollLine({ fileChanged, focusLine });
+    if (!targetLine) return;
     window.requestAnimationFrame(() => {
-      if (focusLine) {
-        scrollToLine(focusLine, 'auto');
-        return;
-      }
-      scrollToLine(1, 'auto');
+      scrollToLine(targetLine, 'auto');
     });
   }, [currentFile, focusLine]);
 

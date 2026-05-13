@@ -197,3 +197,14 @@ export function shouldScrollPeer({
   if (action === 'passive-scroll' && source === 'code') return true;
   return action === 'explicit-jump' || followEnabled;
 }
+
+export function resolveCodeAutoScrollLine({
+  fileChanged,
+  focusLine,
+}: {
+  fileChanged: boolean;
+  focusLine: number | null;
+}): number | null {
+  if (focusLine && focusLine > 0) return focusLine;
+  return fileChanged ? 1 : null;
+}
