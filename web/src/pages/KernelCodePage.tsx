@@ -980,7 +980,7 @@ export default function KernelCodePage() {
       const now = Date.now();
       const nextActive = pickActiveAnnotation(annotations, centerLine);
       setActiveAnnotationId(nextActive?.annotation_id || null);
-      if (shouldScrollPeer({ followEnabled: annotationFollowEnabled, action: 'passive-scroll' })) {
+      if (shouldScrollPeer({ followEnabled: annotationFollowEnabled, action: 'passive-scroll', source: 'code' })) {
         const lock = syncLockRef.current;
         if (lock.source && lock.source !== 'code' && now < lock.until) return;
         syncLockRef.current = { source: 'code', until: now + 350 };
@@ -1047,7 +1047,7 @@ export default function KernelCodePage() {
     setActiveAnnotationId(annotation.annotation_id);
     if (options?.pin) setPinnedAnnotationId(annotation.annotation_id);
     handleSelectRange(range.start, range.end);
-    if (shouldScrollPeer({ followEnabled: annotationFollowEnabled, action: 'explicit-jump' })) {
+    if (shouldScrollPeer({ followEnabled: annotationFollowEnabled, action: 'explicit-jump', source: 'annotation' })) {
       scrollToLine(range.start);
     }
   }
@@ -1055,16 +1055,16 @@ export default function KernelCodePage() {
   function handleRollerCenteredAnnotationChange(annotation: CodeAnnotation) {
     const now = Date.now();
     const range = getAnnotationLineRange(annotation);
-    setActiveAnnotationId(annotation.annotation_id);
-    if (!shouldScrollPeer({ followEnabled: annotationFollowEnabled, action: 'passive-scroll' })) return;
     const lock = syncLockRef.current;
+    syncLockRef.current = { source: 'annotation', until: now + 350 };
+    setActiveAnnotationId(annotation.annotation_id);
+    if (!shouldScrollPeer({ followEnabled: annotationFollowEnabled, action: 'passive-scroll', source: 'annotation' })) return;
     if (lock.source && lock.source !== 'annotation' && now < lock.until) return;
     syncLockRef.current = { source: 'annotation', until: now + 650 };
     scrollToLine(range.start);
   }
 
   useEffect(() => {
-    if (!shouldScrollPeer({ followEnabled: annotationFollowEnabled, action: 'passive-scroll' })) return;
     if (!activeAnnotationId) return;
     const container = annotationPanelRef.current;
     const target = container?.querySelector<HTMLElement>(`[data-annotation-id="${activeAnnotationId}"]`);
@@ -1720,17 +1720,31 @@ export default function KernelCodePage() {
                       </div>
                     </div>
 
-                    {currentExternal && (
-                      <a
-                        href={currentExternal.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-slate-100 px-2.5 py-1.5 text-xs font-medium text-slate-900 transition hover:border-slate-300 hover:bg-slate-200"
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                      <label
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-100 px-2.5 py-1.5 text-xs font-medium text-slate-900 transition hover:border-slate-300 hover:bg-slate-200"
+                        title="When enabled, scrolling annotations moves the code view."
                       >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                        Open source
-                      </a>
-                    )}
+                        <input
+                          type="checkbox"
+                          checked={annotationFollowEnabled}
+                          onChange={(event) => setAnnotationFollowEnabled(event.target.checked)}
+                          className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                        />
+                        <span>Follow</span>
+                      </label>
+                      {currentExternal && (
+                        <a
+                          href={currentExternal.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-slate-100 px-2.5 py-1.5 text-xs font-medium text-slate-900 transition hover:border-slate-300 hover:bg-slate-200"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          Open source
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -2047,20 +2061,9 @@ export default function KernelCodePage() {
                               collapsed={collapsedInspectorSections.has('annotations')}
                               onToggle={() => toggleInspectorSection('annotations')}
                               headerExtra={
-                                <div className="flex items-center gap-2">
-                                  {selectedLines.size > 0 && (
-                                    <span className="text-[10px] font-medium text-slate-600">{selectedRangeLabel}</span>
-                                  )}
-                                  <label className="inline-flex items-center gap-1.5 text-[10px] font-medium text-slate-600">
-                                    <input
-                                      type="checkbox"
-                                      checked={annotationFollowEnabled}
-                                      onChange={(event) => setAnnotationFollowEnabled(event.target.checked)}
-                                      className="h-3 w-3 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                                    />
-                                    <span>Follow</span>
-                                  </label>
-                                </div>
+                                selectedLines.size > 0 ? (
+                                  <span className="text-[10px] font-medium text-slate-600">{selectedRangeLabel}</span>
+                                ) : null
                               }
                             >
                               <AnnotationPanel

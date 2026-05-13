@@ -275,13 +275,18 @@ describe('annotation sync helpers', () => {
     expect(shouldAllowSync({ source: 'code', requestedBy: 'annotation', now: 1400, lockedUntil: 1300 })).toBe(true);
   });
 
-  it('keeps passive scrolls local unless follow mode is enabled', () => {
-    expect(shouldScrollPeer({ followEnabled: false, action: 'passive-scroll' })).toBe(false);
-    expect(shouldScrollPeer({ followEnabled: true, action: 'passive-scroll' })).toBe(true);
+  it('lets code scrolling move annotations by default', () => {
+    expect(shouldScrollPeer({ followEnabled: false, action: 'passive-scroll', source: 'code' })).toBe(true);
+    expect(shouldScrollPeer({ followEnabled: true, action: 'passive-scroll', source: 'code' })).toBe(true);
+  });
+
+  it('only lets annotation scrolling move code when follow mode is enabled', () => {
+    expect(shouldScrollPeer({ followEnabled: false, action: 'passive-scroll', source: 'annotation' })).toBe(false);
+    expect(shouldScrollPeer({ followEnabled: true, action: 'passive-scroll', source: 'annotation' })).toBe(true);
   });
 
   it('always allows explicit annotation jumps to scroll the peer pane', () => {
-    expect(shouldScrollPeer({ followEnabled: false, action: 'explicit-jump' })).toBe(true);
-    expect(shouldScrollPeer({ followEnabled: true, action: 'explicit-jump' })).toBe(true);
+    expect(shouldScrollPeer({ followEnabled: false, action: 'explicit-jump', source: 'annotation' })).toBe(true);
+    expect(shouldScrollPeer({ followEnabled: true, action: 'explicit-jump', source: 'annotation' })).toBe(true);
   });
 });
