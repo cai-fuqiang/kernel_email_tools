@@ -77,6 +77,8 @@ export default function AnnotationPanel({
   const [previewStartEditing, setPreviewStartEditing] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const cardClickTimerRef = useRef<number | null>(null);
+  const captureFocusedAnnotationRef = useRef<string | null>(null);
+  const captureFocusCleanupTimerRef = useRef<number | null>(null);
 
   const rootAnnotations = useMemo(() => annotations.filter(a => !a.in_reply_to), [annotations]);
   const repliesByParentId = useMemo(() => {
@@ -128,6 +130,35 @@ export default function AnnotationPanel({
     query.addEventListener('change', updateMotionPreference);
     return () => query.removeEventListener('change', updateMotionPreference);
   }, []);
+
+  useEffect(() => () => {
+    if (captureFocusCleanupTimerRef.current !== null) {
+      window.clearTimeout(captureFocusCleanupTimerRef.current);
+    }
+  }, []);
+
+  const markCaptureFocusedAnnotation = (annotationId: string) => {
+    captureFocusedAnnotationRef.current = annotationId;
+    if (captureFocusCleanupTimerRef.current !== null) {
+      window.clearTimeout(captureFocusCleanupTimerRef.current);
+    }
+    captureFocusCleanupTimerRef.current = window.setTimeout(() => {
+      if (captureFocusedAnnotationRef.current === annotationId) {
+        captureFocusedAnnotationRef.current = null;
+      }
+      captureFocusCleanupTimerRef.current = null;
+    }, 0);
+  };
+
+  const consumeCaptureFocusedAnnotation = (annotationId: string) => {
+    if (captureFocusedAnnotationRef.current !== annotationId) return false;
+    captureFocusedAnnotationRef.current = null;
+    if (captureFocusCleanupTimerRef.current !== null) {
+      window.clearTimeout(captureFocusCleanupTimerRef.current);
+      captureFocusCleanupTimerRef.current = null;
+    }
+    return true;
+  };
 
   useEffect(() => () => {
     if (cardClickTimerRef.current !== null) {
@@ -385,9 +416,11 @@ export default function AnnotationPanel({
         onClickCapture={(event) => {
           if (!onFocusAnnotation || options.active || options.pinned) return;
           if (event.button !== 0 || event.detail > 1) return;
+          markCaptureFocusedAnnotation(root.annotation_id);
           onFocusAnnotation(root);
         }}
         onClick={(event) => {
+          if (consumeCaptureFocusedAnnotation(root.annotation_id)) return;
           if ((!onJumpToAnnotation && !onFocusAnnotation) || shouldIgnoreAnnotationCardClick(event.target)) return;
           if (event.detail > 1) return;
           if (cardClickTimerRef.current !== null) {
