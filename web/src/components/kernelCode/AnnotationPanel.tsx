@@ -592,7 +592,7 @@ export default function AnnotationPanel({
               if (annotation) onRollerCenteredAnnotationChange(annotation);
             }}
           >
-            <div className="space-y-2 [transform-style:preserve-3d]">
+            <div className="space-y-2 py-[24vh] [transform-style:preserve-3d]">
               {rollerItems.map(({ annotation, position, active }) => (
                 <div
                   key={annotation.annotation_id}
