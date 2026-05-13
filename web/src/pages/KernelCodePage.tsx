@@ -364,6 +364,7 @@ export default function KernelCodePage() {
   const annotationPanelRef = useRef<HTMLDivElement | null>(null);
   const codeScrollRafRef = useRef<number | null>(null);
   const syncLockRef = useRef<{ source: SyncSource; until: number }>({ source: null, until: 0 });
+  const annotationAutoScrollUntilRef = useRef(0);
   const activeFileIdentityRef = useRef<string | null>(null);
   const popoverDragRef = useRef<{ startX: number; startY: number; popoverX: number; popoverY: number } | null>(null);
   const pathRequestIdRef = useRef(0);
@@ -1054,12 +1055,12 @@ export default function KernelCodePage() {
 
   function handleRollerCenteredAnnotationChange(annotation: CodeAnnotation) {
     const now = Date.now();
+    if (now < annotationAutoScrollUntilRef.current) return;
     const range = getAnnotationLineRange(annotation);
     const lock = syncLockRef.current;
-    syncLockRef.current = { source: 'annotation', until: now + 350 };
+    if (lock.source && lock.source !== 'annotation' && now < lock.until) return;
     setActiveAnnotationId(annotation.annotation_id);
     if (!shouldScrollPeer({ followEnabled: annotationFollowEnabled, action: 'passive-scroll', source: 'annotation' })) return;
-    if (lock.source && lock.source !== 'annotation' && now < lock.until) return;
     syncLockRef.current = { source: 'annotation', until: now + 650 };
     scrollToLine(range.start);
   }
@@ -1079,9 +1080,10 @@ export default function KernelCodePage() {
       (targetRect.top - containerRect.top) -
       (container.clientHeight / 2) +
       (targetRect.height / 2);
+    annotationAutoScrollUntilRef.current = now + 700;
     container.scrollTo({
       top: Math.max(0, centeredTop),
-      behavior: 'smooth',
+      behavior: 'auto',
     });
   }, [activeAnnotationId, annotationFollowEnabled]);
 
