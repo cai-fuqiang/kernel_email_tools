@@ -29,6 +29,7 @@ import {
   extractKnowledgeEvidence,
   normalizeDraftPayload,
   readableType,
+  statusTone,
   type ThreadFocus,
 } from './knowledgeUtils';
 import {
@@ -73,7 +74,7 @@ import type {
 } from '../../api/types';
 import { useAuth } from '../../auth';
 import StickyContextBar from '../StickyContextBar';
-import { PrimaryButton, SecondaryButton, StatusBadge } from '../ui';
+import { PrimaryButton } from '../ui';
 
 export default function KnowledgeWorkbench() {
   const { canWrite, isAdmin } = useAuth();
@@ -700,9 +701,13 @@ export default function KnowledgeWorkbench() {
                   </div>
                 ))}
               </div>
-              <SecondaryButton type="button" onClick={() => setRailOpen(true)} className="mt-6 xl:hidden">
+              <button
+                type="button"
+                onClick={() => setRailOpen(true)}
+                className="mt-6 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 xl:hidden"
+              >
                 Open work rail
-              </SecondaryButton>
+              </button>
             </div>
           </div>
         ) : (
@@ -712,35 +717,36 @@ export default function KnowledgeWorkbench() {
               subtitle={`${readableType(selectedEntity.entity_type)} · ${selectedEvidenceCount} evidence · ${timelineCount} timeline events · ${relationCount} relations`}
               meta={
                 <>
-                  <StatusBadge
-                    tone={
-                      selectedEntity.status === 'active'
-                        ? 'success'
-                        : selectedEntity.status === 'deprecated'
-                        ? 'warning'
-                        : 'muted'
-                    }
+                  <span
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(
+                      selectedEntity.status,
+                    )}`}
                   >
                     {selectedEntity.status}
-                  </StatusBadge>
-                  {saving && <StatusBadge tone="info">Saving</StatusBadge>}
+                  </span>
+                  {saving && (
+                    <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-800">
+                      Saving
+                    </span>
+                  )}
                 </>
               }
               actions={
                 <>
-                  <SecondaryButton
+                  <button
                     type="button"
                     onClick={() => setRailOpen(true)}
-                    className="xl:hidden"
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 xl:hidden"
                   >
                     Work rail
-                  </SecondaryButton>
-                  <SecondaryButton
+                  </button>
+                  <button
                     type="button"
                     onClick={() => setActiveSupportPanel('evidence')}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
                   >
                     Evidence
-                  </SecondaryButton>
+                  </button>
                   {canWrite && (
                     <PrimaryButton type="button" onClick={handleSaveEntity} disabled={saving}>
                       Save

@@ -45,7 +45,7 @@ export default function EntityDetailHeader({
             >
               {selectedEntity.status}
             </span>
-            <span className="text-xs text-gray-400">
+            <span className="text-xs font-medium text-slate-600">
               Updated {formatDateTime(selectedEntity.updated_at)}
             </span>
           </div>

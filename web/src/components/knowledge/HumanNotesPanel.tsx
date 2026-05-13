@@ -25,11 +25,11 @@ export default function HumanNotesPanel({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold text-gray-950">Human notes</h2>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-600">
             Corrections, review decisions, and follow-up questions linked to this item.
           </p>
         </div>
-        <div className="text-sm text-gray-400">{annotations.length} items</div>
+        <div className="text-sm font-medium text-gray-600">{annotations.length} items</div>
       </div>
 
       {canWrite && (
@@ -54,9 +54,9 @@ export default function HumanNotesPanel({
 
       <div className="mt-4 space-y-3">
         {annotationLoading ? (
-          <div className="text-sm text-gray-500">Loading notes...</div>
+          <div className="text-sm text-gray-600">Loading notes...</div>
         ) : annotations.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+          <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-600">
             No human notes yet.
           </div>
         ) : (
@@ -67,7 +67,7 @@ export default function HumanNotesPanel({
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="text-sm font-medium text-gray-800">{annotation.author}</div>
-                <div className="text-xs text-gray-400">
+                <div className="text-xs font-medium text-gray-600">
                   {formatDateTime(annotation.updated_at)}
                 </div>
               </div>

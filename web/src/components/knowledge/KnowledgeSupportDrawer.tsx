@@ -45,7 +45,7 @@ export default function KnowledgeSupportDrawer({
             >
               {drawerTitles[panel]}
             </h2>
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="mt-0.5 text-xs text-slate-600">
               Supporting context stays separate from the main document.
             </p>
           </div>
@@ -53,7 +53,7 @@ export default function KnowledgeSupportDrawer({
             type="button"
             aria-label="Close support panel"
             onClick={onClose}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-slate-700 transition hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
           >
             <X className="h-4 w-4" />
           </button>

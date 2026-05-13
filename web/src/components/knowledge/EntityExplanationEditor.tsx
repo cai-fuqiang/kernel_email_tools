@@ -26,7 +26,7 @@ export default function EntityExplanationEditor({
           <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="text-base font-semibold text-slate-950">Summary</h2>
-              <p className="mt-1 text-sm leading-5 text-slate-500">
+              <p className="mt-1 text-sm leading-5 text-slate-600">
                 The reusable short answer for future Ask responses.
               </p>
             </div>
@@ -51,7 +51,7 @@ export default function EntityExplanationEditor({
         <div className="rounded-lg border border-slate-200 bg-white p-5">
           <div>
             <h2 className="text-base font-semibold text-slate-950">Explanation</h2>
-            <p className="mt-1 text-sm leading-5 text-slate-500">
+            <p className="mt-1 text-sm leading-5 text-slate-600">
               Background, tradeoffs, timelines, and caveats that should survive one Ask session.
             </p>
           </div>
