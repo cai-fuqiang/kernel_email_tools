@@ -40,6 +40,7 @@ interface AnnotationPanelProps {
   activeAnnotationId?: string | null;
   pinnedAnnotationId?: string | null;
   onJumpToAnnotation?: (annotation: CodeAnnotation, options?: { pin?: boolean }) => void;
+  onRollerCenteredAnnotationChange?: (annotation: CodeAnnotation) => void;
   rollerContainerRef?: RefObject<HTMLDivElement>;
 }
 
@@ -53,6 +54,7 @@ export default function AnnotationPanel({
   activeAnnotationId = null,
   pinnedAnnotationId = null,
   onJumpToAnnotation,
+  onRollerCenteredAnnotationChange,
   rollerContainerRef,
 }: AnnotationPanelProps) {
   const { canWrite, currentUser, isAdmin } = useAuth();
@@ -473,7 +475,26 @@ export default function AnnotationPanel({
             No annotations in this file yet
           </p>
         ) : (
-          <section ref={rollerContainerRef} aria-label="Annotation roller" className="[perspective:900px]">
+          <section
+            ref={rollerContainerRef}
+            aria-label="Annotation roller"
+            className="max-h-[58vh] overflow-y-auto overscroll-contain pr-1 [perspective:900px]"
+            onScroll={(event) => {
+              if (!onRollerCenteredAnnotationChange) return;
+              const container = event.currentTarget;
+              const cards = Array.from(container.querySelectorAll<HTMLElement>('[data-annotation-id]'));
+              const center = container.getBoundingClientRect().top + container.clientHeight / 2;
+              const nearest = cards
+                .map((card) => ({
+                  id: card.dataset.annotationId || '',
+                  distance: Math.abs(card.getBoundingClientRect().top + card.offsetHeight / 2 - center),
+                }))
+                .sort((a, b) => a.distance - b.distance)[0];
+              if (!nearest?.id || nearest.id === activeAnnotationId) return;
+              const annotation = rootAnnotations.find((item) => item.annotation_id === nearest.id);
+              if (annotation) onRollerCenteredAnnotationChange(annotation);
+            }}
+          >
             <div className="space-y-2 [transform-style:preserve-3d]">
               {rollerItems.map(({ annotation, position, active }) => (
                 <div

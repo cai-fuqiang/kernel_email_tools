@@ -46,7 +46,11 @@ import { showToast } from '../components/Toast';
 import AnnotationPanel from '../components/kernelCode/AnnotationPanel';
 import CodeHistoryPanel from '../components/kernelCode/CodeHistoryPanel';
 import KernelSymbolQuickPreviewPopover from '../components/kernelCode/KernelSymbolQuickPreviewPopover';
-import { pickActiveAnnotation, type SyncSource } from '../components/kernelCode/annotationSync';
+import {
+  getAnnotationLineRange,
+  pickActiveAnnotation,
+  type SyncSource,
+} from '../components/kernelCode/annotationSync';
 import {
   EmptyState,
   IconButton,
@@ -1023,6 +1027,37 @@ export default function KernelCodePage() {
     scrollToLine(normalizedStart);
   }
 
+  function handleJumpToAnnotation(annotation: CodeAnnotation, options?: { pin?: boolean }) {
+    const range = getAnnotationLineRange(annotation);
+    const now = Date.now();
+    syncLockRef.current = { source: 'jump', until: now + 650 };
+    setActiveAnnotationId(annotation.annotation_id);
+    if (options?.pin) setPinnedAnnotationId(annotation.annotation_id);
+    handleSelectRange(range.start, range.end);
+    scrollToLine(range.start);
+  }
+
+  function handleRollerCenteredAnnotationChange(annotation: CodeAnnotation) {
+    const now = Date.now();
+    const lock = syncLockRef.current;
+    if (lock.source && lock.source !== 'annotation' && now < lock.until) return;
+    const range = getAnnotationLineRange(annotation);
+    syncLockRef.current = { source: 'annotation', until: now + 650 };
+    setActiveAnnotationId(annotation.annotation_id);
+    scrollToLine(range.start);
+  }
+
+  useEffect(() => {
+    if (!activeAnnotationId) return;
+    const container = annotationPanelRef.current;
+    const target = container?.querySelector<HTMLElement>(`[data-annotation-id="${activeAnnotationId}"]`);
+    if (!container || !target) return;
+    const now = Date.now();
+    const lock = syncLockRef.current;
+    if (lock.source && lock.source !== 'code' && now < lock.until) return;
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [activeAnnotationId]);
+
   function handleLineClick(line: number, event?: ReactMouseEvent<HTMLElement>) {
     if (event?.shiftKey && selectedLines.size > 0) {
       handleSelectRange(focusLine || line, line);
@@ -1967,6 +2002,8 @@ export default function KernelCodePage() {
                                 activeAnnotationId={activeAnnotation?.annotation_id || null}
                                 pinnedAnnotationId={pinnedAnnotation?.annotation_id || null}
                                 rollerContainerRef={annotationPanelRef}
+                                onJumpToAnnotation={handleJumpToAnnotation}
+                                onRollerCenteredAnnotationChange={handleRollerCenteredAnnotationChange}
                               />
                             </InspectorSection>
                           ) : (
