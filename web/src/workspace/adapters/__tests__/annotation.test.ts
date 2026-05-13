@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'vitest';
 import type { AnnotationListItem, CodeAnnotation } from '../../../api/types';
-import { annotationToEntity, codeAnnotationToEntity } from '../annotation';
+import {
+  annotationToEntity,
+  codeAnnotationToEntity,
+  workspaceAnnotationToCodePreviewAnnotation,
+} from '../annotation';
 
 function makeEmailAnnotation(overrides: Partial<AnnotationListItem> = {}): AnnotationListItem {
   return {
@@ -83,5 +87,35 @@ describe('annotation adapter', () => {
       assert.ok(e.badges.some((b) => b.label === 'public'));
       assert.ok(e.subtitle?.includes('mm/slub.c:100-105'));
     }
+  });
+
+  it('adapts workspace code annotations into code preview annotations', () => {
+    const preview = workspaceAnnotationToCodePreviewAnnotation(
+      makeEmailAnnotation({
+        annotation_id: 'ann-code-1',
+        annotation_type: 'code',
+        target_type: 'kernel_file',
+        target_ref: 'v6.9:mm/mmap.c',
+        target_label: 'mm/mmap.c:41-45',
+        target_subtitle: 'v6.9',
+        anchor: { start_line: 41, end_line: 45 },
+        body: 'Preview this code note',
+      }),
+    );
+
+    assert.ok(preview);
+    assert.equal(preview.annotation_id, 'ann-code-1');
+    assert.equal(preview.version, 'v6.9');
+    assert.equal(preview.file_path, 'mm/mmap.c');
+    assert.equal(preview.start_line, 41);
+    assert.equal(preview.end_line, 45);
+    assert.equal(preview.target_ref, 'v6.9:mm/mmap.c');
+    assert.equal(preview.body, 'Preview this code note');
+  });
+
+  it('does not build a code preview for non-code workspace annotations', () => {
+    const preview = workspaceAnnotationToCodePreviewAnnotation(makeEmailAnnotation());
+
+    assert.equal(preview, null);
   });
 });

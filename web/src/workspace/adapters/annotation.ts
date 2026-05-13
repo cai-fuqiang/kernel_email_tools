@@ -77,6 +77,76 @@ function buildCodeAnchor(a: AnnotationListItem): Record<string, unknown> {
   };
 }
 
+function isCodePreviewCandidate(a: AnnotationListItem | CodeAnnotation): boolean {
+  return (
+    a.annotation_type === 'code' ||
+    targetTypeFromAnnotation(a.target_type) === 'code_line' ||
+    Boolean(('file_path' in a && a.file_path) || a.code_target)
+  );
+}
+
+function codeTargetLineLabel(path: string, startLine: number, endLine: number): string {
+  if (startLine <= 0) return path;
+  return `${path}:${startLine}${endLine > 0 && endLine !== startLine ? `-${endLine}` : ''}`;
+}
+
+/**
+ * Workspace 的通用 AnnotationListItem 也可能携带 code target。预览组件只接受
+ * CodeAnnotation，因此这里把可定位到内核文件的 workspace annotation 统一适配为
+ * CodeAnnotation；非代码批注返回 null，供 UI 控制预览入口显隐。
+ */
+export function workspaceAnnotationToCodePreviewAnnotation(
+  a: AnnotationListItem | CodeAnnotation,
+): CodeAnnotation | null {
+  if (!isCodePreviewCandidate(a)) return null;
+
+  const codeTarget = normalizeCodeTarget(a);
+  if (!codeTarget) return null;
+
+  const startLine = codeTarget.start_line;
+  const endLine = codeTarget.end_line > 0 ? codeTarget.end_line : startLine;
+  const lineLabel = codeTargetLineLabel(codeTarget.path, startLine, endLine);
+
+  return {
+    annotation_id: a.annotation_id,
+    annotation_type: a.annotation_type || 'code',
+    version: codeTarget.version,
+    file_path: codeTarget.path,
+    start_line: startLine,
+    end_line: endLine,
+    body: a.body || '',
+    author: a.author || '',
+    author_user_id: a.author_user_id,
+    visibility: a.visibility,
+    publish_status: a.publish_status,
+    publish_requested_at: a.publish_requested_at,
+    publish_requested_by_user_id: a.publish_requested_by_user_id,
+    publish_reviewed_at: a.publish_reviewed_at,
+    publish_reviewed_by_user_id: a.publish_reviewed_by_user_id,
+    publish_review_comment: a.publish_review_comment,
+    created_at: a.created_at,
+    parent_annotation_id: a.parent_annotation_id,
+    in_reply_to: a.in_reply_to,
+    updated_at: a.updated_at || a.created_at,
+    target_type: a.target_type || 'code_line',
+    target_ref: codeTarget.target_ref || `${codeTarget.version}:${codeTarget.path}`,
+    target_label: a.target_label || lineLabel,
+    target_subtitle: a.target_subtitle || codeTarget.version,
+    anchor: {
+      ...(a.anchor || {}),
+      version: codeTarget.version,
+      file_path: codeTarget.path,
+      start_line: startLine,
+      end_line: endLine,
+    },
+    code_target: codeTarget,
+    meta: {
+      ...(a.meta || {}),
+      code_target: codeTarget,
+    },
+  };
+}
+
 /**
  * 邮件批注 AnnotationListItem -> WorkspaceEntity
  */

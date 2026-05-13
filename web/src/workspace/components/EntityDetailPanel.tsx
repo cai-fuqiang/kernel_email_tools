@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { X, ExternalLink, Maximize2, Trash2 } from 'lucide-react';
+import { X, ExternalLink, Maximize2, PanelRightOpen, Trash2 } from 'lucide-react';
 import type { AnnotationListItem, CodeAnnotation, SearchHit, TagRead, TagTargetItem, TagTree } from '../../api/types';
 import type { WorkspaceEntity, WorkspaceEntityKind } from '../types';
 import AnnotationCard from '../../components/AnnotationCard';
 import ConfirmModal from '../../components/ConfirmModal';
 import { showToast } from '../../components/Toast';
 import TagSummaryCard from './TagSummaryCard';
+import { workspaceAnnotationToCodePreviewAnnotation } from '../adapters/annotation';
 
 /**
  * Annotation action handlers exposed by the parent page. These map 1:1 to the
@@ -46,6 +47,11 @@ interface EntityDetailPanelProps {
     canApprovePublish: boolean;
     canRejectPublish: boolean;
   };
+  /** 在 workspace annotation 详情中打开代码批注预览。 */
+  onPreviewAnnotation?: (
+    annotation: AnnotationListItem | CodeAnnotation,
+    anchorRect: DOMRect | null,
+  ) => void;
   onClose?: () => void;
 }
 
@@ -67,6 +73,10 @@ interface RendererCtx {
     canApprovePublish: boolean;
     canRejectPublish: boolean;
   };
+  onPreviewAnnotation?: (
+    annotation: AnnotationListItem | CodeAnnotation,
+    anchorRect: DOMRect | null,
+  ) => void;
 }
 
 // 各 kind renderer（返回 ReactNode）。kind 差异收敛在此 map 内，外层布局/操作区共用。
@@ -77,6 +87,7 @@ const RENDERERS: Record<WorkspaceEntityKind, (entity: WorkspaceEntity, ctx: Rend
       annotation={entity.raw as AnnotationListItem | CodeAnnotation}
       actions={ctx.annotationActions}
       computePermissions={ctx.annotationPermissions}
+      onPreviewAnnotation={ctx.onPreviewAnnotation}
     />
   ),
   tag: (entity, ctx) => (
@@ -95,6 +106,7 @@ export default function EntityDetailPanel({
   canDeleteTag,
   annotationActions,
   annotationPermissions,
+  onPreviewAnnotation,
   onClose,
 }: EntityDetailPanelProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -104,9 +116,9 @@ export default function EntityDetailPanel({
     if (!entity) return null;
     const r = RENDERERS[entity.kind];
     return r
-      ? r(entity, { onOpenTagTarget, annotationActions, annotationPermissions })
+      ? r(entity, { onOpenTagTarget, annotationActions, annotationPermissions, onPreviewAnnotation })
       : <div className="p-5 text-sm text-slate-500">未知 kind: {entity.kind}</div>;
-  }, [entity, onOpenTagTarget, annotationActions, annotationPermissions]);
+  }, [entity, onOpenTagTarget, annotationActions, annotationPermissions, onPreviewAnnotation]);
 
   // 仅 tag kind 在外层渲染删除按钮；annotation 的删除由 AnnotationCard 内部按钮触发。
   const tagDeletable = Boolean(
@@ -267,6 +279,7 @@ function AnnotationDetail({
   annotation: a,
   actions,
   computePermissions,
+  onPreviewAnnotation,
 }: {
   annotation: AnnotationListItem | CodeAnnotation;
   actions?: AnnotationActionCallbacks;
@@ -277,8 +290,13 @@ function AnnotationDetail({
     canApprovePublish: boolean;
     canRejectPublish: boolean;
   };
+  onPreviewAnnotation?: (
+    annotation: AnnotationListItem | CodeAnnotation,
+    anchorRect: DOMRect | null,
+  ) => void;
 }) {
   const perms = computePermissions ? computePermissions(a) : undefined;
+  const previewAnnotation = workspaceAnnotationToCodePreviewAnnotation(a);
   const [expanded, setExpanded] = useState(false);
 
   function targetSubtitle(): string {
@@ -334,15 +352,29 @@ function AnnotationDetail({
           <span className="truncate font-mono text-slate-500">{a.target_ref}</span>
           {a.target_label && <span className="text-slate-600">· {a.target_label}</span>}
         </div>
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
-          aria-label="放大查看批注"
-          title="放大查看"
-        >
-          <Maximize2 className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5" data-no-annotation-select>
+          {previewAnnotation && onPreviewAnnotation ? (
+            <button
+              type="button"
+              onClick={(event) => onPreviewAnnotation(a, event.currentTarget.getBoundingClientRect())}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2 text-xs font-medium text-sky-800 hover:border-sky-300 hover:bg-sky-100 focus:outline-none focus:ring-2 focus:ring-sky-400"
+              aria-label="预览代码上下文"
+              title="预览代码上下文"
+            >
+              <PanelRightOpen className="h-3.5 w-3.5" />
+              预览代码
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+            aria-label="放大查看批注"
+            title="放大查看"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
       {renderAnnotationCard()}

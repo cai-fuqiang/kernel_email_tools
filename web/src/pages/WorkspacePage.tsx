@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Mail, NotebookText, Search, Sparkles, Tag as TagIcon } from 'lucide-react';
 import { useAuth } from '../auth';
 import ThreadDrawer from '../components/ThreadDrawer';
+import AnnotationQuickPreviewPopover from '../components/kernelCode/AnnotationQuickPreviewPopover';
+import { annotationPreviewStartLine } from '../components/kernelCode/annotationPreview';
 import EntityList from '../workspace/components/EntityList';
 import EntityDetailPanel, {
   type AnnotationActionCallbacks,
@@ -34,11 +36,13 @@ import {
   type TagStats,
 } from '../api/client';
 import { codeTargetToKernelCodeUrl, normalizeCodeTarget } from '../utils/codeTarget';
+import { kernelAnnotationPreviewPath, kernelCodePath } from '../utils/externalLinks';
 import { showToast } from '../components/Toast';
 import BatchTagBar from '../components/search/BatchTagBar';
 import SummaryPanel from '../components/search/SummaryPanel';
 import { errorMessage } from '../components/search/searchUtils';
 import type { AskDraftApplyResponse, AskDraftResponse, SourceRef, SummarizeResponse } from '../api/types';
+import { workspaceAnnotationToCodePreviewAnnotation } from '../workspace/adapters/annotation';
 
 const VALID_VIEWS: WorkspaceView[] = ['email', 'tag', 'annotation'];
 const PAGE_SIZE = 20;
@@ -84,6 +88,10 @@ export default function WorkspacePage() {
   const [tagStats, setTagStats] = useState<TagStats[]>([]);
 
   const [threadOpen, setThreadOpen] = useState<{ threadId: string; focusMessageId?: string } | null>(null);
+  const [workspaceAnnotationPreview, setWorkspaceAnnotationPreview] = useState<{
+    annotation: CodeAnnotation;
+    anchorRect: DOMRect | null;
+  } | null>(null);
   const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set());
   const [batchTagInput, setBatchTagInput] = useState('');
   const [batchTagging, setBatchTagging] = useState(false);
@@ -118,11 +126,17 @@ export default function WorkspacePage() {
     setDraftBundle(null);
     setDraftSaved(null);
     setShowDraftPanel(false);
+    setWorkspaceAnnotationPreview(null);
   }, [view, q, filters]);
 
   useEffect(() => {
     setSelectedMessages(new Set());
+    setWorkspaceAnnotationPreview(null);
   }, [view, page]);
+
+  useEffect(() => {
+    setWorkspaceAnnotationPreview(null);
+  }, [selectedId]);
 
   const effectiveFilters: WorkspaceFilters = useMemo(() => ({ q, ...filters }), [q, filters]);
   const data = useWorkspaceData(isAuthenticated ? view : 'email', effectiveFilters, page, PAGE_SIZE);
@@ -430,6 +444,38 @@ export default function WorkspacePage() {
     },
   };
 
+  function handlePreviewAnnotation(
+    a: AnnotationListItem | CodeAnnotation,
+    anchorRect: DOMRect | null,
+  ) {
+    const preview = workspaceAnnotationToCodePreviewAnnotation(a);
+    if (!preview) {
+      showToast('这个批注没有可预览的代码位置', 'error');
+      return;
+    }
+    setWorkspaceAnnotationPreview({ annotation: preview, anchorRect });
+  }
+
+  function handleOpenWorkspaceAnnotationFullPreview() {
+    const annotation = workspaceAnnotationPreview?.annotation;
+    if (!annotation) return;
+    navigate(kernelAnnotationPreviewPath(annotation.version, annotation.file_path, annotation.annotation_id));
+    setWorkspaceAnnotationPreview(null);
+  }
+
+  function handleOpenWorkspaceAnnotationInAtlas() {
+    const annotation = workspaceAnnotationPreview?.annotation;
+    if (!annotation) return;
+    navigate(
+      kernelCodePath(
+        annotation.version,
+        annotation.file_path,
+        annotationPreviewStartLine(annotation) || undefined,
+      ),
+    );
+    setWorkspaceAnnotationPreview(null);
+  }
+
   return (
     <div className="flex min-h-[calc(100vh-3rem)] flex-col">
       <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-6 py-3 backdrop-blur">
@@ -654,6 +700,7 @@ export default function WorkspacePage() {
             canDeleteTag={canDeleteTag}
             annotationActions={annotationActions}
             annotationPermissions={annotationPermissions}
+            onPreviewAnnotation={handlePreviewAnnotation}
             onClose={() => setSelectedId(null)}
           />
         </aside>
@@ -676,6 +723,7 @@ export default function WorkspacePage() {
               canDeleteTag={canDeleteTag}
               annotationActions={annotationActions}
               annotationPermissions={annotationPermissions}
+              onPreviewAnnotation={handlePreviewAnnotation}
               onClose={() => setSelectedId(null)}
             />
           </div>
@@ -689,6 +737,17 @@ export default function WorkspacePage() {
           onClose={() => setThreadOpen(null)}
         />
       )}
+
+      <AnnotationQuickPreviewPopover
+        isOpen={Boolean(workspaceAnnotationPreview)}
+        annotation={workspaceAnnotationPreview?.annotation ?? null}
+        replies={[]}
+        anchorRect={workspaceAnnotationPreview?.anchorRect ?? null}
+        avoidRect={workspaceAnnotationPreview?.anchorRect ?? null}
+        onClose={() => setWorkspaceAnnotationPreview(null)}
+        onOpenFullPreview={handleOpenWorkspaceAnnotationFullPreview}
+        onOpenInAtlas={handleOpenWorkspaceAnnotationInAtlas}
+      />
 
       {annotationConfirm && (
         <ConfirmModal
