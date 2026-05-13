@@ -79,6 +79,8 @@ export default function AnnotationPanel({
   const cardClickTimerRef = useRef<number | null>(null);
   const captureFocusedAnnotationRef = useRef<string | null>(null);
   const captureFocusCleanupTimerRef = useRef<number | null>(null);
+  const clickDetailPinnedAnnotationRef = useRef<string | null>(null);
+  const clickDetailPinCleanupTimerRef = useRef<number | null>(null);
 
   const rootAnnotations = useMemo(() => annotations.filter(a => !a.in_reply_to), [annotations]);
   const repliesByParentId = useMemo(() => {
@@ -135,6 +137,9 @@ export default function AnnotationPanel({
     if (captureFocusCleanupTimerRef.current !== null) {
       window.clearTimeout(captureFocusCleanupTimerRef.current);
     }
+    if (clickDetailPinCleanupTimerRef.current !== null) {
+      window.clearTimeout(clickDetailPinCleanupTimerRef.current);
+    }
   }, []);
 
   const markCaptureFocusedAnnotation = (annotationId: string) => {
@@ -156,6 +161,29 @@ export default function AnnotationPanel({
     if (captureFocusCleanupTimerRef.current !== null) {
       window.clearTimeout(captureFocusCleanupTimerRef.current);
       captureFocusCleanupTimerRef.current = null;
+    }
+    return true;
+  };
+
+  const markClickDetailPinnedAnnotation = (annotationId: string) => {
+    clickDetailPinnedAnnotationRef.current = annotationId;
+    if (clickDetailPinCleanupTimerRef.current !== null) {
+      window.clearTimeout(clickDetailPinCleanupTimerRef.current);
+    }
+    clickDetailPinCleanupTimerRef.current = window.setTimeout(() => {
+      if (clickDetailPinnedAnnotationRef.current === annotationId) {
+        clickDetailPinnedAnnotationRef.current = null;
+      }
+      clickDetailPinCleanupTimerRef.current = null;
+    }, 350);
+  };
+
+  const consumeClickDetailPinnedAnnotation = (annotationId: string) => {
+    if (clickDetailPinnedAnnotationRef.current !== annotationId) return false;
+    clickDetailPinnedAnnotationRef.current = null;
+    if (clickDetailPinCleanupTimerRef.current !== null) {
+      window.clearTimeout(clickDetailPinCleanupTimerRef.current);
+      clickDetailPinCleanupTimerRef.current = null;
     }
     return true;
   };
@@ -414,6 +442,18 @@ export default function AnnotationPanel({
           ? 'Click to jump to code. Double-click to pin.'
           : 'Click to focus this annotation. Double-click to pin.'}
         onClickCapture={(event) => {
+          if (event.detail > 1 && onTogglePinAnnotation) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (cardClickTimerRef.current !== null) {
+              window.clearTimeout(cardClickTimerRef.current);
+              cardClickTimerRef.current = null;
+            }
+            captureFocusedAnnotationRef.current = null;
+            markClickDetailPinnedAnnotation(root.annotation_id);
+            onTogglePinAnnotation(root);
+            return;
+          }
           if (!onFocusAnnotation || options.active || options.pinned) return;
           if (event.button !== 0 || event.detail > 1) return;
           markCaptureFocusedAnnotation(root.annotation_id);
@@ -440,6 +480,11 @@ export default function AnnotationPanel({
           }, 180);
         }}
         onDoubleClick={(event) => {
+          if (consumeClickDetailPinnedAnnotation(root.annotation_id)) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
           if (!onTogglePinAnnotation || shouldIgnoreAnnotationCardClick(event.target)) return;
           event.preventDefault();
           event.stopPropagation();
