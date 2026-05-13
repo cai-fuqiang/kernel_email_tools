@@ -61,6 +61,18 @@ export function handleAnnotationPreviewButtonClick(
   onPreview(annotation);
 }
 
+export type AnnotationCardClickAction = 'focus' | 'jump';
+
+export function resolveAnnotationCardClickAction({
+  active,
+  pinned,
+}: {
+  active: boolean;
+  pinned: boolean;
+}): AnnotationCardClickAction {
+  return active || pinned ? 'jump' : 'focus';
+}
+
 export function shouldIgnoreAnnotationCardClick(target: EventTarget | ClosestCapableTarget | null): boolean {
   const maybeElement = target as ClosestCapableTarget | null;
   const closestSource =

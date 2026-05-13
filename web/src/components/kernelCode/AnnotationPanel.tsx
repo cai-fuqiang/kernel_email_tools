@@ -21,6 +21,7 @@ import { pickRollerActiveAnnotationId, rankRollerItems } from './annotationSync'
 import {
   formatAnnotationPreviewLineRange,
   handleAnnotationPreviewButtonClick,
+  resolveAnnotationCardClickAction,
   shouldIgnoreAnnotationCardClick,
 } from './annotationPreview';
 
@@ -42,6 +43,7 @@ interface AnnotationPanelProps {
   hideHeader?: boolean;
   activeAnnotationId?: string | null;
   pinnedAnnotationId?: string | null;
+  onFocusAnnotation?: (annotation: CodeAnnotation) => void;
   onJumpToAnnotation?: (annotation: CodeAnnotation, options?: { pin?: boolean }) => void;
   onTogglePinAnnotation?: (annotation: CodeAnnotation) => void;
   onPreviewAnnotation?: (annotation: CodeAnnotation, event: ReactMouseEvent<HTMLButtonElement>) => void;
@@ -58,6 +60,7 @@ export default function AnnotationPanel({
   hideHeader = false,
   activeAnnotationId = null,
   pinnedAnnotationId = null,
+  onFocusAnnotation,
   onJumpToAnnotation,
   onTogglePinAnnotation,
   onPreviewAnnotation,
@@ -375,16 +378,27 @@ export default function AnnotationPanel({
       <div
         key={root.annotation_id}
         data-annotation-id={root.annotation_id}
-        className={`space-y-1 ${onJumpToAnnotation ? 'cursor-pointer' : ''}`}
+        className={`space-y-1 ${onJumpToAnnotation || onFocusAnnotation ? 'cursor-pointer' : ''}`}
+        title={resolveAnnotationCardClickAction({ active: Boolean(options.active), pinned: Boolean(options.pinned) }) === 'jump'
+          ? 'Click to jump to code. Double-click to pin.'
+          : 'Click to focus this annotation. Double-click to pin.'}
         onClick={(event) => {
-          if (!onJumpToAnnotation || shouldIgnoreAnnotationCardClick(event.target)) return;
+          if ((!onJumpToAnnotation && !onFocusAnnotation) || shouldIgnoreAnnotationCardClick(event.target)) return;
           if (event.detail > 1) return;
           if (cardClickTimerRef.current !== null) {
             window.clearTimeout(cardClickTimerRef.current);
           }
           cardClickTimerRef.current = window.setTimeout(() => {
             cardClickTimerRef.current = null;
-            onJumpToAnnotation(root, { pin: false });
+            const action = resolveAnnotationCardClickAction({
+              active: Boolean(options.active),
+              pinned: Boolean(options.pinned),
+            });
+            if (action === 'jump') {
+              onJumpToAnnotation?.(root, { pin: false });
+            } else {
+              onFocusAnnotation?.(root);
+            }
           }, 180);
         }}
         onDoubleClick={(event) => {

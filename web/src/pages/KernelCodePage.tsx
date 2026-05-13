@@ -1077,6 +1077,10 @@ export default function KernelCodePage() {
     }
   }
 
+  function handleFocusAnnotation(annotation: CodeAnnotation) {
+    setActiveAnnotationId(annotation.annotation_id);
+  }
+
   function handleToggleAnnotationPin(annotation: CodeAnnotation) {
     const range = getAnnotationLineRange(annotation);
     setActiveAnnotationId(annotation.annotation_id);
@@ -2158,6 +2162,7 @@ export default function KernelCodePage() {
                                 activeAnnotationId={activeAnnotation?.annotation_id || null}
                                 pinnedAnnotationId={pinnedAnnotation?.annotation_id || null}
                                 rollerContainerRef={annotationPanelRef}
+                                onFocusAnnotation={handleFocusAnnotation}
                                 onJumpToAnnotation={handleJumpToAnnotation}
                                 onTogglePinAnnotation={handleToggleAnnotationPin}
                                 onPreviewAnnotation={handlePreviewAnnotation}

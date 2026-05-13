@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CodeAnnotation } from '../../../api/types';
 import {
   handleAnnotationPreviewButtonClick,
+  resolveAnnotationCardClickAction,
   resolveAnnotationPreviewState,
   shouldIgnoreAnnotationCardClick,
 } from '../annotationPreview';
@@ -84,5 +85,11 @@ describe('annotation preview helpers', () => {
     };
 
     expect(shouldIgnoreAnnotationCardClick(textNodeTarget)).toBe(false);
+  });
+
+  it('uses single clicks to focus inactive cards before jumping from active cards', () => {
+    expect(resolveAnnotationCardClickAction({ active: false, pinned: false })).toBe('focus');
+    expect(resolveAnnotationCardClickAction({ active: true, pinned: false })).toBe('jump');
+    expect(resolveAnnotationCardClickAction({ active: false, pinned: true })).toBe('jump');
   });
 });
