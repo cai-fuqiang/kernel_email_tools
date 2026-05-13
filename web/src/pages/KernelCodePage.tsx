@@ -1010,7 +1010,22 @@ export default function KernelCodePage() {
     const normalizedEnd = Math.max(normalizedStart, Math.max(startLine, endLine));
     const next = new Set<number>();
     for (let line = normalizedStart; line <= normalizedEnd; line += 1) next.add(line);
+    const pinned = annotations
+      .filter((annotation) => !annotation.in_reply_to)
+      .map((annotation) => ({
+        annotation,
+        range: getAnnotationLineRange(annotation),
+      }))
+      .filter(({ range }) => range.start <= normalizedEnd && range.end >= normalizedStart)
+      .sort((a, b) => {
+        const aDistance = Math.abs(a.range.start - normalizedStart);
+        const bDistance = Math.abs(b.range.start - normalizedStart);
+        if (aDistance !== bDistance) return aDistance - bDistance;
+        return a.range.start - b.range.start;
+      })[0]?.annotation || null;
     setSelectedLines(next);
+    setPinnedAnnotationId(pinned?.annotation_id || null);
+    if (pinned) setActiveAnnotationId(pinned.annotation_id);
     setSearchParams(
       { v: selectedVersion, path: currentPath, line: String(normalizedStart) },
       { replace: true },
@@ -1056,6 +1071,7 @@ export default function KernelCodePage() {
     }
     if (selectedLines.size === 1 && selectedLines.has(line)) {
       setSelectedLines(new Set<number>());
+      setPinnedAnnotationId(null);
       setSearchParams(
         { v: selectedVersion, path: currentPath },
         { replace: true },

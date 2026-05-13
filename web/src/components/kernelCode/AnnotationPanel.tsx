@@ -65,6 +65,7 @@ export default function AnnotationPanel({
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [previewAnnotation, setPreviewAnnotation] = useState<CodeAnnotation | null>(null);
   const [previewStartEditing, setPreviewStartEditing] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
   const rootAnnotations = useMemo(() => annotations.filter(a => !a.in_reply_to), [annotations]);
   const repliesByParentId = useMemo(() => {
@@ -108,6 +109,14 @@ export default function AnnotationPanel({
       setBody('');
     }
   }, [selectedLines]);
+
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updateMotionPreference = () => setPrefersReducedMotion(query.matches);
+    updateMotionPreference();
+    query.addEventListener('change', updateMotionPreference);
+    return () => query.removeEventListener('change', updateMotionPreference);
+  }, []);
 
   const handleCreate = async () => {
     if (!body.trim() || selectedLines.size === 0) return;
@@ -234,6 +243,13 @@ export default function AnnotationPanel({
     const distance = Math.min(Math.abs(position), 4);
     const scale = active ? 1 : Math.max(0.9, 1 - distance * 0.045);
     const opacity = active ? 1 : Math.max(0.48, 1 - distance * 0.16);
+    if (prefersReducedMotion) {
+      return {
+        opacity,
+        transform: 'none',
+        transformStyle: 'flat',
+      } as const;
+    }
     return {
       opacity,
       transform: `translateZ(${-distance * 24}px) rotateX(${-clamped * 2.5}deg) scale(${scale})`,
