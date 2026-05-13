@@ -46,6 +46,7 @@ import { showToast } from '../components/Toast';
 import AnnotationPanel from '../components/kernelCode/AnnotationPanel';
 import CodeHistoryPanel from '../components/kernelCode/CodeHistoryPanel';
 import KernelSymbolQuickPreviewPopover from '../components/kernelCode/KernelSymbolQuickPreviewPopover';
+import { pickActiveAnnotation, type SyncSource } from '../components/kernelCode/annotationSync';
 import {
   EmptyState,
   IconButton,
@@ -280,6 +281,9 @@ export default function KernelCodePage() {
   const [pathInput, setPathInput] = useState(urlPath);
   const [directoryEntries, setDirectoryEntries] = useState<KernelTreeEntry[]>([]);
   const [annotations, setAnnotations] = useState<CodeAnnotation[]>([]);
+  const [activeCenterLine, setActiveCenterLine] = useState<number | null>(null);
+  const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
+  const [pinnedAnnotationId, setPinnedAnnotationId] = useState<string | null>(null);
   const [selectedLines, setSelectedLines] = useState<Set<number>>(() => {
     const set = new Set<number>();
     if (urlLine) set.add(urlLine);
@@ -350,6 +354,9 @@ export default function KernelCodePage() {
   } | null>(null);
 
   const codeViewRef = useRef<HTMLDivElement | null>(null);
+  const annotationPanelRef = useRef<HTMLDivElement | null>(null);
+  const codeScrollRafRef = useRef<number | null>(null);
+  const syncLockRef = useRef<{ source: SyncSource; until: number }>({ source: null, until: 0 });
   const popoverDragRef = useRef<{ startX: number; startY: number; popoverX: number; popoverY: number } | null>(null);
   const pathRequestIdRef = useRef(0);
   const navResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -374,6 +381,13 @@ export default function KernelCodePage() {
   }, []);
 
   useEffect(() => () => abortPathRequests(), [abortPathRequests]);
+
+  useEffect(() => () => {
+    if (codeScrollRafRef.current !== null) {
+      window.cancelAnimationFrame(codeScrollRafRef.current);
+      codeScrollRafRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     setVersionsLoading(true);
@@ -665,6 +679,16 @@ export default function KernelCodePage() {
     );
   }, [annotations, selectedLines]);
 
+  const activeAnnotation = useMemo(
+    () => annotations.find((annotation) => annotation.annotation_id === activeAnnotationId) || null,
+    [activeAnnotationId, annotations],
+  );
+
+  const pinnedAnnotation = useMemo(
+    () => annotations.find((annotation) => annotation.annotation_id === pinnedAnnotationId) || null,
+    [pinnedAnnotationId, annotations],
+  );
+
   const pathSegments = useMemo(
     () => (currentPath ? currentPath.split('/').filter(Boolean) : []),
     [currentPath],
@@ -939,8 +963,37 @@ export default function KernelCodePage() {
     });
   }
 
+  function computeCenterLineFromScroll(): number | null {
+    const container = codeViewRef.current;
+    if (!container || !currentFile) return null;
+    const firstLine = container.querySelector<HTMLElement>('[data-line="1"]');
+    if (!firstLine) return null;
+    const rowHeight = firstLine.offsetHeight || 20;
+    const rawLine = Math.round((container.scrollTop + container.clientHeight / 2) / rowHeight);
+    return Math.max(1, Math.min(codeLines.length, rawLine));
+  }
+
+  function handleCodeScroll() {
+    if (codeScrollRafRef.current !== null) return;
+    codeScrollRafRef.current = window.requestAnimationFrame(() => {
+      codeScrollRafRef.current = null;
+      const centerLine = computeCenterLineFromScroll();
+      setActiveCenterLine(centerLine);
+      const now = Date.now();
+      const lock = syncLockRef.current;
+      if (lock.source && lock.source !== 'code' && now < lock.until) return;
+      const nextActive = pickActiveAnnotation(annotations, centerLine);
+      setActiveAnnotationId(nextActive?.annotation_id || null);
+      syncLockRef.current = { source: 'code', until: now + 350 };
+    });
+  }
+
   useEffect(() => {
     if (!currentFile) return;
+    setActiveCenterLine(focusLine || 1);
+    setActiveAnnotationId(null);
+    setPinnedAnnotationId(null);
+    syncLockRef.current = { source: null, until: 0 };
     window.requestAnimationFrame(() => {
       if (focusLine) {
         scrollToLine(focusLine, 'auto');
@@ -1613,7 +1666,11 @@ export default function KernelCodePage() {
 
                   <div
                     ref={codeViewRef}
+                    onScroll={handleCodeScroll}
                     onMouseUp={handleCodeMouseUp}
+                    data-active-center-line={activeCenterLine ?? undefined}
+                    data-active-annotation-id={activeAnnotation?.annotation_id ?? undefined}
+                    data-pinned-annotation-id={pinnedAnnotation?.annotation_id ?? undefined}
                     className="relative min-h-0 flex-1 overflow-y-scroll bg-white"
                   >
                   {fileLoading ? (
@@ -1768,7 +1825,10 @@ export default function KernelCodePage() {
                         </div>
                       </div>
 
-                      <div className="min-h-0 flex-1 space-y-3 overflow-y-scroll overscroll-contain px-4 py-4">
+                      <div
+                        ref={annotationPanelRef}
+                        className="min-h-0 flex-1 space-y-3 overflow-y-scroll overscroll-contain px-4 py-4"
+                      >
                         {inspectorView === 'overview' && (
                           <div className="space-y-3">
                             <div className="rounded-xl border border-slate-200 bg-white p-4">
