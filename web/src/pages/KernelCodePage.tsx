@@ -53,6 +53,7 @@ import {
 } from '../components/kernelCode/annotationPreview';
 import {
   buildLineMarker,
+  calculateCenteredRollerScrollTop,
   getAnnotationLineRange,
   pickActiveAnnotation,
   resolveCodeAutoScrollLine,
@@ -378,6 +379,7 @@ export default function KernelCodePage() {
   const codeScrollRafRef = useRef<number | null>(null);
   const syncLockRef = useRef<{ source: SyncSource; until: number }>({ source: null, until: 0 });
   const annotationAutoScrollUntilRef = useRef(0);
+  const forceCenteredAnnotationRef = useRef<string | null>(null);
   const activeFileIdentityRef = useRef<string | null>(null);
   const codeAutoScrollFileIdentityRef = useRef<string | null>(null);
   const popoverDragRef = useRef<{ startX: number; startY: number; popoverX: number; popoverY: number } | null>(null);
@@ -1078,6 +1080,7 @@ export default function KernelCodePage() {
   }
 
   function handleFocusAnnotation(annotation: CodeAnnotation) {
+    forceCenteredAnnotationRef.current = annotation.annotation_id;
     setActiveAnnotationId(annotation.annotation_id);
   }
 
@@ -1118,18 +1121,22 @@ export default function KernelCodePage() {
     if (!container || !target) return;
     const now = Date.now();
     const lock = syncLockRef.current;
-    if (lock.source && lock.source !== 'code' && now < lock.until) return;
+    const isForcedCenter = forceCenteredAnnotationRef.current === activeAnnotationId;
+    if (!isForcedCenter && lock.source && lock.source !== 'code' && now < lock.until) return;
     const containerRect = container.getBoundingClientRect();
     const targetRect = target.getBoundingClientRect();
-    const centeredTop =
-      container.scrollTop +
-      (targetRect.top - containerRect.top) -
-      (container.clientHeight / 2) +
-      (targetRect.height / 2);
+    const centeredTop = calculateCenteredRollerScrollTop({
+      containerScrollTop: container.scrollTop,
+      containerHeight: container.clientHeight,
+      scrollHeight: container.scrollHeight,
+      targetTop: targetRect.top - containerRect.top,
+      targetHeight: targetRect.height,
+    });
+    if (isForcedCenter) forceCenteredAnnotationRef.current = null;
     annotationAutoScrollUntilRef.current = now + 700;
     container.scrollTo({
-      top: Math.max(0, centeredTop),
-      behavior: 'auto',
+      top: centeredTop,
+      behavior: isForcedCenter ? 'smooth' : 'auto',
     });
   }, [activeAnnotationId, annotationFollowEnabled]);
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CodeAnnotation } from '../../../api/types';
 import {
   buildLineMarker,
+  calculateCenteredRollerScrollTop,
   getAnnotationLineRange,
   lineDistanceToRange,
   pickActiveAnnotation,
@@ -179,6 +180,40 @@ describe('annotation sync helpers', () => {
         ],
       }),
     ).toBe('last');
+  });
+
+  it('calculates scrollTop needed to center a clicked roller card', () => {
+    expect(
+      calculateCenteredRollerScrollTop({
+        containerScrollTop: 100,
+        containerHeight: 200,
+        scrollHeight: 1000,
+        targetTop: 300,
+        targetHeight: 80,
+      }),
+    ).toBe(340);
+  });
+
+  it('clamps centered roller scrollTop to the scrollable range', () => {
+    expect(
+      calculateCenteredRollerScrollTop({
+        containerScrollTop: 0,
+        containerHeight: 200,
+        scrollHeight: 1000,
+        targetTop: 20,
+        targetHeight: 40,
+      }),
+    ).toBe(0);
+
+    expect(
+      calculateCenteredRollerScrollTop({
+        containerScrollTop: 700,
+        containerHeight: 200,
+        scrollHeight: 800,
+        targetTop: 150,
+        targetHeight: 80,
+      }),
+    ).toBe(600);
   });
 
   it('selects the nearest roller item to the viewport center away from boundaries', () => {

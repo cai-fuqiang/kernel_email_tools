@@ -135,6 +135,28 @@ export function pickRollerActiveAnnotationId({
     })[0].id;
 }
 
+export function calculateCenteredRollerScrollTop({
+  containerScrollTop,
+  containerHeight,
+  scrollHeight,
+  targetTop,
+  targetHeight,
+}: {
+  containerScrollTop: number;
+  containerHeight: number;
+  scrollHeight: number;
+  targetTop: number;
+  targetHeight: number;
+}): number {
+  const desired =
+    containerScrollTop +
+    targetTop -
+    containerHeight / 2 +
+    targetHeight / 2;
+  const maxScrollTop = Math.max(0, scrollHeight - containerHeight);
+  return Math.min(Math.max(0, desired), maxScrollTop);
+}
+
 export function buildLineMarker({
   line,
   annotations,

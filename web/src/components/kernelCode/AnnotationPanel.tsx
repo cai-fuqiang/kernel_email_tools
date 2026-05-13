@@ -281,12 +281,12 @@ export default function AnnotationPanel({
   const rollerStyleFor = (position: number, active: boolean) => {
     const clamped = Math.max(-4, Math.min(4, position));
     const distance = Math.min(Math.abs(position), 4);
-    const scale = active ? 1 : Math.max(0.9, 1 - distance * 0.045);
+    const scale = active ? 1.06 : Math.max(0.84, 0.96 - distance * 0.06);
     const opacity = active ? 1 : Math.max(0.48, 1 - distance * 0.16);
     if (prefersReducedMotion) {
       return {
         opacity,
-        transform: 'none',
+        transform: active ? 'scale(1.02)' : 'none',
         transformStyle: 'flat',
       } as const;
     }
@@ -307,9 +307,9 @@ export default function AnnotationPanel({
     [
       'bg-white border rounded-lg overflow-hidden transition-all duration-200',
       pinned
-        ? 'border-sky-300 shadow-md ring-1 ring-sky-100'
+        ? 'border-sky-400 shadow-lg ring-2 ring-sky-200'
         : active
-          ? 'border-sky-300 shadow-md ring-1 ring-sky-100'
+          ? 'border-sky-400 shadow-xl ring-2 ring-sky-200'
           : 'border-slate-300 shadow-sm',
     ].join(' ');
 
