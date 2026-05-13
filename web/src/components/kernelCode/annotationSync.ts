@@ -26,6 +26,14 @@ function numericField(source: Record<string, unknown> | undefined, key: string):
   return 0;
 }
 
+function isRootAnnotation(annotation: CodeAnnotation): boolean {
+  return !annotation.in_reply_to;
+}
+
+function hasValidRange(annotation: CodeAnnotation): boolean {
+  return getAnnotationLineRange(annotation).start > 0;
+}
+
 export function getAnnotationLineRange(annotation: CodeAnnotation): AnnotationRange {
   const codeTarget = annotation.code_target as Record<string, unknown> | undefined;
   const metaCodeTarget = annotation.meta?.code_target as Record<string, unknown> | undefined;
@@ -60,7 +68,7 @@ export function pickActiveAnnotation(
   if (!centerLine || annotations.length === 0) return null;
   return (
     annotations
-      .filter((annotation) => !annotation.in_reply_to)
+      .filter((annotation) => isRootAnnotation(annotation) && hasValidRange(annotation))
       .slice()
       .sort((a, b) => {
         const aRange = getAnnotationLineRange(a);
@@ -74,7 +82,7 @@ export function pickActiveAnnotation(
 
 export function rankRollerItems(annotations: CodeAnnotation[], activeAnnotationId: string | null): RollerItem[] {
   const roots = annotations
-    .filter((annotation) => !annotation.in_reply_to)
+    .filter(isRootAnnotation)
     .slice()
     .sort((a, b) => getAnnotationLineRange(a).start - getAnnotationLineRange(b).start);
   const activeIndex = Math.max(0, roots.findIndex((annotation) => annotation.annotation_id === activeAnnotationId));
@@ -98,8 +106,9 @@ export function buildLineMarker({
   activeAnnotationId: string | null;
 }): LineMarker {
   const selected = selectedLines.has(line);
-  const selectedRange = selectedLines.size > 1;
+  const selectedRange = selected && selectedLines.size > 1;
   const matching = annotations.filter((annotation) => {
+    if (!isRootAnnotation(annotation)) return false;
     const range = getAnnotationLineRange(annotation);
     return range.start <= line && line <= range.end;
   });

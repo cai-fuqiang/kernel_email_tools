@@ -3,6 +3,7 @@ import type { CodeAnnotation } from '../../../api/types';
 import {
   buildLineMarker,
   getAnnotationLineRange,
+  lineDistanceToRange,
   pickActiveAnnotation,
   rankRollerItems,
   shouldAllowSync,
@@ -52,6 +53,47 @@ describe('annotation sync helpers', () => {
     ).toEqual({ start: 21, end: 24 });
   });
 
+  it('falls back to code target line range', () => {
+    expect(
+      getAnnotationLineRange(
+        annotation({
+          start_line: 0,
+          end_line: 0,
+          code_target: {
+            repo: 'linux',
+            version: 'v6.6',
+            path: 'mm/mmap.c',
+            start_line: 31,
+            end_line: 34,
+            symbol: '',
+            commit: '',
+            patch_id: '',
+            message_id: '',
+            target_ref: 'v6.6:mm/mmap.c',
+          },
+        }),
+      ),
+    ).toEqual({ start: 31, end: 34 });
+  });
+
+  it('falls back to meta code target line range', () => {
+    expect(
+      getAnnotationLineRange(
+        annotation({
+          start_line: 0,
+          end_line: 0,
+          meta: { code_target: { start_line: '41', end_line: '44' } },
+        }),
+      ),
+    ).toEqual({ start: 41, end: 44 });
+  });
+
+  it('calculates distance from a line to a range', () => {
+    expect(lineDistanceToRange(12, { start: 10, end: 15 })).toBe(0);
+    expect(lineDistanceToRange(7, { start: 10, end: 15 })).toBe(3);
+    expect(lineDistanceToRange(19, { start: 10, end: 15 })).toBe(4);
+  });
+
   it('picks annotation containing center line before nearest annotation', () => {
     const annotations = [
       annotation({ annotation_id: 'near', start_line: 20, end_line: 22 }),
@@ -70,6 +112,15 @@ describe('annotation sync helpers', () => {
     expect(pickActiveAnnotation(annotations, 32)?.annotation_id).toBe('after');
   });
 
+  it('does not pick an unknown line range over a valid annotation', () => {
+    const annotations = [
+      annotation({ annotation_id: 'unknown', start_line: 0, end_line: 0 }),
+      annotation({ annotation_id: 'valid', start_line: 40, end_line: 41 }),
+    ];
+
+    expect(pickActiveAnnotation(annotations, 1)?.annotation_id).toBe('valid');
+  });
+
   it('ranks roller items around the active annotation', () => {
     const annotations = [
       annotation({ annotation_id: 'a', start_line: 10, end_line: 10 }),
@@ -82,6 +133,19 @@ describe('annotation sync helpers', () => {
       ['b', 0],
       ['c', 1],
     ]);
+  });
+
+  it('ranks roller items from the first item when active annotation is null or unknown', () => {
+    const annotations = [
+      annotation({ annotation_id: 'a', start_line: 10, end_line: 10 }),
+      annotation({ annotation_id: 'b', start_line: 20, end_line: 20 }),
+    ];
+
+    expect(rankRollerItems(annotations, null).map((item) => [item.annotation.annotation_id, item.position, item.active])).toEqual([
+      ['a', 0, false],
+      ['b', 1, false],
+    ]);
+    expect(rankRollerItems(annotations, 'missing').map((item) => item.active)).toEqual([false, false]);
   });
 
   it('uses a dot for single-line annotation markers', () => {
@@ -115,6 +179,37 @@ describe('annotation sync helpers', () => {
         activeAnnotationId: null,
       }),
     ).toMatchObject({ kind: 'range', selected: true, active: false });
+  });
+
+  it('does not mark non-selected lines during a multi-line selection', () => {
+    expect(
+      buildLineMarker({
+        line: 9,
+        annotations: [],
+        selectedLines: new Set<number>([10, 11, 12]),
+        activeAnnotationId: null,
+      }),
+    ).toMatchObject({ kind: 'none', selected: false, active: false });
+  });
+
+  it('only counts root annotations in line markers', () => {
+    expect(
+      buildLineMarker({
+        line: 10,
+        annotations: [annotation({ annotation_id: 'reply', in_reply_to: 'root', start_line: 10, end_line: 10 })],
+        selectedLines: new Set<number>(),
+        activeAnnotationId: 'reply',
+      }),
+    ).toMatchObject({ kind: 'none', selected: false, active: false, annotationCount: 0 });
+
+    expect(
+      buildLineMarker({
+        line: 10,
+        annotations: [annotation({ annotation_id: 'root', start_line: 10, end_line: 10 })],
+        selectedLines: new Set<number>(),
+        activeAnnotationId: 'root',
+      }),
+    ).toMatchObject({ kind: 'dot', selected: false, active: true, annotationCount: 1 });
   });
 
   it('blocks immediate reverse sync from the same source lock', () => {
