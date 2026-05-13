@@ -162,7 +162,7 @@ export default function AnnotationPanel({
         } catch (e) {
           showToast(e instanceof Error ? e.message : 'Withdraw failed', 'error');
         }
-      }} className="text-[10px] text-slate-400">Withdraw</button>;
+      }} className="text-[10px] text-slate-600">Withdraw</button>;
     return null;
   };
 
@@ -214,13 +214,13 @@ export default function AnnotationPanel({
 
   return (
     <>
-    <div className="flex w-full flex-col overflow-hidden bg-slate-800">
-      {!hideHeader && <div className="flex items-center justify-between border-b border-slate-700 bg-slate-900 p-2.5">
-        <h3 className="text-sm font-semibold text-slate-200">Annotations</h3>
+    <div className="flex w-full flex-col overflow-hidden bg-slate-100">
+      {!hideHeader && <div className="flex items-center justify-between border-b border-slate-300 bg-white p-2.5">
+        <h3 className="text-sm font-semibold text-slate-900">Annotations</h3>
         <div className="flex items-center gap-1.5">
           {canWrite && selectedLines.size > 0 && (
             <>
-              <span className="text-[10px] text-slate-500">{lineInfo}</span>
+              <span className="text-[10px] text-slate-600">{lineInfo}</span>
               <button
                 onClick={() => setIsComposerOpen(prev => !prev)}
                 className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[10px] font-medium text-indigo-700 hover:bg-indigo-100"
@@ -234,7 +234,7 @@ export default function AnnotationPanel({
 
       {hideHeader && canWrite && selectedLines.size > 0 && (
         <div className="mb-2 flex items-center justify-between gap-2">
-          <span className="text-[10px] text-slate-500">{lineInfo}</span>
+          <span className="text-[10px] text-slate-600">{lineInfo}</span>
           <button
             onClick={() => setIsComposerOpen(prev => !prev)}
             className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[10px] font-medium text-indigo-700 hover:bg-indigo-100"
@@ -245,12 +245,12 @@ export default function AnnotationPanel({
       )}
 
       {canWrite && selectedLines.size > 0 && isComposerOpen && (
-        <div className="border-b border-slate-700 bg-slate-900 px-2.5 py-2">
+        <div className="border-b border-slate-300 bg-white px-2.5 py-2">
           <textarea
             value={body}
             onChange={e => setBody(e.target.value)}
             placeholder="Annotation content (Markdown)..."
-            className="w-full min-h-[60px] text-xs border border-slate-700 rounded-lg p-2 outline-none focus:border-indigo-400 resize-y"
+            className="w-full min-h-[60px] text-xs border border-slate-300 rounded-lg p-2 outline-none focus:border-indigo-400 resize-y"
           />
           <div className="flex gap-2 mt-2">
             <button onClick={handleCreate} disabled={!body.trim() || saving}
@@ -263,7 +263,7 @@ export default function AnnotationPanel({
                 setBody('');
               }}
               disabled={saving}
-              className="px-3 py-1 text-xs font-medium text-slate-300 bg-slate-700 rounded-lg hover:bg-slate-600 disabled:opacity-50"
+              className="px-3 py-1 text-xs font-medium text-slate-700 bg-slate-200 rounded-lg hover:bg-slate-300 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -280,7 +280,7 @@ export default function AnnotationPanel({
 
       <div className="p-2">
         {relevant.length === 0 ? (
-          <p className="text-xs text-slate-500 text-center py-8">
+          <p className="text-xs text-slate-600 text-center py-8">
             {selectedLines.size > 0 ? 'No annotations on selected lines' : 'Click a line number to add an annotation'}
           </p>
         ) : (
@@ -290,24 +290,24 @@ export default function AnnotationPanel({
               const replies = annotations.filter(a => a.in_reply_to === root.annotation_id);
               const replyCount = replyCounts[root.annotation_id] || 0;
               const statusColors: Record<string, string> = {
-                pending: 'bg-amber-100 text-amber-200',
-                approved: 'bg-emerald-100 text-emerald-200',
-                rejected: 'bg-rose-100 text-rose-200',
+                pending: 'bg-amber-100 text-amber-800',
+                approved: 'bg-emerald-100 text-emerald-800',
+                rejected: 'bg-rose-100 text-rose-800',
               };
-              const sc = statusColors[root.publish_status] || 'bg-slate-700 text-slate-200';
+              const sc = statusColors[root.publish_status] || 'bg-slate-200 text-slate-900';
 
               return (
                 <div key={root.annotation_id} className="space-y-1">
-                  <div className="bg-slate-900 border border-slate-700 rounded-lg overflow-hidden shadow-sm">
-                    <div className="px-3 py-2 bg-slate-800 flex items-center justify-between border-b border-slate-700">
+                  <div className="bg-white border border-slate-300 rounded-lg overflow-hidden shadow-sm">
+                    <div className="px-3 py-2 bg-slate-100 flex items-center justify-between border-b border-slate-300">
                       <div className="flex items-center gap-2">
                         {replyCount > 0 && (
-                          <button onClick={() => toggleExpand(root.annotation_id)} className="text-[10px] text-slate-500 w-4">
+                          <button onClick={() => toggleExpand(root.annotation_id)} className="text-[10px] text-slate-600 w-4">
                             {isExpanded ? '▼' : '▶'}
                           </button>
                         )}
-                        <span className="text-xs text-slate-500">{formatAnnotationLineRange(root)}</span>
-                        {replyCount > 0 && <span className="text-[10px] text-slate-500">({replyCount})</span>}
+                        <span className="text-xs text-slate-600">{formatAnnotationLineRange(root)}</span>
+                        {replyCount > 0 && <span className="text-[10px] text-slate-600">({replyCount})</span>}
                         <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${sc}`}>{root.publish_status}</span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -319,7 +319,7 @@ export default function AnnotationPanel({
                               setPreviewAnnotation(root);
                               setPreviewStartEditing(true);
                             }}
-                            className="text-[10px] text-slate-400 hover:text-slate-100"
+                            className="text-[10px] text-slate-600 hover:text-slate-950"
                           >
                             Edit
                           </button>
@@ -330,7 +330,7 @@ export default function AnnotationPanel({
                             setPreviewAnnotation(root);
                             setPreviewStartEditing(false);
                           }}
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-700 text-slate-500 hover:bg-slate-900 hover:text-slate-200"
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-white hover:text-slate-900"
                           aria-label="Open annotation detail"
                           title="Open annotation detail"
                         >
@@ -338,7 +338,7 @@ export default function AnnotationPanel({
                         </button>
                         {canManage(root) && (
                           <button onClick={() => setPendingAction({ kind: 'delete', annotationId: root.annotation_id, isReply: false })}
-                            className="text-[10px] text-slate-500 hover:text-red-500">Delete</button>
+                            className="text-[10px] text-slate-600 hover:text-red-500">Delete</button>
                         )}
                       </div>
                     </div>
@@ -347,7 +347,7 @@ export default function AnnotationPanel({
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{root.body}</ReactMarkdown>
                       </div>
                       {root.publish_review_comment && (
-                        <div className="mt-2 rounded border border-slate-700 bg-slate-800 px-2 py-1 text-[10px] text-slate-300">
+                        <div className="mt-2 rounded border border-slate-300 bg-slate-100 px-2 py-1 text-[10px] text-slate-700">
                           Review note: {root.publish_review_comment}
                         </div>
                       )}
@@ -358,12 +358,12 @@ export default function AnnotationPanel({
                   </div>
 
                   {isExpanded && replies.map(reply => (
-                    <div key={reply.annotation_id} className="ml-4 bg-slate-900 border border-slate-700 border-l-4 border-l-green-500 rounded-lg overflow-hidden shadow-sm">
-                      <div className="px-3 py-2 bg-slate-800 flex items-center justify-between border-b border-slate-700">
+                    <div key={reply.annotation_id} className="ml-4 bg-white border border-slate-300 border-l-4 border-l-green-500 rounded-lg overflow-hidden shadow-sm">
+                      <div className="px-3 py-2 bg-slate-100 flex items-center justify-between border-b border-slate-300">
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-green-400 bg-green-950 px-1.5 py-0.5 rounded">Reply</span>
-                          <span className="text-xs text-slate-500">{formatAnnotationLineRange(reply)}</span>
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${statusColors[reply.publish_status] || 'bg-slate-700 text-slate-200'}`}>{reply.publish_status}</span>
+                          <span className="text-[10px] text-green-700 bg-green-50 px-1.5 py-0.5 rounded">Reply</span>
+                          <span className="text-xs text-slate-600">{formatAnnotationLineRange(reply)}</span>
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${statusColors[reply.publish_status] || 'bg-slate-200 text-slate-900'}`}>{reply.publish_status}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <PublishButton a={reply} />
@@ -374,7 +374,7 @@ export default function AnnotationPanel({
                                 setPreviewAnnotation(reply);
                                 setPreviewStartEditing(true);
                               }}
-                              className="text-[10px] text-slate-400 hover:text-slate-100"
+                              className="text-[10px] text-slate-600 hover:text-slate-950"
                             >
                               Edit
                             </button>
@@ -385,7 +385,7 @@ export default function AnnotationPanel({
                               setPreviewAnnotation(reply);
                               setPreviewStartEditing(false);
                             }}
-                            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-700 text-slate-500 hover:bg-slate-900 hover:text-slate-200"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-white hover:text-slate-900"
                             aria-label="Open reply detail"
                             title="Open reply detail"
                           >
@@ -393,7 +393,7 @@ export default function AnnotationPanel({
                           </button>
                           {canManage(reply) && (
                             <button onClick={() => setPendingAction({ kind: 'delete', annotationId: reply.annotation_id, isReply: true })}
-                              className="text-[10px] text-slate-500 hover:text-red-500">Delete</button>
+                              className="text-[10px] text-slate-600 hover:text-red-500">Delete</button>
                           )}
                         </div>
                       </div>
@@ -548,7 +548,7 @@ function AnnotationDetailModal({
             <button
               type="button"
               onClick={handleRequestPublish}
-              className="inline-flex items-center gap-2 rounded-lg border border-amber-800 bg-amber-950 px-3 py-2 text-sm font-medium text-amber-300 hover:bg-amber-900"
+              className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100"
             >
               Request public
             </button>
@@ -557,7 +557,7 @@ function AnnotationDetailModal({
             <button
               type="button"
               onClick={handleWithdrawPublish}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100"
             >
               Withdraw
             </button>
@@ -566,7 +566,7 @@ function AnnotationDetailModal({
             <button
               type="button"
               onClick={() => setIsEditing(true)}
-              className="inline-flex items-center gap-2 rounded-lg border border-sky-800 bg-sky-950 px-3 py-2 text-sm font-medium text-sky-300 hover:bg-sky-900"
+              className="inline-flex items-center gap-2 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100"
             >
               Edit
             </button>
@@ -580,7 +580,7 @@ function AnnotationDetailModal({
                   setDraftVisibility(annotation.visibility);
                   setIsEditing(false);
                 }}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100"
               >
                 Cancel
               </button>
@@ -597,7 +597,7 @@ function AnnotationDetailModal({
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100"
             >
               <X className="h-4 w-4" />
               Close
@@ -607,24 +607,24 @@ function AnnotationDetailModal({
       }
     >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
-        <section className="min-w-0 rounded-lg border border-slate-700 bg-slate-900 p-4">
+        <section className="min-w-0 rounded-lg border border-slate-300 bg-white p-4">
           {isEditing ? (
             <div className="space-y-3">
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-600">
                   Body
                 </label>
                 <textarea
                   value={draftBody}
                   onChange={(e) => setDraftBody(e.target.value)}
-                  className="min-h-[320px] w-full rounded-xl border border-slate-700 px-3 py-2 text-sm outline-none focus:border-sky-400"
+                  className="min-h-[320px] w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400"
                   placeholder="Write annotation content..."
                 />
               </div>
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-700 bg-slate-800 px-3 py-3">
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-300 bg-slate-100 px-3 py-3">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Visibility</div>
-                  <div className="mt-1 text-xs text-slate-400">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-600">Visibility</div>
+                  <div className="mt-1 text-xs text-slate-600">
                     {canEditVisibility ? 'Admins can switch public/private.' : 'Only private edits are allowed here; use Request public after saving.'}
                   </div>
                 </div>
@@ -632,7 +632,7 @@ function AnnotationDetailModal({
                   value={draftVisibility}
                   onChange={(e) => setDraftVisibility(e.target.value as 'public' | 'private')}
                   disabled={!canEditVisibility}
-                  className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-200 outline-none disabled:bg-slate-700"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none disabled:bg-slate-200"
                 >
                   <option value="private">private</option>
                   {canEditVisibility && <option value="public">public</option>}
@@ -645,7 +645,7 @@ function AnnotationDetailModal({
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{annotation.body}</ReactMarkdown>
               </div>
               {annotation.publish_review_comment && (
-                <div className="mt-4 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-300">
+                <div className="mt-4 rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-xs text-slate-700">
                   Review note: {annotation.publish_review_comment}
                 </div>
               )}
@@ -653,42 +653,42 @@ function AnnotationDetailModal({
           )}
         </section>
         <aside className="space-y-3">
-          <div className="rounded-lg border border-slate-700 bg-slate-800 p-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+          <div className="rounded-lg border border-slate-300 bg-slate-100 p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
               Target
             </div>
             <dl className="mt-2 space-y-1 text-xs">
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-400">Version</dt>
-                <dd className="font-medium text-slate-100">{annotation.version}</dd>
+                <dt className="text-slate-600">Version</dt>
+                <dd className="font-medium text-slate-950">{annotation.version}</dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-400">Path</dt>
-                <dd className="min-w-0 truncate font-mono text-slate-100">{annotation.file_path}</dd>
+                <dt className="text-slate-600">Path</dt>
+                <dd className="min-w-0 truncate font-mono text-slate-950">{annotation.file_path}</dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-400">Range</dt>
-                <dd className="font-medium text-slate-100">{formatAnnotationLineRange(annotation)}</dd>
+                <dt className="text-slate-600">Range</dt>
+                <dd className="font-medium text-slate-950">{formatAnnotationLineRange(annotation)}</dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-400">Visibility</dt>
-                <dd className="font-medium text-slate-100">{annotation.visibility}</dd>
+                <dt className="text-slate-600">Visibility</dt>
+                <dd className="font-medium text-slate-950">{annotation.visibility}</dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-400">Status</dt>
-                <dd className="font-medium text-slate-100">{annotation.publish_status}</dd>
+                <dt className="text-slate-600">Status</dt>
+                <dd className="font-medium text-slate-950">{annotation.publish_status}</dd>
               </div>
             </dl>
           </div>
           {replies.length > 0 && (
-            <div className="rounded-lg border border-slate-700 bg-slate-900 p-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+            <div className="rounded-lg border border-slate-300 bg-white p-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
                 Replies
               </div>
               <div className="mt-2 max-h-[50vh] space-y-2 overflow-y-auto">
                 {replies.map((reply) => (
-                  <div key={reply.annotation_id} className="rounded-lg border border-slate-700 bg-slate-800 p-2">
-                    <div className="mb-1 text-[10px] font-medium text-slate-400">
+                  <div key={reply.annotation_id} className="rounded-lg border border-slate-300 bg-slate-100 p-2">
+                    <div className="mb-1 text-[10px] font-medium text-slate-600">
                       {formatAnnotationLineRange(reply)} · {reply.publish_status}
                     </div>
                     <div className="markdown-content text-xs">
