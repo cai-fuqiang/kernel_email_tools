@@ -237,7 +237,10 @@ export default function AnnotationQuickPreviewPopover({
     }
 
     function onPointerUp() {
+      if (!interactionRef.current) return;
       interactionRef.current = null;
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
     }
 
     window.addEventListener('pointermove', onPointerMove, { passive: false });
@@ -268,7 +271,7 @@ export default function AnnotationQuickPreviewPopover({
       }}
     >
       <div
-        className="flex cursor-move items-start justify-between gap-3 border-b border-slate-300 bg-white px-3 py-2"
+        className="flex cursor-move select-none touch-none items-start justify-between gap-3 border-b border-slate-300 bg-white px-3 py-2"
         onDoubleClick={(event) => {
           const target = event.target as HTMLElement | null;
           if (target?.closest?.('button,a')) return;
@@ -276,12 +279,17 @@ export default function AnnotationQuickPreviewPopover({
         }}
         onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
           if (event.target instanceof HTMLElement && event.target.closest('button,a')) return;
+          if (!frame) return;
+          event.preventDefault();
+          event.stopPropagation();
           interactionRef.current = {
             kind: 'drag',
             startX: event.clientX,
             startY: event.clientY,
             startFrame: frame,
           };
+          document.body.style.userSelect = 'none';
+          document.body.style.cursor = 'move';
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
       >
@@ -378,14 +386,19 @@ export default function AnnotationQuickPreviewPopover({
       </div>
 
       <div
-        className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize rounded-tl-md bg-slate-600/70"
-        onPointerDown={(event) => {
+        className="absolute bottom-0 right-0 h-6 w-6 cursor-se-resize select-none touch-none rounded-tl-xl bg-slate-600/70"
+        onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
+          if (!frame) return;
+          event.preventDefault();
+          event.stopPropagation();
           interactionRef.current = {
             kind: 'resize',
             startX: event.clientX,
             startY: event.clientY,
             startFrame: frame,
           };
+          document.body.style.userSelect = 'none';
+          document.body.style.cursor = 'se-resize';
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
         title="Resize window"
