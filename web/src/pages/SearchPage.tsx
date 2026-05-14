@@ -48,7 +48,10 @@ export default function SearchPage() {
   const [mode, setMode] = useState('semantic');
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [selectedThread, setSelectedThread] = useState<string | null>(null);
+  const [selectedThread, setSelectedThread] = useState<{
+    threadId: string;
+    focusAnnotationId?: string;
+  } | null>(null);
   const [page, setPage] = useState(1);
   const [tagStats, setTagStats] = useState<TagStats[]>([]);
 
@@ -500,7 +503,7 @@ export default function SearchPage() {
                 setDraftBundle(null);
                 setDraftSaved(null);
               }}
-              onOpenThread={setSelectedThread}
+              onOpenThread={(threadId) => setSelectedThread({ threadId })}
             />
           )}
 
@@ -536,7 +539,7 @@ export default function SearchPage() {
               <ResultCard
                 key={hit.message_id}
                 hit={hit}
-                onThread={() => setSelectedThread(hit.thread_id)}
+                onThread={() => setSelectedThread({ threadId: hit.thread_id })}
                 selected={selectedMessages.has(hit.message_id)}
                 onToggleSelect={handleToggleSelect}
                 messageStats={contribByMessage[hit.message_id]}
@@ -548,7 +551,9 @@ export default function SearchPage() {
           <AnnotationResults
             annotationResults={annotationResults}
             annotationTotal={annotationTotal}
-            onOpenThread={setSelectedThread}
+            onOpenAnnotation={(threadId, annotationId) =>
+              setSelectedThread({ threadId, focusAnnotationId: annotationId })
+            }
           />
 
           {totalPages > 1 && (
@@ -593,7 +598,11 @@ export default function SearchPage() {
       )}
 
       {selectedThread && (
-        <ThreadDrawer threadId={selectedThread} onClose={() => setSelectedThread(null)} />
+        <ThreadDrawer
+          threadId={selectedThread.threadId}
+          focusAnnotationId={selectedThread.focusAnnotationId}
+          onClose={() => setSelectedThread(null)}
+        />
       )}
     </PageShell>
   );
