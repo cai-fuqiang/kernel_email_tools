@@ -11,6 +11,12 @@ import {
 } from '../api/client';
 import { useAuth } from '../auth';
 
+export function getTagPopoverPlacementClass(compact: boolean): string {
+  return compact
+    ? 'bottom-full left-0 mb-1'
+    : 'top-full left-0 mt-1';
+}
+
 interface EmailTagEditorProps {
   messageId?: string;
   targetType?: string;
@@ -244,7 +250,7 @@ export default function EmailTagEditor({
       {showPopover && (
         <div
           ref={popoverRef}
-          className="absolute top-full left-0 mt-1 z-50 w-64 bg-slate-900 border border-slate-700 rounded-lg shadow-lg shadow-black/50 p-2"
+          className={`absolute z-50 w-64 max-w-[min(16rem,calc(100vw-2rem))] bg-slate-900 border border-slate-700 rounded-lg shadow-lg shadow-black/50 p-2 ${getTagPopoverPlacementClass(compact)}`}
         >
           <input
             type="text"
