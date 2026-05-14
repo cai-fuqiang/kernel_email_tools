@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import {
   createTagAssignment,
   deleteTagAssignment,
@@ -15,6 +16,67 @@ export function getTagPopoverPlacementClass(compact: boolean): string {
   return compact
     ? 'bottom-full left-0 mb-1'
     : 'top-full left-0 mt-1';
+}
+
+export type TagOptionViewMode = 'all' | 'matching' | 'related';
+
+type MinimalTagOption = { id: number; name: string };
+
+type TriggerRect = {
+  left: number;
+  top: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
+
+const TAG_POPOVER_WIDTH = 320;
+const TAG_POPOVER_HEIGHT = 208;
+const TAG_POPOVER_MARGIN = 12;
+
+export function buildTagPopoverStyle(
+  rect: TriggerRect,
+  compact: boolean,
+  viewportWidth: number,
+  viewportHeight: number,
+): CSSProperties {
+  const preferredLeft = rect.left;
+  const maxLeft = Math.max(TAG_POPOVER_MARGIN, viewportWidth - TAG_POPOVER_WIDTH - TAG_POPOVER_MARGIN);
+  const left = Math.min(Math.max(TAG_POPOVER_MARGIN, preferredLeft), maxLeft);
+  const openUpward = compact && rect.top > TAG_POPOVER_HEIGHT + TAG_POPOVER_MARGIN;
+  const preferredTop = openUpward ? rect.top - TAG_POPOVER_HEIGHT : rect.bottom + 8;
+  const maxTop = Math.max(TAG_POPOVER_MARGIN, viewportHeight - TAG_POPOVER_HEIGHT - TAG_POPOVER_MARGIN);
+  const top = Math.min(Math.max(TAG_POPOVER_MARGIN, preferredTop), maxTop);
+
+  return {
+    position: 'fixed',
+    left,
+    top,
+    width: Math.min(TAG_POPOVER_WIDTH, viewportWidth - TAG_POPOVER_MARGIN * 2),
+    zIndex: 120,
+  };
+}
+
+export function getVisibleTagOptions({
+  mode,
+  inputValue,
+  suggestions,
+  related,
+}: {
+  mode: TagOptionViewMode;
+  inputValue: string;
+  suggestions: MinimalTagOption[];
+  related: MinimalTagOption[];
+}): MinimalTagOption[] {
+  if (mode === 'related') return related;
+  if (mode === 'matching') return suggestions.filter((tag) => tag.name.toLowerCase().includes(inputValue.toLowerCase()));
+  const seen = new Set<string>();
+  return [...suggestions, ...related].filter((tag) => {
+    const key = tag.name.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 interface EmailTagEditorProps {
@@ -70,9 +132,12 @@ export default function EmailTagEditor({
   const [allTags, setAllTags] = useState<TagTree[]>([]);
   const [showPopover, setShowPopover] = useState(false);
   const [inputValue, setInputValue] = useState('');
+  const [viewMode, setViewMode] = useState<TagOptionViewMode>('all');
   const [loading, setLoading] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const resolvedAnchorKey = JSON.stringify(resolvedAnchor);
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties | null>(null);
 
   const loadTargetTags = useCallback(async () => {
     if (!resolvedTargetRef) return;
@@ -122,13 +187,50 @@ export default function EmailTagEditor({
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(target) &&
+        triggerRef.current &&
+        !triggerRef.current.contains(target)
+      ) {
         setShowPopover(false);
       }
     };
     if (showPopover) document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showPopover]);
+
+  useEffect(() => {
+    if (!showPopover || !triggerRef.current || typeof window === 'undefined') return;
+
+    const updatePosition = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPopoverStyle(
+        buildTagPopoverStyle(
+          {
+            left: rect.left,
+            top: rect.top,
+            bottom: rect.bottom,
+            width: rect.width,
+            height: rect.height,
+          },
+          compact,
+          window.innerWidth,
+          window.innerHeight,
+        ),
+      );
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [compact, showPopover]);
 
   const directTagNames = useMemo(() => directTags.map((tag) => tag.name), [directTags]);
   const aggregatedOnly = useMemo(
@@ -141,8 +243,22 @@ export default function EmailTagEditor({
       allTags
         .filter((tag) => !directTagNames.includes(tag.name))
         .filter((tag) => isAdmin || tag.visibility === 'public' || (tag.visibility === 'private' && tag.owner_user_id === currentUser?.user_id))
-        .filter((tag) => !inputValue || tag.name.toLowerCase().includes(inputValue.toLowerCase())),
-    [allTags, currentUser?.user_id, directTagNames, inputValue, isAdmin],
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [allTags, currentUser?.user_id, directTagNames, isAdmin],
+  );
+  const relatedTagOptions = useMemo(
+    () => aggregatedOnly.map((tag) => ({ id: tag.id, name: tag.name })),
+    [aggregatedOnly],
+  );
+  const visibleOptions = useMemo(
+    () =>
+      getVisibleTagOptions({
+        mode: viewMode,
+        inputValue,
+        suggestions: suggestions.map((tag) => ({ id: tag.id, name: tag.name })),
+        related: relatedTagOptions,
+      }),
+    [inputValue, relatedTagOptions, suggestions, viewMode],
   );
 
   const canManageTag = (tag: TagRead, assignment?: TagAssignment) => {
@@ -234,6 +350,7 @@ export default function EmailTagEditor({
       ))}
 
       <button
+        ref={triggerRef}
         onClick={(e) => {
           e.stopPropagation();
           if (!canWrite) return;
@@ -247,57 +364,78 @@ export default function EmailTagEditor({
         tag
       </button>
 
-      {showPopover && (
+      {showPopover && popoverStyle && typeof document !== 'undefined' && createPortal(
         <div
           ref={popoverRef}
-          className={`absolute z-50 w-64 max-w-[min(16rem,calc(100vw-2rem))] bg-slate-900 border border-slate-700 rounded-lg shadow-lg shadow-black/50 p-2 ${getTagPopoverPlacementClass(compact)}`}
+          style={popoverStyle}
+          className="rounded-xl border border-slate-700 bg-slate-900 p-2 shadow-[0_24px_80px_rgba(15,23,42,0.45)]"
         >
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && inputValue.trim()) handleAdd(inputValue);
-            }}
-            placeholder={placeholder}
-            className="w-full px-2 py-1.5 text-xs border border-slate-700 rounded mb-1.5 focus:ring-1 focus:ring-indigo-600 focus:border-indigo-500"
-            autoFocus
-            disabled={!canWrite}
-          />
+          <div className="mb-2 flex items-center gap-2">
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(e) => {
+                setInputValue(e.target.value);
+                if (viewMode === 'related') setViewMode('matching');
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && inputValue.trim()) handleAdd(inputValue);
+              }}
+              placeholder={placeholder}
+              className="min-w-0 flex-1 rounded border border-slate-700 px-2 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-600"
+              autoFocus
+              disabled={!canWrite}
+            />
+            <select
+              value={viewMode}
+              onChange={(e) => setViewMode(e.target.value as TagOptionViewMode)}
+              className="rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-[11px] text-slate-200"
+            >
+              <option value="all">All</option>
+              <option value="matching">Matching</option>
+              <option value="related">Related</option>
+            </select>
+          </div>
 
-          {aggregatedOnly.length > 0 && (
-            <div className="mb-2">
-              <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Aggregated</div>
-              <div className="flex flex-wrap gap-1">
-                {aggregatedOnly.map((tag) => (
-                  <span key={tag.slug} className="px-1.5 py-0.5 bg-slate-700 text-slate-300 rounded text-[10px]">
-                    {tag.name}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
+          <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wide text-slate-400">
+            <span>{viewMode === 'related' ? 'Related tags' : 'Available tags'}</span>
+            <span>{visibleOptions.length}</span>
+          </div>
 
-          <div className="max-h-32 overflow-y-auto space-y-0.5">
-            {isAdmin && suggestions.length === 0 && inputValue.trim() && (
+          <div className="max-h-[40vh] min-h-24 overflow-y-auto space-y-1 pr-1">
+            {isAdmin && viewMode !== 'related' && suggestions.length === 0 && inputValue.trim() && (
               <button
                 onClick={() => handleAdd(inputValue)}
-                className="w-full text-left px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-950/30 rounded"
+                className="w-full rounded px-2 py-1.5 text-left text-xs text-indigo-300 hover:bg-indigo-950/30"
               >
                 Create "{inputValue.trim()}"
               </button>
             )}
-            {suggestions.map((tag) => (
-              <button
-                key={tag.id}
-                onClick={() => handleAdd(tag.name)}
-                className="w-full text-left px-2 py-1 text-xs text-slate-200 hover:bg-slate-700 rounded"
-              >
-                {tag.name}
-              </button>
-            ))}
+            {visibleOptions.length === 0 ? (
+              <div className="px-2 py-2 text-xs text-slate-500">
+                {viewMode === 'related' ? 'No related tags' : 'No matching tags'}
+              </div>
+            ) : (
+              visibleOptions.map((tag) => (
+                <button
+                  key={tag.id}
+                  onClick={() => {
+                    if (viewMode !== 'related') void handleAdd(tag.name);
+                  }}
+                  className={`w-full rounded px-2 py-1.5 text-left text-xs ${
+                    viewMode === 'related'
+                      ? 'cursor-default text-slate-400'
+                      : 'text-slate-200 hover:bg-slate-700'
+                  }`}
+                  disabled={viewMode === 'related'}
+                >
+                  {tag.name}
+                </button>
+              ))
+            )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
