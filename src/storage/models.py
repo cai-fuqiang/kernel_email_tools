@@ -3,11 +3,13 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, Boolean, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+from src.storage.annotation_links import normalize_relation_type, normalize_source_kind
 
 try:
     from pgvector.sqlalchemy import Vector
@@ -349,6 +351,46 @@ class AnnotationORM(Base):
 
     def __repr__(self) -> str:
         return f"<AnnotationORM id={self.id} annotation_id={self.annotation_id!r} type={self.annotation_type}>"
+
+
+class AnnotationRelationORM(Base):
+    """批注之间的有向关系。"""
+
+    __tablename__ = "annotation_relations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    relation_id: Mapped[str] = mapped_column(String(160), nullable=False, unique=True, index=True)
+    source_annotation_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_annotation_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    relation_type: Mapped[str] = mapped_column(String(64), nullable=False, default="references", index=True)
+    source_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="manual", index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    meta: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
+    updated_by: Mapped[str] = mapped_column(String(128), nullable=False, default="me")
+    created_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    updated_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_annotation_id",
+            "target_annotation_id",
+            "relation_type",
+            "source_kind",
+            name="uq_annotation_relations_edge",
+        ),
+        Index("ix_annotation_relations_source_type", "source_annotation_id", "relation_type"),
+        Index("ix_annotation_relations_target_type", "target_annotation_id", "relation_type"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AnnotationRelationORM relation_id={self.relation_id!r} type={self.relation_type}>"
 
 
 class KnowledgeEntityORM(Base):
@@ -929,6 +971,44 @@ class AnnotationRead(BaseModel):
     end_line: int = 0
     code_target: dict = Field(default_factory=dict)
     meta: dict = Field(default_factory=dict)
+
+    model_config = {"from_attributes": True}
+
+
+class AnnotationRelationCreate(BaseModel):
+    source_annotation_id: str = Field(..., min_length=1, max_length=64)
+    target_annotation_id: str = Field(..., min_length=1, max_length=64)
+    relation_type: str = Field("references", max_length=64)
+    source_kind: str = Field("manual", max_length=32)
+    description: str = Field("", max_length=4000)
+    meta: dict = Field(default_factory=dict)
+    created_by_user_id: Optional[str] = Field(None, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_relation(self) -> "AnnotationRelationCreate":
+        self.relation_type = normalize_relation_type(self.relation_type)
+        self.source_kind = normalize_source_kind(self.source_kind)
+        if self.source_annotation_id == self.target_annotation_id:
+            raise ValueError("source_annotation_id and target_annotation_id must differ")
+        return self
+
+    model_config = {"from_attributes": True}
+
+
+class AnnotationRelationRead(BaseModel):
+    relation_id: str
+    source_annotation_id: str
+    target_annotation_id: str
+    relation_type: str = "references"
+    source_kind: str = "manual"
+    description: str = ""
+    meta: dict = Field(default_factory=dict)
+    created_by: str = "me"
+    updated_by: str = "me"
+    created_by_user_id: Optional[str] = None
+    updated_by_user_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}
 
