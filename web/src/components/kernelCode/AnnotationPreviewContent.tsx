@@ -2,6 +2,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ExternalLink, Maximize2, MessageSquareText, PanelRightOpen } from 'lucide-react';
 import type { CodeAnnotation } from '../../api/types';
+import AnnotationIdBadge from '../AnnotationIdBadge';
 import EmailTagEditor from '../EmailTagEditor';
 import { formatAnnotationPreviewLineRange } from './annotationPreview';
 
@@ -98,8 +99,11 @@ export default function AnnotationPreviewContent({
             <div className="mt-2 truncate text-sm font-semibold text-slate-950">
               {annotation.target_label || `${annotation.file_path}:${lineRange}`}
             </div>
-            <div className="mt-1 truncate font-mono text-[11px] text-slate-500">
-              {annotation.file_path}
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <div className="truncate font-mono text-[11px] text-slate-500">
+                {annotation.file_path}
+              </div>
+              <AnnotationIdBadge annotationId={annotation.annotation_id} compact />
             </div>
           </div>
 

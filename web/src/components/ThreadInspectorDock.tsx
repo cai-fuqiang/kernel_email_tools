@@ -14,6 +14,7 @@ import {
   type TranslationJobResponse,
 } from '../api/client';
 import type { Annotation, TagRead } from '../api/types';
+import AnnotationIdBadge from './AnnotationIdBadge';
 import EmailTagEditor from './EmailTagEditor';
 
 type DockPanel = 'tags' | 'annotations' | 'translations';
@@ -202,7 +203,10 @@ export default function ThreadInspectorDock({
                 {annotations.length > 0 ? annotations.slice(0, 3).map((annotation) => (
                   <div key={annotation.annotation_id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                     <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
-                      <span>{annotation.author || 'unknown'}</span>
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span>{annotation.author || 'unknown'}</span>
+                        <AnnotationIdBadge annotationId={annotation.annotation_id} compact />
+                      </div>
                       <span>{formatDate(annotation.updated_at || annotation.created_at)}</span>
                     </div>
                     <div className="mt-1 text-xs leading-5 text-slate-700">{trimText(annotation.body)}</div>

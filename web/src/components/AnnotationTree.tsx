@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight, FileText, Mail, ScrollText } from 'lucide-react';
 import AnnotationCard from './AnnotationCard';
+import AnnotationIdBadge from './AnnotationIdBadge';
 import ConfirmModal from './ConfirmModal';
 import PreviewModal from './PreviewModal';
 import ThreadDrawer from './ThreadDrawer';
@@ -238,6 +239,7 @@ export default function AnnotationTree({ annotations, onAnnotationsChange, layou
                       {anchorLabel}
                     </span>
                   )}
+                  <AnnotationIdBadge annotationId={annotation.annotation_id} compact />
                 </div>
                 <p className="mt-1 text-sm text-slate-500">
                   {annotation.target_subtitle || annotation.email_sender || annotation.target_type}
