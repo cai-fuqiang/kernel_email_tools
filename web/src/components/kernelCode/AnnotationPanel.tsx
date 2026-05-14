@@ -14,6 +14,7 @@ import {
 } from '../../api/client';
 import type { AnnotationRelation, AnnotationRelationCreate, CodeAnnotation } from '../../api/types';
 import EmailTagEditor from '../EmailTagEditor';
+import AnnotationIdBadge from '../AnnotationIdBadge';
 import AnnotationMarkdown from '../AnnotationMarkdown';
 import AnnotationRelationsPanel from '../AnnotationRelationsPanel';
 import VariableTracePanel from '../VariableTracePanel';
@@ -917,9 +918,15 @@ function AnnotationDetailModal({
       onClose={onClose}
       title={`${formatAnnotationLineRange(currentAnnotation)} annotation`}
       subtitle={
-        <span>
-          {currentAnnotation.visibility} · {currentAnnotation.publish_status}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700">
+            {currentAnnotation.visibility}
+          </span>
+          <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700">
+            {currentAnnotation.publish_status}
+          </span>
+          <AnnotationIdBadge annotationId={currentAnnotation.annotation_id} compact />
+        </div>
       }
       footer={
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -985,7 +992,8 @@ function AnnotationDetailModal({
         </div>
       }
     >
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="space-y-4">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_15rem]">
         <section className="min-w-0 rounded-lg border border-slate-300 bg-white p-4">
           {isEditing ? (
             <div className="space-y-3">
@@ -1032,67 +1040,65 @@ function AnnotationDetailModal({
           )}
         </section>
         <aside className="space-y-3">
-          <div className="rounded-lg border border-slate-300 bg-slate-100 p-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
               Target
             </div>
-            <dl className="mt-2 space-y-1 text-xs">
+            <dl className="mt-3 space-y-2 text-xs">
+              <div className="space-y-1">
+                <dt className="text-slate-500">Annotation ID</dt>
+                <dd><AnnotationIdBadge annotationId={currentAnnotation.annotation_id} compact className="max-w-full" /></dd>
+              </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-600">Version</dt>
+                <dt className="text-slate-500">Version</dt>
                 <dd className="font-medium text-slate-950">{currentAnnotation.version}</dd>
               </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-slate-600">Path</dt>
-                <dd className="min-w-0 truncate font-mono text-slate-950">{currentAnnotation.file_path}</dd>
+              <div className="space-y-1">
+                <dt className="text-slate-500">Path</dt>
+                <dd className="break-all font-mono text-slate-950">{currentAnnotation.file_path}</dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-600">Range</dt>
+                <dt className="text-slate-500">Range</dt>
                 <dd className="font-medium text-slate-950">{formatAnnotationLineRange(currentAnnotation)}</dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-slate-600">Visibility</dt>
-                <dd className="font-medium text-slate-950">{currentAnnotation.visibility}</dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-slate-600">Status</dt>
-                <dd className="font-medium text-slate-950">{currentAnnotation.publish_status}</dd>
               </div>
             </dl>
           </div>
-          {visibleReplies.length > 0 && (
-            <div className="rounded-lg border border-slate-300 bg-white p-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                Replies
-              </div>
-              <div className="mt-2 max-h-[50vh] space-y-2 overflow-y-auto">
-                {visibleReplies.map((reply) => (
-                  <div key={reply.annotation_id} className="rounded-lg border border-slate-300 bg-slate-100 p-2">
-                    <div className="mb-1 text-[10px] font-medium text-slate-600">
-                      {formatAnnotationLineRange(reply)} · {reply.publish_status}
-                    </div>
-                    <div className="markdown-content text-xs">
-                      <AnnotationMarkdown body={reply.body} onOpenAnnotation={handleOpenAnnotation} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
           <VariableTracePanel
             annotationId={currentAnnotation.annotation_id}
             relations={relations}
             onOpenAnnotation={handleOpenAnnotation}
           />
-          <AnnotationRelationsPanel
-            annotationId={currentAnnotation.annotation_id}
-            relations={relations}
-            loading={relationsLoading}
-            error={relationsError}
-            onOpenAnnotation={handleOpenAnnotation}
-            onCreateRelation={handleCreateRelation}
-            onDeleteRelation={handleDeleteRelation}
-          />
         </aside>
+        </div>
+        {visibleReplies.length > 0 && (
+          <div className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+              Replies
+            </div>
+            <div className="mt-2 max-h-[28vh] space-y-2 overflow-y-auto">
+              {visibleReplies.map((reply) => (
+                <div key={reply.annotation_id} className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                  <div className="mb-1 flex flex-wrap items-center gap-2 text-[10px] font-medium text-slate-600">
+                    <span>{formatAnnotationLineRange(reply)} · {reply.publish_status}</span>
+                    <AnnotationIdBadge annotationId={reply.annotation_id} compact />
+                  </div>
+                  <div className="markdown-content text-xs">
+                    <AnnotationMarkdown body={reply.body} onOpenAnnotation={handleOpenAnnotation} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <AnnotationRelationsPanel
+          annotationId={currentAnnotation.annotation_id}
+          relations={relations}
+          loading={relationsLoading}
+          error={relationsError}
+          onOpenAnnotation={handleOpenAnnotation}
+          onCreateRelation={handleCreateRelation}
+          onDeleteRelation={handleDeleteRelation}
+        />
       </div>
     </InspectorDetailModal>
   );

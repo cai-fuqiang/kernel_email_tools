@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { AnnotationListItem, CodeAnnotation } from '../api/types';
 import { getKernelFile } from '../api/client';
+import AnnotationIdBadge from './AnnotationIdBadge';
 import AnnotationMarkdown from './AnnotationMarkdown';
 import { showToast } from './Toast';
 
@@ -95,17 +96,20 @@ export default function PreviewModal({ isOpen, onClose, annotation, onOpenAnnota
       <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[85vh] flex flex-col m-4">
         {/* 头部 */}
         <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <h3 className="text-sm font-semibold text-gray-700">Annotation Preview</h3>
-            <span className="px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-700 rounded">
-              {ann.version}
-            </span>
-            <span className="text-xs font-mono text-gray-500">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold text-gray-700">Annotation Preview</h3>
+              <span className="px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-700 rounded">
+                {ann.version}
+              </span>
+              <span className="text-xs text-gray-400">
+                L{ann.start_line}{ann.end_line !== ann.start_line && `-${ann.end_line}`}
+              </span>
+              <AnnotationIdBadge annotationId={ann.annotation_id} compact />
+            </div>
+            <div className="mt-1 truncate text-xs font-mono text-gray-500">
               {ann.file_path}
-            </span>
-            <span className="text-xs text-gray-400">
-              L{ann.start_line}{ann.end_line !== ann.start_line && `-${ann.end_line}`}
-            </span>
+            </div>
           </div>
           <button
             onClick={onClose}

@@ -248,11 +248,14 @@ export default function AnnotationRelationsPanel({
         </div>
       ) : null}
 
-      <form onSubmit={(event) => void handleSubmit(event)} className="mt-3">
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_160px_auto]">
+      <form
+        onSubmit={(event) => void handleSubmit(event)}
+        className="mt-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3"
+      >
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-end">
           <label className="space-y-1">
             <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-              Target annotation id
+              Target ID
             </span>
             <input
               value={targetAnnotationId}
@@ -264,7 +267,7 @@ export default function AnnotationRelationsPanel({
 
           <label className="space-y-1">
             <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-              Relation type
+              Type
             </span>
             <select
               value={relationType}

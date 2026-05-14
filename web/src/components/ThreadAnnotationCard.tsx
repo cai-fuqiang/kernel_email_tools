@@ -8,6 +8,7 @@ import {
   withdrawAnnotationPublication,
 } from '../api/client';
 import type { Annotation } from '../api/types';
+import AnnotationIdBadge from './AnnotationIdBadge';
 import EmailTagEditor from './EmailTagEditor';
 import { showToast } from './Toast';
 import { useAuth } from '../auth';
@@ -162,7 +163,7 @@ export default function ThreadAnnotationCard({
       }`}
       style={{ marginLeft: depth > 0 ? `${Math.min(depth, 6) * 16}px` : 0 }}
     >
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex flex-wrap items-center gap-2 mb-2">
         <span className="px-2 py-0.5 bg-blue-200 text-blue-800 text-xs rounded font-medium">我的批注</span>
         <span className="text-sm font-medium text-blue-900">{annotation.author}</span>
         <span className={`px-2 py-0.5 text-xs rounded font-medium ${annotation.visibility === 'private' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
@@ -171,6 +172,7 @@ export default function ThreadAnnotationCard({
         <span className={`px-2 py-0.5 text-xs rounded font-medium ${publishTone}`}>
           {annotation.publish_status}
         </span>
+        <AnnotationIdBadge annotationId={annotation.annotation_id} compact className="bg-white/80" />
         <span className="text-xs text-blue-500 ml-auto">
           {new Date(annotation.created_at).toLocaleDateString('zh-CN', {
             year: 'numeric', month: 'short', day: 'numeric',
