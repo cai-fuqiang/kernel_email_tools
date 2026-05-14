@@ -14,6 +14,7 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  Tags,
   Users,
   X,
 } from 'lucide-react';
@@ -101,6 +102,7 @@ export default function MainLayout() {
   ];
   const workbenchItems: NavItem[] = [
     { to: '/knowledge', label: 'Knowledge', icon: Library },
+    { to: '/tags', label: 'Tags', icon: Tags },
     { to: '/translations', label: 'Translations', icon: Languages },
   ];
   const manualItems: NavItem[] = [
