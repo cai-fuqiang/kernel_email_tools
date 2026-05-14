@@ -30,6 +30,14 @@ type PendingAction =
   | { kind: 'reject'; annotationId: string }
   | { kind: 'delete'; annotationId: string; isReply: boolean };
 
+export function shouldShowSecondaryKernelRangeTagging(): boolean {
+  return true;
+}
+
+export function getKernelRangeTaggingLabel(): string {
+  return 'Advanced: tag selected lines';
+}
+
 function formatAnnotationLineRange(annotation: CodeAnnotation): string {
   return formatAnnotationPreviewLineRange(annotation);
 }
@@ -71,6 +79,7 @@ export default function AnnotationPanel({
   const [body, setBody] = useState('');
   const [saving, setSaving] = useState(false);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
+  const [showRangeTaggingTools, setShowRangeTaggingTools] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [previewAnnotation, setPreviewAnnotation] = useState<CodeAnnotation | null>(null);
@@ -122,6 +131,7 @@ export default function AnnotationPanel({
     if (selectedLines.size === 0) {
       setIsComposerOpen(false);
       setBody('');
+      setShowRangeTaggingTools(false);
     }
   }, [selectedLines]);
 
@@ -616,13 +626,29 @@ export default function AnnotationPanel({
               Cancel
             </button>
           </div>
-          <div className="mt-2">
-            <EmailTagEditor
-              targetType="kernel_line_range"
-              targetRef={`${version}:${filePath}`}
-              anchor={{ start_line: Math.min(...selectedLines), end_line: Math.max(...selectedLines) }}
-            />
-          </div>
+          {shouldShowSecondaryKernelRangeTagging() && (
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={() => setShowRangeTaggingTools((prev) => !prev)}
+                className="text-[11px] font-medium text-slate-500 hover:text-slate-700"
+              >
+                {getKernelRangeTaggingLabel()}
+              </button>
+              {showRangeTaggingTools && (
+                <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                  <div className="mb-1 text-[10px] uppercase tracking-wide text-slate-400">
+                    Direct line-range tag
+                  </div>
+                  <EmailTagEditor
+                    targetType="kernel_line_range"
+                    targetRef={`${version}:${filePath}`}
+                    anchor={{ start_line: Math.min(...selectedLines), end_line: Math.max(...selectedLines) }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

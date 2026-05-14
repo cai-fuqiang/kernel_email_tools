@@ -22,7 +22,12 @@ import { codeTargetToKernelCodeUrl, normalizeCodeTarget } from '../utils/codeTar
 type TagAction =
   | { kind: 'delete'; tagId: number; tagName: string }
   | { kind: 'merge'; sourceId: number; sourceName: string }
-  | { kind: 'move'; assignment: TagTargetItem; sourceTagName: string };
+  | { kind: 'move'; assignment: TagTargetItem; sourceTagName: string }
+  | { kind: 'remove-assignment'; assignment: TagTargetItem; sourceTagName: string };
+
+export function getTagTargetActionLabels(canDeleteAssignment: boolean): string[] {
+  return canDeleteAssignment ? ['Open', 'Move', 'Delete'] : ['Open', 'Move'];
+}
 
 interface TagManagerProps {
   onTagsChanged?: () => void;
@@ -164,6 +169,10 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
     setPendingAction({ kind: 'move', assignment, sourceTagName });
   };
 
+  const handleRemoveAssignment = (assignment: TagTargetItem, sourceTagName: string) => {
+    setPendingAction({ kind: 'remove-assignment', assignment, sourceTagName });
+  };
+
   const performMoveAssignment = async (
     action: { assignment: TagTargetItem; sourceTagName: string },
     targetTagName: string,
@@ -210,6 +219,16 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
       await performMerge({ sourceId: action.sourceId, sourceName: action.sourceName }, inputValue);
     } else if (action.kind === 'move') {
       await performMoveAssignment({ assignment: action.assignment, sourceTagName: action.sourceTagName }, inputValue);
+    } else if (action.kind === 'remove-assignment') {
+      try {
+        await deleteTagAssignment(action.assignment.assignment_id);
+        if (expandedTag === action.sourceTagName) {
+          setExpandedTag(null);
+          setTimeout(() => setExpandedTag(action.sourceTagName), 50);
+        }
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Failed to remove tagged target');
+      }
     }
   };
 
@@ -231,6 +250,14 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
           showInput: true,
           inputLabel: '目标标签名',
           inputPlaceholder: '例如：kernel',
+        }
+      : pendingAction.kind === 'remove-assignment'
+      ? {
+          title: '删除此标签项',
+          message: `将从标签 "${pendingAction.sourceTagName}" 中移除此目标。`,
+          confirmLabel: '删除',
+          variant: 'danger' as const,
+          showInput: false,
         }
       : {
           title: `移动此项到其它标签`,
@@ -405,6 +432,7 @@ export default function TagManager({ onTagsChanged }: TagManagerProps) {
             onRename={handleRename}
             onMerge={handleMerge}
             onMoveAssignment={handleMoveAssignment}
+            onRemoveAssignment={handleRemoveAssignment}
           />
         )}
       </div>
@@ -450,6 +478,7 @@ function TagNodeList({
   onRename,
   onMerge,
   onMoveAssignment,
+  onRemoveAssignment,
 }: {
   nodes: TagTree[];
   onDelete: (id: number, name: string) => void;
@@ -460,6 +489,7 @@ function TagNodeList({
   onToggleExpand: (tagName: string) => void;
   onJumpToTarget: (target: TagTargetItem) => void;
   onMoveAssignment?: (assignment: TagTargetItem, sourceTagName: string) => void;
+  onRemoveAssignment?: (assignment: TagTargetItem, sourceTagName: string) => void;
   canWrite: boolean;
   currentUserId: string;
   isAdmin: boolean;
@@ -527,7 +557,14 @@ function TagNodeList({
                 </button>
               )}
             </div>
-            {isExpanded && <TagTargetList tagName={tag.name} onJumpToTarget={onJumpToTarget} onMoveAssignment={onMoveAssignment} />}
+            {isExpanded && (
+              <TagTargetList
+                tagName={tag.name}
+                onJumpToTarget={onJumpToTarget}
+                onMoveAssignment={onMoveAssignment}
+                onRemoveAssignment={onRemoveAssignment}
+              />
+            )}
             {tag.children.length > 0 && (
               <TagNodeList
                 nodes={tag.children}
@@ -546,6 +583,7 @@ function TagNodeList({
                 onRename={onRename}
                 onMerge={onMerge}
                 onMoveAssignment={onMoveAssignment}
+                onRemoveAssignment={onRemoveAssignment}
               />
             )}
           </li>
@@ -559,10 +597,12 @@ function TagTargetList({
   tagName,
   onJumpToTarget,
   onMoveAssignment,
+  onRemoveAssignment,
 }: {
   tagName: string;
   onJumpToTarget: (target: TagTargetItem) => void;
   onMoveAssignment?: (assignment: TagTargetItem, sourceTagName: string) => void;
+  onRemoveAssignment?: (assignment: TagTargetItem, sourceTagName: string) => void;
 }) {
   const [targets, setTargets] = useState<TagTargetItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -591,6 +631,7 @@ function TagTargetList({
   }, [load]);
 
   const totalPages = Math.ceil(total / pageSize);
+  const actionLabels = getTagTargetActionLabels(Boolean(onRemoveAssignment));
 
   if (loading && targets.length === 0) {
     return <div className="ml-5 mt-2 text-xs text-gray-400">Loading tagged targets...</div>;
@@ -612,7 +653,7 @@ function TagTargetList({
             <th className="text-left px-3 py-1.5 font-medium">Target</th>
             <th className="text-left px-3 py-1.5 font-medium w-40">Type</th>
             <th className="text-left px-3 py-1.5 font-medium w-48">Meta</th>
-            <th className="text-left px-3 py-1.5 font-medium w-20">Action</th>
+            <th className="text-left px-3 py-1.5 font-medium w-28">Action</th>
           </tr>
         </thead>
         <tbody>
@@ -645,6 +686,19 @@ function TagTargetList({
                       className="text-amber-600 hover:text-amber-800"
                     >
                       Move
+                    </button>
+                  )}
+                  {onRemoveAssignment && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRemoveAssignment(target, tagName);
+                      }}
+                      className="text-rose-600 hover:text-rose-800"
+                      aria-label={`Delete ${getTargetTitle(target)} from ${tagName}`}
+                      title={actionLabels.join(' / ')}
+                    >
+                      Delete
                     </button>
                   )}
                 </div>
