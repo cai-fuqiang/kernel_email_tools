@@ -13,12 +13,21 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.code_targets import build_code_target
+from src.storage.annotation_links import (
+    extract_annotation_links,
+    normalize_relation_type,
+    normalize_source_kind,
+)
 from src.storage.models import (
     AnnotationCreate,
     AnnotationORM,
+    AnnotationRelationCreate,
+    AnnotationRelationORM,
+    AnnotationRelationRead,
     AnnotationRead,
     AnnotationUpdate,
     EmailORM,
@@ -160,6 +169,25 @@ class UnifiedAnnotationStore:
                         else {}
                     ),
                 },
+            }
+        )
+
+    def _to_relation_read(self, rel: AnnotationRelationORM) -> AnnotationRelationRead:
+        return AnnotationRelationRead.model_validate(
+            {
+                "relation_id": rel.relation_id,
+                "source_annotation_id": rel.source_annotation_id,
+                "target_annotation_id": rel.target_annotation_id,
+                "relation_type": rel.relation_type,
+                "source_kind": rel.source_kind,
+                "description": rel.description,
+                "meta": rel.meta or {},
+                "created_by": rel.created_by,
+                "updated_by": rel.updated_by,
+                "created_by_user_id": rel.created_by_user_id,
+                "updated_by_user_id": rel.updated_by_user_id,
+                "created_at": rel.created_at,
+                "updated_at": rel.updated_at,
             }
         )
 
@@ -446,6 +474,195 @@ class UnifiedAnnotationStore:
             await session.refresh(orm)
             return self._to_annotation_read(orm)
 
+    async def create_relation(
+        self,
+        relation: AnnotationRelationCreate,
+        actor_user_id: str = "",
+        actor_display_name: str = "",
+    ) -> AnnotationRelationRead:
+        source_annotation_id = relation.source_annotation_id.strip()
+        target_annotation_id = relation.target_annotation_id.strip()
+        relation_type = normalize_relation_type(relation.relation_type)
+        source_kind = normalize_source_kind(relation.source_kind)
+        if source_annotation_id == target_annotation_id:
+            raise ValueError("source_annotation_id and target_annotation_id must differ")
+
+        async with self.session_factory() as session:
+            existing_annotations = await session.execute(
+                select(AnnotationORM.annotation_id).where(
+                    AnnotationORM.annotation_id.in_([source_annotation_id, target_annotation_id])
+                )
+            )
+            existing_ids = set(existing_annotations.scalars().all())
+            if source_annotation_id not in existing_ids:
+                raise ValueError(f"source annotation not found: {source_annotation_id}")
+            if target_annotation_id not in existing_ids:
+                raise ValueError(f"target annotation not found: {target_annotation_id}")
+
+            stmt = select(AnnotationRelationORM).where(
+                AnnotationRelationORM.source_annotation_id == source_annotation_id,
+                AnnotationRelationORM.target_annotation_id == target_annotation_id,
+                AnnotationRelationORM.relation_type == relation_type,
+                AnnotationRelationORM.source_kind == source_kind,
+            )
+            existing_relation = (await session.execute(stmt)).scalar_one_or_none()
+            if existing_relation:
+                return self._to_relation_read(existing_relation)
+
+            now = datetime.utcnow()
+            actor_name = actor_display_name or self.default_author
+            actor_id = actor_user_id or relation.created_by_user_id
+            orm = AnnotationRelationORM(
+                relation_id=f"annot-rel-{uuid.uuid4().hex[:12]}",
+                source_annotation_id=source_annotation_id,
+                target_annotation_id=target_annotation_id,
+                relation_type=relation_type,
+                source_kind=source_kind,
+                description=relation.description.strip(),
+                meta=relation.meta or {},
+                created_by=actor_name,
+                updated_by=actor_name,
+                created_by_user_id=actor_id,
+                updated_by_user_id=actor_id,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(orm)
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                existing_relation = (await session.execute(stmt)).scalar_one_or_none()
+                if existing_relation:
+                    return self._to_relation_read(existing_relation)
+                raise
+            await session.refresh(orm)
+            return self._to_relation_read(orm)
+
+    async def list_relations(
+        self,
+        annotation_id: str,
+        direction: str = "both",
+        viewer_user_id: Optional[str] = None,
+        include_all_private: bool = False,
+    ) -> list[AnnotationRelationRead]:
+        normalized_direction = (direction or "both").strip().lower()
+        if normalized_direction not in {"out", "in", "both"}:
+            raise ValueError("direction must be one of: out, in, both")
+
+        visible_annotation_ids = select(AnnotationORM.annotation_id)
+        visibility_filters = self._visibility_filters(
+            viewer_user_id,
+            include_all_private=include_all_private,
+        )
+        if visibility_filters:
+            visible_annotation_ids = visible_annotation_ids.where(*visibility_filters)
+
+        async with self.session_factory() as session:
+            stmt = (
+                select(AnnotationRelationORM)
+                .where(
+                    AnnotationRelationORM.source_annotation_id.in_(visible_annotation_ids),
+                    AnnotationRelationORM.target_annotation_id.in_(visible_annotation_ids),
+                )
+                .order_by(AnnotationRelationORM.created_at.asc())
+            )
+            if normalized_direction == "out":
+                stmt = stmt.where(AnnotationRelationORM.source_annotation_id == annotation_id)
+            elif normalized_direction == "in":
+                stmt = stmt.where(AnnotationRelationORM.target_annotation_id == annotation_id)
+            else:
+                stmt = stmt.where(
+                    or_(
+                        AnnotationRelationORM.source_annotation_id == annotation_id,
+                        AnnotationRelationORM.target_annotation_id == annotation_id,
+                    )
+                )
+
+            result = await session.execute(stmt)
+            return [self._to_relation_read(rel) for rel in result.scalars().all()]
+
+    async def delete_relation(self, relation_id: str) -> bool:
+        async with self.session_factory() as session:
+            result = await session.execute(
+                delete(AnnotationRelationORM).where(AnnotationRelationORM.relation_id == relation_id)
+            )
+            await session.commit()
+            return result.rowcount > 0
+
+    async def sync_markdown_reference_relations(
+        self,
+        source_annotation_id: str,
+        body: str,
+        actor_user_id: str = "",
+        actor_display_name: str = "",
+    ) -> None:
+        desired_relations = {
+            (match["annotation_id"], normalize_relation_type(match["relation_type"]))
+            for match in extract_annotation_links(body)
+            if match["annotation_id"] != source_annotation_id
+        }
+        actor_name = actor_display_name or self.default_author
+        actor_id = actor_user_id or None
+
+        async with self.session_factory() as session:
+            source_exists = await session.execute(
+                select(AnnotationORM.annotation_id).where(AnnotationORM.annotation_id == source_annotation_id)
+            )
+            if not source_exists.scalar_one_or_none():
+                raise ValueError(f"source annotation not found: {source_annotation_id}")
+
+            existing_rows = (
+                await session.execute(
+                    select(AnnotationRelationORM).where(
+                        AnnotationRelationORM.source_annotation_id == source_annotation_id,
+                        AnnotationRelationORM.source_kind == "markdown_link",
+                    )
+                )
+            ).scalars().all()
+            existing_keys = {
+                (row.target_annotation_id, row.relation_type): row
+                for row in existing_rows
+            }
+
+            for key, row in existing_keys.items():
+                if key not in desired_relations:
+                    await session.delete(row)
+
+            desired_target_ids = [target_annotation_id for target_annotation_id, _ in desired_relations]
+            existing_target_ids: set[str] = set()
+            if desired_target_ids:
+                target_rows = await session.execute(
+                    select(AnnotationORM.annotation_id).where(AnnotationORM.annotation_id.in_(desired_target_ids))
+                )
+                existing_target_ids = set(target_rows.scalars().all())
+
+            now = datetime.utcnow()
+            for target_annotation_id, relation_type in sorted(desired_relations):
+                if target_annotation_id not in existing_target_ids:
+                    continue
+                if (target_annotation_id, relation_type) in existing_keys:
+                    continue
+                session.add(
+                    AnnotationRelationORM(
+                        relation_id=f"annot-rel-{uuid.uuid4().hex[:12]}",
+                        source_annotation_id=source_annotation_id,
+                        target_annotation_id=target_annotation_id,
+                        relation_type=relation_type,
+                        source_kind="markdown_link",
+                        description="",
+                        meta={},
+                        created_by=actor_name,
+                        updated_by=actor_name,
+                        created_by_user_id=actor_id,
+                        updated_by_user_id=actor_id,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+
+            await session.commit()
+
     async def request_publication(self, annotation_id: str, request_user_id: str) -> Optional[AnnotationRead]:
         async with self.session_factory() as session:
             result = await session.execute(
@@ -521,6 +738,14 @@ class UnifiedAnnotationStore:
                 delete(TagAssignmentORM)
                 .where(TagAssignmentORM.target_type == "annotation")
                 .where(TagAssignmentORM.target_ref == annotation_id)
+            )
+            await session.execute(
+                delete(AnnotationRelationORM).where(
+                    or_(
+                        AnnotationRelationORM.source_annotation_id == annotation_id,
+                        AnnotationRelationORM.target_annotation_id == annotation_id,
+                    )
+                )
             )
             result = await session.execute(
                 delete(AnnotationORM).where(AnnotationORM.annotation_id == annotation_id)

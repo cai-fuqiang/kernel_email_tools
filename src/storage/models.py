@@ -986,6 +986,8 @@ class AnnotationRelationCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_relation(self) -> "AnnotationRelationCreate":
+        self.source_annotation_id = self.source_annotation_id.strip()
+        self.target_annotation_id = self.target_annotation_id.strip()
         self.relation_type = normalize_relation_type(self.relation_type)
         self.source_kind = normalize_source_kind(self.source_kind)
         if self.source_annotation_id == self.target_annotation_id:

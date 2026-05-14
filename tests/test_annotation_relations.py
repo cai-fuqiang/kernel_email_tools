@@ -67,6 +67,25 @@ class TestExtractAnnotationLinks:
             },
         ]
 
+    def test_keeps_same_annotation_when_relation_types_differ(self):
+        markdown = """
+        Compare [first](annotation:code-annot-a1b2c3 "references") and
+        [second](annotation:code-annot-a1b2c3 "depends_on").
+        """
+
+        assert extract_annotation_links(markdown) == [
+            {
+                "label": "first",
+                "annotation_id": "code-annot-a1b2c3",
+                "relation_type": "references",
+            },
+            {
+                "label": "second",
+                "annotation_id": "code-annot-a1b2c3",
+                "relation_type": "depends_on",
+            },
+        ]
+
 
 class TestNormalizeRelationType:
     def test_returns_valid_relation_type(self):
@@ -111,6 +130,21 @@ class TestAnnotationRelationORM:
             "source_kind",
         )
 
+    def test_orm_has_source_and_target_indexes(self):
+        index_columns = {
+            index.name: tuple(column.name for column in index.columns)
+            for index in AnnotationRelationORM.__table__.indexes
+        }
+
+        assert index_columns["ix_annotation_relations_source_type"] == (
+            "source_annotation_id",
+            "relation_type",
+        )
+        assert index_columns["ix_annotation_relations_target_type"] == (
+            "target_annotation_id",
+            "relation_type",
+        )
+
 
 class TestAnnotationRelationRead:
     def test_read_schema_exposes_audit_fields(self):
@@ -132,11 +166,29 @@ class TestAnnotationRelationCreate:
         assert relation.relation_type == "value_passed_to"
         assert relation.source_kind == "markdown_link"
 
+    def test_falls_back_to_default_relation_type_and_source_kind(self):
+        relation = AnnotationRelationCreate(
+            source_annotation_id="code-annot-a1b2c3",
+            target_annotation_id="code-annot-d4e5f6",
+            relation_type="unknown-edge",
+            source_kind="spreadsheet-import",
+        )
+
+        assert relation.relation_type == "references"
+        assert relation.source_kind == "manual"
+
     def test_rejects_self_links(self):
         with pytest.raises(ValidationError):
             AnnotationRelationCreate(
                 source_annotation_id="code-annot-a1b2c3",
                 target_annotation_id="code-annot-a1b2c3",
+            )
+
+    def test_rejects_self_links_after_trimming_ids(self):
+        with pytest.raises(ValidationError):
+            AnnotationRelationCreate(
+                source_annotation_id="code-annot-a1b2c3",
+                target_annotation_id=" code-annot-a1b2c3 ",
             )
 
 
