@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import type { AnnotationRelation, AnnotationRelationCreate } from '../api/types';
 import AnnotationMarkdown from './AnnotationMarkdown';
+import AnnotationRelationsPanel from './AnnotationRelationsPanel';
 import AnnotationActions from './AnnotationActions';
 import EmailTagEditor from './EmailTagEditor';
 import { useAuth } from '../auth';
@@ -19,9 +21,15 @@ interface AnnotationCardProps {
   targetLabel: string;
   targetSubtitle: string;
   anchorLabel?: string;
+  relations?: AnnotationRelation[];
+  relationsLoading?: boolean;
+  relationsError?: string;
   onEdit: (body: string) => void;
   onDelete: () => void;
   onReply: () => void;
+  onOpenAnnotation?: (annotationId: string) => void;
+  onCreateRelation?: (payload: AnnotationRelationCreate) => Promise<void>;
+  onDeleteRelation?: (relationId: string) => Promise<void>;
   onRequestPublish?: () => void;
   onWithdrawPublish?: () => void;
   onApprovePublish?: () => void;
@@ -64,9 +72,15 @@ export default function AnnotationCard({
   targetLabel,
   targetSubtitle,
   anchorLabel,
+  relations,
+  relationsLoading,
+  relationsError,
   onEdit,
   onDelete,
   onReply,
+  onOpenAnnotation,
+  onCreateRelation,
+  onDeleteRelation,
   onRequestPublish,
   onWithdrawPublish,
   onApprovePublish,
@@ -225,12 +239,27 @@ export default function AnnotationCard({
         </div>
       ) : (
         <>
-          <AnnotationMarkdown body={body} className={`mt-4 text-sm leading-7 ${theme.text}`} />
+          <AnnotationMarkdown
+            body={body}
+            className={`mt-4 text-sm leading-7 ${theme.text}`}
+            onOpenAnnotation={onOpenAnnotation}
+          />
           {publishReviewComment && (
             <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
               审核备注：{publishReviewComment}
             </div>
           )}
+          {onOpenAnnotation && onCreateRelation && onDeleteRelation ? (
+            <AnnotationRelationsPanel
+              annotationId={annotationId}
+              relations={relations ?? []}
+              loading={relationsLoading ?? false}
+              error={relationsError ?? ''}
+              onOpenAnnotation={onOpenAnnotation}
+              onCreateRelation={onCreateRelation}
+              onDeleteRelation={onDeleteRelation}
+            />
+          ) : null}
           {(canRequestPublish || canWithdrawPublish || canApprovePublish || canRejectPublish) && (
             <div className="mt-3 flex flex-wrap gap-2">
               {canRequestPublish && (
