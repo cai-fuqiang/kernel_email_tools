@@ -4,6 +4,10 @@
 
 目标不是只做一个搜索框，而是把邮件讨论、patch review、手册证据和代码批注沉淀成可引用、可审核、可维护的内核知识库。
 
+## 使用手册
+
+- [Annotation 使用手册](docs/annotation-user-guide.md)
+
 ## 当前能力
 
 - 邮件导入：支持 `kvm`、`linux-mm`、`lkml` 等 lore git mirror，本地仓库优先。
