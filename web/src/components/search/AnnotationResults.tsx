@@ -6,12 +6,16 @@ interface AnnotationResultsProps {
   annotationResults: AnnotationListItem[];
   annotationTotal: number;
   onOpenAnnotation: (threadId: string, annotationId: string) => void;
+  exactIdCandidate?: string;
+  exactIdHit?: string | null;
 }
 
 export default function AnnotationResults({
   annotationResults,
   annotationTotal,
   onOpenAnnotation,
+  exactIdCandidate,
+  exactIdHit,
 }: AnnotationResultsProps) {
   if (annotationResults.length === 0) return null;
 
@@ -42,6 +46,17 @@ export default function AnnotationResults({
       <p className="text-sm text-slate-500 mb-3">
         批注匹配 <span className="font-semibold text-slate-900">{annotationTotal}</span> 条
       </p>
+      {exactIdCandidate ? (
+        <div className={`mb-3 rounded-lg border px-3 py-2 text-xs ${
+          exactIdHit
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            : 'border-amber-200 bg-amber-50 text-amber-800'
+        }`}>
+          Exact ID mode: <span className="font-mono font-semibold">{exactIdCandidate}</span>
+          {' · '}
+          {exactIdHit ? 'exact match promoted to top' : 'no exact match in current annotation result page'}
+        </div>
+      ) : null}
       <div className="space-y-2">
         {annotationResults.map((ann) => (
           <div
@@ -56,7 +71,11 @@ export default function AnnotationResults({
                 onOpenAnnotation(ann.thread_id, ann.annotation_id);
               }
             }}
-            className="block w-full rounded-lg border border-purple-200 bg-purple-50/50 p-4 text-left transition hover:bg-purple-50 focus:outline-none focus:ring-2 focus:ring-purple-300"
+            className={`block w-full rounded-lg p-4 text-left transition focus:outline-none focus:ring-2 focus:ring-purple-300 ${
+              ann.annotation_id === exactIdHit
+                ? 'border border-emerald-300 bg-emerald-50/80 hover:bg-emerald-50'
+                : 'border border-purple-200 bg-purple-50/50 hover:bg-purple-50'
+            }`}
           >
             <div className="mb-1 flex items-start justify-between gap-3">
               <div className="flex min-w-0 flex-wrap items-center gap-2">

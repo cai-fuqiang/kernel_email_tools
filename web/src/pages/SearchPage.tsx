@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, Sparkles } from 'lucide-react';
 import {
   searchEmails,
@@ -78,6 +78,25 @@ export default function SearchPage() {
   const [includeAnnotations, setIncludeAnnotations] = useState(false);
   const [annotationResults, setAnnotationResults] = useState<AnnotationListItem[]>([]);
   const [annotationTotal, setAnnotationTotal] = useState(0);
+  const exactAnnotationIdCandidate = useMemo(
+    () => (/^[-_a-zA-Z0-9]+$/.test(query.trim()) ? query.trim() : ''),
+    [query],
+  );
+  const exactAnnotationHit = useMemo(
+    () => exactAnnotationIdCandidate
+      ? annotationResults.find((annotation) => annotation.annotation_id === exactAnnotationIdCandidate) || null
+      : null,
+    [annotationResults, exactAnnotationIdCandidate],
+  );
+  const displayedAnnotationResults = useMemo(() => {
+    if (!exactAnnotationHit) return annotationResults;
+    return [
+      exactAnnotationHit,
+      ...annotationResults.filter(
+        (annotation) => annotation.annotation_id !== exactAnnotationHit.annotation_id,
+      ),
+    ];
+  }, [annotationResults, exactAnnotationHit]);
 
   // 批量标签操作
   const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set());
@@ -549,11 +568,13 @@ export default function SearchPage() {
           </div>
 
           <AnnotationResults
-            annotationResults={annotationResults}
+            annotationResults={displayedAnnotationResults}
             annotationTotal={annotationTotal}
             onOpenAnnotation={(threadId, annotationId) =>
               setSelectedThread({ threadId, focusAnnotationId: annotationId })
             }
+            exactIdCandidate={exactAnnotationIdCandidate || undefined}
+            exactIdHit={exactAnnotationHit?.annotation_id || null}
           />
 
           {totalPages > 1 && (
