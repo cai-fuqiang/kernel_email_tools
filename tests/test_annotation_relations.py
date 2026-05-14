@@ -10,6 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 from src.storage.annotation_links import extract_annotation_links, normalize_relation_type
+from src.api.schemas import AnnotationRelationRequest
 from src.storage.models import (
     AnnotationRelationCreate,
     AnnotationRelationORM,
@@ -190,6 +191,16 @@ class TestAnnotationRelationCreate:
                 source_annotation_id="code-annot-a1b2c3",
                 target_annotation_id=" code-annot-a1b2c3 ",
             )
+
+
+class TestAnnotationRelationRequest:
+    def test_request_defaults(self):
+        relation = AnnotationRelationRequest(target_annotation_id="code-annot-d4e5f6")
+
+        assert relation.target_annotation_id == "code-annot-d4e5f6"
+        assert relation.relation_type == "references"
+        assert relation.description == ""
+        assert relation.meta == {}
 
 
 class TestAnnotationRelationMigration:

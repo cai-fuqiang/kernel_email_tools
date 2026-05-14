@@ -32,6 +32,34 @@ class AnnotationResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
 
+class AnnotationRelationRequest(BaseModel):
+    target_annotation_id: str = Field(..., min_length=1, max_length=64)
+    relation_type: str = Field("references", max_length=64)
+    description: str = Field("", max_length=2000)
+    meta: dict = Field(default_factory=dict)
+
+
+class AnnotationRelationResponse(BaseModel):
+    relation_id: str
+    source_annotation_id: str
+    target_annotation_id: str
+    relation_type: str = "references"
+    source_kind: str = "manual"
+    description: str = ""
+    meta: dict = Field(default_factory=dict)
+    created_by: str = ""
+    updated_by: str = ""
+    created_by_user_id: Optional[str] = None
+    updated_by_user_id: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class AnnotationRelationsResponse(BaseModel):
+    annotation_id: str
+    relations: list[AnnotationRelationResponse] = Field(default_factory=list)
+
+
 class DraftApplyRequest(BaseModel):
     selected_draft_ids: Optional[list[str]] = None
     knowledge_overrides: Optional[dict] = None
@@ -85,6 +113,35 @@ def _annotation_to_response(annotation: Any) -> AnnotationResponse:
         end_line=_get("end_line", 0) or 0,
         visibility=_get("visibility", "private") or "private",
         publish_status=_get("publish_status", "none") or "none",
+        created_at=_get("created_at", None) or None,
+        updated_at=_get("updated_at", None) or None,
+    )
+
+
+def _annotation_relation_to_response(relation: Any) -> AnnotationRelationResponse:
+    """Convert an AnnotationRelationRead / ORM-like object to AnnotationRelationResponse."""
+    if relation is None:
+        raise ValueError("relation is required")
+
+    def _get(name: str, default: Any = "") -> Any:
+        if isinstance(relation, dict):
+            value = relation.get(name, default)
+        else:
+            value = getattr(relation, name, default)
+        return default if value is None else value
+
+    return AnnotationRelationResponse(
+        relation_id=_get("relation_id", ""),
+        source_annotation_id=_get("source_annotation_id", ""),
+        target_annotation_id=_get("target_annotation_id", ""),
+        relation_type=_get("relation_type", "references") or "references",
+        source_kind=_get("source_kind", "manual") or "manual",
+        description=_get("description", ""),
+        meta=_get("meta", {}) or {},
+        created_by=_get("created_by", ""),
+        updated_by=_get("updated_by", ""),
+        created_by_user_id=_get("created_by_user_id", None) or None,
+        updated_by_user_id=_get("updated_by_user_id", None) or None,
         created_at=_get("created_at", None) or None,
         updated_at=_get("updated_at", None) or None,
     )

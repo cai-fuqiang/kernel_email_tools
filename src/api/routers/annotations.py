@@ -26,12 +26,16 @@ from src.api.deps import (
     _resolve_user_from_session,
 )
 from src.api.schemas import (
+    AnnotationRelationRequest,
+    AnnotationRelationResponse,
+    AnnotationRelationsResponse,
     AnnotationResponse,
     DraftApplyRequest,
     DraftApplyResponse,
+    _annotation_relation_to_response,
     _annotation_to_response,
 )
-from src.storage.models import AnnotationCreate, AnnotationORM, AnnotationUpdate
+from src.storage.models import AnnotationCreate, AnnotationORM, AnnotationRelationCreate, AnnotationUpdate
 
 router = APIRouter(tags=["annotations"])
 
@@ -283,9 +287,95 @@ async def create_annotation(
             actor_user_id=current_user.user_id,
             actor_display_name=current_user.display_name,
         )
+        await state._annotation_store.sync_markdown_reference_relations(
+            annotation.annotation_id,
+            annotation.body,
+            actor_user_id=current_user.user_id,
+            actor_display_name=current_user.display_name,
+        )
         return _annotation_to_response(annotation)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get(
+    "/api/annotations/{annotation_id}/relations",
+    response_model=AnnotationRelationsResponse,
+)
+async def list_annotation_relations(
+    annotation_id: str,
+    direction: Literal["in", "out", "both"] = Query(
+        "both",
+        description="Relation direction filter: in | out | both",
+    ),
+    current_user: Optional[CurrentUser] = Depends(get_optional_current_user),
+):
+    if not state._annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+
+    relations = await state._annotation_store.list_relations(
+        annotation_id,
+        direction=direction,
+        viewer_user_id=current_user.user_id if current_user else None,
+        include_all_private=bool(current_user and _is_admin(current_user)),
+    )
+    return AnnotationRelationsResponse(
+        annotation_id=annotation_id,
+        relations=[_annotation_relation_to_response(relation) for relation in relations],
+    )
+
+
+@router.post(
+    "/api/annotations/{annotation_id}/relations",
+    response_model=AnnotationRelationResponse,
+)
+async def create_annotation_relation(
+    annotation_id: str,
+    request: AnnotationRelationRequest,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not state._annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+
+    await _ensure_annotation_manage_access(annotation_id, current_user)
+
+    try:
+        relation = await state._annotation_store.create_relation(
+            AnnotationRelationCreate(
+                source_annotation_id=annotation_id,
+                target_annotation_id=request.target_annotation_id,
+                relation_type=request.relation_type,
+                source_kind="manual",
+                description=request.description,
+                meta=request.meta,
+                created_by_user_id=current_user.user_id,
+            ),
+            actor_user_id=current_user.user_id,
+            actor_display_name=current_user.display_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return _annotation_relation_to_response(relation)
+
+
+@router.delete("/api/annotation-relations/{relation_id}")
+async def delete_annotation_relation(
+    relation_id: str,
+    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
+):
+    if not state._annotation_store:
+        raise HTTPException(status_code=503, detail="Annotation store not initialized")
+
+    relation = await state._annotation_store.get_relation(relation_id)
+    if not relation:
+        raise HTTPException(status_code=404, detail=f"Annotation relation {relation_id} not found")
+    await _ensure_annotation_manage_access(relation.source_annotation_id, current_user)
+
+    deleted = await state._annotation_store.delete_relation(relation_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Annotation relation {relation_id} not found")
+    return {"status": "ok", "message": f"Annotation relation {relation_id} deleted"}
 
 
 @router.get("/api/annotations/{thread_id:path}", response_model=list[AnnotationResponse])
@@ -418,6 +508,12 @@ async def update_annotation(
     if not updated:
         raise HTTPException(status_code=404, detail=f"Annotation {annotation_id} not found")
 
+    await state._annotation_store.sync_markdown_reference_relations(
+        updated.annotation_id,
+        updated.body,
+        actor_user_id=current_user.user_id,
+        actor_display_name=current_user.display_name,
+    )
     return _annotation_to_response(updated)
 
 
@@ -506,5 +602,3 @@ async def import_annotations(
     except Exception as e:
         logger.error(f"Failed to import annotations: {e}")
         raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
-
-

@@ -590,6 +590,14 @@ class UnifiedAnnotationStore:
             await session.commit()
             return result.rowcount > 0
 
+    async def get_relation(self, relation_id: str) -> Optional[AnnotationRelationRead]:
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(AnnotationRelationORM).where(AnnotationRelationORM.relation_id == relation_id)
+            )
+            rel = result.scalar_one_or_none()
+            return self._to_relation_read(rel) if rel else None
+
     async def sync_markdown_reference_relations(
         self,
         source_annotation_id: str,
