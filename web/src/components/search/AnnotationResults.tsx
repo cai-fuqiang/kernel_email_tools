@@ -1,4 +1,5 @@
 import type { AnnotationListItem } from '../../api/types';
+import AnnotationIdBadge from '../AnnotationIdBadge';
 
 interface AnnotationResultsProps {
   annotationResults: AnnotationListItem[];
@@ -26,7 +27,7 @@ export default function AnnotationResults({
             onClick={() => ann.thread_id && onOpenThread(ann.thread_id)}
             className="block w-full rounded-lg border border-purple-200 bg-purple-50/50 p-4 text-left hover:bg-purple-50 transition"
           >
-            <div className="flex items-center gap-2 mb-1">
+            <div className="mb-1 flex flex-wrap items-center gap-2">
               <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px] font-medium">
                 批注
               </span>
@@ -34,6 +35,12 @@ export default function AnnotationResults({
               <span className="text-xs text-slate-400">
                 {ann.created_at ? new Date(ann.created_at).toLocaleDateString() : ''}
               </span>
+              <AnnotationIdBadge
+                annotationId={ann.annotation_id}
+                compact
+                copyable={false}
+                className="bg-white/80"
+              />
             </div>
             <div className="text-sm text-slate-700 line-clamp-3">{ann.body}</div>
             {ann.email_subject && (

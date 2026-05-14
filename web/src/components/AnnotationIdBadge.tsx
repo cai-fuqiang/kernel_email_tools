@@ -6,12 +6,14 @@ interface AnnotationIdBadgeProps {
   annotationId: string;
   compact?: boolean;
   className?: string;
+  copyable?: boolean;
 }
 
 export default function AnnotationIdBadge({
   annotationId,
   compact = false,
   className = '',
+  copyable = true,
 }: AnnotationIdBadgeProps) {
   async function handleCopy() {
     try {
@@ -39,15 +41,17 @@ export default function AnnotationIdBadge({
       <code className={`font-mono ${compact ? 'text-[11px]' : 'text-xs'} font-medium text-slate-900`}>
         {annotationId}
       </code>
-      <button
-        type="button"
-        onClick={() => void handleCopy()}
-        className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
-        aria-label={`Copy annotation ID ${annotationId}`}
-        title="Copy annotation ID"
-      >
-        <Copy size={12} />
-      </button>
+      {copyable ? (
+        <button
+          type="button"
+          onClick={() => void handleCopy()}
+          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+          aria-label={`Copy annotation ID ${annotationId}`}
+          title="Copy annotation ID"
+        >
+          <Copy size={12} />
+        </button>
+      ) : null}
     </div>
   );
 }

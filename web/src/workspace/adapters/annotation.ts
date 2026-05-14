@@ -155,6 +155,7 @@ export function annotationToEntity(a: AnnotationListItem): WorkspaceEntity {
   const subtitleParts = [
     a.author || 'unknown',
     dateLabel,
+    `ID ${a.annotation_id}`,
     a.target_label || a.target_ref,
   ].filter(Boolean);
 
@@ -201,7 +202,12 @@ export function codeAnnotationToEntity(a: CodeAnnotation): WorkspaceEntity {
   const locationLabel = codeTarget
     ? `${codeTarget.path}:${codeTarget.start_line}${codeTarget.end_line && codeTarget.end_line !== codeTarget.start_line ? `-${codeTarget.end_line}` : ''}`
     : `${a.file_path}:${a.start_line}${a.end_line && a.end_line !== a.start_line ? `-${a.end_line}` : ''}`;
-  const subtitleParts = [a.author || 'unknown', dateLabel, `${codeTarget?.version || a.version} · ${locationLabel}`];
+  const subtitleParts = [
+    a.author || 'unknown',
+    dateLabel,
+    `ID ${a.annotation_id}`,
+    `${codeTarget?.version || a.version} · ${locationLabel}`,
+  ];
 
   const badges: WorkspaceBadge[] = [
     { label: 'annotation', tone: 'info' },
