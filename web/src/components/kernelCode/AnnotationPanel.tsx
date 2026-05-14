@@ -338,21 +338,20 @@ export default function AnnotationPanel({
   };
 
   const rollerStyleFor = (position: number, active: boolean) => {
-    const clamped = Math.max(-4, Math.min(4, position));
     const distance = Math.min(Math.abs(position), 4);
-    const scale = active ? 1.03 : Math.max(0.9, 0.97 - distance * 0.045);
-    const opacity = active ? 1 : Math.max(0.48, 1 - distance * 0.16);
+    const scale = active ? 1.03 : Math.max(0.94, 0.985 - distance * 0.02);
+    const opacity = active ? 1 : Math.max(0.7, 1 - distance * 0.08);
     if (prefersReducedMotion) {
       return {
         opacity,
         transform: active ? 'scale(1.01)' : 'none',
-        transformStyle: 'flat',
+        zIndex: active ? 2 : 1,
       } as const;
     }
     return {
       opacity,
-      transform: `translateZ(${-distance * 24}px) rotateX(${-clamped * 2.5}deg) scale(${scale})`,
-      transformStyle: 'preserve-3d',
+      transform: `scale(${scale})`,
+      zIndex: active ? 2 : 1,
     } as const;
   };
 
@@ -655,7 +654,7 @@ export default function AnnotationPanel({
           <section
             ref={rollerContainerRef}
             aria-label="Annotation roller"
-            className="max-h-[58vh] overflow-y-auto overscroll-contain pr-1 [perspective:900px]"
+            className="max-h-[58vh] overflow-y-auto overscroll-contain pr-1"
             onScroll={(event) => {
               if (!onRollerCenteredAnnotationChange) return;
               const container = event.currentTarget;
@@ -675,11 +674,11 @@ export default function AnnotationPanel({
               if (annotation) onRollerCenteredAnnotationChange(annotation);
             }}
           >
-            <div className="space-y-2 py-[14vh] [transform-style:preserve-3d]">
+            <div className="space-y-2 py-[14vh]">
               {rollerItems.map(({ annotation, position, active }) => (
                 <div
                   key={annotation.annotation_id}
-                  className="origin-center transition-all duration-200 ease-out"
+                  className="relative origin-center transition-all duration-200 ease-out"
                   style={rollerStyleFor(position, active)}
                 >
                   {renderRootCard(annotation, { active })}
