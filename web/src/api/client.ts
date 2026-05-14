@@ -22,6 +22,9 @@ import type {
   Annotation,
   AnnotationCreate,
   AnnotationListResponse,
+  AnnotationRelation,
+  AnnotationRelationCreate,
+  AnnotationRelationsResponse,
   KnowledgeEntity,
   KnowledgeEntityListResponse,
   KnowledgeDraftListResponse,
@@ -987,6 +990,39 @@ export async function deleteAnnotation(annotationId: string): Promise<void> {
     const text = await res.text();
     throw new Error(`API error ${res.status}: ${text}`);
   }
+}
+
+export async function listAnnotationRelations(
+  annotationId: string,
+  direction: 'in' | 'out' | 'both' = 'both',
+): Promise<AnnotationRelationsResponse> {
+  const params = new URLSearchParams({ direction });
+  return fetchJSON<AnnotationRelationsResponse>(
+    `${API_BASE}/annotations/${encodeURIComponent(annotationId)}/relations?${params}`,
+  );
+}
+
+export async function createAnnotationRelation(
+  annotationId: string,
+  data: AnnotationRelationCreate,
+): Promise<AnnotationRelation> {
+  return fetchWithBody<AnnotationRelation>(
+    `${API_BASE}/annotations/${encodeURIComponent(annotationId)}/relations`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    },
+  );
+}
+
+export async function deleteAnnotationRelation(relationId: string): Promise<{ status: string; message: string }> {
+  return fetchWithBody<{ status: string; message: string }>(
+    `${API_BASE}/annotation-relations/${encodeURIComponent(relationId)}`,
+    {
+      method: 'DELETE',
+    },
+  );
 }
 
 export async function exportAnnotations(threadId?: string): Promise<Record<string, unknown>> {

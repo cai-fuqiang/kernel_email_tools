@@ -518,6 +518,47 @@ export interface AnnotationListResponse {
   page_size: number;
 }
 
+export type AnnotationRelationType =
+  | 'references'
+  | 'explains'
+  | 'refines'
+  | 'contradicts'
+  | 'same_variable'
+  | 'variable_evolves_to'
+  | 'value_passed_to'
+  | 'depends_on'
+  | 'evidence_for';
+
+export type AnnotationRelationSourceKind = 'manual' | 'markdown_link' | 'system';
+
+export interface AnnotationRelation {
+  relation_id: string;
+  source_annotation_id: string;
+  target_annotation_id: string;
+  relation_type: AnnotationRelationType;
+  source_kind: AnnotationRelationSourceKind;
+  description: string;
+  meta: Record<string, unknown>;
+  created_by: string;
+  updated_by: string;
+  created_by_user_id?: string | null;
+  updated_by_user_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AnnotationRelationCreate {
+  target_annotation_id: string;
+  relation_type?: AnnotationRelationType;
+  description?: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface AnnotationRelationsResponse {
+  annotation_id: string;
+  relations: AnnotationRelation[];
+}
+
 export interface KnowledgeEntity {
   entity_id: string;
   entity_type: string;
