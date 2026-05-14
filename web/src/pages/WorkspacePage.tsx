@@ -204,6 +204,20 @@ export default function WorkspacePage() {
     }
   }
 
+  function handleOpenAnnotationReference(annotationId: string) {
+    const target = data.entities.find((entity) => {
+      if (entity.kind !== 'annotation') return false;
+      const raw = entity.raw as AnnotationListItem | CodeAnnotation;
+      return raw.annotation_id === annotationId || entity.id === `annotation:${annotationId}`;
+    });
+    if (!target) {
+      showToast(`Annotation ${annotationId} is not loaded in the current workspace page`, 'info');
+      return;
+    }
+    setSelectedId(target.id);
+    setWorkspaceAnnotationPreview(null);
+  }
+
   function handleOpenTagTarget(t: TagTargetItem) {
     const meta = t.target_meta || {};
     const anchor = t.anchor || {};
@@ -701,6 +715,7 @@ export default function WorkspacePage() {
             annotationActions={annotationActions}
             annotationPermissions={annotationPermissions}
             onPreviewAnnotation={handlePreviewAnnotation}
+            onOpenAnnotationReference={handleOpenAnnotationReference}
             onClose={() => setSelectedId(null)}
           />
         </aside>
@@ -724,6 +739,7 @@ export default function WorkspacePage() {
               annotationActions={annotationActions}
               annotationPermissions={annotationPermissions}
               onPreviewAnnotation={handlePreviewAnnotation}
+              onOpenAnnotationReference={handleOpenAnnotationReference}
               onClose={() => setSelectedId(null)}
             />
           </div>

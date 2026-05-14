@@ -1,6 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, ExternalLink, Maximize2, PanelRightOpen, Trash2 } from 'lucide-react';
-import type { AnnotationListItem, CodeAnnotation, SearchHit, TagRead, TagTargetItem, TagTree } from '../../api/types';
+import type { AnnotationListItem, AnnotationRelation, AnnotationRelationCreate, CodeAnnotation, SearchHit, TagRead, TagTargetItem, TagTree } from '../../api/types';
+import {
+  createAnnotationRelation,
+  deleteAnnotationRelation,
+  listAnnotationRelations,
+} from '../../api/client';
 import type { WorkspaceEntity, WorkspaceEntityKind } from '../types';
 import AnnotationCard from '../../components/AnnotationCard';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -52,6 +57,8 @@ interface EntityDetailPanelProps {
     annotation: AnnotationListItem | CodeAnnotation,
     anchorRect: DOMRect | null,
   ) => void;
+  /** 在 workspace 列表中打开另一个 annotation 详情。 */
+  onOpenAnnotationReference?: (annotationId: string) => void;
   onClose?: () => void;
 }
 
@@ -77,6 +84,7 @@ interface RendererCtx {
     annotation: AnnotationListItem | CodeAnnotation,
     anchorRect: DOMRect | null,
   ) => void;
+  onOpenAnnotationReference?: (annotationId: string) => void;
 }
 
 // 各 kind renderer（返回 ReactNode）。kind 差异收敛在此 map 内，外层布局/操作区共用。
@@ -88,6 +96,7 @@ const RENDERERS: Record<WorkspaceEntityKind, (entity: WorkspaceEntity, ctx: Rend
       actions={ctx.annotationActions}
       computePermissions={ctx.annotationPermissions}
       onPreviewAnnotation={ctx.onPreviewAnnotation}
+      onOpenAnnotationReference={ctx.onOpenAnnotationReference}
     />
   ),
   tag: (entity, ctx) => (
@@ -107,6 +116,7 @@ export default function EntityDetailPanel({
   annotationActions,
   annotationPermissions,
   onPreviewAnnotation,
+  onOpenAnnotationReference,
   onClose,
 }: EntityDetailPanelProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -116,9 +126,22 @@ export default function EntityDetailPanel({
     if (!entity) return null;
     const r = RENDERERS[entity.kind];
     return r
-      ? r(entity, { onOpenTagTarget, annotationActions, annotationPermissions, onPreviewAnnotation })
+      ? r(entity, {
+        onOpenTagTarget,
+        annotationActions,
+        annotationPermissions,
+        onPreviewAnnotation,
+        onOpenAnnotationReference,
+      })
       : <div className="p-5 text-sm text-slate-500">未知 kind: {entity.kind}</div>;
-  }, [entity, onOpenTagTarget, annotationActions, annotationPermissions, onPreviewAnnotation]);
+  }, [
+    entity,
+    onOpenTagTarget,
+    annotationActions,
+    annotationPermissions,
+    onPreviewAnnotation,
+    onOpenAnnotationReference,
+  ]);
 
   // 仅 tag kind 在外层渲染删除按钮；annotation 的删除由 AnnotationCard 内部按钮触发。
   const tagDeletable = Boolean(
@@ -280,6 +303,7 @@ function AnnotationDetail({
   actions,
   computePermissions,
   onPreviewAnnotation,
+  onOpenAnnotationReference,
 }: {
   annotation: AnnotationListItem | CodeAnnotation;
   actions?: AnnotationActionCallbacks;
@@ -294,10 +318,50 @@ function AnnotationDetail({
     annotation: AnnotationListItem | CodeAnnotation,
     anchorRect: DOMRect | null,
   ) => void;
+  onOpenAnnotationReference?: (annotationId: string) => void;
 }) {
   const perms = computePermissions ? computePermissions(a) : undefined;
   const previewAnnotation = workspaceAnnotationToCodePreviewAnnotation(a);
   const [expanded, setExpanded] = useState(false);
+  const [relations, setRelations] = useState<AnnotationRelation[]>([]);
+  const [relationsLoading, setRelationsLoading] = useState(false);
+  const [relationsError, setRelationsError] = useState('');
+  const relationsRequestRef = useRef(0);
+
+  async function loadRelations(annotationId: string) {
+    const requestId = relationsRequestRef.current + 1;
+    relationsRequestRef.current = requestId;
+    setRelationsLoading(true);
+    setRelationsError('');
+    try {
+      const data = await listAnnotationRelations(annotationId, 'both');
+      if (relationsRequestRef.current !== requestId) return;
+      setRelations(data.relations);
+    } catch (error) {
+      if (relationsRequestRef.current !== requestId) return;
+      setRelationsError(error instanceof Error ? error.message : 'Failed to load annotation relations');
+    } finally {
+      if (relationsRequestRef.current === requestId) setRelationsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadRelations(a.annotation_id);
+  }, [a.annotation_id]);
+
+  function handleOpenAnnotation(annotationId: string) {
+    onOpenAnnotationReference?.(annotationId);
+  }
+
+  async function handleCreateRelation(payload: AnnotationRelationCreate) {
+    await createAnnotationRelation(a.annotation_id, payload);
+    await loadRelations(a.annotation_id);
+  }
+
+  async function handleDeleteRelation(relationId: string) {
+    await deleteAnnotationRelation(relationId);
+    await loadRelations(a.annotation_id);
+  }
 
   function targetSubtitle(): string {
     if ('file_path' in a && a.file_path) return `${a.version || ''} ${a.file_path}`.trim();
@@ -326,6 +390,12 @@ function AnnotationDetail({
         canApprovePublish={perms?.canApprovePublish}
         canRejectPublish={perms?.canRejectPublish}
         canReply={false}
+        relations={relations}
+        relationsLoading={relationsLoading}
+        relationsError={relationsError}
+        onOpenAnnotation={handleOpenAnnotation}
+        onCreateRelation={handleCreateRelation}
+        onDeleteRelation={handleDeleteRelation}
         onEdit={actions?.onEdit ? (body) => actions.onEdit!(a, body) : () => {}}
         onDelete={actions?.onDelete ? () => actions!.onDelete!(a) : () => {}}
         onReply={() => {}}

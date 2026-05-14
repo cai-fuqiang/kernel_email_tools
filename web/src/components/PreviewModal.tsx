@@ -8,6 +8,7 @@ interface PreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   annotation: CodeAnnotation | AnnotationListItem | null;
+  onOpenAnnotation?: (annotationId: string) => void;
 }
 
 function hasCodePreviewData(
@@ -27,7 +28,7 @@ function hasCodePreviewData(
   );
 }
 
-export default function PreviewModal({ isOpen, onClose, annotation }: PreviewModalProps) {
+export default function PreviewModal({ isOpen, onClose, annotation, onOpenAnnotation }: PreviewModalProps) {
   const [codeLines, setCodeLines] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentAnnotation, setCurrentAnnotation] = useState<CodeAnnotation | AnnotationListItem | null>(null);
@@ -160,7 +161,7 @@ export default function PreviewModal({ isOpen, onClose, annotation }: PreviewMod
               <span className="text-xs text-gray-500">Annotation (Markdown)</span>
             </div>
             <div className="flex-1 overflow-auto p-4">
-                <AnnotationMarkdown body={ann.body} />
+                <AnnotationMarkdown body={ann.body} onOpenAnnotation={onOpenAnnotation} />
             </div>
             <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 shrink-0">
               <div className="flex items-center justify-between text-[10px] text-gray-400">

@@ -1,18 +1,22 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type RefObject } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { LocateFixed, Maximize2, PanelRightOpen, X } from 'lucide-react';
 import {
   approveAnnotationPublication,
+  createAnnotationRelation,
   createCodeAnnotation,
+  deleteAnnotationRelation,
   deleteCodeAnnotation,
+  listAnnotationRelations,
   rejectAnnotationPublication,
   requestAnnotationPublication,
   updateCodeAnnotation,
   withdrawAnnotationPublication,
 } from '../../api/client';
-import type { CodeAnnotation } from '../../api/types';
+import type { AnnotationRelation, AnnotationRelationCreate, CodeAnnotation } from '../../api/types';
 import EmailTagEditor from '../EmailTagEditor';
+import AnnotationMarkdown from '../AnnotationMarkdown';
+import AnnotationRelationsPanel from '../AnnotationRelationsPanel';
+import VariableTracePanel from '../VariableTracePanel';
 import { useAuth } from '../../auth';
 import { showToast } from '../Toast';
 import ConfirmModal from '../ConfirmModal';
@@ -423,9 +427,17 @@ export default function AnnotationPanel({
         </div>
       </div>
       <div className="px-3 py-2">
-        <div className="markdown-content text-xs">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{reply.body}</ReactMarkdown>
-        </div>
+        <AnnotationMarkdown
+          body={reply.body}
+          className="markdown-content text-xs"
+          onOpenAnnotation={(annotationId) => {
+            const target = annotations.find((item) => item.annotation_id === annotationId);
+            if (target) {
+              setPreviewAnnotation(target);
+              setPreviewStartEditing(false);
+            }
+          }}
+        />
         <div className="mt-2">
           <EmailTagEditor targetType="annotation" targetRef={reply.annotation_id} compact />
         </div>
@@ -551,9 +563,17 @@ export default function AnnotationPanel({
             </div>
           </div>
           <div className="px-3 py-2">
-            <div className="markdown-content text-xs">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{root.body}</ReactMarkdown>
-            </div>
+            <AnnotationMarkdown
+              body={root.body}
+              className="markdown-content text-xs"
+              onOpenAnnotation={(annotationId) => {
+                const target = annotations.find((item) => item.annotation_id === annotationId);
+                if (target) {
+                  setPreviewAnnotation(target);
+                  setPreviewStartEditing(false);
+                }
+              }}
+            />
             {root.publish_review_comment && (
               <div className="mt-2 rounded border border-slate-300 bg-slate-100 px-2 py-1 text-[10px] text-slate-700">
                 Review note: {root.publish_review_comment}
@@ -729,12 +749,8 @@ export default function AnnotationPanel({
     />
     <AnnotationDetailModal
       annotation={previewAnnotation}
+      allAnnotations={annotations}
       initialEditing={previewStartEditing}
-      replies={
-        previewAnnotation
-          ? annotations.filter((annotation) => annotation.in_reply_to === previewAnnotation.annotation_id)
-          : []
-      }
       onClose={() => {
         setPreviewAnnotation(null);
         setPreviewStartEditing(false);
@@ -747,62 +763,101 @@ export default function AnnotationPanel({
 
 function AnnotationDetailModal({
   annotation,
-  replies,
+  allAnnotations,
   onClose,
   onRefresh,
   initialEditing = false,
 }: {
   annotation: CodeAnnotation | null;
-  replies: CodeAnnotation[];
+  allAnnotations: CodeAnnotation[];
   onClose: () => void;
   onRefresh: () => void;
   initialEditing?: boolean;
 }) {
   const { currentUser, isAdmin } = useAuth();
+  const [currentAnnotation, setCurrentAnnotation] = useState<CodeAnnotation | null>(annotation);
   const [isEditing, setIsEditing] = useState(initialEditing);
   const [draftBody, setDraftBody] = useState(annotation?.body || '');
   const [draftVisibility, setDraftVisibility] = useState<'public' | 'private'>(annotation?.visibility || 'private');
   const [saving, setSaving] = useState(false);
+  const [relations, setRelations] = useState<AnnotationRelation[]>([]);
+  const [relationsLoading, setRelationsLoading] = useState(false);
+  const [relationsError, setRelationsError] = useState('');
+  const relationsRequestRef = useRef(0);
+
+  async function loadRelations(annotationId: string) {
+    const requestId = relationsRequestRef.current + 1;
+    relationsRequestRef.current = requestId;
+    setRelationsLoading(true);
+    setRelationsError('');
+    try {
+      const data = await listAnnotationRelations(annotationId, 'both');
+      if (relationsRequestRef.current !== requestId) return;
+      setRelations(data.relations);
+    } catch (error) {
+      if (relationsRequestRef.current !== requestId) return;
+      setRelationsError(error instanceof Error ? error.message : 'Failed to load annotation relations');
+    } finally {
+      if (relationsRequestRef.current === requestId) setRelationsLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!annotation) return;
+    setCurrentAnnotation(annotation);
     setDraftBody(annotation.body);
     setDraftVisibility(annotation.visibility);
     setIsEditing(initialEditing);
     setSaving(false);
+    void loadRelations(annotation.annotation_id);
   }, [annotation, initialEditing]);
 
-  if (!annotation) return null;
+  useEffect(() => {
+    if (!currentAnnotation || isEditing) return;
+    const latest = allAnnotations.find((item) => item.annotation_id === currentAnnotation.annotation_id);
+    if (latest && latest !== currentAnnotation) {
+      setCurrentAnnotation(latest);
+      setDraftBody(latest.body);
+      setDraftVisibility(latest.visibility);
+    }
+  }, [allAnnotations, currentAnnotation, isEditing]);
+
+  if (!currentAnnotation) return null;
+
+  const visibleReplies = allAnnotations.filter(
+    (item) => item.in_reply_to === currentAnnotation.annotation_id,
+  );
 
   const canManage =
     !!currentUser &&
     (isAdmin ||
-      (annotation.visibility === 'private' &&
-        annotation.publish_status !== 'pending' &&
-        annotation.author_user_id === currentUser.user_id));
+      (currentAnnotation.visibility === 'private' &&
+        currentAnnotation.publish_status !== 'pending' &&
+        currentAnnotation.author_user_id === currentUser.user_id));
   const canRequestPublish =
     !!currentUser &&
     !isAdmin &&
-    annotation.visibility === 'private' &&
-    annotation.author_user_id === currentUser.user_id &&
-    annotation.publish_status !== 'pending';
+    currentAnnotation.visibility === 'private' &&
+    currentAnnotation.author_user_id === currentUser.user_id &&
+    currentAnnotation.publish_status !== 'pending';
   const canWithdrawPublish =
     !!currentUser &&
-    annotation.publish_status === 'pending' &&
-    (isAdmin || annotation.author_user_id === currentUser.user_id);
+    currentAnnotation.publish_status === 'pending' &&
+    (isAdmin || currentAnnotation.author_user_id === currentUser.user_id);
   const canEditVisibility = !!currentUser && isAdmin;
 
   const handleSave = async () => {
     if (!draftBody.trim() || saving) return;
     setSaving(true);
     try {
-      await updateCodeAnnotation(annotation.annotation_id, {
+      const updated = await updateCodeAnnotation(currentAnnotation.annotation_id, {
         body: draftBody.trim(),
         ...(canEditVisibility ? { visibility: draftVisibility } : {}),
       });
       showToast('Annotation updated', 'success');
-      setDraftBody(draftBody.trim());
-      setDraftVisibility(canEditVisibility ? draftVisibility : annotation.visibility);
+      setCurrentAnnotation(updated);
+      setDraftBody(updated.body);
+      setDraftVisibility(updated.visibility);
       setIsEditing(false);
       onRefresh();
     } catch (e) {
@@ -814,7 +869,7 @@ function AnnotationDetailModal({
 
   const handleRequestPublish = async () => {
     try {
-      await requestAnnotationPublication(annotation.annotation_id);
+      await requestAnnotationPublication(currentAnnotation.annotation_id);
       showToast('Publication requested', 'success');
       onRefresh();
     } catch (e) {
@@ -824,7 +879,7 @@ function AnnotationDetailModal({
 
   const handleWithdrawPublish = async () => {
     try {
-      await withdrawAnnotationPublication(annotation.annotation_id);
+      await withdrawAnnotationPublication(currentAnnotation.annotation_id);
       showToast('Publication request withdrawn', 'success');
       onRefresh();
     } catch (e) {
@@ -832,14 +887,38 @@ function AnnotationDetailModal({
     }
   };
 
+  const handleOpenAnnotation = (annotationId: string) => {
+    const target = allAnnotations.find((item) => item.annotation_id === annotationId);
+    if (!target) {
+      showToast(`Annotation ${annotationId} is not loaded in this file`, 'info');
+      return;
+    }
+    setCurrentAnnotation(target);
+    setDraftBody(target.body);
+    setDraftVisibility(target.visibility);
+    setIsEditing(false);
+    setSaving(false);
+    void loadRelations(target.annotation_id);
+  };
+
+  const handleCreateRelation = async (payload: AnnotationRelationCreate) => {
+    await createAnnotationRelation(currentAnnotation.annotation_id, payload);
+    await loadRelations(currentAnnotation.annotation_id);
+  };
+
+  const handleDeleteRelation = async (relationId: string) => {
+    await deleteAnnotationRelation(relationId);
+    await loadRelations(currentAnnotation.annotation_id);
+  };
+
   return (
     <InspectorDetailModal
       isOpen={!!annotation}
       onClose={onClose}
-      title={`${formatAnnotationLineRange(annotation)} annotation`}
+      title={`${formatAnnotationLineRange(currentAnnotation)} annotation`}
       subtitle={
         <span>
-          {annotation.visibility} · {annotation.publish_status}
+          {currentAnnotation.visibility} · {currentAnnotation.publish_status}
         </span>
       }
       footer={
@@ -876,8 +955,8 @@ function AnnotationDetailModal({
               <button
                 type="button"
                 onClick={() => {
-                  setDraftBody(annotation.body);
-                  setDraftVisibility(annotation.visibility);
+                  setDraftBody(currentAnnotation.body);
+                  setDraftVisibility(currentAnnotation.visibility);
                   setIsEditing(false);
                 }}
                 className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100"
@@ -942,11 +1021,11 @@ function AnnotationDetailModal({
           ) : (
             <>
               <div className="markdown-content text-sm leading-6">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{annotation.body}</ReactMarkdown>
+                <AnnotationMarkdown body={currentAnnotation.body} onOpenAnnotation={handleOpenAnnotation} />
               </div>
-              {annotation.publish_review_comment && (
+              {currentAnnotation.publish_review_comment && (
                 <div className="mt-4 rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-xs text-slate-700">
-                  Review note: {annotation.publish_review_comment}
+                  Review note: {currentAnnotation.publish_review_comment}
                 </div>
               )}
             </>
@@ -960,45 +1039,59 @@ function AnnotationDetailModal({
             <dl className="mt-2 space-y-1 text-xs">
               <div className="flex justify-between gap-3">
                 <dt className="text-slate-600">Version</dt>
-                <dd className="font-medium text-slate-950">{annotation.version}</dd>
+                <dd className="font-medium text-slate-950">{currentAnnotation.version}</dd>
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-slate-600">Path</dt>
-                <dd className="min-w-0 truncate font-mono text-slate-950">{annotation.file_path}</dd>
+                <dd className="min-w-0 truncate font-mono text-slate-950">{currentAnnotation.file_path}</dd>
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-slate-600">Range</dt>
-                <dd className="font-medium text-slate-950">{formatAnnotationLineRange(annotation)}</dd>
+                <dd className="font-medium text-slate-950">{formatAnnotationLineRange(currentAnnotation)}</dd>
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-slate-600">Visibility</dt>
-                <dd className="font-medium text-slate-950">{annotation.visibility}</dd>
+                <dd className="font-medium text-slate-950">{currentAnnotation.visibility}</dd>
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-slate-600">Status</dt>
-                <dd className="font-medium text-slate-950">{annotation.publish_status}</dd>
+                <dd className="font-medium text-slate-950">{currentAnnotation.publish_status}</dd>
               </div>
             </dl>
           </div>
-          {replies.length > 0 && (
+          {visibleReplies.length > 0 && (
             <div className="rounded-lg border border-slate-300 bg-white p-3">
               <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
                 Replies
               </div>
               <div className="mt-2 max-h-[50vh] space-y-2 overflow-y-auto">
-                {replies.map((reply) => (
+                {visibleReplies.map((reply) => (
                   <div key={reply.annotation_id} className="rounded-lg border border-slate-300 bg-slate-100 p-2">
                     <div className="mb-1 text-[10px] font-medium text-slate-600">
                       {formatAnnotationLineRange(reply)} · {reply.publish_status}
                     </div>
                     <div className="markdown-content text-xs">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{reply.body}</ReactMarkdown>
+                      <AnnotationMarkdown body={reply.body} onOpenAnnotation={handleOpenAnnotation} />
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
+          <VariableTracePanel
+            annotationId={currentAnnotation.annotation_id}
+            relations={relations}
+            onOpenAnnotation={handleOpenAnnotation}
+          />
+          <AnnotationRelationsPanel
+            annotationId={currentAnnotation.annotation_id}
+            relations={relations}
+            loading={relationsLoading}
+            error={relationsError}
+            onOpenAnnotation={handleOpenAnnotation}
+            onCreateRelation={handleCreateRelation}
+            onDeleteRelation={handleDeleteRelation}
+          />
         </aside>
       </div>
     </InspectorDetailModal>
