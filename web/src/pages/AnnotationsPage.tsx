@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import AnnotationTree from '../components/AnnotationTree';
 import { getAnnotationStats, listAnnotations } from '../api/client';
 import type { AnnotationListItem } from '../api/types';
 import { useAuth } from '../auth';
 import { showToast } from '../components/Toast';
+import AnnotationIdBadge from '../components/AnnotationIdBadge';
 
 type FilterType = 'all' | 'email' | 'code' | 'sdm_spec';
 
@@ -30,6 +31,18 @@ export default function AnnotationsPage() {
 
   // 统计（服务端全库统计）
   const [stats, setStats] = useState({ email_count: 0, code_count: 0, sdm_spec_count: 0, total: 0 });
+  const trimmedQuery = q.trim();
+  const exactIdCandidate = /^[-_a-zA-Z0-9]+$/.test(trimmedQuery) ? trimmedQuery : '';
+  const exactIdHit = exactIdCandidate
+    ? annotations.find((annotation) => annotation.annotation_id === exactIdCandidate) || null
+    : null;
+  const displayedAnnotations = useMemo(() => {
+    if (!exactIdHit) return annotations;
+    return [
+      exactIdHit,
+      ...annotations.filter((annotation) => annotation.annotation_id !== exactIdHit.annotation_id),
+    ];
+  }, [annotations, exactIdHit]);
 
   // 加载统计
   useEffect(() => {
@@ -150,6 +163,15 @@ export default function AnnotationsPage() {
               </button>
             )}
           </div>
+          {exactIdCandidate ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <span>Exact ID mode:</span>
+              <AnnotationIdBadge annotationId={exactIdCandidate} compact copyable={false} />
+              <span className={exactIdHit ? 'text-emerald-700' : 'text-amber-700'}>
+                {exactIdHit ? 'exact match in current page' : 'no exact match in current page'}
+              </span>
+            </div>
+          ) : null}
         </div>
 
         {/* 筛选标签 */}
@@ -224,8 +246,14 @@ export default function AnnotationsPage() {
           </div>
         )}
 
+        {!loading && exactIdHit ? (
+          <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            Exact annotation ID hit found. Matching annotation promoted in current result set.
+          </div>
+        ) : null}
+
         {/* 列表 */}
-        {!loading && annotations.length === 0 && (
+        {!loading && displayedAnnotations.length === 0 && (
           <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 flex items-center justify-center">
               <i data-lucide="inbox" className="w-8 h-8 text-slate-400"></i>
@@ -240,9 +268,9 @@ export default function AnnotationsPage() {
         )}
 
         {/* 统一树形组件 */}
-        {!loading && annotations.length > 0 && (
+        {!loading && displayedAnnotations.length > 0 && (
           <AnnotationTree
-            annotations={annotations} 
+            annotations={displayedAnnotations} 
             onAnnotationsChange={loadAnnotations}
             layout="grid"
           />

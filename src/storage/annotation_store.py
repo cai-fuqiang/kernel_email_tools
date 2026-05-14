@@ -91,6 +91,27 @@ def _normalize_annotation_payload(annotation: AnnotationCreate) -> AnnotationCre
     return data
 
 
+def _keyword_search_filters(keyword: str) -> list:
+    """Build broad-but-still-predictable search filters for annotation list search."""
+    term = keyword.strip()
+    if not term:
+        return []
+
+    exact_fields = [
+        AnnotationORM.annotation_id == term,
+        AnnotationORM.target_ref == term,
+    ]
+    fuzzy_fields = [
+        AnnotationORM.body.ilike(f"%{term}%"),
+        AnnotationORM.annotation_id.ilike(f"%{term}%"),
+        AnnotationORM.target_ref.ilike(f"%{term}%"),
+        AnnotationORM.target_label.ilike(f"%{term}%"),
+        AnnotationORM.file_path.ilike(f"%{term}%"),
+        AnnotationORM.version.ilike(f"%{term}%"),
+    ]
+    return [or_(*exact_fields, *fuzzy_fields)]
+
+
 class UnifiedAnnotationStore:
     """统一标注存储器。"""
 
@@ -356,7 +377,7 @@ class UnifiedAnnotationStore:
         include_all_private: bool = False,
     ) -> tuple[list[dict], int]:
         filters = [
-            AnnotationORM.body.ilike(f"%{keyword}%"),
+            *_keyword_search_filters(keyword),
             *self._visibility_filters(viewer_user_id, include_all_private=include_all_private),
             *(extra_filters or []),
         ]

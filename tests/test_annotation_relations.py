@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from src.storage.annotation_links import extract_annotation_links, normalize_relation_type
 from src.api.schemas import AnnotationRelationRequest
+from src.storage.annotation_store import _keyword_search_filters
 from src.storage.models import (
     AnnotationRelationCreate,
     AnnotationRelationORM,
@@ -232,6 +233,21 @@ class TestAnnotationRelationMigration:
             "UNIQUE (source_annotation_id, target_annotation_id, relation_type, source_kind)"
             in migration_sql
         )
+
+
+class TestAnnotationKeywordSearchFilters:
+    def test_search_filters_include_exact_id_and_locator_fields(self):
+        filters = _keyword_search_filters("ann-123")
+
+        assert len(filters) == 1
+        compiled = str(filters[0])
+        assert "annotations.annotation_id =" in compiled
+        assert "annotations.target_ref =" in compiled
+        assert "annotations.body" in compiled
+        assert "annotations.file_path" in compiled
+
+    def test_blank_keyword_returns_no_filters(self):
+        assert _keyword_search_filters("   ") == []
 
     def test_migration_executes_annotation_relations_indexes(self):
         migration = load_annotation_relation_migration()

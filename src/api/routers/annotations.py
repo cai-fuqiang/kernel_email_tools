@@ -178,7 +178,7 @@ async def get_annotation_stats(current_user: Optional[CurrentUser] = Depends(get
 
 @router.get("/api/annotations")
 async def list_annotations(
-    q: Optional[str] = Query(None, description="搜索关键词（模糊匹配批注正文）"),
+    q: Optional[str] = Query(None, description="搜索关键词（支持 annotation_id、target_ref、file_path 与正文匹配）"),
     type: str = Query("all", description="批注类型过滤：'all' | 'email' | 'code'"),
     version: Optional[str] = Query(None, description="限定代码版本（code 类型时）"),
     target_type: Optional[str] = Query(None, description="限定目标类型"),
