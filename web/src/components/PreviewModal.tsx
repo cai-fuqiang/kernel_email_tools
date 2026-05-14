@@ -105,7 +105,7 @@ export default function PreviewModal({ isOpen, onClose, annotation, onOpenAnnota
               <span className="text-xs text-gray-400">
                 L{ann.start_line}{ann.end_line !== ann.start_line && `-${ann.end_line}`}
               </span>
-              <AnnotationIdBadge annotationId={ann.annotation_id} compact />
+              <AnnotationIdBadge annotationId={ann.annotation_id} compact showCopyLink />
             </div>
             <div className="mt-1 truncate text-xs font-mono text-gray-500">
               {ann.file_path}

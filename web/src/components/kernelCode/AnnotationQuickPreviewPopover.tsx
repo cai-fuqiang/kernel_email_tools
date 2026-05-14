@@ -302,7 +302,7 @@ export default function AnnotationQuickPreviewPopover({
             <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-800">
               {rangeLabel}
             </span>
-            <AnnotationIdBadge annotationId={annotation.annotation_id} compact />
+            <AnnotationIdBadge annotationId={annotation.annotation_id} compact showCopyLink />
           </div>
           <div className="mt-1 truncate font-mono text-xs text-slate-900">{annotation.file_path}</div>
           <div className="mt-1 text-[11px] text-slate-600">{annotation.author || 'Unknown author'}</div>

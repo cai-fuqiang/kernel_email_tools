@@ -131,7 +131,7 @@ export default function AnnotationCard({
               {annotationType}
             </span>
             {anchorLabel && <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">{anchorLabel}</span>}
-            <AnnotationIdBadge annotationId={annotationId} compact />
+            <AnnotationIdBadge annotationId={annotationId} compact showCopyLink />
           </div>
           <div className="mt-2 truncate text-sm font-semibold text-slate-900">
             {targetLabel || 'Untitled target'}
@@ -165,7 +165,7 @@ export default function AnnotationCard({
                 <div className="rounded-lg bg-slate-50 px-2 py-1.5">
                   <div className="text-[11px] text-slate-400">Annotation ID</div>
                   <div className="mt-1">
-                    <AnnotationIdBadge annotationId={annotationId} compact />
+                    <AnnotationIdBadge annotationId={annotationId} compact showCopyLink />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">

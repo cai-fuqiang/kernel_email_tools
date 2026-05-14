@@ -144,6 +144,22 @@ export function localKernelAnnotationPreviewUrl(
 }
 
 /**
+ * 构建统一批注检索页 URL。适用于邮件/代码/spec 批注的通用深链。
+ */
+export function annotationSearchPath(annotationId: string): string {
+  const params = new URLSearchParams();
+  params.set('q', annotationId);
+  return `/annotations?${params.toString()}`;
+}
+
+/**
+ * 构建统一批注检索页的绝对链接。
+ */
+export function localAnnotationSearchUrl(annotationId: string): string {
+  return `/app${annotationSearchPath(annotationId)}`;
+}
+
+/**
  * 判断 Elixir 是否覆盖给定版本。Elixir 通常覆盖 v2.6.12 及以后的 release/rc tag，
  * 也支持 `latest` / `master`。对于过旧或异常 tag 我们 fallback 到 git.kernel.org。
  *

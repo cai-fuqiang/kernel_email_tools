@@ -925,7 +925,7 @@ function AnnotationDetailModal({
           <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700">
             {currentAnnotation.publish_status}
           </span>
-          <AnnotationIdBadge annotationId={currentAnnotation.annotation_id} compact />
+          <AnnotationIdBadge annotationId={currentAnnotation.annotation_id} compact showCopyLink />
         </div>
       }
       footer={
@@ -1047,7 +1047,7 @@ function AnnotationDetailModal({
             <dl className="mt-3 space-y-2 text-xs">
               <div className="space-y-1">
                 <dt className="text-slate-500">Annotation ID</dt>
-                <dd><AnnotationIdBadge annotationId={currentAnnotation.annotation_id} compact className="max-w-full" /></dd>
+                <dd><AnnotationIdBadge annotationId={currentAnnotation.annotation_id} compact showCopyLink className="max-w-full" /></dd>
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-slate-500">Version</dt>
@@ -1080,7 +1080,7 @@ function AnnotationDetailModal({
                 <div key={reply.annotation_id} className="rounded-lg border border-slate-200 bg-slate-50 p-2">
                   <div className="mb-1 flex flex-wrap items-center gap-2 text-[10px] font-medium text-slate-600">
                     <span>{formatAnnotationLineRange(reply)} · {reply.publish_status}</span>
-                    <AnnotationIdBadge annotationId={reply.annotation_id} compact />
+                    <AnnotationIdBadge annotationId={reply.annotation_id} compact showCopyLink />
                   </div>
                   <div className="markdown-content text-xs">
                     <AnnotationMarkdown body={reply.body} onOpenAnnotation={handleOpenAnnotation} />

@@ -103,7 +103,7 @@ export default function AnnotationPreviewContent({
               <div className="truncate font-mono text-[11px] text-slate-500">
                 {annotation.file_path}
               </div>
-              <AnnotationIdBadge annotationId={annotation.annotation_id} compact />
+              <AnnotationIdBadge annotationId={annotation.annotation_id} compact showCopyLink />
             </div>
           </div>
 
