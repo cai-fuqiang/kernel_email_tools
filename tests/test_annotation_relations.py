@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import importlib.util
+import asyncio
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -11,6 +15,34 @@ from src.storage.models import (
     AnnotationRelationORM,
     AnnotationRelationRead,
 )
+
+MIGRATION_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "src"
+    / "storage"
+    / "migrations"
+    / "20260514_add_annotation_relations.py"
+)
+
+
+def load_annotation_relation_migration():
+    spec = importlib.util.spec_from_file_location(
+        "annotation_relation_migration",
+        MIGRATION_PATH,
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class CapturingConnection:
+    def __init__(self):
+        self.statements: list[str] = []
+
+    async def execute(self, statement):
+        self.statements.append(str(statement))
 
 
 class TestExtractAnnotationLinks:
@@ -106,3 +138,49 @@ class TestAnnotationRelationCreate:
                 source_annotation_id="code-annot-a1b2c3",
                 target_annotation_id="code-annot-a1b2c3",
             )
+
+
+class TestAnnotationRelationMigration:
+    def test_migration_executes_annotation_relations_table_and_constraints(self):
+        migration = load_annotation_relation_migration()
+        conn = CapturingConnection()
+
+        asyncio.run(migration.run_migration(conn))
+
+        assert len(conn.statements) == 4
+        migration_sql = "\n".join(conn.statements)
+
+        assert "CREATE TABLE IF NOT EXISTS annotation_relations" in migration_sql
+        assert "relation_id VARCHAR(160)" in migration_sql
+        assert "source_annotation_id VARCHAR(64) NOT NULL" in migration_sql
+        assert "target_annotation_id VARCHAR(64) NOT NULL" in migration_sql
+        assert "relation_type VARCHAR(64) NOT NULL DEFAULT 'references'" in migration_sql
+        assert "source_kind VARCHAR(32) NOT NULL DEFAULT 'manual'" in migration_sql
+        assert "description TEXT NOT NULL DEFAULT ''" in migration_sql
+        assert "metadata JSONB NOT NULL DEFAULT '{}'::jsonb" in migration_sql
+        assert "created_by VARCHAR(128)" in migration_sql
+        assert "updated_by VARCHAR(128)" in migration_sql
+        assert "created_by_user_id VARCHAR(128)" in migration_sql
+        assert "updated_by_user_id VARCHAR(128)" in migration_sql
+        assert "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()" in migration_sql
+        assert "updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()" in migration_sql
+        assert "uq_annotation_relations_edge" in migration_sql
+        assert (
+            "UNIQUE (source_annotation_id, target_annotation_id, relation_type, source_kind)"
+            in migration_sql
+        )
+
+    def test_migration_executes_annotation_relations_indexes(self):
+        migration = load_annotation_relation_migration()
+        conn = CapturingConnection()
+
+        asyncio.run(migration.run_migration(conn))
+
+        migration_sql = "\n".join(conn.statements)
+
+        assert "ix_annotation_relations_source_type" in migration_sql
+        assert "ON annotation_relations (source_annotation_id, relation_type)" in migration_sql
+        assert "ix_annotation_relations_target_type" in migration_sql
+        assert "ON annotation_relations (target_annotation_id, relation_type)" in migration_sql
+        assert "ix_annotation_relations_source_kind" in migration_sql
+        assert "ON annotation_relations (source_kind)" in migration_sql
