@@ -398,18 +398,6 @@ export default function AnnotationPanel({
         <div className="flex items-center gap-2">
           {renderPreviewButton(reply)}
           <PublishButton a={reply} />
-          {canManage(reply) && (
-            <button
-              type="button"
-              onClick={() => {
-                setPreviewAnnotation(reply);
-                setPreviewStartEditing(true);
-              }}
-              className="text-[10px] text-slate-600 hover:text-slate-950"
-            >
-              Edit
-            </button>
-          )}
           <button
             type="button"
             onClick={() => {
@@ -417,14 +405,14 @@ export default function AnnotationPanel({
               setPreviewStartEditing(false);
             }}
             className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-white hover:text-slate-900"
-            aria-label="Open reply detail"
-            title="Open reply detail"
+            aria-label="打开回复详情"
+            title="打开回复详情"
           >
             <Maximize2 className="h-3.5 w-3.5" />
           </button>
           {canManage(reply) && (
             <button onClick={() => setPendingAction({ kind: 'delete', annotationId: reply.annotation_id, isReply: true })}
-              className="text-[10px] text-slate-600 hover:text-red-500">Delete</button>
+              className="text-[10px] text-slate-600 hover:text-red-500">删除</button>
           )}
         </div>
       </div>
@@ -553,14 +541,14 @@ export default function AnnotationPanel({
                   setPreviewStartEditing(false);
                 }}
                 className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-white hover:text-slate-900"
-                aria-label="Open annotation detail"
-                title="Open annotation detail"
+                aria-label="打开标注详情"
+                title="打开标注详情"
               >
                 <Maximize2 className="h-3.5 w-3.5" />
               </button>
               {canManage(root) && (
                 <button onClick={() => setPendingAction({ kind: 'delete', annotationId: root.annotation_id, isReply: false })}
-                  className="text-[10px] text-slate-600 hover:text-red-500">Delete</button>
+                  className="text-[10px] text-slate-600 hover:text-red-500">删除</button>
               )}
             </div>
           </div>
@@ -578,7 +566,7 @@ export default function AnnotationPanel({
             />
             {root.publish_review_comment && (
               <div className="mt-2 rounded border border-slate-300 bg-slate-100 px-2 py-1 text-[10px] text-slate-700">
-                Review note: {root.publish_review_comment}
+              审核备注：{root.publish_review_comment}
               </div>
             )}
             <div className="mt-2" data-no-annotation-select>
