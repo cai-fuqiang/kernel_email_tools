@@ -347,16 +347,9 @@ Web 入口：`/app/agent-research`（左侧导航 `Research` -> `Agent Research`
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
-| `/api/agent/research-runs` | POST | 创建 run |
-| `/api/agent/research-runs` | GET | 列出 runs（支持 status 过滤） |
-| `/api/agent/research-runs/{run_id}` | GET | run 详情 + trace |
-| `/api/agent/research-runs/{run_id}/cancel` | POST | 取消（cooperative） |
-| `/api/agent/research-runs/{run_id}/retry` | POST | 重试失败的 run |
 
 ### 代码结构
 
-- `src/agent/research_service.py` — 研究循环编排（多轮迭代、relevance judge、prompt 硬化、token 追踪）
-- `src/storage/agent_store.py` — `agent_research_runs` / `agent_run_actions` 持久化
 - `web/src/pages/AgentResearchPage.tsx` — 前端操作台（创建、监控、trace 查看）
 
 详细设计见 [.joycode/plans/PLAN-35000-ai-agent-special-user.md](.joycode/plans/PLAN-35000-ai-agent-special-user.md)。
@@ -391,14 +384,6 @@ Web 入口：`/app/agent-research`（左侧导航 `Research` -> `Agent Research`
 - `POST /api/ask/conversations`
 - `GET /api/thread/{thread_id}`
 - `GET /api/stats`
-
-### AI Research Agent
-
-- `POST /api/agent/research-runs`
-- `GET /api/agent/research-runs`
-- `GET /api/agent/research-runs/{run_id}`
-- `POST /api/agent/research-runs/{run_id}/cancel`
-- `POST /api/agent/research-runs/{run_id}/retry`
 
 ### Knowledge
 
