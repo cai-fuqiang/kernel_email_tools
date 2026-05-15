@@ -23,6 +23,7 @@ import { useAuth } from '../../auth';
 import { showToast } from '../Toast';
 import ConfirmModal from '../ConfirmModal';
 import InspectorDetailModal from './InspectorDetailModal';
+import AnnotationQuickPreviewPopover from './AnnotationQuickPreviewPopover';
 import { pickRollerActiveAnnotationId, rankRollerItems } from './annotationSync';
 import {
   formatAnnotationPreviewLineRange,
@@ -862,6 +863,7 @@ function AnnotationDetailModal({
   const [saving, setSaving] = useState(false);
   const [relations, setRelations] = useState<AnnotationRelation[]>([]);
   const [relationsLoading, setRelationsLoading] = useState(false);
+  const [codePreviewAnnotation, setCodePreviewAnnotation] = useState<CodeAnnotation | null>(null);
   const [relationsError, setRelationsError] = useState('');
   const relationsRequestRef = useRef(0);
 
@@ -1014,6 +1016,7 @@ function AnnotationDetailModal({
   };
 
   return (
+    <>
     <InspectorDetailModal
       isOpen={!!annotation}
       onClose={onClose}
@@ -1142,8 +1145,18 @@ function AnnotationDetailModal({
         </section>
         <aside className="space-y-3">
           <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Target
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Target
+              </div>
+              <button
+                type="button"
+                onClick={() => setCodePreviewAnnotation(currentAnnotation)}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-300 text-slate-500 hover:bg-white hover:text-sky-700"
+                title="预览代码"
+              >
+                <PanelRightOpen className="h-3.5 w-3.5" />
+              </button>
             </div>
             <dl className="mt-3 space-y-2 text-xs">
               <div className="space-y-1">
@@ -1215,5 +1228,16 @@ function AnnotationDetailModal({
         />
       </div>
     </InspectorDetailModal>
+    <AnnotationQuickPreviewPopover
+      isOpen={!!codePreviewAnnotation}
+      annotation={codePreviewAnnotation}
+      anchorRect={null}
+      avoidRect={null}
+      onClose={() => setCodePreviewAnnotation(null)}
+      onOpenFullPreview={() => {}}
+      onOpenInAtlas={() => {}}
+      onOpenAnnotation={handleOpenAnnotation}
+    />
+    </>
   );
 }
