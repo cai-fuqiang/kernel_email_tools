@@ -265,7 +265,7 @@ export default function AnnotationQuickPreviewPopover({
   return createPortal(
     <div
       data-annotation-quick-preview
-      className="fixed z-[200] flex flex-col overflow-hidden rounded-xl border border-slate-300 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.24)]"
+      className="fixed z-[200] flex flex-col overflow-clip rounded-xl border border-slate-300 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.24)]"
       style={{
         left: frame.x,
         top: frame.y,
