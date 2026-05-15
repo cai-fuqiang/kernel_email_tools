@@ -1,6 +1,6 @@
 """Contribution lookup API — 查询邮件/线程在知识库中已留下的痕迹.
 
-PLAN-34001: 在 Search 命中卡片、Ask 答案 Sources、ThreadDrawer 标题栏向用户展示
+PLAN-34001: 在 Search 命中卡片、结果来源区、ThreadDrawer 标题栏向用户展示
 该 message_id / thread_id 已经被引用为多少 knowledge evidence、附了多少 annotation、
 有多少 pending knowledge draft。
 

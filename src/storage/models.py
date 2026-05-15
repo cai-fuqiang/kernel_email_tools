@@ -539,7 +539,7 @@ class KnowledgeEvidenceORM(Base):
 
 
 class KnowledgeDraftORM(Base):
-    """Ask/Search 生成的待审核知识草稿。"""
+    """待审核知识草稿。"""
 
     __tablename__ = "knowledge_drafts"
 
