@@ -31,7 +31,6 @@ type NavItem = {
 function roleTone(role: string) {
   if (role === 'admin') return 'success';
   if (role === 'editor') return 'info';
-  if (role === 'agent') return 'warning';
   return 'muted';
 }
 
