@@ -31,9 +31,7 @@ function updateDraftList<T>(
 
 function sourceCount(draft: KnowledgeDraftPayload) {
   const counts = draft.knowledge_drafts.map((item) => {
-    const ask = item.meta?.ask;
-    if (!ask || typeof ask !== 'object') return 0;
-    const sources = (ask as Record<string, unknown>).sources;
+    const sources = item.meta?.sources;
     return Array.isArray(sources) ? sources.length : 0;
   });
   return counts.reduce((sum, value) => sum + value, 0);

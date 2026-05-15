@@ -17,7 +17,7 @@ type UserAction =
   | { kind: 'reset'; userId: string };
 
 const ROLE_GUIDE: Array<{
-  role: 'admin' | 'editor' | 'viewer' | 'agent';
+  role: 'admin' | 'editor' | 'viewer';
   title: string;
   description: string;
 }> = [
@@ -35,11 +35,6 @@ const ROLE_GUIDE: Array<{
     role: 'viewer',
     title: 'Viewer',
     description: 'Read-only access. Can view public content and the user\'s own private items.',
-  },
-  {
-    role: 'agent',
-    title: 'Agent',
-    description: 'System identity for background research tasks. It writes drafts and trace records for human review.',
   },
 ];
 
@@ -137,7 +132,7 @@ function UserSection({
     }
   };
 
-  const handleRoleChange = async (userId: string, role: 'admin' | 'editor' | 'viewer' | 'agent') => {
+  const handleRoleChange = async (userId: string, role: 'admin' | 'editor' | 'viewer') => {
     setWorking(userId);
     try {
       await updateUser(userId, { role });
@@ -192,14 +187,13 @@ function UserSection({
                   <td className="px-4 py-3">
                     <select
                       value={user.role}
-                      onChange={(e) => handleRoleChange(user.user_id, e.target.value as 'admin' | 'editor' | 'viewer' | 'agent')}
+                      onChange={(e) => handleRoleChange(user.user_id, e.target.value as 'admin' | 'editor' | 'viewer')}
                       disabled={working === user.user_id}
                       className="rounded-lg border border-gray-300 px-2 py-1"
                     >
                       <option value="admin">admin</option>
                       <option value="editor">editor</option>
                       <option value="viewer">viewer</option>
-                      <option value="agent">agent</option>
                     </select>
                   </td>
                   <td className="px-4 py-3">

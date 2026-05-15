@@ -10,8 +10,7 @@
  * - `symbols`: identifier names (functions / structs / macros).
  * - `timeline`: human-curated feature/topic timeline entries.
  *
- * All other keys under `meta` are preserved untouched (e.g. `meta.ask` populated
- * by the Ask draft pipeline).
+ * All other keys under `meta` are preserved untouched.
  */
 
 export const KERNEL_VERSION_RELATIONSHIPS = [
@@ -191,7 +190,7 @@ export function extractKnowledgeMeta(meta: unknown): KnowledgeEntityMetaSchema {
 
 /**
  * Merge standardized fields back into the original `meta`, preserving any
- * unknown keys (e.g. `meta.ask`).
+ * unknown keys.
  *
  * Empty arrays are removed so callers round-trip cleanly (no churn on save).
  */

@@ -228,7 +228,7 @@ export async function updateUser(
   patch: {
     display_name?: string;
     email?: string;
-    role?: 'admin' | 'editor' | 'viewer' | 'agent';
+    role?: 'admin' | 'editor' | 'viewer';
     status?: string;
     approval_status?: 'pending' | 'approved' | 'rejected';
     disabled_reason?: string;

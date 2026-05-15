@@ -1,7 +1,7 @@
 import { Inbox, RefreshCw } from 'lucide-react';
 import type { KnowledgeDraft } from '../../api/types';
 import { SecondaryButton } from '../ui';
-import { agentDraftMeta, formatDateTime } from './knowledgeUtils';
+import { formatDateTime } from './knowledgeUtils';
 
 interface DraftInboxPanelProps {
   drafts: KnowledgeDraft[];
@@ -19,9 +19,6 @@ interface DraftInboxPanelProps {
 const FILTERS = [
   { value: 'all', label: 'All' },
   { value: 'human', label: 'Human' },
-  { value: 'agent', label: 'AI Agent' },
-  { value: 'accepted', label: 'Accepted Agent' },
-  { value: 'rejected', label: 'Rejected Agent' },
 ];
 
 export default function DraftInboxPanel({
@@ -37,14 +34,7 @@ export default function DraftInboxPanel({
   className = '',
 }: DraftInboxPanelProps) {
   const sortedDrafts = [...drafts]
-    .sort((a, b) => {
-      const aConf = agentDraftMeta(a).confidence;
-      const bConf = agentDraftMeta(b).confidence;
-      if (aConf !== null && bConf !== null) return bConf - aConf;
-      if (aConf !== null) return -1;
-      if (bConf !== null) return 1;
-      return 0;
-    })
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 6);
 
   return (
@@ -98,7 +88,6 @@ export default function DraftInboxPanel({
           </div>
         ) : (
           sortedDrafts.map((draft) => {
-            const agentMeta = agentDraftMeta(draft);
             return (
               <div key={draft.draft_id} className="rounded-lg border border-amber-100 bg-white p-3">
                 <button
@@ -111,42 +100,12 @@ export default function DraftInboxPanel({
                       <div className="truncate text-xs font-semibold text-gray-900">
                         {draft.question || draft.source_ref || draft.source_type}
                       </div>
-                      {draft.source_type === 'agent_research' ? (
-                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                          <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">
-                            AI Research Agent
-                          </span>
-                          {agentMeta.confidence !== null && (
-                            <span
-                              className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                                agentMeta.confidence >= 0.7
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : agentMeta.confidence >= 0.5
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-red-100 text-red-700'
-                              }`}
-                            >
-                              confidence {agentMeta.confidence.toFixed(2)}
-                            </span>
-                          )}
-                          {agentMeta.runId && (
-                            <span className="text-[10px] text-purple-600">
-                              run {agentMeta.runId.slice(-12)}
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="mt-1 text-[11px] text-slate-500">
-                          Created by {draft.created_by || 'human'}
-                        </div>
-                      )}
+                      <div className="mt-1 text-[11px] text-slate-500">
+                        Created by {draft.created_by || 'human'}
+                      </div>
                     </div>
                     <span
-                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                        draft.source_type === 'agent_research'
-                          ? 'bg-purple-100 text-purple-700'
-                          : 'bg-amber-100 text-amber-700'
-                      }`}
+                      className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700"
                     >
                       {draft.source_type}
                     </span>

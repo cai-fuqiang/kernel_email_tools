@@ -182,7 +182,7 @@ export interface CurrentUser {
   display_name: string;
   email: string;
   approval_status: 'pending' | 'approved' | 'rejected';
-  role: 'admin' | 'editor' | 'viewer' | 'agent';
+  role: 'admin' | 'editor' | 'viewer';
   status: string;
   auth_source: string;
   capabilities: string[];
@@ -198,7 +198,7 @@ export interface UserRead {
   approved_at?: string | null;
   disabled_reason: string;
   last_login_at?: string | null;
-  role: 'admin' | 'editor' | 'viewer' | 'agent';
+  role: 'admin' | 'editor' | 'viewer';
   status: string;
   auth_source: string;
   last_seen_at: string;

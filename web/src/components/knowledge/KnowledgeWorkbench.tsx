@@ -292,15 +292,9 @@ export default function KnowledgeWorkbench() {
       const opts: { status?: string; source_type?: string; page_size: number } = {
         page_size: 20,
       };
-      if (draftFilter === 'agent') {
-        opts.source_type = 'agent_research';
+      if (draftFilter === 'human') {
+        opts.source_type = 'human';
         opts.status = 'new';
-      } else if (draftFilter === 'accepted') {
-        opts.source_type = 'agent_research';
-        opts.status = 'accepted';
-      } else if (draftFilter === 'rejected') {
-        opts.source_type = 'agent_research';
-        opts.status = 'rejected';
       } else {
         opts.status = 'new';
       }
@@ -1026,7 +1020,7 @@ export default function KnowledgeWorkbench() {
                   Draft review
                 </h2>
                 <p className="mt-1 text-sm leading-5 text-amber-700">
-                  Review agent drafts without crowding the knowledge document.
+                  Review drafts without crowding the knowledge document.
                 </p>
               </div>
               <button

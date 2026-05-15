@@ -1,6 +1,5 @@
 import type {
   KnowledgeDraftPayload,
-  KnowledgeDraft,
   KnowledgeEntity,
   KnowledgeEvidence,
 } from '../../api/types';
@@ -51,8 +50,8 @@ export function asStringList(value: unknown): string[] {
 }
 
 export function extractKnowledgeEvidence(entity: KnowledgeEntity | null) {
-  const ask = entity?.meta?.ask;
-  if (!ask || typeof ask !== 'object') {
+  const meta = entity?.meta;
+  if (!meta || typeof meta !== 'object') {
     return {
       question: '',
       generatedAt: '',
@@ -60,8 +59,8 @@ export function extractKnowledgeEvidence(entity: KnowledgeEntity | null) {
       threadIds: [] as string[],
     };
   }
-  const askMeta = ask as Record<string, unknown>;
-  const rawSources = Array.isArray(askMeta.sources) ? askMeta.sources : [];
+  const record = meta as Record<string, unknown>;
+  const rawSources = Array.isArray(record.sources) ? record.sources : [];
   const sources = rawSources
     .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
     .map((source) => ({
@@ -76,10 +75,10 @@ export function extractKnowledgeEvidence(entity: KnowledgeEntity | null) {
     .filter((source) => source.message_id || source.thread_id || source.subject);
 
   return {
-    question: String(askMeta.question || ''),
-    generatedAt: String(askMeta.generated_at || ''),
+    question: String(record.question || ''),
+    generatedAt: String(record.generated_at || ''),
     sources,
-    threadIds: asStringList(askMeta.thread_ids),
+    threadIds: asStringList(record.thread_ids),
   };
 }
 
@@ -143,14 +142,6 @@ export function normalizeDraftPayload(payload: unknown): KnowledgeDraftPayload {
       : [],
     warnings: Array.isArray(raw.warnings) ? raw.warnings : [],
   };
-}
-
-export function agentDraftMeta(draft: KnowledgeDraft) {
-  const payload = draft.payload as unknown as Record<string, unknown>;
-  const confidence = typeof payload.confidence === 'number' ? payload.confidence : null;
-  const runId = typeof payload.agent_run_id === 'string' ? payload.agent_run_id : '';
-  const review = typeof payload.self_review === 'string' ? payload.self_review : '';
-  return { confidence, runId, review };
 }
 
 export function relationEntityName(
