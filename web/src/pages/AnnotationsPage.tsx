@@ -165,10 +165,10 @@ export default function AnnotationsPage() {
           </div>
           {exactIdCandidate ? (
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span>Exact ID mode:</span>
+              <span>精确 ID 匹配：</span>
               <AnnotationIdBadge annotationId={exactIdCandidate} compact copyable={false} />
               <span className={exactIdHit ? 'text-emerald-700' : 'text-amber-700'}>
-                {exactIdHit ? 'exact match in current page' : 'no exact match in current page'}
+                {exactIdHit ? '当前页已找到精确匹配' : '当前页无精确匹配'}
               </span>
             </div>
           ) : null}
@@ -248,7 +248,7 @@ export default function AnnotationsPage() {
 
         {!loading && exactIdHit ? (
           <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-            Exact annotation ID hit found. Matching annotation promoted in current result set.
+            已找到精确匹配的批注 ID，已置顶显示。
           </div>
         ) : null}
 

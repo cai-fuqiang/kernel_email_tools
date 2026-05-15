@@ -156,7 +156,7 @@ export default function AnnotationCard({
             )}
           </div>
           <div className="mt-2 truncate text-sm font-semibold text-slate-900">
-            {targetLabel || 'Untitled target'}
+            {targetLabel || '未命名目标'}
           </div>
         </div>
       </div>
@@ -293,8 +293,8 @@ export default function AnnotationCard({
                 onClick={() => onJump()}
                 className="text-xs px-2 py-1 rounded transition-colors text-slate-600 hover:bg-slate-100"
               >
-                Jump
-              </button>
+                跳转
+</button>
             </div>
           ) : null}
         </>
