@@ -19,3 +19,4 @@ run_import.py
 config.sh
 api.log
 .tmp_*
+.worktrees/
