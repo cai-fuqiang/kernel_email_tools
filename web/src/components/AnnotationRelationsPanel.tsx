@@ -366,7 +366,7 @@ export default function AnnotationRelationsPanel({
 
   return (
     <>
-    <section className="mt-4 border-t border-slate-200 pt-3">
+    <section className="mt-4 border-t border-slate-200 pt-3" data-no-annotation-select>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-slate-900">Relations</div>
