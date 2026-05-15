@@ -11,7 +11,6 @@ import {
   getStats,
   listAnnotations,
   listKnowledgeDrafts,
-  listUsers,
 } from '../api/client';
 import type {
   AnnotationListItem,
@@ -155,7 +154,6 @@ export default function DashboardPage() {
   const [knowledgeStats, setKnowledgeStats] = useState<LoadState<KnowledgeStats>>(initialState);
   const [drafts, setDrafts] = useState<LoadState<KnowledgeDraft[]>>(initialState);
   const [annotations, setAnnotations] = useState<LoadState<AnnotationListItem[]>>(initialState);
-  const [pendingUsers, setPendingUsers] = useState<LoadState<number>>(initialState);
 
   useEffect(() => {
     getStats()
@@ -178,22 +176,7 @@ export default function DashboardPage() {
       .catch((error: unknown) =>
         setAnnotations({ loading: false, error: error instanceof Error ? error.message : 'Failed to load annotations', data: null }),
       );
-    if (isAdmin) {
-      listUsers()
-        .then((users) =>
-          setPendingUsers({
-            loading: false,
-            error: '',
-            data: users.filter((user) => user.approval_status === 'pending').length,
-          }),
-        )
-        .catch((error: unknown) =>
-          setPendingUsers({ loading: false, error: error instanceof Error ? error.message : 'Failed to load users', data: null }),
-        );
-    } else {
-      setPendingUsers({ loading: false, error: '', data: 0 });
-    }
-  }, [isAdmin]);
+  }, []);
 
   const channelCount = Object.keys(mailStats.data?.lists || {}).length;
   const privateAnnotations = useMemo(
@@ -250,8 +233,8 @@ export default function DashboardPage() {
             {isAdmin && (
               <InboxItem
                 label="Admin approvals"
-                value={(pendingAnnotations.length || 0) + (pendingUsers.data || 0)}
-                hint="Pending annotations and user registrations"
+                value={pendingAnnotations.length}
+                hint="Pending annotations awaiting review"
                 to="/admin/annotation-review"
               />
             )}
