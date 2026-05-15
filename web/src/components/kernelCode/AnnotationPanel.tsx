@@ -1179,9 +1179,19 @@ function AnnotationDetailModal({
             <div className="mt-2 max-h-[28vh] space-y-2 overflow-y-auto">
               {visibleReplies.map((reply) => (
                 <div key={reply.annotation_id} className="rounded-lg border border-slate-200 bg-slate-50 p-2">
-                  <div className="mb-1 flex flex-wrap items-center gap-2 text-[10px] font-medium text-slate-600">
-                    <span>{formatAnnotationLineRange(reply)} · {reply.publish_status}</span>
-                    <AnnotationIdBadge annotationId={reply.annotation_id} compact showCopyLink />
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-[10px] font-medium text-slate-600">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>{formatAnnotationLineRange(reply)} · {reply.publish_status}</span>
+                      <AnnotationIdBadge annotationId={reply.annotation_id} compact showCopyLink />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAnnotation(reply.annotation_id)}
+                      className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-300 text-slate-500 hover:bg-white hover:text-sky-700"
+                      title="在此面板中查看"
+                    >
+                      <PanelRightOpen className="h-3 w-3" />
+                    </button>
                   </div>
                   <div className="markdown-content text-xs">
                     <AnnotationMarkdown body={reply.body} onOpenAnnotation={handleOpenAnnotation} />
