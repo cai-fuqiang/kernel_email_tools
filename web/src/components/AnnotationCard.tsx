@@ -1,5 +1,9 @@
 import { useState } from 'react';
-import type { AnnotationRelation, AnnotationRelationCreate } from '../api/types';
+import type {
+  AnnotationRelation,
+  AnnotationRelationCreate,
+  CodeAnnotation,
+} from '../api/types';
 import AnnotationMarkdown from './AnnotationMarkdown';
 import AnnotationRelationsPanel from './AnnotationRelationsPanel';
 import AnnotationActions from './AnnotationActions';
@@ -29,8 +33,11 @@ interface AnnotationCardProps {
   onDelete: () => void;
   onReply: () => void;
   onOpenAnnotation?: (annotationId: string) => void;
+  subjectAnnotation?: CodeAnnotation | null;
+  candidateAnnotations?: CodeAnnotation[];
   onCreateRelation?: (payload: AnnotationRelationCreate) => Promise<void>;
   onDeleteRelation?: (relationId: string) => Promise<void>;
+  onSearchAnnotations?: (query: string) => Promise<CodeAnnotation[]>;
   onRequestPublish?: () => void;
   onWithdrawPublish?: () => void;
   onApprovePublish?: () => void;
@@ -80,8 +87,11 @@ export default function AnnotationCard({
   onDelete,
   onReply,
   onOpenAnnotation,
+  subjectAnnotation,
+  candidateAnnotations = [],
   onCreateRelation,
   onDeleteRelation,
+  onSearchAnnotations,
   onRequestPublish,
   onWithdrawPublish,
   onApprovePublish,
@@ -260,12 +270,15 @@ export default function AnnotationCard({
           {onOpenAnnotation && onCreateRelation && onDeleteRelation ? (
             <AnnotationRelationsPanel
               annotationId={annotationId}
+              subjectAnnotation={subjectAnnotation ?? null}
+              candidateAnnotations={candidateAnnotations}
               relations={relations ?? []}
               loading={relationsLoading ?? false}
               error={relationsError ?? ''}
               onOpenAnnotation={onOpenAnnotation}
               onCreateRelation={onCreateRelation}
               onDeleteRelation={onDeleteRelation}
+              onSearchAnnotations={onSearchAnnotations ?? (async () => [])}
             />
           ) : null}
           {(canRequestPublish || canWithdrawPublish || canApprovePublish || canRejectPublish) && (

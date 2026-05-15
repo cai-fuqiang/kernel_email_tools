@@ -6,6 +6,7 @@ import {
   createCodeAnnotation,
   deleteAnnotationRelation,
   deleteCodeAnnotation,
+  listCodeAnnotations,
   listAnnotationRelations,
   rejectAnnotationPublication,
   requestAnnotationPublication,
@@ -903,13 +904,35 @@ function AnnotationDetailModal({
   };
 
   const handleCreateRelation = async (payload: AnnotationRelationCreate) => {
-    await createAnnotationRelation(currentAnnotation.annotation_id, payload);
+    if (payload.meta?.reverse_direction) {
+      const nextMeta = { ...payload.meta };
+      delete nextMeta.reverse_direction;
+      await createAnnotationRelation(payload.target_annotation_id, {
+        target_annotation_id: currentAnnotation.annotation_id,
+        relation_type: payload.relation_type,
+        description: payload.description,
+        meta: nextMeta,
+      });
+    } else {
+      await createAnnotationRelation(currentAnnotation.annotation_id, payload);
+    }
     await loadRelations(currentAnnotation.annotation_id);
   };
 
   const handleDeleteRelation = async (relationId: string) => {
     await deleteAnnotationRelation(relationId);
     await loadRelations(currentAnnotation.annotation_id);
+  };
+
+  const handleSearchRelationCandidates = async (query: string) => {
+    const result = await listCodeAnnotations({
+      q: query,
+      page: 1,
+      page_size: 20,
+    });
+    return result.annotations.filter(
+      (item) => item.annotation_id !== currentAnnotation.annotation_id,
+    );
   };
 
   return (
@@ -1092,12 +1115,15 @@ function AnnotationDetailModal({
         )}
         <AnnotationRelationsPanel
           annotationId={currentAnnotation.annotation_id}
+          subjectAnnotation={currentAnnotation}
+          candidateAnnotations={allAnnotations}
           relations={relations}
           loading={relationsLoading}
           error={relationsError}
           onOpenAnnotation={handleOpenAnnotation}
           onCreateRelation={handleCreateRelation}
           onDeleteRelation={handleDeleteRelation}
+          onSearchAnnotations={handleSearchRelationCandidates}
         />
       </div>
     </InspectorDetailModal>

@@ -1,10 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  ArrowRightLeft,
+  FileSearch,
   Link2,
   LoaderCircle,
   Plus,
+  Search,
   Trash2,
 } from 'lucide-react';
 
@@ -12,16 +15,22 @@ import type {
   AnnotationRelation,
   AnnotationRelationCreate,
   AnnotationRelationType,
+  CodeAnnotation,
 } from '../api/types';
+import AnnotationIdBadge from './AnnotationIdBadge';
+import AnnotationPreviewContent from './kernelCode/AnnotationPreviewContent';
 
 export interface AnnotationRelationsPanelProps {
   annotationId: string;
+  subjectAnnotation: CodeAnnotation | null;
+  candidateAnnotations: CodeAnnotation[];
   relations: AnnotationRelation[];
   loading: boolean;
   error: string;
   onOpenAnnotation: (annotationId: string) => void;
   onCreateRelation: (payload: AnnotationRelationCreate) => Promise<void>;
   onDeleteRelation: (relationId: string) => Promise<void>;
+  onSearchAnnotations: (query: string) => Promise<CodeAnnotation[]>;
 }
 
 export const ANNOTATION_RELATION_TYPE_OPTIONS: AnnotationRelationType[] = [
@@ -35,6 +44,57 @@ export const ANNOTATION_RELATION_TYPE_OPTIONS: AnnotationRelationType[] = [
   'depends_on',
   'evidence_for',
 ];
+
+const RELATION_LABELS: Record<
+  AnnotationRelationType,
+  { outgoing: string; incoming: string; hint: string }
+> = {
+  references: {
+    outgoing: 'This annotation references target',
+    incoming: 'Target references this annotation',
+    hint: 'Cross-reference another note.',
+  },
+  explains: {
+    outgoing: 'This annotation explains target',
+    incoming: 'Target explains this annotation',
+    hint: 'Use when one note clarifies another.',
+  },
+  refines: {
+    outgoing: 'This annotation refines target',
+    incoming: 'Target refines this annotation',
+    hint: 'Narrow or improve a broader note.',
+  },
+  contradicts: {
+    outgoing: 'This annotation contradicts target',
+    incoming: 'Target contradicts this annotation',
+    hint: 'Capture an explicit conflict.',
+  },
+  same_variable: {
+    outgoing: 'Same variable as target',
+    incoming: 'Same variable as this annotation',
+    hint: 'Both notes refer to the same variable.',
+  },
+  variable_evolves_to: {
+    outgoing: 'Variable here evolves to target',
+    incoming: 'Variable in target evolves to this note',
+    hint: 'Track state progression.',
+  },
+  value_passed_to: {
+    outgoing: 'Value here is passed to target',
+    incoming: 'Value in target is passed to this note',
+    hint: 'Track parameter/value flow.',
+  },
+  depends_on: {
+    outgoing: 'This annotation depends on target',
+    incoming: 'Target depends on this annotation',
+    hint: 'Prerequisite or dependency relation.',
+  },
+  evidence_for: {
+    outgoing: 'This annotation is evidence for target',
+    incoming: 'Target is evidence for this annotation',
+    hint: 'Support a claim with concrete evidence.',
+  },
+};
 
 export function groupAnnotationRelations(
   annotationId: string,
@@ -64,29 +124,94 @@ export function getRelationPeerId(
 
 export default function AnnotationRelationsPanel({
   annotationId,
+  subjectAnnotation,
+  candidateAnnotations,
   relations,
   loading,
   error,
   onOpenAnnotation,
   onCreateRelation,
   onDeleteRelation,
+  onSearchAnnotations,
 }: AnnotationRelationsPanelProps) {
   const groupedRelations = useMemo(
     () => groupAnnotationRelations(annotationId, relations),
     [annotationId, relations],
   );
-  const [targetAnnotationId, setTargetAnnotationId] = useState('');
+  const [targetAnnotationId, setTargetAnnotationId] = useState<string | null>(
+    null,
+  );
   const [relationType, setRelationType] =
     useState<AnnotationRelationType>('references');
+  const [relationDirection, setRelationDirection] = useState<
+    'outgoing' | 'incoming'
+  >('outgoing');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<CodeAnnotation[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const [previewAnnotation, setPreviewAnnotation] = useState<CodeAnnotation | null>(
+    null,
+  );
+
+  const relatedPeerIds = useMemo(() => {
+    const peers = new Set<string>();
+    for (const relation of relations) {
+      peers.add(getRelationPeerId(annotationId, relation));
+    }
+    return peers;
+  }, [annotationId, relations]);
+
+  const nearbyCandidates = useMemo(() => {
+    if (!subjectAnnotation) return [];
+    const scored = candidateAnnotations
+      .filter((item) => item.annotation_id !== annotationId)
+      .map((item) => {
+        const sameFile = item.file_path === subjectAnnotation.file_path;
+        const overlap =
+          item.start_line <= subjectAnnotation.end_line &&
+          item.end_line >= subjectAnnotation.start_line;
+        const distance = sameFile
+          ? Math.abs(item.start_line - subjectAnnotation.start_line)
+          : 100000;
+        const alreadyLinked = relatedPeerIds.has(item.annotation_id);
+        return { item, sameFile, overlap, distance, alreadyLinked };
+      })
+      .sort((a, b) => {
+        if (a.sameFile !== b.sameFile) return a.sameFile ? -1 : 1;
+        if (a.overlap !== b.overlap) return a.overlap ? -1 : 1;
+        if (a.distance !== b.distance) return a.distance - b.distance;
+        if (a.alreadyLinked !== b.alreadyLinked) return a.alreadyLinked ? 1 : -1;
+        return b.item.updated_at.localeCompare(a.item.updated_at);
+      })
+      .slice(0, 8)
+      .map((entry) => entry.item);
+    return scored;
+  }, [annotationId, candidateAnnotations, relatedPeerIds, subjectAnnotation]);
+
+  const candidateMap = useMemo(() => {
+    const map = new Map<string, CodeAnnotation>();
+    for (const candidate of [...candidateAnnotations, ...searchResults]) {
+      map.set(candidate.annotation_id, candidate);
+    }
+    return map;
+  }, [candidateAnnotations, searchResults]);
+
+  useEffect(() => {
+    if (targetAnnotationId) {
+      setPreviewAnnotation(candidateMap.get(targetAnnotationId) || null);
+      return;
+    }
+    setPreviewAnnotation(null);
+  }, [candidateMap, targetAnnotationId]);
 
   const visibleError = formError || error;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const nextTargetAnnotationId = targetAnnotationId.trim();
+    const nextTargetAnnotationId = (targetAnnotationId || '').trim();
     if (!nextTargetAnnotationId) {
       setFormError('Target annotation id is required.');
       return;
@@ -104,9 +229,9 @@ export default function AnnotationRelationsPanel({
         target_annotation_id: nextTargetAnnotationId,
         relation_type: relationType,
         description: '',
-        meta: {},
+        meta: relationDirection === 'incoming' ? { reverse_direction: true } : {},
       });
-      setTargetAnnotationId('');
+      setTargetAnnotationId(null);
       setRelationType('references');
     } catch (submitError) {
       setFormError(
@@ -116,6 +241,30 @@ export default function AnnotationRelationsPanel({
       );
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function performSearch() {
+    const query = searchQuery.trim();
+    if (!query) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    setFormError('');
+    try {
+      const result = await onSearchAnnotations(query);
+      setSearchResults(
+        result.filter((item) => item.annotation_id !== annotationId).slice(0, 12),
+      );
+    } catch (searchError) {
+      setFormError(
+        searchError instanceof Error
+          ? searchError.message
+          : 'Failed to search annotations.',
+      );
+    } finally {
+      setSearching(false);
     }
   }
 
@@ -161,8 +310,8 @@ export default function AnnotationRelationsPanel({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-md bg-slate-900 px-2 py-0.5 font-mono text-[11px] font-medium text-white">
-                          {relation.relation_type}
+              <span className="rounded-md bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-white">
+                          {RELATION_LABELS[relation.relation_type][direction]}
                         </span>
                         <span className="text-[11px] font-medium text-slate-500">
                           {direction === 'outgoing' ? 'Outgoing' : 'Incoming'} /{' '}
@@ -252,42 +401,147 @@ export default function AnnotationRelationsPanel({
         onSubmit={(event) => void handleSubmit(event)}
         className="mt-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3"
       >
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-end">
-          <label className="space-y-1">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-              Target ID
-            </span>
-            <input
-              value={targetAnnotationId}
-              onChange={(event) => setTargetAnnotationId(event.target.value)}
-              placeholder="ann-123"
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus-visible:ring-2 focus-visible:ring-slate-300"
-            />
-          </label>
+        <div className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="space-y-1">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Relation direction
+              </span>
+              <div className="flex rounded-lg border border-slate-200 bg-white p-1">
+                <button
+                  type="button"
+                  onClick={() => setRelationDirection('outgoing')}
+                  className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium ${relationDirection === 'outgoing' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+                >
+                  Current {'->'} target
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRelationDirection('incoming')}
+                  className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium ${relationDirection === 'incoming' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+                >
+                  Target {'->'} current
+                </button>
+              </div>
+            </label>
 
-          <label className="space-y-1">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-              Type
+            <label className="space-y-1">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Relation type
+              </span>
+              <select
+                value={relationType}
+                onChange={(event) =>
+                  setRelationType(event.target.value as AnnotationRelationType)
+                }
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus-visible:ring-2 focus-visible:ring-slate-300"
+              >
+                {ANNOTATION_RELATION_TYPE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {RELATION_LABELS[option][relationDirection]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+            <span className="inline-flex items-center gap-1.5 font-medium text-slate-800">
+              <ArrowRightLeft size={13} />
+              {RELATION_LABELS[relationType][relationDirection]}
             </span>
-            <select
-              value={relationType}
-              onChange={(event) =>
-                setRelationType(event.target.value as AnnotationRelationType)
-              }
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus-visible:ring-2 focus-visible:ring-slate-300"
-            >
-              {ANNOTATION_RELATION_TYPE_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
+            <span className="ml-2">{RELATION_LABELS[relationType].hint}</span>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+              Nearby candidates
+            </div>
+            {nearbyCandidates.length > 0 ? (
+              <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1.5">
+                {nearbyCandidates.map((candidate) => (
+                  <button
+                    key={candidate.annotation_id}
+                    type="button"
+                    onClick={() => setTargetAnnotationId(candidate.annotation_id)}
+                    className={`w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-slate-100 ${targetAnnotationId === candidate.annotation_id ? 'bg-sky-50 ring-1 ring-sky-200' : ''}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <AnnotationIdBadge annotationId={candidate.annotation_id} compact />
+                      <span className="text-slate-500">
+                        L{candidate.start_line}-{candidate.end_line}
+                      </span>
+                    </div>
+                    <div className="mt-1 truncate text-slate-600">{candidate.body}</div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
+                No nearby candidates in current context.
+              </div>
+            )}
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+            <label className="space-y-1">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Full-library search
+              </span>
+              <div className="relative">
+                <Search
+                  size={14}
+                  className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Annotation ID or text"
+                  className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-3 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus-visible:ring-2 focus-visible:ring-slate-300"
+                />
+              </div>
+            </label>
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={() => void performSearch()}
+                className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 hover:bg-slate-100"
+              >
+                {searching ? (
+                  <LoaderCircle size={14} className="animate-spin" />
+                ) : (
+                  <FileSearch size={14} />
+                )}
+                Search
+              </button>
+            </div>
+          </div>
+
+          {searchResults.length > 0 ? (
+            <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1.5">
+              {searchResults.map((candidate) => (
+                <button
+                  key={candidate.annotation_id}
+                  type="button"
+                  onClick={() => setTargetAnnotationId(candidate.annotation_id)}
+                  className={`w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-slate-100 ${targetAnnotationId === candidate.annotation_id ? 'bg-sky-50 ring-1 ring-sky-200' : ''}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <AnnotationIdBadge annotationId={candidate.annotation_id} compact />
+                    <span className="truncate text-slate-500">
+                      {candidate.file_path}:L{candidate.start_line}
+                    </span>
+                  </div>
+                  <div className="mt-1 truncate text-slate-600">{candidate.body}</div>
+                </button>
               ))}
-            </select>
-          </label>
+            </div>
+          ) : null}
 
           <div className="flex items-end">
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || !targetAnnotationId}
               className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? (
@@ -295,11 +549,24 @@ export default function AnnotationRelationsPanel({
               ) : (
                 <Plus size={14} />
               )}
-              Add
+              Create relation
             </button>
           </div>
         </div>
       </form>
+
+      {previewAnnotation ? (
+        <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Target preview
+          </div>
+          <AnnotationPreviewContent
+            annotation={previewAnnotation}
+            compact
+            onOpenAnnotation={onOpenAnnotation}
+          />
+        </div>
+      ) : null}
 
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         {renderGroup('Outgoing', groupedRelations.outgoing, 'outgoing')}

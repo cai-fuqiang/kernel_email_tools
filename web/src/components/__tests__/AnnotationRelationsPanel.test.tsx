@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AnnotationRelation } from '../../api/types';
+import type { AnnotationRelation, CodeAnnotation } from '../../api/types';
 import AnnotationRelationsPanel from '../AnnotationRelationsPanel';
 
 const baseRelation: Omit<
@@ -15,6 +15,30 @@ const baseRelation: Omit<
   updated_by_user_id: 'user-1',
   created_at: '2026-05-14T00:00:00Z',
   updated_at: '2026-05-14T00:00:00Z',
+};
+
+const baseAnnotation: CodeAnnotation = {
+  annotation_id: 'ann-current',
+  annotation_type: 'code',
+  version: 'v6.6',
+  file_path: 'mm/mmap.c',
+  start_line: 10,
+  end_line: 12,
+  body: 'Current annotation',
+  author: 'tester',
+  author_user_id: 'user-1',
+  visibility: 'private',
+  publish_status: 'none',
+  created_at: '2026-05-14T00:00:00Z',
+  parent_annotation_id: '',
+  in_reply_to: '',
+  updated_at: '2026-05-14T00:00:00Z',
+  target_type: 'code',
+  target_ref: 'v6.6:mm/mmap.c:10-12',
+  target_label: 'mm/mmap.c:10-12',
+  target_subtitle: 'v6.6',
+  anchor: {},
+  meta: {},
 };
 
 describe('AnnotationRelationsPanel', () => {
@@ -43,20 +67,23 @@ describe('AnnotationRelationsPanel', () => {
     const html = renderToStaticMarkup(
       <AnnotationRelationsPanel
         annotationId="ann-current"
+        subjectAnnotation={baseAnnotation}
+        candidateAnnotations={[baseAnnotation]}
         relations={relations}
         loading={false}
         error=""
         onOpenAnnotation={vi.fn()}
         onCreateRelation={vi.fn().mockResolvedValue(undefined)}
         onDeleteRelation={vi.fn().mockResolvedValue(undefined)}
+        onSearchAnnotations={vi.fn().mockResolvedValue([])}
       />,
     );
 
     expect(html).toContain('Relations');
     expect(html).toContain('Outgoing');
     expect(html).toContain('Incoming');
-    expect(html).toContain('depends_on');
-    expect(html).toContain('references');
+    expect(html).toContain('This annotation depends on target');
+    expect(html).toContain('Target references this annotation');
     expect(html).toContain('ann-target');
     expect(html).toContain('ann-source');
     expect(html).toContain('Markdown reference');
@@ -87,12 +114,15 @@ describe('AnnotationRelationsPanel', () => {
     const html = renderToStaticMarkup(
       <AnnotationRelationsPanel
         annotationId="ann-current"
+        subjectAnnotation={baseAnnotation}
+        candidateAnnotations={[baseAnnotation]}
         relations={relations}
         loading={false}
         error=""
         onOpenAnnotation={vi.fn()}
         onCreateRelation={vi.fn().mockResolvedValue(undefined)}
         onDeleteRelation={vi.fn().mockResolvedValue(undefined)}
+        onSearchAnnotations={vi.fn().mockResolvedValue([])}
       />,
     );
 
