@@ -126,7 +126,6 @@ export default function AnnotationPanel({
   const captureFocusCleanupTimerRef = useRef<number | null>(null);
   const clickDetailPinnedAnnotationRef = useRef<string | null>(null);
   const clickDetailPinCleanupTimerRef = useRef<number | null>(null);
-  const modalContentRef = useRef<HTMLDivElement | null>(null);
 
   const rootAnnotations = useMemo(() => annotations.filter(a => !a.in_reply_to), [annotations]);
   const repliesByParentId = useMemo(() => {
@@ -867,6 +866,7 @@ function AnnotationDetailModal({
   const [codePreviewAnnotation, setCodePreviewAnnotation] = useState<CodeAnnotation | null>(null);
   const [relationsError, setRelationsError] = useState('');
   const relationsRequestRef = useRef(0);
+  const modalContentRef = useRef<HTMLDivElement | null>(null);
 
   async function loadRelations(annotationId: string) {
     const requestId = relationsRequestRef.current + 1;
