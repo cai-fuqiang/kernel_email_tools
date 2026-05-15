@@ -278,7 +278,7 @@ export default function AnnotationQuickPreviewPopover({
       }}
     >
       <div
-        className="flex cursor-move select-none touch-none items-start justify-between gap-3 border-b border-slate-300 bg-white px-3 py-2"
+        className="flex shrink-0 cursor-move select-none touch-none items-start justify-between gap-3 border-b border-slate-300 bg-white px-3 py-2"
         onDoubleClick={(event) => {
           const target = event.target as HTMLElement | null;
           if (target?.closest?.('button,a')) return;
