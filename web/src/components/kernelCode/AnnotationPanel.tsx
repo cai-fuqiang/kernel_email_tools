@@ -90,6 +90,35 @@ export default function AnnotationPanel({
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [previewAnnotation, setPreviewAnnotation] = useState<CodeAnnotation | null>(null);
   const [previewStartEditing, setPreviewStartEditing] = useState(false);
+  const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
+  const [inlineEditBody, setInlineEditBody] = useState('');
+  const [inlineEditSaving, setInlineEditSaving] = useState(false);
+
+  const startInlineEdit = (annotation: CodeAnnotation) => {
+    setInlineEditingId(annotation.annotation_id);
+    setInlineEditBody(annotation.body);
+  };
+
+  const cancelInlineEdit = () => {
+    setInlineEditingId(null);
+    setInlineEditBody('');
+  };
+
+  const submitInlineEdit = async (annotation: CodeAnnotation) => {
+    const trimmed = inlineEditBody.trim();
+    if (!trimmed || inlineEditSaving) return;
+    setInlineEditSaving(true);
+    try {
+      await updateCodeAnnotation(annotation.annotation_id, { body: trimmed });
+      setInlineEditingId(null);
+      setInlineEditBody('');
+      onAnnotationCreated();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '保存失败', 'error');
+    } finally {
+      setInlineEditSaving(false);
+    }
+  };
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const cardClickTimerRef = useRef<number | null>(null);
   const captureFocusedAnnotationRef = useRef<string | null>(null);
@@ -398,6 +427,15 @@ export default function AnnotationPanel({
         <div className="flex items-center gap-2">
           {renderPreviewButton(reply)}
           <PublishButton a={reply} />
+          {canManage(reply) && inlineEditingId !== reply.annotation_id && (
+            <button
+              type="button"
+              onClick={() => startInlineEdit(reply)}
+              className="text-[10px] text-slate-600 hover:text-slate-950"
+            >
+              编辑
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -417,17 +455,44 @@ export default function AnnotationPanel({
         </div>
       </div>
       <div className="px-3 py-2">
-        <AnnotationMarkdown
-          body={reply.body}
-          className="markdown-content text-xs"
-          onOpenAnnotation={(annotationId) => {
-            const target = annotations.find((item) => item.annotation_id === annotationId);
-            if (target) {
-              setPreviewAnnotation(target);
-              setPreviewStartEditing(false);
-            }
-          }}
-        />
+        {inlineEditingId === reply.annotation_id ? (
+          <div>
+            <textarea
+              value={inlineEditBody}
+              onChange={(e) => setInlineEditBody(e.target.value)}
+              className="w-full min-h-[72px] text-xs border border-slate-300 rounded-lg p-2 outline-none focus:border-indigo-400 resize-y"
+              autoFocus
+            />
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={() => submitInlineEdit(reply)}
+                disabled={!inlineEditBody.trim() || inlineEditSaving}
+                className="px-3 py-1 text-xs font-medium text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 disabled:opacity-50"
+              >
+                {inlineEditSaving ? '保存中...' : '保存'}
+              </button>
+              <button
+                onClick={cancelInlineEdit}
+                disabled={inlineEditSaving}
+                className="px-3 py-1 text-xs font-medium text-slate-700 bg-slate-200 rounded-lg hover:bg-slate-300 disabled:opacity-50"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        ) : (
+          <AnnotationMarkdown
+            body={reply.body}
+            className="markdown-content text-xs"
+            onOpenAnnotation={(annotationId) => {
+              const target = annotations.find((item) => item.annotation_id === annotationId);
+              if (target) {
+                setPreviewAnnotation(target);
+                setPreviewStartEditing(false);
+              }
+            }}
+          />
+        )}
         <div className="mt-2">
           <EmailTagEditor targetType="annotation" targetRef={reply.annotation_id} compact />
         </div>
@@ -522,16 +587,14 @@ export default function AnnotationPanel({
               {renderPreviewButton(root)}
               {renderJumpButton(root)}
               <PublishButton a={root} />
-              {canManage(root) && (
+              {canManage(root) && inlineEditingId !== root.annotation_id && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setPreviewAnnotation(root);
-                    setPreviewStartEditing(true);
-                  }}
+                  onClick={(e) => { e.stopPropagation(); startInlineEdit(root); }}
                   className="text-[10px] text-slate-600 hover:text-slate-950"
+                  data-no-annotation-select
                 >
-                  Edit
+                  编辑
                 </button>
               )}
               <button
@@ -553,17 +616,44 @@ export default function AnnotationPanel({
             </div>
           </div>
           <div className="px-3 py-2">
-            <AnnotationMarkdown
-              body={root.body}
-              className="markdown-content text-xs"
-              onOpenAnnotation={(annotationId) => {
-                const target = annotations.find((item) => item.annotation_id === annotationId);
-                if (target) {
-                  setPreviewAnnotation(target);
-                  setPreviewStartEditing(false);
-                }
-              }}
-            />
+            {inlineEditingId === root.annotation_id ? (
+              <div data-no-annotation-select>
+                <textarea
+                  value={inlineEditBody}
+                  onChange={(e) => setInlineEditBody(e.target.value)}
+                  className="w-full min-h-[72px] text-xs border border-slate-300 rounded-lg p-2 outline-none focus:border-indigo-400 resize-y"
+                  autoFocus
+                />
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={() => submitInlineEdit(root)}
+                    disabled={!inlineEditBody.trim() || inlineEditSaving}
+                    className="px-3 py-1 text-xs font-medium text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 disabled:opacity-50"
+                  >
+                    {inlineEditSaving ? '保存中...' : '保存'}
+                  </button>
+                  <button
+                    onClick={cancelInlineEdit}
+                    disabled={inlineEditSaving}
+                    className="px-3 py-1 text-xs font-medium text-slate-700 bg-slate-200 rounded-lg hover:bg-slate-300 disabled:opacity-50"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <AnnotationMarkdown
+                body={root.body}
+                className="markdown-content text-xs"
+                onOpenAnnotation={(annotationId) => {
+                  const target = annotations.find((item) => item.annotation_id === annotationId);
+                  if (target) {
+                    setPreviewAnnotation(target);
+                    setPreviewStartEditing(false);
+                  }
+                }}
+              />
+            )}
             {root.publish_review_comment && (
               <div className="mt-2 rounded border border-slate-300 bg-slate-100 px-2 py-1 text-[10px] text-slate-700">
               审核备注：{root.publish_review_comment}
