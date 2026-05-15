@@ -150,7 +150,7 @@ auth:
 # 内核源码浏览配置（PLAN-10000）
 kernel_source:
   # 主仓库路径（指向 .git 目录，因为 GitLocalSource 使用 --git-dir）
-  repo_path: /home/wang/workspace/kernel/linux-stable/.git
+  repo_path: /home/wang/workspace/kernel/linux/.git
   # 历史仓库路径（history/history.git，覆盖 v0.01 ~ v2.6.11）
   history_repo_path: /home/wang/workspace/kernel/history/.git
   # 是否启用 graft 接合（将 history 接入 master 仓库）
