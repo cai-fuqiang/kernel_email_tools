@@ -9,7 +9,6 @@ import {
   Plus,
   Search,
   Trash2,
-  X,
 } from 'lucide-react';
 
 import type {
@@ -19,9 +18,7 @@ import type {
   CodeAnnotation,
 } from '../api/types';
 import AnnotationIdBadge from './AnnotationIdBadge';
-import AnnotationPreviewContent from './kernelCode/AnnotationPreviewContent';
-import KernelCodePreviewPane from './kernelCode/KernelCodePreviewPane';
-import { getKernelFile } from '../api/client';
+import AnnotationQuickPreviewPopover from './kernelCode/AnnotationQuickPreviewPopover';
 
 export interface AnnotationRelationsPanelProps {
   annotationId: string;
@@ -157,20 +154,6 @@ export default function AnnotationRelationsPanel({
   const [previewAnnotation, setPreviewAnnotation] = useState<CodeAnnotation | null>(
     null,
   );
-  const [fileLines, setFileLines] = useState<string[]>([]);
-  const [fileLoading, setFileLoading] = useState(false);
-
-  useEffect(() => {
-    if (!previewAnnotation?.version || !previewAnnotation?.file_path) {
-      setFileLines([]);
-      return;
-    }
-    setFileLoading(true);
-    getKernelFile(previewAnnotation.version, previewAnnotation.file_path)
-      .then((f) => setFileLines(f.content.split('\n')))
-      .catch(() => setFileLines([]))
-      .finally(() => setFileLoading(false));
-  }, [previewAnnotation?.annotation_id]);
 
   const relatedPeerIds = useMemo(() => {
     const peers = new Set<string>();
@@ -382,10 +365,8 @@ export default function AnnotationRelationsPanel({
   }
 
   return (
+    <>
     <section className="mt-4 border-t border-slate-200 pt-3">
-      <div className={`flex gap-0 transition-all ${previewAnnotation ? 'items-start' : ''}`}>
-        {/* Left: form + relations */}
-        <div className={`min-w-0 flex-1 transition-all ${previewAnnotation ? 'pr-3' : ''}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-slate-900">Relations</div>
@@ -579,43 +560,18 @@ export default function AnnotationRelationsPanel({
         {renderGroup('Outgoing', groupedRelations.outgoing, 'outgoing')}
         {renderGroup('Incoming', groupedRelations.incoming, 'incoming')}
       </div>
-        </div>
-
-        {/* Right: preview drawer */}
-        {previewAnnotation && (
-          <div className="w-[420px] shrink-0 rounded-xl border border-slate-200 bg-white overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Target preview
-              </span>
-              <button
-                type="button"
-                onClick={() => setTargetAnnotationId(null)}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-              >
-                <X size={13} />
-              </button>
-            </div>
-            <div className="h-56 shrink-0 border-b border-slate-200 overflow-hidden">
-              <KernelCodePreviewPane
-                lines={fileLines}
-                loading={fileLoading}
-                highlightRange={{ start: previewAnnotation.start_line, end: previewAnnotation.end_line }}
-                initialLine={previewAnnotation.start_line}
-                theme="light"
-                className="h-full"
-              />
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto">
-              <AnnotationPreviewContent
-                annotation={previewAnnotation}
-                compact
-                onOpenAnnotation={onOpenAnnotation}
-              />
-            </div>
-          </div>
-        )}
-      </div>
     </section>
+
+    <AnnotationQuickPreviewPopover
+      isOpen={!!previewAnnotation}
+      annotation={previewAnnotation}
+      anchorRect={null}
+      avoidRect={null}
+      onClose={() => setTargetAnnotationId(null)}
+      onOpenFullPreview={() => {}}
+      onOpenInAtlas={() => {}}
+      onOpenAnnotation={onOpenAnnotation}
+    />
+    </>
   );
 }
