@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
+  ArrowRight,
   BookOpen,
+  Bookmark,
   Code2,
   Library,
   Search,
+  Tags,
 } from 'lucide-react';
 import {
   getKnowledgeStats,
@@ -149,6 +152,7 @@ function ActivityRow({
 }
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const { currentUser, isAdmin } = useAuth();
   const [mailStats, setMailStats] = useState<LoadState<StatsResponse>>(initialState);
   const [knowledgeStats, setKnowledgeStats] = useState<LoadState<KnowledgeStats>>(initialState);
@@ -205,13 +209,23 @@ export default function DashboardPage() {
   ]
     .sort((a, b) => new Date(b.date || '').getTime() - new Date(a.date || '').getTime())
     .slice(0, 10);
+  const latestCodeAnnotation = useMemo(
+    () =>
+      (annotations.data || []).find(
+        (annotation) => annotation.target_type === 'code' && annotation.file_path,
+      ) || null,
+    [annotations.data],
+  );
+  const continueContextLabel = latestCodeAnnotation?.file_path
+    ? `${latestCodeAnnotation.file_path}${latestCodeAnnotation.start_line ? `:${latestCodeAnnotation.start_line}` : ''}`
+    : 'Resume from your last code context in Kernel Code';
 
   return (
     <PageShell wide>
       <PageHeader
-        eyebrow="Dashboard"
+        eyebrow="Workbench"
         title={`Hello, ${currentUser?.display_name || 'researcher'}`}
-        description="Start from active queues, then jump into search, knowledge review, code, or manuals."
+        description="Continue your active code and annotation work, then branch into search or knowledge review."
         meta={currentUser && <StatusBadge tone={roleTone(currentUser.role)}>{currentUser.role}</StatusBadge>}
       />
 
@@ -220,6 +234,31 @@ export default function DashboardPage() {
         <MetricCard label="Emails" value={mailStats.loading ? '...' : (mailStats.data?.total_emails || 0).toLocaleString()} hint="Searchable messages" />
         <MetricCard label="Knowledge" value={knowledgeStats.loading ? '...' : (knowledgeStats.data?.by_status.active || knowledgeStats.data?.total_entities || 0).toLocaleString()} hint="Accepted active entities" />
       </div>
+
+      <SectionPanel title="Continue Working" description="Return to the most specific code context available.">
+        <button
+          type="button"
+          onClick={() => navigate('/kernel-code')}
+          className="group flex w-full items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 text-left transition hover:border-slate-300 hover:bg-slate-50"
+        >
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+              <Code2 className="h-4 w-4 text-slate-700" />
+              Continue last code context
+            </div>
+            <div className="mt-1 truncate text-sm text-slate-600">{continueContextLabel}</div>
+          </div>
+          <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-400 transition group-hover:text-slate-700" />
+        </button>
+      </SectionPanel>
+
+      <SectionPanel title="Search" description="Search stays one click away whenever you need broader discovery.">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <ActionTile to="/workspace" icon={Search} title="Mail and thread search" description="Find threads by subsystem, symptom, patch, or tag." />
+          <ActionTile to="/manual/search" icon={BookOpen} title="Manual lookup" description="Search Intel SDM and related technical references." />
+          <ActionTile to="/annotations" icon={Bookmark} title="Annotation lookup" description="Find annotations by ID, source, or recent activity." />
+        </div>
+      </SectionPanel>
 
       <SectionPanel title="My Inbox" description="Review queues surfaced in one place.">
         {drafts.loading || annotations.loading ? (
@@ -242,12 +281,11 @@ export default function DashboardPage() {
         )}
       </SectionPanel>
 
-      <SectionPanel title="Quick Actions">
+      <SectionPanel title="Knowledge Surfaces">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <ActionTile to="/workspace" icon={Search} title="New search" description="Find threads by subsystem, symptom, patch, or tag." />
           <ActionTile to="/knowledge" icon={Library} title="Browse knowledge" description="Edit entities, evidence, relations, and review drafts." />
-          <ActionTile to="/kernel-code" icon={Code2} title="Open Atlas" description="Inspect code targets, versions, and linked annotations." />
-          <ActionTile to="/manual/search" icon={BookOpen} title="Manuals" description="Search Intel SDM and related technical references." />
+          <ActionTile to="/kernel-code" icon={Code2} title="Kernel Code" description="Inspect code targets, versions, and linked annotations." />
+          <ActionTile to="/tags" icon={Tags} title="Tag maintenance" description="Manage tag hierarchy for filtering and cleanup workflows." />
         </div>
       </SectionPanel>
 

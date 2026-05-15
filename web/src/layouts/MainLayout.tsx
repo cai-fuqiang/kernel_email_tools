@@ -2,9 +2,9 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import {
   BookOpen,
+  Bookmark,
   Code2,
   FileCheck2,
-  Inbox,
   Languages,
   Library,
   LayoutDashboard,
@@ -13,6 +13,7 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  Search,
   Tags,
   Users,
   X,
@@ -92,17 +93,17 @@ export default function MainLayout() {
     setMobileNavOpen(false);
   }, [location.pathname]);
 
-  const researchItems: NavItem[] = [
-    { to: '/dashboard', label: 'Home', icon: LayoutDashboard },
-    { to: '/workspace', label: 'Workspace', icon: Inbox },
-  ];
-  const workbenchItems: NavItem[] = [
+  const primaryItems: NavItem[] = [
+    { to: '/kernel-code', label: 'Kernel Code', icon: Code2 },
+    { to: '/workspace', label: 'Search', icon: Search },
     { to: '/knowledge', label: 'Knowledge', icon: Library },
+  ];
+  const contextItems: NavItem[] = [
+    { to: '/dashboard', label: 'Workbench Home', icon: LayoutDashboard },
+    { to: '/annotations', label: 'Annotations', icon: Bookmark },
+    { to: '/manual/search', label: 'Manuals', icon: BookOpen },
     { to: '/tags', label: 'Tags', icon: Tags },
     { to: '/translations', label: 'Translations', icon: Languages },
-  ];
-  const manualItems: NavItem[] = [
-    { to: '/manual/search', label: 'Search Manuals', icon: BookOpen },
   ];
 
   const SidebarContent = ({ collapsed = false }: { collapsed?: boolean }) => (
@@ -162,9 +163,8 @@ export default function MainLayout() {
         </div>
 
         <nav className={collapsed ? 'flex-1 space-y-4 overflow-y-auto px-2 py-4' : 'flex-1 space-y-6 overflow-y-auto p-4'}>
-          <NavSection title="Research" items={researchItems} collapsed={collapsed} />
-          <NavSection title="Knowledge Workbench" items={workbenchItems} collapsed={collapsed} />
-          <NavSection title="Code" items={[{ to: '/kernel-code', label: 'Code Atlas', icon: Code2 }]} collapsed={collapsed} />
+          <NavSection title="Primary" items={primaryItems} collapsed={collapsed} />
+          <NavSection title="Context" items={contextItems} collapsed={collapsed} />
           {isAdmin && (
             <NavSection
               title="Admin"
@@ -175,7 +175,6 @@ export default function MainLayout() {
               collapsed={collapsed}
             />
           )}
-          <NavSection title="Manuals" items={manualItems} collapsed={collapsed} />
         </nav>
 
         {!collapsed && <div className="border-t border-slate-200 p-4">
