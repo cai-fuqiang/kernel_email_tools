@@ -1,6 +1,6 @@
 import type {
-  AskDraftApplyResponse,
-  AskDraftResponse,
+  KnowledgeDraftApplyResponse,
+  KnowledgeDraftPayload,
   SummarizeResponse,
 } from '../../api/types';
 import DraftReviewPanel from '../DraftReviewPanel';
@@ -8,12 +8,12 @@ import { citationLabel, resolveCitationSource } from './searchUtils';
 
 interface SummaryPanelProps {
   summary: SummarizeResponse;
-  draftBundle: AskDraftResponse | null;
-  draftSaved: AskDraftApplyResponse | null;
+  draftBundle: KnowledgeDraftPayload | null;
+  draftSaved: KnowledgeDraftApplyResponse | null;
   draftLoading: boolean;
   showDraftPanel: boolean;
   onCreateDraft: () => void;
-  onDraftChange: (next: AskDraftResponse) => void;
+  onDraftChange: (next: KnowledgeDraftPayload) => void;
   onApplyDraft: () => void;
   onCloseDraft: () => void;
   onOpenThread: (threadId: string) => void;

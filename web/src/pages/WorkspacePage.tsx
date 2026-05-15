@@ -41,7 +41,7 @@ import { showToast } from '../components/Toast';
 import BatchTagBar from '../components/search/BatchTagBar';
 import SummaryPanel from '../components/search/SummaryPanel';
 import { errorMessage } from '../components/search/searchUtils';
-import type { AskDraftApplyResponse, AskDraftResponse, SourceRef, SummarizeResponse } from '../api/types';
+import type { KnowledgeDraftApplyResponse, KnowledgeDraftPayload, SourceRef, SummarizeResponse } from '../api/types';
 import { workspaceAnnotationToCodePreviewAnnotation } from '../workspace/adapters/annotation';
 
 const VALID_VIEWS: WorkspaceView[] = ['email', 'tag', 'annotation'];
@@ -97,9 +97,9 @@ export default function WorkspacePage() {
   const [batchTagging, setBatchTagging] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
   const [summary, setSummary] = useState<SummarizeResponse | null>(null);
-  const [draftBundle, setDraftBundle] = useState<AskDraftResponse | null>(null);
+  const [draftBundle, setDraftBundle] = useState<KnowledgeDraftPayload | null>(null);
   const [draftLoading, setDraftLoading] = useState(false);
-  const [draftSaved, setDraftSaved] = useState<AskDraftApplyResponse | null>(null);
+  const [draftSaved, setDraftSaved] = useState<KnowledgeDraftApplyResponse | null>(null);
   const [showDraftPanel, setShowDraftPanel] = useState(false);
 
   // 加载元数据

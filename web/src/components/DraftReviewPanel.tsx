@@ -1,19 +1,19 @@
 import { useState } from 'react';
-import type { AskDraftApplyResponse, AskDraftResponse } from '../api/types';
+import type { KnowledgeDraftApplyResponse, KnowledgeDraftPayload } from '../api/types';
 
 type Props = {
-  draft: AskDraftResponse;
-  onChange: (draft: AskDraftResponse) => void;
+  draft: KnowledgeDraftPayload;
+  onChange: (draft: KnowledgeDraftPayload) => void;
   onSave: () => void;
   saving?: boolean;
-  saved?: AskDraftApplyResponse | null;
+  saved?: KnowledgeDraftApplyResponse | null;
   error?: string;
   compact?: boolean;
 };
 
 type Tab = 'knowledge' | 'annotations' | 'tags';
 
-function selectedCount(draft: AskDraftResponse) {
+function selectedCount(draft: KnowledgeDraftPayload) {
   return [
     ...draft.knowledge_drafts,
     ...draft.annotation_drafts,
@@ -29,7 +29,7 @@ function updateDraftList<T>(
   return list.map((item, i) => (i === index ? { ...item, ...patch } : item));
 }
 
-function sourceCount(draft: AskDraftResponse) {
+function sourceCount(draft: KnowledgeDraftPayload) {
   const counts = draft.knowledge_drafts.map((item) => {
     const ask = item.meta?.ask;
     if (!ask || typeof ask !== 'object') return 0;
@@ -256,7 +256,7 @@ export default function DraftReviewPanel({
   );
 }
 
-function useDraftTab(draft: AskDraftResponse): [Tab, (tab: Tab) => void] {
+function useDraftTab(draft: KnowledgeDraftPayload): [Tab, (tab: Tab) => void] {
   const initial = draft.knowledge_drafts.length > 0
     ? 'knowledge'
     : draft.annotation_drafts.length > 0

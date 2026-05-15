@@ -41,7 +41,7 @@ export interface SummarizeResponse {
   model: string;
 }
 
-export interface AskKnowledgeDraft {
+export interface KnowledgeDraftEntityDraft {
   selected: boolean;
   entity_type: string;
   canonical_name: string;
@@ -55,7 +55,7 @@ export interface AskKnowledgeDraft {
   tags?: string[];
 }
 
-export interface AskAnnotationDraft {
+export interface KnowledgeDraftAnnotationDraft {
   selected: boolean;
   annotation_type: string;
   body: string;
@@ -70,7 +70,7 @@ export interface AskAnnotationDraft {
   meta: Record<string, unknown>;
 }
 
-export interface AskTagAssignmentDraft {
+export interface KnowledgeDraftTagAssignmentDraft {
   selected: boolean;
   tag_name: string;
   tag_exists?: boolean;
@@ -82,15 +82,15 @@ export interface AskTagAssignmentDraft {
   evidence: Record<string, unknown>;
 }
 
-export interface AskDraftResponse {
+export interface KnowledgeDraftPayload {
   draft_id?: string;
-  knowledge_drafts: AskKnowledgeDraft[];
-  annotation_drafts: AskAnnotationDraft[];
-  tag_assignment_drafts: AskTagAssignmentDraft[];
+  knowledge_drafts: KnowledgeDraftEntityDraft[];
+  annotation_drafts: KnowledgeDraftAnnotationDraft[];
+  tag_assignment_drafts: KnowledgeDraftTagAssignmentDraft[];
   warnings: string[];
 }
 
-export interface AskDraftApplyResponse {
+export interface KnowledgeDraftApplyResponse {
   created_entities: KnowledgeEntity[];
   created_annotations: Annotation[];
   created_tag_assignments: TagAssignment[];
@@ -527,7 +527,7 @@ export interface KnowledgeDraft {
   source_type: string;
   source_ref: string;
   question: string;
-  payload: AskDraftResponse;
+  payload: KnowledgeDraftPayload;
   status: string;
   review_note: string;
   created_by: string;

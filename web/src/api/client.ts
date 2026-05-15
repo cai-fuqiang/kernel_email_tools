@@ -2,8 +2,8 @@ import type {
   SearchHit,
   SearchResponse,
   SummarizeResponse,
-  AskDraftApplyResponse,
-  AskDraftResponse,
+  KnowledgeDraftApplyResponse,
+  KnowledgeDraftPayload,
   SourceRef,
   ThreadResponse,
   StatsResponse,
@@ -503,16 +503,16 @@ export async function summarizeSearchResults(req: SummarizeRequest): Promise<Sum
   });
 }
 
-export async function createSummaryDraft(query: string, summary: string, sources: SourceRef[]): Promise<AskDraftResponse> {
-  return fetchWithBody<AskDraftResponse>(`${API_BASE}/search/summarize/draft`, {
+export async function createSummaryDraft(query: string, summary: string, sources: SourceRef[]): Promise<KnowledgeDraftPayload> {
+  return fetchWithBody<KnowledgeDraftPayload>(`${API_BASE}/search/summarize/draft`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, summary, sources }),
   });
 }
 
-export async function applySummaryDraft(draft: AskDraftResponse): Promise<AskDraftApplyResponse> {
-  return fetchWithBody<AskDraftApplyResponse>(`${API_BASE}/search/summarize/draft/apply`, {
+export async function applySummaryDraft(draft: KnowledgeDraftPayload): Promise<KnowledgeDraftApplyResponse> {
+  return fetchWithBody<KnowledgeDraftApplyResponse>(`${API_BASE}/search/summarize/draft/apply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1066,8 +1066,8 @@ export async function updateKnowledgeDraft(
   });
 }
 
-export async function acceptKnowledgeDraft(draftId: string): Promise<import('./types').AskDraftApplyResponse> {
-  return fetchWithBody<import('./types').AskDraftApplyResponse>(
+export async function acceptKnowledgeDraft(draftId: string): Promise<import('./types').KnowledgeDraftApplyResponse> {
+  return fetchWithBody<import('./types').KnowledgeDraftApplyResponse>(
     `${API_BASE}/knowledge/drafts/${encodeURIComponent(draftId)}/accept`,
     { method: 'POST' },
   );

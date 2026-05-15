@@ -226,7 +226,7 @@ export default function EvidencePanel({
 
       {evidence.question && (
         <div className="mt-4 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm leading-6 text-indigo-950">
-          Ask question: {evidence.question}
+          Source question: {evidence.question}
         </div>
       )}
       <div className="mt-4 grid gap-2 md:grid-cols-3">

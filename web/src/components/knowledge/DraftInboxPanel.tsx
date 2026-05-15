@@ -56,7 +56,7 @@ export default function DraftInboxPanel({
             Draft Inbox
           </div>
           <p className="mt-1 text-xs leading-5 text-gray-600">
-            Ask/Search drafts waiting for human review.
+            Search-generated drafts waiting for human review.
           </p>
         </div>
         <SecondaryButton
@@ -94,7 +94,7 @@ export default function DraftInboxPanel({
           <div className="text-xs text-gray-600">Loading drafts...</div>
         ) : drafts.length === 0 ? (
           <div className="rounded-lg border border-dashed border-amber-200 bg-white/70 px-3 py-3 text-xs leading-5 text-gray-600">
-            No drafts for this filter. Ask or Search can generate candidates here.
+            No drafts for this filter. Search and review flows can generate candidates here.
           </div>
         ) : (
           sortedDrafts.map((draft) => {

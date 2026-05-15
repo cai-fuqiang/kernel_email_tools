@@ -63,8 +63,8 @@ import {
 } from '../../api/client';
 import type {
   AnnotationListItem,
-  AskDraftApplyResponse,
-  AskDraftResponse,
+  KnowledgeDraftApplyResponse,
+  KnowledgeDraftPayload,
   KnowledgeDraft,
   KnowledgeEntity,
   KnowledgeEvidence,
@@ -120,8 +120,8 @@ export default function KnowledgeWorkbench() {
   const [draftLoading, setDraftLoading] = useState(false);
   const [draftFilter, setDraftFilter] = useState<string>('all');
   const [activeDraft, setActiveDraft] = useState<KnowledgeDraft | null>(null);
-  const [activeDraftPayload, setActiveDraftPayload] = useState<AskDraftResponse | null>(null);
-  const [draftSaved, setDraftSaved] = useState<AskDraftApplyResponse | null>(null);
+  const [activeDraftPayload, setActiveDraftPayload] = useState<KnowledgeDraftPayload | null>(null);
+  const [draftSaved, setDraftSaved] = useState<KnowledgeDraftApplyResponse | null>(null);
   const [draftError, setDraftError] = useState('');
   // PLAN-31001 Phase 5：实体列表分页 + fulltext 模式
   const [entityTotal, setEntityTotal] = useState(0);
@@ -690,7 +690,7 @@ export default function KnowledgeWorkbench() {
               </h2>
               <div className="mt-6 grid gap-4 md:grid-cols-3">
                 {[
-                  ['1', 'Ask or search', 'Find the discussion that explains a behavior, tradeoff, or subsystem decision.'],
+                  ['1', 'Search evidence', 'Find the discussion that explains a behavior, tradeoff, or subsystem decision.'],
                   ['2', 'Review evidence', 'Keep the source emails visible so every claim can be checked later.'],
                   ['3', 'Save knowledge', 'Promote the stable explanation into a concept, issue, or mechanism with notes.'],
                 ].map(([step, title, body]) => (

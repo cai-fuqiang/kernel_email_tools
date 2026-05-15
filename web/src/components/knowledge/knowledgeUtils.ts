@@ -1,5 +1,5 @@
 import type {
-  AskDraftResponse,
+  KnowledgeDraftPayload,
   KnowledgeDraft,
   KnowledgeEntity,
   KnowledgeEvidence,
@@ -131,9 +131,9 @@ export function evidenceTitle(row: KnowledgeEvidence) {
   return [sender, date, subject].filter(Boolean).join(' · ');
 }
 
-export function normalizeDraftPayload(payload: unknown): AskDraftResponse {
+export function normalizeDraftPayload(payload: unknown): KnowledgeDraftPayload {
   const raw =
-    payload && typeof payload === 'object' ? (payload as Partial<AskDraftResponse>) : {};
+    payload && typeof payload === 'object' ? (payload as Partial<KnowledgeDraftPayload>) : {};
   return {
     draft_id: raw.draft_id || '',
     knowledge_drafts: Array.isArray(raw.knowledge_drafts) ? raw.knowledge_drafts : [],

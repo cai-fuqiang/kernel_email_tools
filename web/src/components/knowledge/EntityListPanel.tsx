@@ -261,7 +261,7 @@ export default function EntityListPanel({
           <div className="p-5 text-sm text-gray-500">Loading knowledge...</div>
         ) : entities.length === 0 ? (
           <div className="p-5 text-sm leading-6 text-gray-500">
-            No knowledge items yet. Start from an Ask answer, then save the useful parts as drafts.
+            No knowledge items yet. Start from search evidence, then save the useful parts as drafts.
           </div>
         ) : (
           entities.map((entity) => {

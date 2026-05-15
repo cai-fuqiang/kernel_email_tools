@@ -14,8 +14,8 @@ import {
 import type {
   SearchResponse,
   SummarizeResponse,
-  AskDraftResponse,
-  AskDraftApplyResponse,
+  KnowledgeDraftPayload,
+  KnowledgeDraftApplyResponse,
   SourceRef,
   ChannelOption,
   AnnotationListItem,
@@ -69,9 +69,9 @@ export default function SearchPage() {
   // AI 概括状态
   const [summarizing, setSummarizing] = useState(false);
   const [summary, setSummary] = useState<SummarizeResponse | null>(null);
-  const [draftBundle, setDraftBundle] = useState<AskDraftResponse | null>(null);
+  const [draftBundle, setDraftBundle] = useState<KnowledgeDraftPayload | null>(null);
   const [draftLoading, setDraftLoading] = useState(false);
-  const [draftSaved, setDraftSaved] = useState<AskDraftApplyResponse | null>(null);
+  const [draftSaved, setDraftSaved] = useState<KnowledgeDraftApplyResponse | null>(null);
   const [showDraftPanel, setShowDraftPanel] = useState(false);
 
   // Annotation search

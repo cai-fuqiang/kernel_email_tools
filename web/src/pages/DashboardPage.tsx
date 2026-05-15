@@ -274,7 +274,7 @@ export default function DashboardPage() {
           {knowledgeStats.loading || annotations.loading ? (
             <MiniSkeleton />
           ) : recentActivities.length === 0 ? (
-            <EmptyState title="No recent activity yet" description="Search results, accepted knowledge, annotations, and agent runs will appear here." />
+            <EmptyState title="No recent activity yet" description="Search results, accepted knowledge, and annotations will appear here." />
           ) : (
             <div className="divide-y divide-slate-100">
               {recentActivities.map((item) => (
