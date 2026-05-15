@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { Pin } from 'lucide-react';
 import { getKernelFile } from '../../api/client';
 import type { CodeAnnotation } from '../../api/types';
 import { showToast } from '../Toast';
@@ -106,6 +107,7 @@ export default function AnnotationQuickPreviewPopover({
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [frame, setFrame] = useState<Frame | null>(null);
+  const [pinned, setPinned] = useState(false);
   const interactionRef = useRef<Interaction | null>(null);
   const frameKeyRef = useRef('');
 
@@ -114,6 +116,7 @@ export default function AnnotationQuickPreviewPopover({
       setFileLines([]);
       setLoading(false);
       setError(null);
+      setPinned(false);
       return undefined;
     }
 
@@ -199,6 +202,7 @@ export default function AnnotationQuickPreviewPopover({
       const target = event.target as HTMLElement | null;
       if (target?.closest?.('[data-annotation-quick-preview]')) return;
       if (target?.closest?.('[data-no-annotation-select]')) return;
+      if (pinned) return;
       onClose();
     }
 
@@ -214,7 +218,7 @@ export default function AnnotationQuickPreviewPopover({
       document.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('resize', onResize);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, pinned]);
 
   useEffect(() => {
     function onPointerMove(event: PointerEvent) {
@@ -344,6 +348,15 @@ export default function AnnotationQuickPreviewPopover({
             className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-900 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-400"
           >
             Open full preview
+          </button>
+          <button
+            type="button"
+            onClick={() => setPinned((v) => !v)}
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition focus:outline-none focus:ring-2 focus:ring-sky-400 ${pinned ? 'bg-sky-100 text-sky-600' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}
+            aria-label={pinned ? 'Unpin preview' : 'Pin preview'}
+            title={pinned ? '取消固定' : '固定（编辑时保持浮窗）'}
+          >
+            <Pin className="h-4 w-4" />
           </button>
           <button
             type="button"
