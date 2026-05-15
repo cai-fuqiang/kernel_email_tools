@@ -65,8 +65,8 @@ function buildInitialFrame(anchorRect: DOMRect | null, avoidRect: DOMRect | null
   const availableLeft = avoidRect ? avoidRect.left - GAP : 0;
   const availableRight = avoidRect ? viewportWidth - avoidRect.right - GAP : 0;
 
-  let x = VIEWPORT_MARGIN;
-  let y = VIEWPORT_MARGIN;
+  let x = Math.round((viewportWidth - width) / 2);
+  let y = Math.round((viewportHeight - height) / 2);
 
   if (avoidRect && availableLeft >= width) {
     x = Math.max(VIEWPORT_MARGIN, avoidRect.left - GAP - width);
