@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight, FileText, Mail, ScrollText } from 'lucide-re
 import AnnotationCard from './AnnotationCard';
 import AnnotationIdBadge from './AnnotationIdBadge';
 import ConfirmModal from './ConfirmModal';
-import PreviewModal from './PreviewModal';
+import AnnotationQuickPreviewPopover from './kernelCode/AnnotationQuickPreviewPopover';
 import ThreadDrawer from './ThreadDrawer';
 import { showToast } from './Toast';
 import {
@@ -17,7 +17,7 @@ import {
   withdrawAnnotationPublication,
 } from '../api/client';
 import { useAuth } from '../auth';
-import type { AnnotationListItem } from '../api/types';
+import type { AnnotationListItem, CodeAnnotation } from '../api/types';
 import { codeTargetToKernelCodeUrl, normalizeCodeTarget } from '../utils/codeTarget';
 
 interface AnnotationTreeProps {
@@ -402,7 +402,15 @@ export default function AnnotationTree({ annotations, onAnnotationsChange, layou
       <div className={layout === 'grid' ? 'grid gap-4 xl:grid-cols-2' : 'space-y-4'}>
         {tree.map((node) => renderNode(node))}
       </div>
-      <PreviewModal isOpen={!!previewAnnotation} onClose={() => setPreviewAnnotation(null)} annotation={previewAnnotation} />
+      <AnnotationQuickPreviewPopover
+        isOpen={!!previewAnnotation}
+        annotation={previewAnnotation as CodeAnnotation | null}
+        anchorRect={null}
+        avoidRect={null}
+        onClose={() => setPreviewAnnotation(null)}
+        onOpenFullPreview={() => {}}
+        onOpenInAtlas={() => {}}
+      />
       {drawerThreadId && <ThreadDrawer threadId={drawerThreadId} onClose={() => setDrawerThreadId(null)} />}
       <ConfirmModal
         isOpen={confirmOpen}
