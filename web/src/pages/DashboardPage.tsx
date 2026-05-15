@@ -1,23 +1,19 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Bot,
   BookOpen,
   Code2,
-  FileText,
   Library,
   Search,
 } from 'lucide-react';
 import {
   getKnowledgeStats,
   getStats,
-  listAgentResearchRuns,
   listAnnotations,
   listKnowledgeDrafts,
   listUsers,
 } from '../api/client';
 import type {
-  AgentResearchRun,
   AnnotationListItem,
   KnowledgeDraft,
   KnowledgeStats,
@@ -56,10 +52,6 @@ function formatDate(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
-}
-
-function countActiveRuns(runs: AgentResearchRun[]) {
-  return runs.filter((run) => ['queued', 'running', 'needs_review'].includes(run.status)).length;
 }
 
 function SectionError({ message }: { message: string }) {
@@ -164,7 +156,6 @@ export default function DashboardPage() {
   const [knowledgeStats, setKnowledgeStats] = useState<LoadState<KnowledgeStats>>(initialState);
   const [drafts, setDrafts] = useState<LoadState<KnowledgeDraft[]>>(initialState);
   const [annotations, setAnnotations] = useState<LoadState<AnnotationListItem[]>>(initialState);
-  const [runs, setRuns] = useState<LoadState<AgentResearchRun[]>>(initialState);
   const [pendingUsers, setPendingUsers] = useState<LoadState<number>>(initialState);
 
   useEffect(() => {
@@ -187,11 +178,6 @@ export default function DashboardPage() {
       .then((data) => setAnnotations({ loading: false, error: '', data: data.annotations }))
       .catch((error: unknown) =>
         setAnnotations({ loading: false, error: error instanceof Error ? error.message : 'Failed to load annotations', data: null }),
-      );
-    listAgentResearchRuns('', 1, 20)
-      .then((data) => setRuns({ loading: false, error: '', data: data.runs }))
-      .catch((error: unknown) =>
-        setRuns({ loading: false, error: error instanceof Error ? error.message : 'Failed to load agent runs', data: null }),
       );
     if (isAdmin) {
       listUsers()
@@ -219,7 +205,6 @@ export default function DashboardPage() {
     () => (annotations.data || []).filter((item) => item.publish_status === 'pending'),
     [annotations.data],
   );
-  const activeRuns = runs.data ? countActiveRuns(runs.data) : 0;
   const recentActivities = [
     ...(knowledgeStats.data?.recent || []).map((entity) => ({
       title: entity.canonical_name,
@@ -227,13 +212,6 @@ export default function DashboardPage() {
       to: `/knowledge?entity_id=${encodeURIComponent(entity.entity_id)}`,
       badge: 'Knowledge',
       date: entity.updated_at,
-    })),
-    ...(runs.data || []).slice(0, 5).map((run) => ({
-      title: run.topic,
-      subtitle: `${run.status.replace(/_/g, ' ')} by ${run.requested_by} ${formatDate(run.updated_at)}`,
-      to: '/agent-research',
-      badge: 'Agent',
-      date: run.updated_at,
     })),
     ...(annotations.data || []).slice(0, 5).map((annotation) => ({
       title: annotation.target_label || annotation.email_subject || annotation.annotation_id,
@@ -251,7 +229,7 @@ export default function DashboardPage() {
       <PageHeader
         eyebrow="Dashboard"
         title={`Hello, ${currentUser?.display_name || 'researcher'}`}
-        description="Start from the active queues, then jump into search, agent research, knowledge review, code, or manuals."
+        description="Start from active queues, then jump into search, knowledge review, code, or manuals."
         meta={currentUser && <StatusBadge tone={roleTone(currentUser.role)}>{currentUser.role}</StatusBadge>}
       />
 
@@ -261,16 +239,15 @@ export default function DashboardPage() {
         <MetricCard label="Knowledge" value={knowledgeStats.loading ? '...' : (knowledgeStats.data?.by_status.active || knowledgeStats.data?.total_entities || 0).toLocaleString()} hint="Accepted active entities" />
       </div>
 
-      <SectionPanel title="My Inbox" description="Review queues and unfinished research surfaced in one place.">
-        {drafts.loading || annotations.loading || runs.loading ? (
+      <SectionPanel title="My Inbox" description="Review queues surfaced in one place.">
+        {drafts.loading || annotations.loading ? (
           <MiniSkeleton />
-        ) : drafts.error || annotations.error || runs.error ? (
-          <SectionError message={drafts.error || annotations.error || runs.error} />
+        ) : drafts.error || annotations.error ? (
+          <SectionError message={drafts.error || annotations.error} />
         ) : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <InboxItem label="Knowledge drafts" value={drafts.data?.length || 0} hint="New drafts waiting for review" to="/knowledge" />
             <InboxItem label="Private annotations" value={privateAnnotations.length} hint="Unpublished notes in your working set" to="/workspace?view=annotation" />
-            <InboxItem label="Agent runs" value={activeRuns} hint="Queued, running, or ready for review" to="/agent-research" />
             {isAdmin && (
               <InboxItem
                 label="Admin approvals"
@@ -286,8 +263,6 @@ export default function DashboardPage() {
       <SectionPanel title="Quick Actions">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <ActionTile to="/workspace" icon={Search} title="New search" description="Find threads by subsystem, symptom, patch, or tag." />
-          <ActionTile to="/ask" icon={Bot} title="Ask agent" description="Ask follow-up questions over mailing-list evidence." />
-          <ActionTile to="/agent-research" icon={FileText} title="New agent research" description="Run a topic-driven investigation and review its draft." />
           <ActionTile to="/knowledge" icon={Library} title="Browse knowledge" description="Edit entities, evidence, relations, and review drafts." />
           <ActionTile to="/kernel-code" icon={Code2} title="Open Atlas" description="Inspect code targets, versions, and linked annotations." />
           <ActionTile to="/manual/search" icon={BookOpen} title="Manuals" description="Search Intel SDM and related technical references." />
@@ -296,7 +271,7 @@ export default function DashboardPage() {
 
       <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
         <SectionPanel title="Recent Activity">
-          {knowledgeStats.loading || annotations.loading || runs.loading ? (
+          {knowledgeStats.loading || annotations.loading ? (
             <MiniSkeleton />
           ) : recentActivities.length === 0 ? (
             <EmptyState title="No recent activity yet" description="Search results, accepted knowledge, annotations, and agent runs will appear here." />

@@ -41,50 +41,6 @@ export interface SummarizeResponse {
   model: string;
 }
 
-export interface ExecutedAskQuery {
-  query: string;
-  mode: string;
-  hits: number;
-}
-
-export interface AskThreadMessage {
-  message_id: string;
-  subject: string;
-  sender: string;
-  date: string;
-  preview: string;
-}
-
-export interface AskThreadSummary {
-  thread_id: string;
-  subject: string;
-  message_count: number;
-  messages: AskThreadMessage[];
-}
-
-export interface AskResponse {
-  question: string;
-  answer: string;
-  sources: SourceRef[];
-  model: string;
-  retrieval_mode: string;
-  search_plan: {
-    goal?: string;
-    keyword_queries?: string[];
-    semantic_queries?: string[];
-    rationale?: string;
-    planner?: string;
-  };
-  executed_queries: ExecutedAskQuery[];
-  threads: AskThreadSummary[];
-  retrieval_stats: Record<string, unknown>;
-}
-
-export interface AskMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
 export interface AskKnowledgeDraft {
   selected: boolean;
   entity_type: string;
@@ -411,70 +367,10 @@ export interface ManualSourceRef {
   snippet: string;
 }
 
-export interface ManualAskResponse {
-  question: string;
-  answer: string;
-  sources: ManualSourceRef[];
-  model: string;
-  retrieval_mode: string;
-}
-
 export interface ManualStatsResponse {
   total_chunks: number;
   by_manual_type: Record<string, number>;
   by_content_type: Record<string, number>;
-}
-
-export interface AgentResearchBudget {
-  max_iterations: number;
-  max_searches: number;
-  max_threads: number;
-}
-
-export interface AgentResearchRun {
-  run_id: string;
-  topic: string;
-  status: 'queued' | 'running' | 'needs_review' | 'accepted' | 'rejected' | 'failed' | 'cancelled' | string;
-  requested_by_user_id?: string | null;
-  requested_by: string;
-  agent_user_id: string;
-  agent_name: string;
-  filters: Record<string, unknown>;
-  budget: Record<string, unknown>;
-  confidence: number;
-  summary: string;
-  failure_reason: string;
-  draft_ids: string[];
-  heartbeat_at?: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface AgentRunAction {
-  action_id: string;
-  run_id: string;
-  iteration_index: number;
-  action_index: number;
-  action_type: string;
-  status: string;
-  payload: Record<string, unknown>;
-  error: string;
-  duration_ms: number;
-  model: string;
-  token_usage: Record<string, unknown>;
-  created_at: string;
-}
-
-export interface AgentResearchRunListResponse {
-  runs: AgentResearchRun[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
-export interface AgentResearchRunDetailResponse {
-  run: AgentResearchRun;
-  actions: AgentRunAction[];
 }
 
 // 批注列表相关类型
@@ -742,52 +638,6 @@ export interface KnowledgeImportSummary {
   relations_created: number;
   relations_skipped: number;
   errors: string[];
-}
-
-// ============================================================
-// Ask 对话历史相关类型
-// ============================================================
-
-export interface AskTurn {
-  turn_id: string;
-  turn_index: number;
-  question: string;
-  answer: string;
-  sources: Record<string, unknown>[];
-  search_plan: Record<string, unknown>;
-  threads: Record<string, unknown>[];
-  retrieval_stats: Record<string, unknown>;
-  model: string;
-  error?: string | null;
-  created_at: string;
-}
-
-export interface AskConversation {
-  conversation_id: string;
-  user_id: string;
-  display_name: string;
-  title: string;
-  model: string;
-  turn_count: number;
-  created_at: string;
-  updated_at: string;
-  turns: AskTurn[];
-}
-
-export interface AskConversationListItem {
-  conversation_id: string;
-  title: string;
-  model: string;
-  turn_count: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface AskConversationListResponse {
-  conversations: AskConversationListItem[];
-  total: number;
-  page: number;
-  page_size: number;
 }
 
 // ============================================================

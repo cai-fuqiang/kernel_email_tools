@@ -1,4 +1,3 @@
-import { Link } from 'react-router-dom';
 import { Inbox, RefreshCw } from 'lucide-react';
 import type { KnowledgeDraft } from '../../api/types';
 import { SecondaryButton } from '../ui';
@@ -131,13 +130,9 @@ export default function DraftInboxPanel({
                             </span>
                           )}
                           {agentMeta.runId && (
-                            <Link
-                              to={`/agent-research?run_id=${agentMeta.runId}`}
-                              className="text-[10px] text-purple-600 underline hover:text-purple-800"
-                              onClick={(e) => e.stopPropagation()}
-                            >
+                            <span className="text-[10px] text-purple-600">
                               run {agentMeta.runId.slice(-12)}
-                            </Link>
+                            </span>
                           )}
                         </div>
                       ) : (

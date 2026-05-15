@@ -1,8 +1,6 @@
 import type {
   SearchHit,
   SearchResponse,
-  AskMessage,
-  AskResponse,
   SummarizeResponse,
   AskDraftApplyResponse,
   AskDraftResponse,
@@ -13,12 +11,7 @@ import type {
   CurrentUser,
   LoginResult,
   ManualSearchResponse,
-  ManualAskResponse,
   ManualStatsResponse,
-  AgentResearchBudget,
-  AgentResearchRun,
-  AgentResearchRunDetailResponse,
-  AgentResearchRunListResponse,
   Annotation,
   AnnotationCreate,
   AnnotationListResponse,
@@ -510,100 +503,6 @@ export async function summarizeSearchResults(req: SummarizeRequest): Promise<Sum
   });
 }
 
-export interface AskOptions {
-  list_name?: string;
-  sender?: string;
-  date_from?: string;
-  date_to?: string;
-  tags?: string | string[];
-  history?: AskMessage[];
-}
-
-export async function askQuestion(
-  question: string,
-  opts: AskOptions = {},
-): Promise<AskResponse> {
-  return fetchWithBody<AskResponse>(`${API_BASE}/ask`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      question,
-      history: opts.history || [],
-      list_name: opts.list_name,
-      sender: opts.sender,
-      date_from: opts.date_from,
-      date_to: opts.date_to,
-      tags: Array.isArray(opts.tags)
-        ? opts.tags
-        : opts.tags
-          ? opts.tags.split(',').map((tag) => tag.trim()).filter(Boolean)
-          : [],
-    }),
-  });
-}
-
-export async function listAskConversations(
-  page = 1,
-  pageSize = 50,
-): Promise<import('./types').AskConversationListResponse> {
-  return fetchJSON<import('./types').AskConversationListResponse>(
-    `${API_BASE}/ask/conversations?page=${page}&page_size=${pageSize}`
-  );
-}
-
-export async function getAskConversation(
-  conversationId: string,
-): Promise<import('./types').AskConversation> {
-  return fetchJSON<import('./types').AskConversation>(
-    `${API_BASE}/ask/conversations/${encodeURIComponent(conversationId)}`
-  );
-}
-
-export async function saveAskConversation(data: {
-  conversation_id?: string;
-  title?: string;
-  model?: string;
-  turns: Record<string, unknown>[];
-}): Promise<import('./types').AskConversation> {
-  return fetchWithBody<import('./types').AskConversation>(
-    `${API_BASE}/ask/conversations`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    },
-  );
-}
-
-export async function deleteAskConversation(
-  conversationId: string,
-): Promise<{ deleted: boolean }> {
-  return fetchWithBody<{ deleted: boolean }>(
-    `${API_BASE}/ask/conversations/${encodeURIComponent(conversationId)}`,
-    { method: 'DELETE' },
-  );
-}
-
-export async function createAskDraft(answer: AskResponse): Promise<AskDraftResponse> {
-  return fetchWithBody<AskDraftResponse>(`${API_BASE}/ask/draft`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(answer),
-  });
-}
-
-export async function applyAskDraft(draft: AskDraftResponse): Promise<AskDraftApplyResponse> {
-  return fetchWithBody<AskDraftApplyResponse>(`${API_BASE}/ask/draft/apply`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      knowledge_drafts: draft.knowledge_drafts,
-      annotation_drafts: draft.annotation_drafts,
-      tag_assignment_drafts: draft.tag_assignment_drafts,
-    }),
-  });
-}
-
 export async function createSummaryDraft(query: string, summary: string, sources: SourceRef[]): Promise<AskDraftResponse> {
   return fetchWithBody<AskDraftResponse>(`${API_BASE}/search/summarize/draft`, {
     method: 'POST',
@@ -656,68 +555,8 @@ export async function searchManuals(
   return fetchJSON<ManualSearchResponse>(`${API_BASE}/manual/search?${params}`);
 }
 
-export async function askManualQuestion(
-  question: string,
-  manualType?: string,
-  contentType?: string,
-): Promise<ManualAskResponse> {
-  const params = new URLSearchParams({ q: question });
-  if (manualType) params.set('manual_type', manualType);
-  if (contentType) params.set('content_type', contentType);
-  return fetchJSON<ManualAskResponse>(`${API_BASE}/manual/ask?${params}`);
-}
-
 export async function getManualStats(): Promise<ManualStatsResponse> {
   return fetchJSON<ManualStatsResponse>(`${API_BASE}/manual/stats`);
-}
-
-export async function createAgentResearchRun(data: {
-  topic: string;
-  list_name?: string;
-  sender?: string;
-  date_from?: string;
-  date_to?: string;
-  tags?: string[];
-  has_patch?: boolean | null;
-  budget?: AgentResearchBudget;
-}): Promise<AgentResearchRun> {
-  return fetchWithBody<AgentResearchRun>(`${API_BASE}/agent/research-runs`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-}
-
-export async function listAgentResearchRuns(
-  status: string = '',
-  page: number = 1,
-  pageSize: number = 20,
-): Promise<AgentResearchRunListResponse> {
-  const params = new URLSearchParams();
-  if (status) params.set('status', status);
-  params.set('page', String(page));
-  params.set('page_size', String(pageSize));
-  return fetchJSON<AgentResearchRunListResponse>(`${API_BASE}/agent/research-runs?${params}`);
-}
-
-export async function getAgentResearchRun(runId: string): Promise<AgentResearchRunDetailResponse> {
-  return fetchJSON<AgentResearchRunDetailResponse>(
-    `${API_BASE}/agent/research-runs/${encodeURIComponent(runId)}`
-  );
-}
-
-export async function cancelAgentResearchRun(runId: string): Promise<AgentResearchRun> {
-  return fetchWithBody<AgentResearchRun>(
-    `${API_BASE}/agent/research-runs/${encodeURIComponent(runId)}/cancel`,
-    { method: 'POST' },
-  );
-}
-
-export async function retryAgentResearchRun(runId: string): Promise<AgentResearchRun> {
-  return fetchWithBody<AgentResearchRun>(
-    `${API_BASE}/agent/research-runs/${encodeURIComponent(runId)}/retry`,
-    { method: 'POST' },
-  );
 }
 
 // ============================================================

@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { searchManuals } from '../api/client';
 import type { ManualSearchResponse, ManualSearchHit } from '../api/types';
@@ -100,15 +99,7 @@ export default function ManualSearchPage() {
       {result && (
         <SectionPanel
           title="Manual evidence"
-          description="Review larger snippets before asking a follow-up question or using a section as supporting evidence."
-          actions={
-            <Link
-              to="/manual/ask"
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              Ask Manuals
-            </Link>
-          }
+          description="Review larger snippets and use sections as supporting evidence."
         >
           <p className="mb-4 text-sm text-gray-500">
             Found <span className="font-semibold text-gray-900">{result.total}</span> results{' '}

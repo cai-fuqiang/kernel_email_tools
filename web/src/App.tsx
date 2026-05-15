@@ -7,13 +7,10 @@ import { SkeletonCard } from './components/ui';
 
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
-const AskPage = lazy(() => import('./pages/AskPage'));
-const AgentResearchPage = lazy(() => import('./pages/AgentResearchPage'));
 const TagsPage = lazy(() => import('./pages/TagsPage'));
 const TranslationsPage = lazy(() => import('./pages/TranslationsPage'));
 const AnnotationsPage = lazy(() => import('./pages/AnnotationsPage'));
 const ManualSearchPage = lazy(() => import('./pages/ManualSearchPage'));
-const ManualAskPage = lazy(() => import('./pages/ManualAskPage'));
 const KernelCodePage = lazy(() => import('./pages/KernelCodePage'));
 const KernelSymbolPreviewPage = lazy(() => import('./pages/KernelSymbolPreviewPage'));
 const KernelAnnotationPreviewPage = lazy(() => import('./pages/KernelAnnotationPreviewPage'));
@@ -74,15 +71,12 @@ export default function App() {
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/search" element={<SearchPage />} />
                 <Route path="/workspace" element={<WorkspacePage />} />
-                <Route path="/ask" element={<AskPage />} />
-                <Route path="/agent-research" element={<AgentResearchPage />} />
 
                 <Route path="/tags" element={<TagsPage />} />
                 <Route path="/knowledge" element={<KnowledgePage />} />
                 <Route path="/annotations" element={<AnnotationsPage />} />
                 <Route path="/translations" element={<TranslationsPage />} />
                 <Route path="/manual/search" element={<ManualSearchPage />} />
-                <Route path="/manual/ask" element={<ManualAskPage />} />
                 <Route path="/kernel-code" element={<KernelCodePage />} />
                 <Route path="/kernel-code/preview" element={<KernelSymbolPreviewPage />} />
                 <Route path="/kernel-code/annotation-preview" element={<KernelAnnotationPreviewPage />} />

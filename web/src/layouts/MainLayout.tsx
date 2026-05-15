@@ -2,7 +2,6 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import {
   BookOpen,
-  Bot,
   Code2,
   FileCheck2,
   Inbox,
@@ -97,8 +96,6 @@ export default function MainLayout() {
   const researchItems: NavItem[] = [
     { to: '/dashboard', label: 'Home', icon: LayoutDashboard },
     { to: '/workspace', label: 'Workspace', icon: Inbox },
-    { to: '/ask', label: 'Ask Agent', icon: Bot },
-    { to: '/agent-research', label: 'Agent Research', icon: Bot },
   ];
   const workbenchItems: NavItem[] = [
     { to: '/knowledge', label: 'Knowledge', icon: Library },
@@ -107,7 +104,6 @@ export default function MainLayout() {
   ];
   const manualItems: NavItem[] = [
     { to: '/manual/search', label: 'Search Manuals', icon: BookOpen },
-    { to: '/manual/ask', label: 'Ask Manuals', icon: MailSearch },
   ];
 
   const SidebarContent = ({ collapsed = false }: { collapsed?: boolean }) => (
