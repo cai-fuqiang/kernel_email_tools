@@ -4,8 +4,6 @@ import {
   BookOpen,
   Bookmark,
   Code2,
-  FileCheck2,
-  Languages,
   Library,
   LayoutDashboard,
   LogOut,
@@ -95,7 +93,7 @@ export default function MainLayout() {
 
   const primaryItems: NavItem[] = [
     { to: '/kernel-code', label: 'Kernel Code', icon: Code2 },
-    { to: '/workspace', label: 'Search', icon: Search },
+    { to: '/search', label: 'Search', icon: Search },
     { to: '/knowledge', label: 'Knowledge', icon: Library },
   ];
   const contextItems: NavItem[] = [
@@ -103,7 +101,6 @@ export default function MainLayout() {
     { to: '/annotations', label: 'Annotations', icon: Bookmark },
     { to: '/manual/search', label: 'Manuals', icon: BookOpen },
     { to: '/tags', label: 'Tags', icon: Tags },
-    { to: '/translations', label: 'Translations', icon: Languages },
   ];
 
   const SidebarContent = ({ collapsed = false }: { collapsed?: boolean }) => (
@@ -170,7 +167,6 @@ export default function MainLayout() {
               title="Admin"
               items={[
                 { to: '/users', label: 'Users', icon: Users },
-                { to: '/admin/annotation-review', label: 'Annotation Review', icon: FileCheck2 },
               ]}
               collapsed={collapsed}
             />

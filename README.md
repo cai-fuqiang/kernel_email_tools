@@ -303,14 +303,13 @@ pip install sentence-transformers
 
 ## Web 功能
 
-- **Search Emails**：keyword/semantic/hybrid 邮件搜索，支持 channel、sender、date、patch、tag 过滤，搜索结果可 AI 概括并生成草稿。结果卡片显示贡献度 chip（K=知识引用、A=批注、D=待审 draft）。
+- **Search Emails**：keyword/semantic/hybrid 邮件搜索，支持 channel、sender、date、patch、tag 过滤，搜索结果可 AI 概括并生成草稿。
 - **Knowledge**：知识实体、关系、evidence、graph、Draft Inbox。
 - **Tags**：层级标签管理、tag target 浏览、邮件/知识实体绑定。
-- **Annotations**：统一批注列表，支持邮件/代码/知识实体批注和发布审核。
-- **Translations**：线程翻译缓存、批量翻译任务、人工翻译修订。
+- **Annotations**：统一批注列表，支持邮件/代码/知识实体批注及关系网络。
 - **Kernel Code**：本地 kernel git 浏览、版本树、文件查看、代码批注。
-- **Manual Search / Ask**：芯片手册搜索与问答。
-- **Users / Admin**：本地用户、审批、角色、批注发布审核。
+- **Manual Search**：芯片手册搜索。
+- **Users / Admin**：本地用户、审批、角色管理。
 
 ## 常用 API
 
@@ -388,10 +387,6 @@ pip install sentence-transformers
 - `GET /api/manual/search`
 - `GET /api/manual/ask`
 - `GET /api/manual/stats`
-
-### Contributions (PLAN-34001)
-
-- `POST /api/contributions/lookup` — 批量查询 message_id / thread_id 在知识库中的贡献度（knowledge evidence、annotation、pending draft 计数）
 
 ### Kernel Code
 

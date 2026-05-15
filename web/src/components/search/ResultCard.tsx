@@ -1,5 +1,4 @@
 import type { SearchHit } from '../../api/types';
-import type { ContributionStats } from '../../api/contributions';
 import EmailTagEditor from '../EmailTagEditor';
 import { highlightSnippet } from './searchUtils';
 import { Database, FileText, Info, MessageSquareText, Tags } from 'lucide-react';
@@ -9,8 +8,6 @@ interface ResultCardProps {
   onThread: () => void;
   selected?: boolean;
   onToggleSelect?: (messageId: string) => void;
-  messageStats?: ContributionStats | null;
-  threadStats?: ContributionStats | null;
 }
 
 export default function ResultCard({
@@ -18,16 +15,13 @@ export default function ResultCard({
   onThread,
   selected,
   onToggleSelect,
-  messageStats,
-  threadStats,
 }: ResultCardProps) {
   const senderName = hit.sender.split('<')[0].trim() || hit.sender;
   const dateLabel = hit.date ? new Date(hit.date).toLocaleDateString() : '';
-  const stats = messageStats || threadStats;
   const tagCount = hit.tags?.length || 0;
-  const knowledgeCount = stats?.knowledge_evidence_count || 0;
-  const annotationCount = stats?.annotation_count || 0;
-  const draftCount = stats?.draft_count || 0;
+  const knowledgeCount = 0;
+  const annotationCount = 0;
+  const draftCount = 0;
   const hasDock = tagCount > 0 || knowledgeCount > 0 || annotationCount > 0 || draftCount > 0 || hit.source;
   const dockCount = tagCount + knowledgeCount + annotationCount + draftCount;
 

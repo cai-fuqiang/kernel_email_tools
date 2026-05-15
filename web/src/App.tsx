@@ -8,7 +8,6 @@ import { SkeletonCard } from './components/ui';
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const TagsPage = lazy(() => import('./pages/TagsPage'));
-const TranslationsPage = lazy(() => import('./pages/TranslationsPage'));
 const AnnotationsPage = lazy(() => import('./pages/AnnotationsPage'));
 const ManualSearchPage = lazy(() => import('./pages/ManualSearchPage'));
 const KernelCodePage = lazy(() => import('./pages/KernelCodePage'));
@@ -18,8 +17,6 @@ const UsersPage = lazy(() => import('./pages/UsersPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const KnowledgePage = lazy(() => import('./pages/KnowledgePage'));
-const AnnotationReviewPage = lazy(() => import('./pages/AnnotationReviewPage'));
-const WorkspacePage = lazy(() => import('./pages/WorkspacePage'));
 
 function RouteFallback() {
   return (
@@ -70,18 +67,16 @@ export default function App() {
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/search" element={<SearchPage />} />
-                <Route path="/workspace" element={<WorkspacePage />} />
+                <Route path="/workspace" element={<Navigate to="/search" replace />} />
 
                 <Route path="/tags" element={<TagsPage />} />
                 <Route path="/knowledge" element={<KnowledgePage />} />
                 <Route path="/annotations" element={<AnnotationsPage />} />
-                <Route path="/translations" element={<TranslationsPage />} />
                 <Route path="/manual/search" element={<ManualSearchPage />} />
                 <Route path="/kernel-code" element={<KernelCodePage />} />
                 <Route path="/kernel-code/preview" element={<KernelSymbolPreviewPage />} />
                 <Route path="/kernel-code/annotation-preview" element={<KernelAnnotationPreviewPage />} />
                 <Route path="/users" element={<UsersPage />} />
-                <Route path="/admin/annotation-review" element={<AnnotationReviewPage />} />
               </Route>
             </Route>
           </Routes>

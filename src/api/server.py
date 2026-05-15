@@ -18,7 +18,6 @@ from starlette.responses import FileResponse
 from src.api import state
 from src.api.deps import _maybe_bootstrap_admin
 from src.api.routers.annotations import router as annotations_router
-from src.api.routers.contributions import router as contributions_router
 from src.api.routers.auth import router as auth_router
 from src.api.routers.kernel import router as kernel_router
 from src.api.routers.knowledge import router as knowledge_router
@@ -237,7 +236,6 @@ app.include_router(annotations_router)
 app.include_router(manual_router)
 app.include_router(kernel_router)
 app.include_router(knowledge_router)
-app.include_router(contributions_router)
 app.include_router(system_router)
 
 # Serve static frontend files if available
