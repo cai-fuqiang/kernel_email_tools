@@ -107,13 +107,6 @@ class TestCapabilitiesForRole:
         caps = _capabilities_for_role("viewer")
         assert caps == ["read"]
 
-    def test_agent_has_agent_permissions(self):
-        caps = _capabilities_for_role("agent")
-        assert "read" in caps
-        assert "agent:research" in caps
-        assert "agent:create_draft" in caps
-        assert "write" not in caps
-
     def test_unknown_role_has_read_only(self):
         caps = _capabilities_for_role("superadmin")
         assert caps == ["read"]

@@ -588,7 +588,7 @@ class KnowledgeStore:
         now = datetime.utcnow()
         draft = KnowledgeDraftORM(
             draft_id=f"kdraft:{uuid.uuid4().hex}",
-            source_type=(data.source_type or "ask").strip(),
+            source_type=(data.source_type or "manual").strip(),
             source_ref=data.source_ref.strip(),
             question=data.question.strip(),
             payload=data.payload or {},

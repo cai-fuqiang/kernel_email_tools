@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # Constants
 # ============================================================
-VALID_ROLES = {"admin", "editor", "viewer", "agent"}
+VALID_ROLES = {"admin", "editor", "viewer"}
 VALID_VISIBILITY = {"public", "private"}
 VALID_APPROVAL_STATUS = {"pending", "approved", "rejected"}
 VALID_PUBLISH_STATUS = {"none", "pending", "approved", "rejected"}
@@ -81,14 +81,6 @@ def _capabilities_for_role(role: str) -> list[str]:
         return ["read", "write", "manage_users"]
     if role == "editor":
         return ["read", "write"]
-    if role == "agent":
-        return [
-            "read",
-            "agent:research",
-            "agent:create_draft",
-            "agent:create_private_note",
-            "agent:suggest_merge",
-        ]
     return ["read"]
 
 
@@ -246,7 +238,7 @@ async def _sync_user_record(current_user: CurrentUser) -> CurrentUser:
                 new_role = _normalize_role(current_user.role)
                 # 仅在角色升级或现有角色为默认 viewer 时更新，防止 Header 认证
                 # 的默认 viewer 角色覆盖数据库中的高权限角色
-                role_order = {"admin": 3, "editor": 2, "agent": 1, "viewer": 0}
+                role_order = {"admin": 2, "editor": 1, "viewer": 0}
                 if role_order.get(new_role, 0) > role_order.get(user.role, 0):
                     user.role = new_role
             user.status = current_user.status or user.status
@@ -305,42 +297,6 @@ async def _maybe_bootstrap_admin() -> None:
         user.updated_at = now
         await session.commit()
         logger.info("Bootstrapped local admin user: %s", username)
-
-
-async def _maybe_bootstrap_agent() -> Optional[CurrentUser]:
-    if not state._storage:
-        return None
-    agent_cfg = (state._app_config.get("agent", {}) or {}).get("default_agent", {}) or {}
-    username = str(agent_cfg.get("username", "lobster-agent")).strip() or "lobster-agent"
-    display_name = str(agent_cfg.get("display_name", "Lobster Research Agent")).strip() or "Lobster Research Agent"
-    email = str(agent_cfg.get("email", "")).strip()
-    user_id = f"agent:{username}"
-    now = datetime.utcnow()
-    async with state._storage.session_factory() as session:
-        result = await session.execute(select(UserORM).where(UserORM.user_id == user_id))
-        user = result.scalar_one_or_none()
-        if user is None:
-            user = UserORM(
-                user_id=user_id, username=username, display_name=display_name,
-                email=email, approval_status="approved", approved_by_user_id=user_id,
-                approved_at=now, role="agent", status="active",
-                auth_source="system_agent", last_seen_at=now,
-                created_at=now, updated_at=now,
-            )
-            session.add(user)
-        else:
-            user.username = username
-            user.display_name = display_name
-            user.email = email
-            user.approval_status = "approved"
-            user.role = "agent"
-            user.status = "active"
-            user.auth_source = "system_agent"
-            user.updated_at = now
-        await session.commit()
-        await session.refresh(user)
-        logger.info("Bootstrapped AI agent user: %s", username)
-        return _serialize_user(user)
 
 
 async def _resolve_user_from_session(request: Request) -> Optional[CurrentUser]:

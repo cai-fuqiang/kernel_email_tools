@@ -545,7 +545,7 @@ class KnowledgeDraftORM(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     draft_id: Mapped[str] = mapped_column(String(160), nullable=False, unique=True, index=True)
-    source_type: Mapped[str] = mapped_column(String(64), nullable=False, default="ask", index=True)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False, default="manual", index=True)
     source_ref: Mapped[str] = mapped_column(String(512), nullable=False, default="", index=True)
     question: Mapped[str] = mapped_column(Text, nullable=False, default="")
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
@@ -1072,7 +1072,7 @@ class KnowledgeEvidenceRead(BaseModel):
 
 
 class KnowledgeDraftCreate(BaseModel):
-    source_type: str = Field("ask", max_length=64)
+    source_type: str = Field("manual", max_length=64)
     source_ref: str = Field("", max_length=512)
     question: str = ""
     payload: dict = Field(default_factory=dict)
@@ -1096,7 +1096,7 @@ class KnowledgeDraftUpdate(BaseModel):
 
 class KnowledgeDraftRead(BaseModel):
     draft_id: str
-    source_type: str = "ask"
+    source_type: str = "manual"
     source_ref: str = ""
     question: str = ""
     payload: dict = Field(default_factory=dict)

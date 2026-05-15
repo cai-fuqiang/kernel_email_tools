@@ -163,7 +163,7 @@ async def get_knowledge_stats():
 @router.get("/api/knowledge/drafts", response_model=KnowledgeDraftListResponse)
 async def list_knowledge_drafts(
     status: str = Query("", description="草稿状态过滤"),
-    source_type: str = Query("", description="按来源类型过滤，如 agent_research"),
+    source_type: str = Query("", description="按来源类型过滤，如 manual"),
     created_by_user_id: str = Query("", description="按创建者用户 ID 过滤"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -677,5 +677,4 @@ async def import_knowledge(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return summary
-
 
