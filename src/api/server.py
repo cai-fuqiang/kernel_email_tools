@@ -16,10 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
 from src.api import state
-from src.api.deps import _maybe_bootstrap_admin, _maybe_bootstrap_agent
-from src.api.routers.agent import router as agent_router
+from src.api.deps import _maybe_bootstrap_admin
 from src.api.routers.annotations import router as annotations_router
-from src.api.routers.ask import router as ask_router
 from src.api.routers.contributions import router as contributions_router
 from src.api.routers.auth import router as auth_router
 from src.api.routers.kernel import router as kernel_router
@@ -30,7 +28,6 @@ from src.api.routers.system import router as system_router
 from src.api.routers.tags import router as tags_router
 from src.api.routers.translations import router as translations_router
 
-from src.qa.ask_agent import AskAgent
 from src.qa.manual_qa import ManualQA
 from src.qa.providers import ChatLLMClient, DashScopeEmbeddingProvider, resolve_api_key
 from src.retriever.hybrid import HybridRetriever
@@ -39,9 +36,6 @@ from src.retriever.manual import ManualRetriever
 from src.retriever.semantic import SemanticRetriever
 from src.storage.document_store import DocumentStorage
 from src.storage.models import EmailORM
-from src.agent.research_service import AgentResearchService
-from src.storage.agent_store import AgentStore
-from src.storage.ask_store import AskStore
 from src.storage.knowledge_store import KnowledgeStore
 from src.storage.postgres import PostgresStorage
 from src.storage.tag_store import TagStore
@@ -78,12 +72,6 @@ async def lifespan(app: FastAPI):
     )
     await state._storage.init_db()
     await _maybe_bootstrap_admin()
-    state._agent_user = await _maybe_bootstrap_agent()
-    state._agent_store = AgentStore(state._storage.session_factory)
-    recovered_runs = await state._agent_store.fail_running_runs_after_restart()
-    if recovered_runs:
-        logger.warning("Marked %d stale AI agent run(s) failed after restart", recovered_runs)
-
     # 初始化标签存储
     state._tag_store = TagStore(
         session_factory=state._storage.session_factory,
@@ -139,15 +127,6 @@ async def lifespan(app: FastAPI):
         semantic_retriever=semantic_retriever,
     )
 
-    state._qa = AskAgent(
-        storage=state._storage,
-        retriever=state._retriever,
-        llm=state._llm_client,
-        embedding_provider=embedding_provider,
-        embedding_provider_name=vector_cfg.get("provider", "dashscope"),
-    )
-    logger.info("Mail Ask agent initialized")
-
     # ========== 翻译组件初始化 ==========
     translator_cfg = config.get("translator", {})
     if is_translator_available():
@@ -177,17 +156,6 @@ async def lifespan(app: FastAPI):
     logger.info("Annotation store initialized")
 
     state._knowledge_store = KnowledgeStore(state._storage.session_factory)
-    state._qa.knowledge_store = state._knowledge_store
-    state._ask_store = AskStore(state._storage.session_factory)
-    state._agent_service = AgentResearchService(
-        agent_store=state._agent_store,
-        knowledge_store=state._knowledge_store,
-        retriever=state._retriever,
-        llm_client=state._llm_client,
-        qa=state._qa,
-        agent_user_id=state._agent_user.user_id if state._agent_user else "agent:lobster-agent",
-        agent_name=state._agent_user.display_name if state._agent_user else "Lobster Research Agent",
-    )
     logger.info("Knowledge store initialized")
 
     # ========== 芯片手册存储初始化 ==========
@@ -264,14 +232,12 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(tags_router)
 app.include_router(search_router)
-app.include_router(ask_router)
 app.include_router(translations_router)
 app.include_router(annotations_router)
 app.include_router(manual_router)
 app.include_router(kernel_router)
 app.include_router(knowledge_router)
 app.include_router(contributions_router)
-app.include_router(agent_router)
 app.include_router(system_router)
 
 # Serve static frontend files if available

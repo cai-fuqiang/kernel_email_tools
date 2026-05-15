@@ -12,13 +12,10 @@ import yaml
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from src.qa.ask_agent import AskAgent
     from src.qa.manual_qa import ManualQA
     from src.qa.providers import ChatLLMClient
     from src.retriever.hybrid import HybridRetriever
-    from src.storage.agent_store import AgentStore
     from src.storage.annotation_store import AnnotationStore
-    from src.storage.ask_store import AskStore
     from src.storage.document_store import DocumentStorage
     from src.storage.knowledge_store import KnowledgeStore
     from src.storage.postgres import PostgresStorage
@@ -26,7 +23,6 @@ if TYPE_CHECKING:
     from src.storage.translation_cache import TranslationCacheStore
     from src.kernel_source.base import BaseKernelSource
     from src.translator.google_translator import GoogleTranslator
-    from src.agent.research_service import AgentResearchService
 
 # ============================================================
 # Global service singletons (initialized in lifespan)
@@ -35,7 +31,6 @@ if TYPE_CHECKING:
 _storage: Optional["PostgresStorage"] = None
 _retriever: Optional["HybridRetriever"] = None
 _llm_client: Optional["ChatLLMClient"] = None
-_qa: Optional["AskAgent"] = None
 _tag_store: Optional["TagStore"] = None
 
 _manual_storage: Optional["DocumentStorage"] = None
@@ -52,12 +47,6 @@ _annotation_store: Optional["AnnotationStore"] = None
 _kernel_source: Optional["BaseKernelSource"] = None
 
 _knowledge_store: Optional["KnowledgeStore"] = None
-
-_ask_store: Optional["AskStore"] = None
-
-_agent_store: Optional["AgentStore"] = None
-_agent_user: Optional["CurrentUser"] = None  # CurrentUser defined in deps.py to avoid circular imports
-_agent_service: Optional["AgentResearchService"] = None
 
 # Config dictionaries (set in lifespan)
 _auth_config: dict = {}

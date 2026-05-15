@@ -1,7 +1,7 @@
 """search API routes."""
 
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
@@ -24,7 +24,6 @@ from src.api.deps import (
 )
 from src.api.schemas import AnnotationResponse, DraftApplyRequest, DraftApplyResponse
 from src.retriever.base import SearchQuery
-from src.qa.ask_drafts import AskDraftService
 
 router = APIRouter(tags=["search"])
 
@@ -49,34 +48,6 @@ class SummarizeResponse(BaseModel):
     answer: str
     sources: list[dict] = Field(default_factory=list)
     model: str = ""
-
-
-class AskResponse(BaseModel):
-    """邮件 Ask 响应。"""
-    question: str
-    answer: str
-    sources: list[dict] = Field(default_factory=list)
-    model: str = ""
-    retrieval_mode: str = "agentic_rag"
-    search_plan: dict = Field(default_factory=dict)
-    executed_queries: list[dict] = Field(default_factory=list)
-    threads: list[dict] = Field(default_factory=list)
-    retrieval_stats: dict = Field(default_factory=dict)
-
-
-class AskMessage(BaseModel):
-    role: Literal["user", "assistant"]
-    content: str = Field(..., min_length=1, max_length=12000)
-
-
-class AskRequest(BaseModel):
-    question: str = Field(..., min_length=1, max_length=4000)
-    history: list[AskMessage] = Field(default_factory=list, max_length=12)
-    list_name: Optional[str] = None
-    sender: Optional[str] = None
-    date_from: Optional[datetime] = None
-    date_to: Optional[datetime] = None
-    tags: list[str] = Field(default_factory=list)
 
 
 class DraftRequest(BaseModel):
@@ -186,61 +157,6 @@ async def search(
     )
 
 
-@router.post("/api/ask", response_model=AskResponse)
-async def ask(request: AskRequest):
-    """Agentic Ask — 生成检索计划、多路召回邮件证据并回答。"""
-    if not state._qa:
-        raise HTTPException(status_code=503, detail="Ask service not initialized")
-
-    answer = await state._qa.ask(
-        question=request.question,
-        list_name=request.list_name,
-        sender=request.sender,
-        date_from=request.date_from,
-        date_to=request.date_to,
-        tags=[tag.strip() for tag in request.tags if tag.strip()],
-        history=[item.model_dump() for item in request.history],
-    )
-
-    return AskResponse(
-        question=answer.question,
-        answer=answer.answer,
-        sources=[
-            {
-                "chunk_id": s.chunk_id,
-                "message_id": s.message_id,
-                "subject": s.subject,
-                "sender": s.sender,
-                "date": s.date,
-                "list_name": s.list_name,
-                "thread_id": s.thread_id,
-                "chunk_index": s.chunk_index,
-                "snippet": s.snippet,
-                "score": round(s.score, 4),
-                "source": s.source,
-            }
-            for s in answer.sources
-        ],
-        model=answer.model,
-        retrieval_mode=answer.retrieval_mode,
-        search_plan=answer.search_plan,
-        executed_queries=[
-            {"query": item.query, "mode": item.mode, "hits": item.hits}
-            for item in answer.executed_queries
-        ],
-        threads=[
-            {
-                "thread_id": thread.thread_id,
-                "subject": thread.subject,
-                "message_count": thread.message_count,
-                "messages": thread.messages,
-            }
-            for thread in answer.threads
-        ],
-        retrieval_stats=answer.retrieval_stats,
-    )
-
-
 @router.post("/api/search/summarize", response_model=SummarizeResponse)
 async def summarize_search(request: SummarizeRequest):
     """AI 概括搜索结果 — 基于搜索命中邮件生成引用式概览。
@@ -298,96 +214,4 @@ async def summarize_search(request: SummarizeRequest):
         model=state._llm_client.model,
     )
 
-
-@router.post("/api/search/summarize/draft", response_model=DraftResponse)
-async def create_summary_draft(
-    request: DraftRequest,
-    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
-):
-    """基于 AI 概括结果生成可编辑的 Knowledge / Annotation / Tag 草稿。"""
-    if not state._llm_client:
-        raise HTTPException(status_code=503, detail="LLM service not initialized")
-    if not state._tag_store:
-        raise HTTPException(status_code=503, detail="Tag store not initialized")
-
-    async def tag_exists(tag_name: str) -> bool:
-        return await state._tag_store.get_tag_by_name(tag_name) is not None
-
-    bundle = await AskDraftService(llm=state._llm_client).generate(
-        query=request.query,
-        summary=request.summary,
-        sources=request.sources,
-        tag_exists=tag_exists,
-    )
-    response = DraftResponse(
-        knowledge_drafts=bundle.knowledge_drafts,
-        annotation_drafts=bundle.annotation_drafts,
-        tag_assignment_drafts=bundle.tag_assignment_drafts,
-        warnings=bundle.warnings,
-    )
-    response.draft_id = await _persist_draft_response(
-        source_type="search_summarize",
-        source_ref=request.query,
-        question=request.query,
-        response=response,
-        current_user=current_user,
-    )
-    return response
-
-
-@router.post("/api/search/summarize/draft/apply", response_model=DraftApplyResponse)
-async def apply_summary_draft(
-    request: DraftApplyRequest,
-    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
-):
-    """保存用户确认后的 AI 概括草稿。"""
-    return await _apply_draft_request(request, current_user)
-
-
-@router.post("/api/ask/draft", response_model=DraftResponse)
-async def create_ask_draft(
-    request: AskResponse,
-    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
-):
-    """基于 Ask 结果生成可编辑的 Knowledge / Annotation / Tag 草稿。"""
-    if not state._llm_client:
-        raise HTTPException(status_code=503, detail="LLM service not initialized")
-    if not state._tag_store:
-        raise HTTPException(status_code=503, detail="Tag store not initialized")
-
-    async def tag_exists(tag_name: str) -> bool:
-        return await state._tag_store.get_tag_by_name(tag_name) is not None
-
-    bundle = await AskDraftService(llm=state._llm_client).generate(
-        query=request.question,
-        summary=request.answer,
-        sources=request.sources,
-        search_plan=request.search_plan,
-        threads=request.threads,
-        retrieval_stats=request.retrieval_stats,
-        tag_exists=tag_exists,
-    )
-    response = DraftResponse(
-        knowledge_drafts=bundle.knowledge_drafts,
-        annotation_drafts=bundle.annotation_drafts,
-        tag_assignment_drafts=bundle.tag_assignment_drafts,
-        warnings=bundle.warnings,
-    )
-    response.draft_id = await _persist_draft_response(
-        source_type="ask",
-        source_ref=request.question,
-        question=request.question,
-        response=response,
-        current_user=current_user,
-    )
-    return response
-
-
-@router.post("/api/ask/draft/apply", response_model=DraftApplyResponse)
-async def apply_ask_draft(
-    request: DraftApplyRequest,
-    current_user: CurrentUser = Depends(require_roles("admin", "editor")),
-):
-    """保存用户确认后的 Ask 草稿。"""
-    return await _apply_draft_request(request, current_user)
 
