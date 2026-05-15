@@ -27,6 +27,7 @@ export interface AnnotationRelationsPanelProps {
   relations: AnnotationRelation[];
   loading: boolean;
   error: string;
+  avoidRect?: DOMRect | null;
   onOpenAnnotation: (annotationId: string) => void;
   onCreateRelation: (payload: AnnotationRelationCreate) => Promise<void>;
   onDeleteRelation: (relationId: string) => Promise<void>;
@@ -129,6 +130,7 @@ export default function AnnotationRelationsPanel({
   relations,
   loading,
   error,
+  avoidRect,
   onOpenAnnotation,
   onCreateRelation,
   onDeleteRelation,
@@ -566,7 +568,7 @@ export default function AnnotationRelationsPanel({
       isOpen={!!previewAnnotation}
       annotation={previewAnnotation}
       anchorRect={null}
-      avoidRect={null}
+      avoidRect={avoidRect ?? null}
       onClose={() => setTargetAnnotationId(null)}
       onOpenFullPreview={() => {}}
       onOpenInAtlas={() => {}}

@@ -126,6 +126,7 @@ export default function AnnotationPanel({
   const captureFocusCleanupTimerRef = useRef<number | null>(null);
   const clickDetailPinnedAnnotationRef = useRef<string | null>(null);
   const clickDetailPinCleanupTimerRef = useRef<number | null>(null);
+  const modalContentRef = useRef<HTMLDivElement | null>(null);
 
   const rootAnnotations = useMemo(() => annotations.filter(a => !a.in_reply_to), [annotations]);
   const repliesByParentId = useMemo(() => {
@@ -1096,7 +1097,7 @@ function AnnotationDetailModal({
         </div>
       }
     >
-      <div className="space-y-4">
+      <div className="space-y-4" ref={modalContentRef}>
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_15rem]">
         <section className="min-w-0 rounded-lg border border-slate-300 bg-white p-4">
           {isEditing ? (
@@ -1221,6 +1222,7 @@ function AnnotationDetailModal({
           relations={relations}
           loading={relationsLoading}
           error={relationsError}
+          avoidRect={modalContentRef.current?.closest('[role="dialog"]')?.querySelector(':scope > div')?.getBoundingClientRect() ?? null}
           onOpenAnnotation={handleOpenAnnotation}
           onCreateRelation={handleCreateRelation}
           onDeleteRelation={handleDeleteRelation}
