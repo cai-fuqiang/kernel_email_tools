@@ -763,6 +763,7 @@ export default function WorkspacePage() {
         onClose={() => setWorkspaceAnnotationPreview(null)}
         onOpenFullPreview={handleOpenWorkspaceAnnotationFullPreview}
         onOpenInAtlas={handleOpenWorkspaceAnnotationInAtlas}
+        onOpenAnnotation={handleOpenAnnotationReference}
       />
 
       {annotationConfirm && (

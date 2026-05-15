@@ -35,9 +35,10 @@ interface TreeEmailCardProps {
   onEditAnnotation: (annotationId: string, body: string) => void;
   onDeleteAnnotation: (annotationId: string) => void;
   replyingTo: string | null;
- onSetReplyingTo: (id: string | null) => void;
+  onSetReplyingTo: (id: string | null) => void;
   threadId: string;
   onRefresh: () => void;
+  onOpenAnnotationReference?: (annotationId: string) => void;
 }
 
 /**
@@ -61,6 +62,7 @@ export default function TreeEmailCard({
   onSetReplyingTo,
   threadId,
   onRefresh,
+  onOpenAnnotationReference,
 }: TreeEmailCardProps) {
   const { canWrite } = useAuth();
   const { email, children, depth } = node;
@@ -223,6 +225,7 @@ export default function TreeEmailCard({
           onDelete={onDeleteAnnotation}
           onReply={(id) => onSetReplyingTo(id)}
           onRefresh={onRefresh}
+          onOpenAnnotation={onOpenAnnotationReference}
         />
         {children.length > 0 && (
           <div className="replies mt-3">
@@ -243,6 +246,7 @@ export default function TreeEmailCard({
                 onSetReplyingTo={onSetReplyingTo}
                 threadId={threadId}
                 onRefresh={onRefresh}
+                onOpenAnnotationReference={onOpenAnnotationReference}
               />
             ))}
           </div>

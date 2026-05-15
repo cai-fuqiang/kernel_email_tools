@@ -1579,6 +1579,21 @@ export default function KernelCodePage() {
     );
   }
 
+  function handleAnnotationPreviewOpenAnnotation(annotationId: string) {
+    const target = annotations.find((annotation) => annotation.annotation_id === annotationId);
+    if (!target) {
+      showToast(`Annotation ${annotationId} is not loaded in this file`, 'info');
+      return;
+    }
+    setAnnotationQuickPreview((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        annotation: target,
+      };
+    });
+  }
+
   const annotationPreviewState = annotationQuickPreview
     ? resolveAnnotationPreviewState(annotations, annotationQuickPreview.annotation.annotation_id)
     : { target: null, replies: [], missing: false };
@@ -2481,6 +2496,7 @@ export default function KernelCodePage() {
         onClose={() => setAnnotationQuickPreview(null)}
         onOpenFullPreview={handleAnnotationPreviewOpenPage}
         onOpenInAtlas={handleAnnotationPreviewOpenInAtlas}
+        onOpenAnnotation={handleAnnotationPreviewOpenAnnotation}
       />
 
       {threadOpen && (

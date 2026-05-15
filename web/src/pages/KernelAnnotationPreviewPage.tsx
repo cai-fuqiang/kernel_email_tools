@@ -12,7 +12,7 @@ import {
 } from '../components/kernelCode/annotationPreview';
 import { getAnnotationLineRange } from '../components/kernelCode/annotationSync';
 import { PageShell, SectionPanel, SecondaryButton, StatusBadge } from '../components/ui';
-import { kernelCodePath, pickKernelSourceUrl } from '../utils/externalLinks';
+import { annotationSearchPath, kernelAnnotationPreviewPath, kernelCodePath, pickKernelSourceUrl } from '../utils/externalLinks';
 
 function formatBytes(size: number): string {
   if (size < 1024) return `${size} B`;
@@ -93,6 +93,18 @@ export default function KernelAnnotationPreviewPage() {
   const sourceLink = pickKernelSourceUrl(version || 'latest', path, startLine || undefined);
 
   const openInAtlas = () => navigate(atlasPath);
+  const openAnnotationReference = (targetAnnotationId: string) => {
+    const linkedAnnotation = annotations.find((annotation) => annotation.annotation_id === targetAnnotationId);
+    if (linkedAnnotation) {
+      navigate(kernelAnnotationPreviewPath(
+        linkedAnnotation.version || version,
+        linkedAnnotation.file_path || path,
+        linkedAnnotation.annotation_id,
+      ));
+      return;
+    }
+    navigate(annotationSearchPath(targetAnnotationId));
+  };
   const rangeLabel = target ? formatAnnotationPreviewLineRange(target) : 'No annotation';
 
   return (
@@ -179,6 +191,7 @@ export default function KernelAnnotationPreviewPage() {
                   : 'Open an annotation preview from the code browser to select an annotation here.'
               }
               onOpenInAtlas={path ? openInAtlas : undefined}
+              onOpenAnnotation={openAnnotationReference}
             />
             {file ? (
               <div className="border-t border-slate-200 bg-white px-4 py-3 text-xs leading-5 text-slate-600">

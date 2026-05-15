@@ -1,8 +1,7 @@
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { ExternalLink, Maximize2, MessageSquareText, PanelRightOpen } from 'lucide-react';
 import type { CodeAnnotation } from '../../api/types';
 import AnnotationIdBadge from '../AnnotationIdBadge';
+import AnnotationMarkdown from '../AnnotationMarkdown';
 import EmailTagEditor from '../EmailTagEditor';
 import { formatAnnotationPreviewLineRange } from './annotationPreview';
 
@@ -15,6 +14,7 @@ interface AnnotationPreviewContentProps {
   onOpenFullPreview?: () => void;
   onOpenInAtlas?: () => void;
   onOpenDetail?: () => void;
+  onOpenAnnotation?: (annotationId: string) => void;
 }
 
 function formatDateTime(value?: string | null): string {
@@ -57,6 +57,7 @@ export default function AnnotationPreviewContent({
   onOpenFullPreview,
   onOpenInAtlas,
   onOpenDetail,
+  onOpenAnnotation,
 }: AnnotationPreviewContentProps) {
   if (!annotation) {
     return (
@@ -157,9 +158,11 @@ export default function AnnotationPreviewContent({
           <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
             Annotation
           </div>
-          <div className="markdown-content mt-3 text-sm leading-6 text-slate-900">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{annotation.body}</ReactMarkdown>
-          </div>
+          <AnnotationMarkdown
+            body={annotation.body}
+            className="markdown-content mt-3 text-sm leading-6 text-slate-900"
+            onOpenAnnotation={onOpenAnnotation}
+          />
           {annotation.publish_review_comment ? (
             <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-700">
               Review note: {annotation.publish_review_comment}
@@ -195,9 +198,11 @@ export default function AnnotationPreviewContent({
                     <span>{formatAnnotationPreviewLineRange(reply)}</span>
                     <span>{formatDateTime(reply.updated_at || reply.created_at)}</span>
                   </div>
-                  <div className="markdown-content text-xs leading-5 text-slate-800">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{reply.body}</ReactMarkdown>
-                  </div>
+                  <AnnotationMarkdown
+                    body={reply.body}
+                    className="markdown-content text-xs leading-5 text-slate-800"
+                    onOpenAnnotation={onOpenAnnotation}
+                  />
                 </div>
               ))}
             </div>

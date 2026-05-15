@@ -1,6 +1,4 @@
 import { useEffect, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import {
   approveAnnotationPublication,
   rejectAnnotationPublication,
@@ -13,6 +11,7 @@ import EmailTagEditor from './EmailTagEditor';
 import { showToast } from './Toast';
 import { useAuth } from '../auth';
 import ConfirmModal from './ConfirmModal';
+import AnnotationMarkdown from './AnnotationMarkdown';
 
 // =============================================================
 // 批注输入组件（Thread 抽屉内嵌版）
@@ -99,6 +98,7 @@ export default function ThreadAnnotationCard({
   onDelete,
   onReply,
   onRefresh,
+  onOpenAnnotation,
 }: {
   annotation: Annotation;
   depth: number;
@@ -107,6 +107,7 @@ export default function ThreadAnnotationCard({
   onDelete: (annotationId: string) => void;
   onReply: (annotationId: string) => void;
   onRefresh: () => void;
+  onOpenAnnotation?: (annotationId: string) => void;
 }) {
   const { canWrite, currentUser, isAdmin } = useAuth();
   const [editing, setEditing] = useState(false);
@@ -193,9 +194,11 @@ export default function ThreadAnnotationCard({
         />
       ) : (
         <>
-          <div className="annotation-markdown text-sm text-blue-900 leading-relaxed">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{annotation.body}</ReactMarkdown>
-          </div>
+          <AnnotationMarkdown
+            body={annotation.body}
+            className="text-sm text-blue-900 leading-relaxed"
+            onOpenAnnotation={onOpenAnnotation}
+          />
           {annotation.publish_review_comment && (
             <div className="mt-2 rounded-lg border border-blue-200 bg-white/70 px-3 py-2 text-xs text-blue-800">
               审核备注：{annotation.publish_review_comment}

@@ -39,6 +39,7 @@ interface LayeredEmailCardProps {
   threadId: string;
   onRefresh: () => void;
   onSetReplyingTo: (id: string | null) => void;
+  onOpenAnnotationReference?: (annotationId: string) => void;
 }
 
 /**
@@ -62,6 +63,7 @@ export default function LayeredEmailCard({
   onSetReplyingTo,
   threadId,
   onRefresh,
+  onOpenAnnotationReference,
 }: LayeredEmailCardProps) {
   const { canWrite } = useAuth();
   const { email, children, depth } = node;
@@ -276,6 +278,7 @@ export default function LayeredEmailCard({
         onDelete={onDeleteAnnotation}
         onReply={(id) => onSetReplyingTo(id)}
         onRefresh={onRefresh}
+        onOpenAnnotation={onOpenAnnotationReference}
       />
     );
   }

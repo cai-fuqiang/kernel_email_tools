@@ -22,6 +22,7 @@ interface AnnotationQuickPreviewPopoverProps {
   onClose: () => void;
   onOpenFullPreview: () => void;
   onOpenInAtlas: () => void;
+  onOpenAnnotation?: (annotationId: string) => void;
 }
 
 type Frame = {
@@ -98,6 +99,7 @@ export default function AnnotationQuickPreviewPopover({
   onClose,
   onOpenFullPreview,
   onOpenInAtlas,
+  onOpenAnnotation,
 }: AnnotationQuickPreviewPopoverProps) {
   const [fileLines, setFileLines] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -383,6 +385,7 @@ export default function AnnotationQuickPreviewPopover({
             compact
             onOpenFullPreview={onOpenFullPreview}
             onOpenInAtlas={onOpenInAtlas}
+            onOpenAnnotation={onOpenAnnotation}
           />
         </aside>
       </div>

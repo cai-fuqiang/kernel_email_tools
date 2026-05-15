@@ -338,6 +338,37 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
     return () => window.clearTimeout(timer);
   }, [thread, focusAnnotationId, focusMessageId]);
 
+  const handleOpenAnnotationReference = useCallback((annotationId: string) => {
+    const targetAnnotationId = annotationId.trim();
+    if (!targetAnnotationId) return;
+
+    const emailIds = thread?.emails.map((email) => email.id) || [];
+    setExpandedIds(new Set(emailIds));
+    setLayeredExpandedIds(new Set(emailIds));
+    setViewMode(
+      typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+        ? 'layered'
+        : 'tree',
+    );
+
+    const targetKey = `annotation:${targetAnnotationId}`;
+    setHighlightedTarget(targetKey);
+    window.setTimeout(() => {
+      const target = document.querySelector<HTMLElement>(
+        `[data-annotation-id="${CSS.escape(targetAnnotationId)}"]`,
+      );
+      if (!target) {
+        showToast(`Annotation ${targetAnnotationId} is not visible in this thread`, 'info');
+        setHighlightedTarget((current) => (current === targetKey ? null : current));
+        return;
+      }
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      window.setTimeout(() => {
+        setHighlightedTarget((current) => (current === targetKey ? null : current));
+      }, 2200);
+    }, 120);
+  }, [thread]);
+
   const toggleExpand = useCallback((id: number) => {
     setExpandedIds(prev => {
       const next = new Set(prev);
@@ -529,6 +560,7 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
                       onSetReplyingTo={setReplyingTo}
                       threadId={threadId}
                       onRefresh={handleRefreshThread}
+                      onOpenAnnotationReference={handleOpenAnnotationReference}
                     />
                   ))
                 ) : (
@@ -549,6 +581,7 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
                       onSetReplyingTo={setReplyingTo}
                       threadId={threadId}
                       onRefresh={handleRefreshThread}
+                      onOpenAnnotationReference={handleOpenAnnotationReference}
                     />
                   ))
                 )}
