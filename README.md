@@ -1,6 +1,6 @@
 # Kernel Email Knowledge Base
 
-面向 Linux 内核邮件列表的本地知识库系统。它把 lore.kernel.org git mirror、邮件全文检索、semantic chunk 检索、Ask Agent、AI Research Agent、手册问答、内核源码浏览、标签、批注和 Knowledge Draft Review 组织到一个 Web 工作台里。
+面向 Linux 内核邮件列表的本地知识库系统。它把 lore.kernel.org git mirror、邮件全文检索、semantic chunk 检索、手册问答、内核源码浏览、标签、批注和 Knowledge Draft Review 组织到一个 Web 工作台里。
 
 目标不是只做一个搜索框，而是把邮件讨论、patch review、手册证据和代码批注沉淀成可引用、可审核、可维护的内核知识库。
 
@@ -14,10 +14,8 @@
 - Keyword 搜索：PostgreSQL TSVECTOR + GIN，支持 list、sender、date、patch、tag 过滤。
 - Semantic 搜索：`email_chunks` + `email_chunk_embeddings` + pgvector，使用 DashScope `text-embedding-v3` 或本地 BAAI/bge-m3。
 - Hybrid 搜索：短关键词偏 keyword，自然语言问题融合 keyword/semantic。
-- Ask Agent：生成检索计划，执行多 query 检索，拉取 thread 上下文，并生成带证据的回答。
-- AI Research Agent：把 AI 作为特殊系统用户，按 topic 创建 research run，自动搜索、Ask synthesis、生成 Knowledge Draft，等待人工 review。
 - Knowledge Workbench：知识实体、关系、evidence、graph、Draft Inbox、merge。
-- Draft Review：Ask/Search/Agent 产出的 Knowledge、Annotation、Tag assignment 草稿先进入 review，不自动污染知识库。
+- Draft Review：Search 产出的 Knowledge、Annotation、Tag assignment 草稿先进入 review，不自动污染知识库。
 - Tags：层级标签、target 浏览、邮件/知识实体绑定。
 - Annotations：邮件、代码、知识实体批注，以及发布审核。
 - Thread Drawer：线程阅读、翻译、批注、标签、patch 展示。
@@ -35,7 +33,7 @@ src/
 ├── storage/         # PostgreSQL ORM、标签、批注、知识、agent run、缓存
 ├── indexer/         # 全文索引、邮件 RAG chunk、向量索引
 ├── retriever/       # keyword / semantic / hybrid / manual 检索
-├── qa/              # AskAgent、AskDraftService、ManualQA、LLM/embedding provider
+├── qa/              # ManualQA、LLM/embedding provider
 ├── kernel_source/   # 本地 kernel git 浏览
 ├── symbol_indexer/  # ctags 符号索引
 ├── translator/      # 翻译与缓存
@@ -44,12 +42,12 @@ src/
     ├── state.py      # 全局服务单例
     ├── deps.py       # Auth 中间件、权限控制、依赖注入
     ├── schemas.py    # 共享 Pydantic 模型
-    └── routers/      # 11 个 domain router (auth, tags, search, ask,
-                      #   translations, annotations, kernel, knowledge,
-                      #   agent, manual, system)
+    └── routers/      # domain router (auth, tags, search, translations,
+                      #   annotations, kernel, knowledge, contributions,
+                      #   manual, system)
 
 web/src/
-├── pages/           # Search / Ask / Agent Research / Knowledge / Tags / Annotations / Code / Manuals / Admin
+├── pages/           # Search / Knowledge / Tags / Annotations / Code / Manuals / Admin
 ├── components/      # ThreadDrawer、DraftReviewPanel、Tag/Annotation 组件等
 ├── layouts/         # MainLayout
 ├── api/             # API client 和 TypeScript 类型
@@ -303,62 +301,9 @@ pip install sentence-transformers
 
 如果用了与数据库现有维度不同的模型，需要重建 vector 列并重跑 embedding。
 
-## Ask Agent
-
-`POST /api/ask` 的流程：
-
-1. LLM 生成结构化检索计划。
-2. 执行多条 keyword query。
-3. 如果向量索引可用，执行 semantic query。
-4. 合并 chunk 命中，必要时回退邮件级搜索。
-5. 展开相关 thread 上下文。
-6. LLM 基于证据回答，返回 sources、threads、executed_queries、retrieval_stats。
-
-Ask 页面可以把回答转换成可编辑草稿：
-
-- Knowledge entity 草稿
-- Annotation 草稿
-- Tag assignment 草稿
-
-保存前用户可以逐项编辑和取消勾选。缺失 tag 会显示为 `missing`，默认不选中；系统不会自动创建新 tag。
-
-## AI Research Agent
-
-Agent Research 把 AI 作为特殊系统用户。默认 agent 身份：
-
-- `user_id`: `agent:lobster-agent`
-- `username`: `lobster-agent`
-- `role`: `agent`
-- `auth_source`: `system_agent`
-
-Web 入口：`/app/agent-research`（左侧导航 `Research` -> `Agent Research`）
-
-### Run 流程
-
-1. 用户输入 topic、过滤条件、budget（迭代次数/搜索次数/线程数）。
-2. 后端创建 `agent_research_runs`，启动后台多轮研究循环。
-3. **多轮迭代**：semantic search → LLM relevance judge → query refinement → 直到证据充分或 budget 用完。
-4. 每次 LLM 调用记录 token usage；迭代边界检查取消信号（cooperative cancellation）。
-5. 检索到的所有内容标记为 `[UNTRUSTED SOURCE EVIDENCE]`，不被视为系统指令。
-6. Ask synthesis + Knowledge Draft 生成（`source_type=agent_research`）。
-7. 人工在 Knowledge Draft Inbox 审核 accept/reject（按 confidence 排序，支持 AI Agent / Accepted / Rejected 过滤器）。
-
-### API
-
-| 端点 | 方法 | 说明 |
-|------|------|------|
-
-### 代码结构
-
-- `web/src/pages/AgentResearchPage.tsx` — 前端操作台（创建、监控、trace 查看）
-
-详细设计见 [.joycode/plans/PLAN-35000-ai-agent-special-user.md](.joycode/plans/PLAN-35000-ai-agent-special-user.md)。
-
 ## Web 功能
 
 - **Search Emails**：keyword/semantic/hybrid 邮件搜索，支持 channel、sender、date、patch、tag 过滤，搜索结果可 AI 概括并生成草稿。结果卡片显示贡献度 chip（K=知识引用、A=批注、D=待审 draft）。
-- **Ask Agent**：agentic RAG 问答，展示检索计划、执行 query、来源、相关 thread，并可生成知识草稿。Sources 列表展示贡献度 chip。
-- **Agent Research**：按 topic 创建 AI research run，查看 trace，生成 Knowledge Draft。
 - **Knowledge**：知识实体、关系、evidence、graph、Draft Inbox。
 - **Tags**：层级标签管理、tag target 浏览、邮件/知识实体绑定。
 - **Annotations**：统一批注列表，支持邮件/代码/知识实体批注和发布审核。
@@ -371,17 +316,12 @@ Web 入口：`/app/agent-research`（左侧导航 `Research` -> `Agent Research`
 
 完整交互以 http://localhost:8000/docs 为准。
 
-### 搜索与 Ask
+### 搜索
 
 - `GET /api/search`
 - `POST /api/search/summarize`
 - `POST /api/search/summarize/draft`
 - `POST /api/search/summarize/draft/apply`
-- `POST /api/ask`
-- `POST /api/ask/draft`
-- `POST /api/ask/draft/apply`
-- `GET /api/ask/conversations`
-- `POST /api/ask/conversations`
 - `GET /api/thread/{thread_id}`
 - `GET /api/stats`
 
@@ -575,14 +515,6 @@ python scripts/index.py --build-vector --list <list>
 
 不会。普通导入只处理邮件入库和全文索引。需要额外构建 chunk/vector。当前实现偏全量，增量向量构建还在 TODO。
 
-### Ask 没有向量召回怎么办？
-
-Ask 会先使用 chunk fulltext 和邮件级 fallback。若希望 semantic query 生效，先构建 RAG 索引。
-
-### Agent Research 会自动修改 Knowledge 吗？
-
-不会。Agent 只生成 `agent_research` draft，并记录 trace。接受、拒绝和实际落库仍由 human reviewer 完成。
-
 ### API key 应该放哪里？
 
 推荐环境变量：
@@ -595,7 +527,6 @@ export DASHSCOPE_API_KEY=...
 
 ## 计划文档
 
-- [.joycode/plans/PLAN-35000-ai-agent-special-user.md](.joycode/plans/PLAN-35000-ai-agent-special-user.md)：AI agent 作为特殊用户、research run、trace、draft review 计划与 TODO。
 - [.joycode/plans/PLAN-34000-semantic-search.md](.joycode/plans/PLAN-34000-semantic-search.md)：Semantic 搜索落地计划。
 - [.joycode/plans/PLAN-31002-knowledge-workbench-roadmap.md](.joycode/plans/PLAN-31002-knowledge-workbench-roadmap.md)：Knowledge Workbench、Evidence、Draft Inbox 与知识沉淀路线。
 - [.joycode/plans/PLAN-31003-ui-workbench-refresh.md](.joycode/plans/PLAN-31003-ui-workbench-refresh.md)：全站 UI 统一与知识沉淀工作流优化计划。
