@@ -40,7 +40,7 @@ type Interaction =
 const DEFAULT_SIZE = { width: 860, height: 560 };
 const MIN_SIZE = { width: 580, height: 380 };
 const GAP = 14;
-const VIEWPORT_MARGIN = 12;
+const VIEWPORT_MARGIN = 32;
 const STORAGE_PREFIX = 'kernel-annotation-preview-window';
 
 function clampZoom(value: number): number {
@@ -156,36 +156,32 @@ export default function AnnotationQuickPreviewPopover({
     if (frameKeyRef.current === key && frame) return;
     frameKeyRef.current = key;
 
-    let stored: Partial<Frame> & { zoom?: number } | null = null;
+    let storedSize: { width: number; height: number; zoom?: number } | null = null;
     try {
       const raw = window.localStorage.getItem(key);
-      if (raw) stored = JSON.parse(raw) as Partial<Frame> & { zoom?: number };
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<Frame> & { zoom?: number };
+        if (typeof parsed.width === 'number' && typeof parsed.height === 'number') {
+          storedSize = { width: parsed.width, height: parsed.height, zoom: parsed.zoom };
+        }
+      }
     } catch {
-      stored = null;
+      storedSize = null;
     }
 
-    const initial =
-      stored &&
-      typeof stored.x === 'number' &&
-      typeof stored.y === 'number' &&
-      typeof stored.width === 'number' &&
-      typeof stored.height === 'number'
-        ? clampFrame({
-            x: stored.x,
-            y: stored.y,
-            width: stored.width,
-            height: stored.height,
-          })
-        : buildInitialFrame(anchorRect, avoidRect);
+    const baseFrame = buildInitialFrame(anchorRect, avoidRect);
+    const initial = storedSize
+      ? clampFrame({ x: baseFrame.x, y: baseFrame.y, width: storedSize.width, height: storedSize.height })
+      : baseFrame;
 
     setFrame(initial);
-    setZoom(stored?.zoom ? clampZoom(stored.zoom) : 1);
+    setZoom(storedSize?.zoom ? clampZoom(storedSize.zoom) : 1);
   }, [anchorRect, annotation, avoidRect, frame, isOpen]);
 
   useEffect(() => {
     if (!isOpen || !annotation || !frame) return;
     try {
-      window.localStorage.setItem(frameKey(annotation), JSON.stringify({ ...frame, zoom }));
+      window.localStorage.setItem(frameKey(annotation), JSON.stringify({ width: frame.width, height: frame.height, zoom }));
     } catch {
       // ignore storage failures
     }
