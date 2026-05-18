@@ -69,9 +69,10 @@ export function normalizeCodeTarget(input?: MaybeCodeTarget | null): CodeTarget 
   };
 }
 
-export function codeTargetToKernelCodeUrl(target: CodeTarget): string {
+export function codeTargetToKernelCodeUrl(target: CodeTarget, annotationId?: string): string {
   const params = new URLSearchParams({ v: target.version, path: target.path });
   if (target.start_line > 0) params.set('line', String(target.start_line));
+  if (annotationId) params.set('annotation', annotationId);
   return `/kernel-code?${params.toString()}`;
 }
 

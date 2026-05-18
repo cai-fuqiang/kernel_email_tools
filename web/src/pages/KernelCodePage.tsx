@@ -285,6 +285,7 @@ export default function KernelCodePage() {
   const urlVersion = searchParams.get('v') || '';
   const urlPath = searchParams.get('path') || '';
   const urlLine = parseInt(searchParams.get('line') || '0', 10) || null;
+  const urlAnnotationId = searchParams.get('annotation') || null;
 
   const [versions, setVersions] = useState<KernelVersionInfo[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(true);
@@ -563,7 +564,7 @@ export default function KernelCodePage() {
     const focusLine = targetLine ?? urlLine;
     setSelectedLines(focusLine ? new Set([focusLine]) : new Set());
     setSearchParams(
-      { v: selectedVersion, path, ...(focusLine ? { line: String(focusLine) } : {}) },
+      { v: selectedVersion, path, ...(focusLine ? { line: String(focusLine) } : {}), ...(urlAnnotationId ? { annotation: urlAnnotationId } : {}) },
       { replace: true },
     );
     try {
@@ -1026,6 +1027,19 @@ export default function KernelCodePage() {
     setPinnedAnnotationId(null);
     syncLockRef.current = { source: null, until: 0 };
   }, [currentFile, focusLine]);
+
+  useEffect(() => {
+    if (!urlAnnotationId || annotations.length === 0) return;
+    const target = annotations.find((a) => a.annotation_id === urlAnnotationId);
+    if (!target) return;
+    setInspectorView('annotations');
+    setInspectorCollapsed(false);
+    setActiveAnnotationId(urlAnnotationId);
+    setPinnedAnnotationId(urlAnnotationId);
+    window.requestAnimationFrame(() => {
+      scrollAnnotationCardIntoCenter(urlAnnotationId, 'auto');
+    });
+  }, [urlAnnotationId, annotations]);
 
   useEffect(() => {
     if (!currentFile) return;

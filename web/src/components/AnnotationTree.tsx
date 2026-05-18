@@ -130,7 +130,7 @@ export default function AnnotationTree({ annotations, onAnnotationsChange, layou
 
     const codeTarget = normalizeCodeTarget(annotation);
     if (annotation.target_type === 'kernel_file' && codeTarget) {
-      navigate(codeTargetToKernelCodeUrl(codeTarget));
+      navigate(codeTargetToKernelCodeUrl(codeTarget, annotation.annotation_id));
       return;
     }
 
