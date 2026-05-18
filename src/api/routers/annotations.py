@@ -190,6 +190,7 @@ async def list_annotations(
     version: Optional[str] = Query(None, description="限定代码版本（code 类型时）"),
     target_type: Optional[str] = Query(None, description="限定目标类型"),
     target_ref: Optional[str] = Query(None, description="限定目标引用"),
+    promoted_only: bool = Query(False, description="仅返回知识地图使用的高价值批注"),
     publish_status: Optional[str] = Query(None, description="公开申请状态过滤"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
@@ -200,6 +201,23 @@ async def list_annotations(
         raise HTTPException(status_code=503, detail="Annotation store not initialized")
 
     try:
+        if promoted_only:
+            if not target_type or not target_ref:
+                raise HTTPException(status_code=400, detail="target_type and target_ref are required for promoted_only")
+            annotations = await state._annotation_store.list_map_annotations(
+                target_type=target_type,
+                target_ref=target_ref,
+                viewer_user_id=current_user.user_id if current_user else None,
+                include_all_private=bool(current_user and _is_admin(current_user)),
+            )
+            payload = [_annotation_to_response(annotation).model_dump(mode="json") for annotation in annotations]
+            return {
+                "annotations": payload,
+                "total": len(payload),
+                "page": 1,
+                "page_size": len(payload),
+            }
+
         extra_filters = []
         if type == "code" and version:
             extra_filters.append(AnnotationORM.version == version)

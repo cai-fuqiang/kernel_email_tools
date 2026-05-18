@@ -62,6 +62,24 @@ def _normalize_related_targets(related_targets: list[Any]) -> list[dict]:
     return normalized
 
 
+def _is_promoted_annotation(annotation_type: str, pinned: bool) -> bool:
+    return annotation_type in {"claim", "summary", "link"} or (
+        annotation_type == "note" and pinned
+    )
+
+
+def _annotation_matches_target(ann: AnnotationORM, target_type: str, target_ref: str) -> bool:
+    if ann.target_type == target_type and ann.target_ref == target_ref:
+        return True
+    for related in ann.related_targets or []:
+        if (
+            str(related.get("target_type", "") or "").strip() == target_type
+            and str(related.get("target_ref", "") or "").strip() == target_ref
+        ):
+            return True
+    return False
+
+
 def _normalize_annotation_payload(annotation: AnnotationCreate) -> AnnotationCreate:
     """将邮件/代码便捷字段折叠到统一 target/anchor 结构。"""
     data = annotation.model_copy(deep=True)
@@ -376,6 +394,29 @@ class UnifiedAnnotationStore:
             )
             result = await session.execute(stmt)
             return [self._to_annotation_read(row) for row in result.scalars().all()]
+
+    async def list_map_annotations(
+        self,
+        target_type: str,
+        target_ref: str,
+        viewer_user_id: Optional[str] = None,
+        include_all_private: bool = False,
+    ) -> list[AnnotationRead]:
+        async with self.session_factory() as session:
+            stmt = (
+                select(AnnotationORM)
+                .where(*self._visibility_filters(viewer_user_id, include_all_private=include_all_private))
+                .order_by(AnnotationORM.created_at.desc())
+            )
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+            selected = [
+                self._to_annotation_read(row)
+                for row in rows
+                if _is_promoted_annotation(row.annotation_type, bool(row.pinned))
+                and _annotation_matches_target(row, target_type, target_ref)
+            ]
+            return selected
 
     async def list_all(
         self,
