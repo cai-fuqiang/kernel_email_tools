@@ -1,227 +1,208 @@
-import { useEffect, useRef, useCallback } from 'react';
-import cytoscape, { Core, EventObject } from 'cytoscape';
-import type { KnowledgeEntity, KnowledgeRelation } from '../api/types';
+import { useMemo, useState } from 'react';
+import type {
+  KnowledgeMapAnnotationNode,
+  KnowledgeMapModel,
+  KnowledgeMapObjectNode,
+} from './knowledge/knowledgeMap';
+import KnowledgeMapInspector from './knowledge/KnowledgeMapInspector';
 
-const TYPE_COLORS: Record<string, string> = {
-  concept: '#4f46e5',
-  subsystem: '#0891b2',
-  mechanism: '#059669',
-  issue: '#dc2626',
-  symbol: '#7c3aed',
-  patch_discussion: '#d97706',
-};
+type FilterKey = 'claim' | 'summary' | 'link' | 'note';
 
-const DEFAULT_COLOR = '#6b7280';
+const FILTER_ORDER: Array<{ key: FilterKey; label: string }> = [
+  { key: 'claim', label: 'Claims' },
+  { key: 'summary', label: 'Summaries' },
+  { key: 'link', label: 'Links' },
+  { key: 'note', label: 'Pinned notes' },
+];
 
-interface KnowledgeGraphViewProps {
-  nodes: KnowledgeEntity[];
-  edges: KnowledgeRelation[];
-  centerEntityId: string;
-  onNodeClick: (entityId: string) => void;
+function annotationMatchesFilter(annotation: KnowledgeMapAnnotationNode, active: Record<FilterKey, boolean>) {
+  if (annotation.annotation_type === 'note') return active.note;
+  if (annotation.annotation_type === 'claim') return active.claim;
+  if (annotation.annotation_type === 'summary') return active.summary;
+  if (annotation.annotation_type === 'link') return active.link;
+  return false;
 }
 
 export default function KnowledgeGraphView({
-  nodes,
-  edges,
-  centerEntityId,
+  model,
   onNodeClick,
-}: KnowledgeGraphViewProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const cyRef = useRef<Core | null>(null);
-
-  const handleNodeClick = useCallback(
-    (entityId: string) => {
-      onNodeClick(entityId);
-    },
-    [onNodeClick]
+}: {
+  model: KnowledgeMapModel;
+  onNodeClick: (entityId: string) => void;
+}) {
+  const [filters, setFilters] = useState<Record<FilterKey, boolean>>({
+    claim: true,
+    summary: true,
+    link: true,
+    note: true,
+  });
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(
+    model.annotationNodes[0]?.annotation_id ?? null,
+  );
+  const [selectedObjectId, setSelectedObjectId] = useState<string | null>(
+    model.relatedObjectNodes[0]?.id ?? null,
   );
 
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const container = containerRef.current;
+  const filterCounts = useMemo(
+    () => ({
+      claim: model.annotationNodes.filter((item) => item.annotation_type === 'claim').length,
+      summary: model.annotationNodes.filter((item) => item.annotation_type === 'summary').length,
+      link: model.annotationNodes.filter((item) => item.annotation_type === 'link').length,
+      note: model.annotationNodes.filter((item) => item.annotation_type === 'note').length,
+    }),
+    [model.annotationNodes],
+  );
 
-    const elements: cytoscape.ElementDefinition[] = [];
+  const filteredAnnotations = useMemo(
+    () => model.annotationNodes.filter((annotation) => annotationMatchesFilter(annotation, filters)),
+    [filters, model.annotationNodes],
+  );
 
-    for (const node of nodes) {
-      const color = TYPE_COLORS[node.entity_type] || DEFAULT_COLOR;
-      elements.push({
-        data: {
-          id: node.entity_id,
-          label: node.canonical_name,
-          type: node.entity_type,
-          summary: node.summary || '',
-          status: node.status,
-          isCenter: node.entity_id === centerEntityId,
-        },
-        classes: node.entity_id === centerEntityId ? 'center' : '',
-        style: {
-          'background-color': color,
-          color: '#1f2937',
-        },
-      });
+  const filteredObjectIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const edge of model.edges) {
+      if (!filteredAnnotations.some((annotation) => annotation.id === edge.source)) continue;
+      ids.add(edge.target);
     }
+    return ids;
+  }, [filteredAnnotations, model.edges]);
 
-    for (const edge of edges) {
-      const sourceId = edge.source_entity_id;
-      const targetId = edge.target_entity_id;
-      if (
-        !nodes.find((n) => n.entity_id === sourceId) ||
-        !nodes.find((n) => n.entity_id === targetId)
-      ) {
-        continue;
-      }
+  const filteredObjects = useMemo(
+    () => model.relatedObjectNodes.filter((node) => filteredObjectIds.has(node.id)),
+    [filteredObjectIds, model.relatedObjectNodes],
+  );
 
-      elements.push({
-        data: {
-          id: edge.relation_id,
-          source: sourceId,
-          target: targetId,
-          label: edge.relation_type.replace(/_/g, ' '),
-          description: edge.description || '',
-        },
-      });
-    }
+  const selectedAnnotation = filteredAnnotations.find((item) => item.annotation_id === selectedAnnotationId) ?? null;
+  const selectedObject = filteredObjects.find((item) => item.id === selectedObjectId) ?? null;
+  const inspectorSelection = selectedAnnotation
+    ? { kind: 'annotation' as const, node: selectedAnnotation }
+    : selectedObject
+      ? { kind: 'object' as const, node: selectedObject }
+      : { kind: 'center' as const, node: model.centerNode };
 
-    const cy = cytoscape({
-      container,
-      elements,
-      style: [
-        {
-          selector: 'node',
-          style: {
-            'label': 'data(label)',
-            'font-size': '12px',
-            'font-weight': 600,
-            'text-valign': 'bottom',
-            'text-halign': 'center',
-            'text-margin-y': 6,
-            'text-wrap': 'wrap',
-            'text-max-width': '120px',
-            'text-overflow-wrap': 'anywhere',
-            'width': 24,
-            'height': 24,
-            'border-width': 2,
-            'border-color': '#fff',
-            'shape': 'ellipse',
-          },
-        },
-        {
-          selector: 'node.center',
-          style: {
-            'width': 34,
-            'height': 34,
-            'border-width': 3,
-            'border-color': '#1e1b4b',
-            'font-size': '14px',
-            'font-weight': 700,
-          },
-        },
-        {
-          selector: 'node:selected',
-          style: {
-            'border-color': '#4f46e5',
-            'border-width': 3,
-          },
-        },
-        {
-          selector: 'edge',
-          style: {
-            'width': 1.5,
-            'line-color': '#d1d5db',
-            'target-arrow-color': '#9ca3af',
-            'target-arrow-shape': 'triangle',
-            'curve-style': 'bezier',
-            'font-size': '10px',
-            'label': 'data(label)',
-            'color': '#6b7280',
-            'text-rotation': 'autorotate',
-            'text-margin-y': -6,
-          },
-        },
-        {
-          selector: 'edge:hover',
-          style: {
-            'line-color': '#6366f1',
-            'target-arrow-color': '#6366f1',
-            'width': 2.5,
-            'color': '#4f46e5',
-            'font-size': '11px',
-          },
-        },
-      ],
-      layout: {
-        name: 'cose',
-        animate: true,
-        animationDuration: 400,
-        fit: true,
-        padding: 40,
-        nodeRepulsion: () => 6000,
-        idealEdgeLength: () => 120,
-        gravity: 0.25,
-      },
-      minZoom: 0.3,
-      maxZoom: 3,
-      wheelSensitivity: 0.3,
-    });
+  const annotationCardClass = (annotation: KnowledgeMapAnnotationNode) =>
+    `w-full rounded-2xl border px-4 py-3 text-left transition ${
+      annotation.annotation_id === selectedAnnotationId
+        ? 'border-slate-900 bg-slate-900 text-white shadow-lg'
+        : 'border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:bg-slate-50'
+    }`;
 
-    const resizeObserver = new ResizeObserver(() => {
-      cy.resize();
-      cy.fit(undefined, 40);
-    });
-    resizeObserver.observe(container);
-
-    cy.on('tap', 'node', (evt: EventObject) => {
-      const nodeId = evt.target.data('id');
-      if (nodeId) handleNodeClick(nodeId);
-    });
-
-    // Tooltip on hover
-    cy.on('mouseover', 'node', (evt: EventObject) => {
-      const summary = evt.target.data('summary');
-      if (summary) {
-        const existing = container.querySelector('[data-graph-tooltip="true"]');
-        if (existing) existing.remove();
-        const tip = document.createElement('div');
-        tip.dataset.graphTooltip = 'true';
-        tip.className =
-          'absolute z-50 max-w-xs rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs leading-5 text-gray-700 shadow-lg';
-        tip.textContent = summary;
-        tip.style.left = evt.renderedPosition.x + 12 + 'px';
-        tip.style.top = evt.renderedPosition.y - 12 + 'px';
-        container.appendChild(tip);
-      }
-    });
-
-    cy.on('mouseout', 'node', () => {
-      const tip = container.querySelector('[data-graph-tooltip="true"]');
-      if (tip) tip.remove();
-    });
-
-    cyRef.current = cy;
-
-    return () => {
-      resizeObserver.disconnect();
-      const tip = container.querySelector('[data-graph-tooltip="true"]');
-      if (tip) tip.remove();
-      cy.destroy();
-      cyRef.current = null;
-    };
-  }, [nodes, edges, centerEntityId, handleNodeClick]);
+  const objectCardClass = (node: KnowledgeMapObjectNode) =>
+    `w-full rounded-2xl border px-4 py-3 text-left transition ${
+      node.id === selectedObjectId
+        ? 'border-sky-600 bg-sky-50 text-sky-950 shadow-sm'
+        : 'border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:bg-slate-50'
+    }`;
 
   return (
-    <div className="relative min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white">
-      <div className="absolute left-3 top-3 z-10 rounded-lg border border-gray-200 bg-white/95 px-3 py-2 shadow-sm">
-        <div className="text-xs font-semibold text-gray-900">Local relationship map</div>
-        <div className="mt-1 text-[11px] text-gray-500">{nodes.length} nodes · {edges.length} relations</div>
+    <div className="rounded-3xl border border-slate-200 bg-[linear-gradient(180deg,#fff_0%,#f8fafc_100%)] p-4 shadow-sm md:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Knowledge Map
+          </div>
+          <div className="mt-2 text-sm text-slate-600">
+            {filteredAnnotations.length} promoted annotations · {filteredObjects.length} related objects
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {FILTER_ORDER.map((filter) => (
+            <button
+              key={filter.key}
+              type="button"
+              onClick={() => setFilters((current) => ({ ...current, [filter.key]: !current[filter.key] }))}
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                filters[filter.key]
+                  ? 'border-slate-900 bg-slate-900 text-white'
+                  : 'border-slate-200 bg-white text-slate-600'
+              }`}
+            >
+              {filter.label}
+              <span className="ml-1 opacity-80">{filterCounts[filter.key]}</span>
+            </button>
+          ))}
+        </div>
       </div>
-      <div ref={containerRef} className="h-[420px] w-full md:h-[520px]" />
-      <div className="flex flex-wrap items-center gap-3 border-t border-gray-100 px-3 py-2 text-[11px] text-gray-500">
-        {Object.entries(TYPE_COLORS).map(([type, color]) => (
-          <span key={type} className="inline-flex items-center gap-1">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-            {type.replace(/_/g, ' ')}
-          </span>
-        ))}
+
+      <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(240px,280px)_minmax(0,1fr)]">
+          <section className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Promoted annotations
+            </div>
+            <div className="mt-3 space-y-3">
+              {filteredAnnotations.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">
+                  No promoted annotations match the current filters.
+                </div>
+              ) : (
+                filteredAnnotations.map((annotation) => (
+                  <button
+                    key={annotation.annotation_id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedAnnotationId(annotation.annotation_id);
+                      setSelectedObjectId(null);
+                    }}
+                    className={annotationCardClass(annotation)}
+                  >
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-80">
+                      {annotation.annotation_type}
+                    </div>
+                    <div className="mt-2 text-sm font-semibold">{annotation.label}</div>
+                  </button>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-[28px] border border-slate-300 bg-slate-950 px-5 py-6 text-white shadow-xl">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
+              Center object
+            </div>
+            <div className="mt-4 text-2xl font-semibold">{model.centerNode.label}</div>
+            <div className="mt-2 text-sm text-slate-300">{model.centerNode.entity_type}</div>
+            {model.centerNode.summary && (
+              <p className="mt-4 text-sm leading-6 text-slate-200">{model.centerNode.summary}</p>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Related objects
+            </div>
+            <div className="mt-3 space-y-3">
+              {filteredObjects.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">
+                  No related objects surfaced from the visible annotations.
+                </div>
+              ) : (
+                filteredObjects.map((node) => (
+                  <button
+                    key={node.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedObjectId(node.id);
+                      setSelectedAnnotationId(null);
+                    }}
+                    className={objectCardClass(node)}
+                  >
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      {node.target_type}
+                    </div>
+                    <div className="mt-2 text-sm font-semibold">{node.label}</div>
+                    <div className="mt-1 text-xs text-slate-500">{node.subtitle}</div>
+                  </button>
+                ))
+              )}
+            </div>
+          </section>
+        </div>
+
+        <KnowledgeMapInspector
+          selection={inspectorSelection}
+          onOpenObject={onNodeClick}
+        />
       </div>
     </div>
   );

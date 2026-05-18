@@ -4,6 +4,7 @@ import type {
   KnowledgeGraphResponse,
   KnowledgeRelation,
 } from '../../api/types';
+import type { KnowledgeMapModel } from './knowledgeMap';
 import { RELATION_TYPES, relationEntityName, relationLabel } from './knowledgeUtils';
 
 // Lazy-load the graph view because cytoscape (~6 MB) is the heaviest dep on this page.
@@ -34,6 +35,7 @@ interface EntityRelationsPanelProps {
   viewMode: ViewMode;
   graphDepth: number;
   graphData: KnowledgeGraphResponse | null;
+  knowledgeMapModel: KnowledgeMapModel | null;
   graphLoading: boolean;
   canWrite: boolean;
   saving: boolean;
@@ -48,7 +50,7 @@ interface EntityRelationsPanelProps {
 }
 
 export default function EntityRelationsPanel({
-  selectedEntity,
+  selectedEntity: _selectedEntity,
   relations,
   relationLoading,
   relationCount,
@@ -56,13 +58,14 @@ export default function EntityRelationsPanel({
   relationDrafts,
   relationForm,
   viewMode,
-  graphDepth,
-  graphData,
+  graphDepth: _graphDepth,
+  graphData: _graphData,
+  knowledgeMapModel,
   graphLoading,
   canWrite,
   saving,
   onSetViewMode,
-  onSetGraphDepth,
+  onSetGraphDepth: _onSetGraphDepth,
   onSelectEntity,
   onRelationFormChange,
   onCreateRelation,
@@ -125,9 +128,9 @@ export default function EntityRelationsPanel({
     <section className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white p-4 md:p-5">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-gray-950">Local knowledge graph</h2>
+          <h2 className="text-lg font-semibold text-gray-950">Knowledge Map</h2>
           <p className="text-sm text-gray-600">
-            Explore this item's immediate neighborhood, then switch to List to edit the reviewed relations.
+            Review promoted annotations around this object, then switch to List to edit explicit entity relations.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-3">
@@ -155,7 +158,7 @@ export default function EntityRelationsPanel({
                   : 'text-gray-700 hover:text-gray-900'
               }`}
             >
-              Graph
+              Map
             </button>
           </div>
         </div>
@@ -163,62 +166,36 @@ export default function EntityRelationsPanel({
 
       {viewMode === 'graph' ? (
         <div className="mt-4 min-w-0">
-          <div className="mb-3 flex flex-wrap items-center gap-3">
-            <span className="text-xs font-medium text-gray-600">Neighborhood depth:</span>
-            {[1, 2, 3].map((d) => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => onSetGraphDepth(d)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
-                  graphDepth === d
-                    ? 'bg-indigo-600 text-white'
-                    : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                {d} hop{d > 1 ? 's' : ''}
-              </button>
-            ))}
-            <span className="text-xs text-gray-600">
-              Click a node to open that knowledge item.
-            </span>
-          </div>
-          {relationCount === 0 ? (
+          {knowledgeMapModel && knowledgeMapModel.annotationNodes.length > 0 ? (
+            <Suspense
+              fallback={
+                <div className="flex h-[520px] items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-600">
+                  Loading knowledge map...
+                </div>
+              }
+            >
+              <KnowledgeGraphView
+                model={knowledgeMapModel}
+                onNodeClick={(entityId) => onSelectEntity(entityId)}
+              />
+            </Suspense>
+          ) : graphLoading ? (
+            <div className="flex h-[520px] items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-600">
+              Loading knowledge map...
+            </div>
+          ) : (
             <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-10 text-center">
-              <div className="text-sm font-semibold text-gray-900">No graph relations yet</div>
+              <div className="text-sm font-semibold text-gray-900">No promoted annotations yet</div>
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-600">
-                A useful graph starts with explicit relationships. Add a relation in List view, then return here to see the local map.
+                Add a claim, summary, link, or pinned note on this object to populate the knowledge map.
               </p>
               <button
                 type="button"
                 onClick={() => onSetViewMode('list')}
                 className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
               >
-                Add relation
+                Review relations
               </button>
-            </div>
-          ) : graphLoading ? (
-            <div className="flex h-[520px] items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-600">
-              Loading graph...
-            </div>
-          ) : graphData && graphData.edges.length > 0 ? (
-            <Suspense
-              fallback={
-                <div className="flex h-[520px] items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-600">
-                  Loading graph view...
-                </div>
-              }
-            >
-              <KnowledgeGraphView
-                nodes={graphData.nodes}
-                edges={graphData.edges}
-                centerEntityId={selectedEntity.entity_id}
-                onNodeClick={(entityId) => onSelectEntity(entityId)}
-              />
-            </Suspense>
-          ) : (
-            <div className="flex h-[200px] items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-600">
-              No graph data available for the selected depth.
             </div>
           )}
         </div>

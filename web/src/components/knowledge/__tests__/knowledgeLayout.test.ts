@@ -1,10 +1,14 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { KnowledgeEntity, KnowledgeRelation } from '../../../api/types';
+import KnowledgeGraphView from '../../KnowledgeGraphView';
 import {
   buildSupportPanelItems,
   summarizeRelations,
   summarizeTimeline,
 } from '../knowledgeLayout';
+import type { KnowledgeMapModel } from '../knowledgeMap';
 
 function entity(patch: Partial<KnowledgeEntity>): KnowledgeEntity {
   return {
@@ -39,6 +43,43 @@ function relation(patch: Partial<KnowledgeRelation>): KnowledgeRelation {
     created_at: '',
     updated_at: '',
     ...patch,
+  };
+}
+
+function mapModel(): KnowledgeMapModel {
+  return {
+    centerNode: {
+      id: 'symbol:do_mmap',
+      label: 'do_mmap',
+      entity_type: 'symbol',
+      summary: 'Maps memory for the target VMA.',
+    },
+    annotationNodes: [
+      {
+        id: 'ann-1',
+        annotation_id: 'ann-1',
+        annotation_type: 'claim',
+        label: 'Caller already holds mmap_lock',
+        body: 'The caller enters with mmap_lock held.',
+        pinned: false,
+        target_type: 'symbol',
+        target_ref: 'symbol:do_mmap',
+      },
+    ],
+    relatedObjectNodes: [
+      {
+        id: 'commit:abc123',
+        target_type: 'commit',
+        target_ref: 'commit:abc123',
+        label: 'abc123',
+        subtitle: 'commit',
+        role: '',
+      },
+    ],
+    edges: [
+      { id: 'center->ann-1', source: 'symbol:do_mmap', target: 'ann-1', kind: 'annotates' },
+      { id: 'ann-1->commit:abc123', source: 'ann-1', target: 'commit:abc123', kind: 'references' },
+    ],
   };
 }
 
@@ -115,5 +156,30 @@ describe('knowledge layout helpers', () => {
     expect(summary.total).toBe(2);
     expect(summary.items.map((item) => item.name)).toEqual(['B', 'C']);
     expect(summary.items.map((item) => item.direction)).toEqual(['outgoing', 'incoming']);
+  });
+
+  it('shows Knowledge Map instead of Local knowledge graph', () => {
+    const html = renderToStaticMarkup(
+      createElement(KnowledgeGraphView, {
+        model: mapModel(),
+        onNodeClick: () => {},
+      }),
+    );
+
+    expect(html).toContain('Knowledge Map');
+  });
+
+  it('shows filter controls for promoted annotation classes', () => {
+    const html = renderToStaticMarkup(
+      createElement(KnowledgeGraphView, {
+        model: mapModel(),
+        onNodeClick: () => {},
+      }),
+    );
+
+    expect(html).toContain('Claims');
+    expect(html).toContain('Summaries');
+    expect(html).toContain('Links');
+    expect(html).toContain('Pinned notes');
   });
 });

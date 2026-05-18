@@ -86,6 +86,7 @@ export default function KnowledgeWorkbench() {
   const [entities, setEntities] = useState<KnowledgeEntity[]>([]);
   const [selectedEntity, setSelectedEntity] = useState<KnowledgeEntity | null>(null);
   const [annotations, setAnnotations] = useState<AnnotationListItem[]>([]);
+  const [mapAnnotations, setMapAnnotations] = useState<AnnotationListItem[]>([]);
   const [evidenceRows, setEvidenceRows] = useState<KnowledgeEvidence[]>([]);
   const [relations, setRelations] = useState<{
     outgoing: KnowledgeRelation[];
@@ -139,8 +140,8 @@ export default function KnowledgeWorkbench() {
   const [railOpen, setRailOpen] = useState(false);
   const [draftReviewOpen, setDraftReviewOpen] = useState(false);
   const promotedAnnotations = useMemo(
-    () => annotations.filter((annotation) => isPromotedKnowledgeAnnotation(annotation)),
-    [annotations],
+    () => mapAnnotations.filter((annotation) => isPromotedKnowledgeAnnotation(annotation)),
+    [mapAnnotations],
   );
   const knowledgeMapModel = useMemo(
     () => (selectedEntity ? buildKnowledgeMapModel({ center: selectedEntity, annotations: promotedAnnotations }) : null),
@@ -248,15 +249,15 @@ export default function KnowledgeWorkbench() {
   }, [entities, selectedEntityId]);
 
   const loadAnnotations = useCallback(async () => {
-    if (!selectedEntityId) {
+    if (!selectedEntity) {
       setAnnotations([]);
       return;
     }
     setAnnotationLoading(true);
     try {
       const res = await listAnnotations({
-        target_type: 'knowledge_entity',
-        target_ref: selectedEntityId,
+        target_type: selectedEntity.entity_type,
+        target_ref: selectedEntity.entity_id,
         page_size: 100,
       });
       setAnnotations(res.annotations);
@@ -265,7 +266,25 @@ export default function KnowledgeWorkbench() {
     } finally {
       setAnnotationLoading(false);
     }
-  }, [selectedEntityId]);
+  }, [selectedEntity]);
+
+  const loadMapAnnotations = useCallback(async () => {
+    if (!selectedEntity) {
+      setMapAnnotations([]);
+      return;
+    }
+    try {
+      const res = await listAnnotations({
+        target_type: selectedEntity.entity_type,
+        target_ref: selectedEntity.entity_id,
+        promoted_only: true,
+        page_size: 100,
+      });
+      setMapAnnotations(res.annotations);
+    } catch {
+      setMapAnnotations([]);
+    }
+  }, [selectedEntity]);
 
   const loadRelations = useCallback(async () => {
     if (!selectedEntityId) {
@@ -326,6 +345,9 @@ export default function KnowledgeWorkbench() {
   useEffect(() => {
     loadAnnotations();
   }, [loadAnnotations]);
+  useEffect(() => {
+    loadMapAnnotations();
+  }, [loadMapAnnotations]);
   useEffect(() => {
     loadRelations();
   }, [loadRelations]);
@@ -402,12 +424,12 @@ export default function KnowledgeWorkbench() {
     () =>
       buildSupportPanelItems({
         evidenceCount: selectedEvidenceCount,
-        notesCount: knowledgeMapModel?.annotationNodes.length ?? annotations.length,
+        notesCount: annotations.length,
         historyCount: selectedEntity ? 1 : 0,
         relationCount,
         timelineCount,
       }),
-    [annotations.length, knowledgeMapModel, relationCount, selectedEntity, selectedEvidenceCount, timelineCount],
+    [annotations.length, relationCount, selectedEntity, selectedEvidenceCount, timelineCount],
   );
 
   const handleCreateEntity = async () => {
@@ -548,13 +570,14 @@ export default function KnowledgeWorkbench() {
         annotation_type: 'note',
         body: annotationBody.trim(),
         visibility: isAdmin ? 'public' : 'private',
-        target_type: 'knowledge_entity',
+        target_type: selectedEntity.entity_type,
         target_ref: selectedEntity.entity_id,
         target_label: selectedEntity.canonical_name,
         target_subtitle: selectedEntity.entity_type,
       });
       setAnnotationBody('');
       await loadAnnotations();
+      await loadMapAnnotations();
     } catch (e: unknown) {
       showToast(e instanceof Error ? e.message : 'Failed to create note', 'error');
     } finally {
@@ -964,6 +987,7 @@ export default function KnowledgeWorkbench() {
             viewMode={viewMode}
             graphDepth={graphDepth}
             graphData={graphData}
+            knowledgeMapModel={knowledgeMapModel}
             graphLoading={graphLoading}
             canWrite={canWrite}
             saving={saving}
