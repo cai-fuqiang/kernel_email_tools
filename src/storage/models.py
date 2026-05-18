@@ -784,7 +784,10 @@ class EmailChunkSearchResult(EmailChunkRead):
 class AnnotationCreate(BaseModel):
     """创建批注时的输入模型。"""
 
-    annotation_type: str = Field("note", description="批注类型：'excerpt' | 'claim' | 'note' | 'summary' | 'link'")
+    annotation_type: str = Field(
+        "email",
+        description="批注类型：legacy(email/code/sdm_spec) 或知识层(excerpt/claim/note/summary/link)",
+    )
     short_label: str = Field("", description="简短标签，适合知识卡片视图")
     body: str = Field("", description="批注正文（支持 Markdown）")
     author: str = Field("", description="批注作者")
@@ -813,14 +816,23 @@ class AnnotationCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_annotation(self) -> "AnnotationCreate":
-        allowed_types = {"excerpt", "claim", "note", "summary", "link"}
+        allowed_types = {
+            "email",
+            "code",
+            "sdm_spec",
+            "excerpt",
+            "claim",
+            "note",
+            "summary",
+            "link",
+        }
         self.annotation_type = self.annotation_type.strip()
         self.short_label = self.short_label.strip()
         self.body = self.body.strip()
 
         if self.annotation_type not in allowed_types:
             raise ValueError(
-                "annotation_type must be one of excerpt, claim, note, summary, link"
+                "annotation_type must be one of email, code, sdm_spec, excerpt, claim, note, summary, link"
             )
         if not self.body and not self.short_label:
             raise ValueError("annotation requires body or short_label")

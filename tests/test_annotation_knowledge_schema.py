@@ -11,6 +11,34 @@ def test_annotation_create_accepts_claim_and_link_types():
     assert data.annotation_type == "claim"
 
 
+def test_annotation_create_preserves_legacy_annotation_types():
+    code_annotation = AnnotationCreate(
+        annotation_type="code",
+        body="legacy code annotation",
+        target_type="kernel_file",
+        target_ref="v6.8:mm/mmap.c",
+    )
+    email_annotation = AnnotationCreate(
+        annotation_type="email",
+        body="legacy email annotation",
+        target_type="email_thread",
+        target_ref="thread:legacy",
+    )
+
+    assert code_annotation.annotation_type == "code"
+    assert email_annotation.annotation_type == "email"
+
+
+def test_annotation_create_defaults_to_email_for_legacy_callers():
+    data = AnnotationCreate(
+        body="backward compatible default",
+        target_type="email_thread",
+        target_ref="thread:legacy-default",
+    )
+
+    assert data.annotation_type == "email"
+
+
 def test_annotation_create_allows_short_label_only_for_link_annotations():
     data = AnnotationCreate(
         annotation_type="link",
