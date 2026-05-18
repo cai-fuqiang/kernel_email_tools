@@ -2,6 +2,7 @@
 
 > Read this file before starting any task. It replaces codebase exploration.
 > Update this file when you add/remove/rename modules or change a file's responsibility.
+> **Note for Codex:** claude-mem is unavailable. Use Architecture Decisions Log and Current Feature Context sections below as cross-session memory.
 
 ---
 
