@@ -20,12 +20,14 @@ import EntityRelationsPanel, {
 import EvidencePanel from './EvidencePanel';
 import HumanNotesPanel from './HumanNotesPanel';
 import EntityHistoryPanel from './EntityHistoryPanel';
+import { buildKnowledgeMapModel } from './knowledgeMap';
 import {
   buildSupportPanelItems,
   type SupportPanelId,
 } from './knowledgeLayout';
 import {
   DEFAULT_ENTITY_TYPE,
+  isPromotedKnowledgeAnnotation,
   extractKnowledgeEvidence,
   normalizeDraftPayload,
   readableType,
@@ -136,6 +138,14 @@ export default function KnowledgeWorkbench() {
   const [activeSupportPanel, setActiveSupportPanel] = useState<SupportPanelId | null>(null);
   const [railOpen, setRailOpen] = useState(false);
   const [draftReviewOpen, setDraftReviewOpen] = useState(false);
+  const promotedAnnotations = useMemo(
+    () => annotations.filter((annotation) => isPromotedKnowledgeAnnotation(annotation)),
+    [annotations],
+  );
+  const knowledgeMapModel = useMemo(
+    () => (selectedEntity ? buildKnowledgeMapModel({ center: selectedEntity, annotations: promotedAnnotations }) : null),
+    [promotedAnnotations, selectedEntity],
+  );
 
   const loadEntities = useCallback(async (opts?: { append?: boolean; page?: number }) => {
     const targetPage = opts?.page ?? 1;
@@ -392,12 +402,12 @@ export default function KnowledgeWorkbench() {
     () =>
       buildSupportPanelItems({
         evidenceCount: selectedEvidenceCount,
-        notesCount: annotations.length,
+        notesCount: knowledgeMapModel?.annotationNodes.length ?? annotations.length,
         historyCount: selectedEntity ? 1 : 0,
         relationCount,
         timelineCount,
       }),
-    [annotations.length, relationCount, selectedEntity, selectedEvidenceCount, timelineCount],
+    [annotations.length, knowledgeMapModel, relationCount, selectedEntity, selectedEvidenceCount, timelineCount],
   );
 
   const handleCreateEntity = async () => {

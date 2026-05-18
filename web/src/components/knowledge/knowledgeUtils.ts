@@ -1,4 +1,5 @@
 import type {
+  AnnotationListItem,
   KnowledgeDraftPayload,
   KnowledgeEntity,
   KnowledgeEvidence,
@@ -149,4 +150,15 @@ export function relationEntityName(
   fallback: string,
 ) {
   return entity?.canonical_name || fallback;
+}
+
+export function isPromotedKnowledgeAnnotation(annotation: Pick<AnnotationListItem, 'annotation_type' | 'pinned'>) {
+  return annotation.annotation_type === 'claim'
+    || annotation.annotation_type === 'summary'
+    || annotation.annotation_type === 'link'
+    || (annotation.annotation_type === 'note' && annotation.pinned);
+}
+
+export function annotationDisplayLabel(annotation: Pick<AnnotationListItem, 'short_label' | 'body' | 'annotation_id'>) {
+  return annotation.short_label || annotation.body || annotation.annotation_id;
 }
