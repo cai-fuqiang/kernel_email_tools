@@ -311,7 +311,9 @@ class AnnotationORM(Base):
     author_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="public", index=True)
     publish_status: Mapped[str] = mapped_column(String(16), nullable=False, default="none", index=True)
+    short_label: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     parent_annotation_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     publish_requested_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     publish_requested_by_user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
@@ -330,6 +332,7 @@ class AnnotationORM(Base):
     target_ref: Mapped[str] = mapped_column(String(1024), nullable=False, index=True)
     target_label: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     target_subtitle: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    related_targets: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     anchor: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     meta: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
@@ -781,17 +784,20 @@ class EmailChunkSearchResult(EmailChunkRead):
 class AnnotationCreate(BaseModel):
     """创建批注时的输入模型。"""
 
-    annotation_type: str = Field("email", description="批注类型：'email' | 'code'")
-    body: str = Field(..., min_length=1, description="批注正文（支持 Markdown）")
+    annotation_type: str = Field("note", description="批注类型：'excerpt' | 'claim' | 'note' | 'summary' | 'link'")
+    short_label: str = Field("", description="简短标签，适合知识卡片视图")
+    body: str = Field("", description="批注正文（支持 Markdown）")
     author: str = Field("", description="批注作者")
     author_user_id: Optional[str] = Field(None, description="批注作者用户 ID")
     visibility: str = Field("public", description="public | private")
+    pinned: bool = Field(False, description="是否置顶")
     parent_annotation_id: str = Field("", description="父批注 ID，支持回复")
 
     target_type: str = Field("", description="标注目标类型，如 email_thread / kernel_file / sdm_spec")
     target_ref: str = Field("", description="目标唯一引用，如 thread_id 或 version:path")
     target_label: str = Field("", description="目标主标题")
     target_subtitle: str = Field("", description="目标副标题")
+    related_targets: list = Field(default_factory=list, description="关联目标列表")
     anchor: dict = Field(default_factory=dict, description="通用锚点，例如 message_id/line/page")
 
     # 便捷字段：邮件
@@ -804,6 +810,21 @@ class AnnotationCreate(BaseModel):
     start_line: int = Field(0, ge=0, description="起始行号（code 类型）")
     end_line: int = Field(0, ge=0, description="结束行号（code 类型）")
     meta: dict = Field(default_factory=dict, description="通用扩展元数据，用于承载 target/anchor 等")
+
+    @model_validator(mode="after")
+    def validate_annotation(self) -> "AnnotationCreate":
+        allowed_types = {"excerpt", "claim", "note", "summary", "link"}
+        self.annotation_type = self.annotation_type.strip()
+        self.short_label = self.short_label.strip()
+        self.body = self.body.strip()
+
+        if self.annotation_type not in allowed_types:
+            raise ValueError(
+                "annotation_type must be one of excerpt, claim, note, summary, link"
+            )
+        if not self.body and not self.short_label:
+            raise ValueError("annotation requires body or short_label")
+        return self
 
     model_config = {"from_attributes": True}
 
@@ -827,7 +848,9 @@ class AnnotationRead(BaseModel):
     author_user_id: Optional[str] = None
     visibility: str = "public"
     publish_status: str = "none"
+    short_label: str = ""
     body: str
+    pinned: bool = False
     parent_annotation_id: str = ""
     publish_requested_at: Optional[datetime] = None
     publish_requested_by_user_id: Optional[str] = None
@@ -841,6 +864,7 @@ class AnnotationRead(BaseModel):
     target_ref: str = ""
     target_label: str = ""
     target_subtitle: str = ""
+    related_targets: list = Field(default_factory=list)
     anchor: dict = Field(default_factory=dict)
 
     # 便捷字段
