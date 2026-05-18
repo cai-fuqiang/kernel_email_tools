@@ -14,10 +14,10 @@
 - Keyword 搜索：PostgreSQL TSVECTOR + GIN，支持 list、sender、date、patch、tag 过滤。
 - Semantic 搜索：`email_chunks` + `email_chunk_embeddings` + pgvector，使用 DashScope `text-embedding-v3` 或本地 BAAI/bge-m3。
 - Hybrid 搜索：短关键词偏 keyword，自然语言问题融合 keyword/semantic。
-- Knowledge Workbench：知识实体、关系、evidence、graph、Draft Inbox、merge。
+- Knowledge Workbench：知识实体、关系、evidence、annotation-centered Knowledge Map、Draft Inbox、merge。
 - Draft Review：Search 产出的 Knowledge、Annotation、Tag assignment 草稿先进入 review，不自动污染知识库。
 - Tags：层级标签、target 浏览、邮件/知识实体绑定。
-- Annotations：邮件、代码、知识实体批注，以及发布审核。
+- Annotations：邮件、代码、知识对象批注；支持 `claim` / `summary` / `link` / `note` 等高价值类型、related targets，以及发布审核。
 - Thread Drawer：线程阅读、翻译、批注、标签、patch 展示。
 - Kernel Code：本地 kernel git 浏览、版本树、文件查看、代码批注；符号索引脚本已存在，定义跳转仍在后续计划中。
 - Manuals：Intel SDM 等 PDF 导入、手册搜索和手册问答。
