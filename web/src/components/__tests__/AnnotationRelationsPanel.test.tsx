@@ -20,6 +20,7 @@ const baseRelation: Omit<
 const baseAnnotation: CodeAnnotation = {
   annotation_id: 'ann-current',
   annotation_type: 'code',
+  short_label: '',
   version: 'v6.6',
   file_path: 'mm/mmap.c',
   start_line: 10,
@@ -29,6 +30,7 @@ const baseAnnotation: CodeAnnotation = {
   author_user_id: 'user-1',
   visibility: 'private',
   publish_status: 'none',
+  pinned: false,
   created_at: '2026-05-14T00:00:00Z',
   parent_annotation_id: '',
   in_reply_to: '',
@@ -37,6 +39,7 @@ const baseAnnotation: CodeAnnotation = {
   target_ref: 'v6.6:mm/mmap.c:10-12',
   target_label: 'mm/mmap.c:10-12',
   target_subtitle: 'v6.6',
+  related_targets: [],
   anchor: {},
   meta: {},
 };

@@ -7,11 +7,13 @@ import ThreadAnnotationCard from '../ThreadAnnotationCard';
 const baseAnnotation: Annotation = {
   annotation_id: 'ann-current',
   annotation_type: 'email',
+  short_label: '',
   author: 'Tester',
   author_user_id: 'user-1',
   visibility: 'public',
   publish_status: 'none',
   body: 'See [the related note](annotation:ann-target).',
+  pinned: false,
   parent_annotation_id: '',
   publish_review_comment: '',
   created_at: '2026-05-14T00:00:00Z',
@@ -20,6 +22,7 @@ const baseAnnotation: Annotation = {
   target_ref: 'thread-1',
   target_label: 'Thread',
   target_subtitle: '',
+  related_targets: [],
   anchor: {},
   thread_id: 'thread-1',
   in_reply_to: '',
@@ -48,5 +51,27 @@ describe('ThreadAnnotationCard annotation links', () => {
 
     expect(html).toContain('type="button"');
     expect(html).toContain('aria-label="Open annotation the related note"');
+  });
+
+  it('renders claim metadata when a short label is present', () => {
+    const html = renderToStaticMarkup(
+      <ThreadAnnotationCard
+        annotation={{
+          ...baseAnnotation,
+          annotation_id: 'ann-claim',
+          annotation_type: 'claim',
+          short_label: 'Locking guarantee',
+          body: 'Caller already holds mmap_lock.',
+        }}
+        depth={0}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onReply={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('claim');
+    expect(html).toContain('Locking guarantee');
   });
 });

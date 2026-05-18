@@ -160,6 +160,7 @@ export default function ThreadDrawer({ threadId, focusMessageId, focusAnnotation
   const handleAddAnnotation = useCallback(async (_threadId: string, inReplyTo: string, body: string, visibility: 'public' | 'private') => {
     try {
       await createAnnotation({
+        annotation_type: 'email',
         thread_id: threadId,
         in_reply_to: inReplyTo,
         body,

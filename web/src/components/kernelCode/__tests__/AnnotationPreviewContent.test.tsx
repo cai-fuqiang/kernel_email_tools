@@ -7,6 +7,7 @@ import AnnotationPreviewContent from '../AnnotationPreviewContent';
 const baseCodeAnnotation: CodeAnnotation = {
   annotation_id: 'code-ann-current',
   annotation_type: 'code',
+  short_label: '',
   version: 'v6.6',
   file_path: 'mm/mmap.c',
   start_line: 10,
@@ -16,6 +17,7 @@ const baseCodeAnnotation: CodeAnnotation = {
   author_user_id: 'user-1',
   visibility: 'public',
   publish_status: 'none',
+  pinned: false,
   publish_review_comment: '',
   created_at: '2026-05-14T00:00:00Z',
   parent_annotation_id: '',
@@ -25,6 +27,7 @@ const baseCodeAnnotation: CodeAnnotation = {
   target_ref: 'v6.6:mm/mmap.c:10-12',
   target_label: 'mm/mmap.c:10-12',
   target_subtitle: 'v6.6',
+  related_targets: [],
   anchor: {},
   meta: {},
 };

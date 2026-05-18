@@ -232,8 +232,11 @@ export default function AnnotationTree({ annotations, onAnnotationsChange, layou
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="truncate text-base font-semibold text-slate-900">
-                    {annotation.target_label || annotation.email_subject || annotation.file_path || annotation.target_ref}
+                    {annotation.short_label || annotation.target_label || annotation.email_subject || annotation.file_path || annotation.target_ref}
                   </h3>
+                  <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                    {annotation.annotation_type}
+                  </span>
                   {anchorLabel && (
                     <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
                       {anchorLabel}

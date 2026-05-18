@@ -535,7 +535,7 @@ export default function KnowledgeWorkbench() {
     setSaving(true);
     try {
       await createAnnotation({
-        annotation_type: 'email',
+        annotation_type: 'note',
         body: annotationBody.trim(),
         visibility: isAdmin ? 'public' : 'private',
         target_type: 'knowledge_entity',

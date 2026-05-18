@@ -269,14 +269,25 @@ export interface AnnotationTarget {
   anchor: Record<string, unknown>;
 }
 
+export interface AnnotationTargetRef {
+  target_type: string;
+  target_ref: string;
+  target_label?: string;
+  target_subtitle?: string;
+  anchor?: Record<string, unknown>;
+  role?: string;
+}
+
 export interface Annotation {
   annotation_id: string;
   annotation_type: string;
+  short_label: string;
   author: string;
   author_user_id?: string | null;
   visibility: 'public' | 'private';
   publish_status: 'none' | 'pending' | 'approved' | 'rejected';
   body: string;
+  pinned: boolean;
   parent_annotation_id: string;
   publish_requested_at?: string | null;
   publish_requested_by_user_id?: string | null;
@@ -289,6 +300,7 @@ export interface Annotation {
   target_ref: string;
   target_label: string;
   target_subtitle: string;
+  related_targets: AnnotationTargetRef[];
   anchor: Record<string, unknown>;
   code_target?: CodeTarget;
   thread_id: string;
@@ -304,13 +316,16 @@ export interface Annotation {
 export interface AnnotationCreate {
   annotation_type?: string;
   body: string;
+  short_label?: string;
   author?: string;
   visibility?: 'public' | 'private';
+  pinned?: boolean;
   parent_annotation_id?: string;
   target_type?: string;
   target_ref?: string;
   target_label?: string;
   target_subtitle?: string;
+  related_targets?: AnnotationTargetRef[];
   anchor?: Record<string, unknown>;
   thread_id?: string;
   in_reply_to?: string;
@@ -377,11 +392,13 @@ export interface ManualStatsResponse {
 export interface AnnotationListItem {
   annotation_id: string;
   annotation_type: string;
+  short_label: string;
   author: string;
   author_user_id?: string | null;
   visibility: 'public' | 'private';
   publish_status: 'none' | 'pending' | 'approved' | 'rejected';
   body: string;
+  pinned: boolean;
   parent_annotation_id: string;
   publish_requested_at?: string | null;
   publish_requested_by_user_id?: string | null;
@@ -394,6 +411,7 @@ export interface AnnotationListItem {
   target_ref: string;
   target_label: string;
   target_subtitle: string;
+  related_targets: AnnotationTargetRef[];
   anchor: Record<string, unknown>;
   code_target?: CodeTarget;
   meta?: Record<string, unknown>;
@@ -750,6 +768,7 @@ export interface KernelLineHistoryResponse {
 export interface CodeAnnotation {
   annotation_id: string;
   annotation_type: string;
+  short_label: string;
   version: string;
   file_path: string;
   start_line: number;
@@ -759,6 +778,7 @@ export interface CodeAnnotation {
   author_user_id?: string | null;
   visibility: 'public' | 'private';
   publish_status: 'none' | 'pending' | 'approved' | 'rejected';
+  pinned: boolean;
   publish_requested_at?: string | null;
   publish_requested_by_user_id?: string | null;
   publish_reviewed_at?: string | null;
@@ -772,6 +792,7 @@ export interface CodeAnnotation {
   target_ref: string;
   target_label: string;
   target_subtitle: string;
+  related_targets: AnnotationTargetRef[];
   anchor: Record<string, unknown>;
   code_target?: CodeTarget;
   meta?: Record<string, unknown>;
@@ -783,9 +804,12 @@ export interface CodeAnnotationCreate {
   start_line: number;
   end_line: number;
   body: string;
+  short_label?: string;
   author?: string;
   visibility?: 'public' | 'private';
+  pinned?: boolean;
   in_reply_to?: string;
+  related_targets?: AnnotationTargetRef[];
 }
 
 export interface CodeAnnotationListResponse {

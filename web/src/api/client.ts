@@ -103,6 +103,16 @@ type AnnotationTargetFields = {
   target_label?: string;
   target_subtitle?: string;
   anchor?: Record<string, unknown>;
+  related_targets?: Array<{
+    target_type?: string;
+    target_ref?: string;
+    target_label?: string;
+    target_subtitle?: string;
+    anchor?: Record<string, unknown>;
+    role?: string;
+  }>;
+  short_label?: string;
+  pinned?: boolean;
 };
 
 type AnnotationTargetView = {
@@ -891,10 +901,11 @@ export async function importAnnotations(data: Record<string, unknown>): Promise<
 
 export async function listAnnotations(opts?: {
   q?: string;
-  type?: 'all' | 'email' | 'code' | 'sdm_spec';
+  type?: 'all' | 'email' | 'code' | 'sdm_spec' | 'excerpt' | 'claim' | 'note' | 'summary' | 'link';
   version?: string;
   target_type?: string;
   target_ref?: string;
+  promoted_only?: boolean;
   publish_status?: 'none' | 'pending' | 'approved' | 'rejected';
   page?: number;
   page_size?: number;
@@ -905,6 +916,7 @@ export async function listAnnotations(opts?: {
   if (opts?.version) params.set('version', opts.version);
   if (opts?.target_type) params.set('target_type', opts.target_type);
   if (opts?.target_ref) params.set('target_ref', opts.target_ref);
+  if (opts?.promoted_only) params.set('promoted_only', 'true');
   if (opts?.publish_status) params.set('publish_status', opts.publish_status);
   if (opts?.page) params.set('page', String(opts.page));
   if (opts?.page_size) params.set('page_size', String(opts.page_size));

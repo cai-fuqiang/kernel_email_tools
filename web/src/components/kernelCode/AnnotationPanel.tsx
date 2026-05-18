@@ -45,6 +45,10 @@ export function getKernelRangeTaggingLabel(): string {
   return 'Advanced: tag selected lines';
 }
 
+export function getSupportedKnowledgeAnnotationTypes(): string[] {
+  return ['claim', 'summary', 'link', 'note'];
+}
+
 function formatAnnotationLineRange(annotation: CodeAnnotation): string {
   return formatAnnotationPreviewLineRange(annotation);
 }

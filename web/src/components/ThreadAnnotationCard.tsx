@@ -166,6 +166,14 @@ export default function ThreadAnnotationCard({
     >
       <div className="flex flex-wrap items-center gap-2 mb-2">
         <span className="px-2 py-0.5 bg-blue-200 text-blue-800 text-xs rounded font-medium">我的批注</span>
+        <span className="px-2 py-0.5 bg-white/80 text-blue-700 text-xs rounded font-medium uppercase tracking-[0.12em]">
+          {annotation.annotation_type}
+        </span>
+        {annotation.short_label && (
+          <span className="px-2 py-0.5 bg-white text-blue-900 text-xs rounded font-semibold border border-blue-200">
+            {annotation.short_label}
+          </span>
+        )}
         <span className="text-sm font-medium text-blue-900">{annotation.author}</span>
         <span className={`px-2 py-0.5 text-xs rounded font-medium ${annotation.visibility === 'private' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
           {annotation.visibility}
