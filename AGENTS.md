@@ -28,11 +28,13 @@ With a brief, read ONLY the listed files. No speculative reads. If an unlisted f
 
 | File | Responsibility |
 |------|---------------|
-| `src/storage/models.py` | All ORM models: UserORM, TagORM, EmailORM, AnnotationORM, AnnotationRelationORM, KnowledgeEntityORM. 1209 lines. |
-| `src/storage/knowledge_store.py` | UnifiedAnnotationStore + KnowledgeStore. Main data access layer. 1282 lines. |
+| `src/storage/models.py` | All ORM models: UserORM, TagORM, EmailORM, AnnotationORM, AnnotationRelationORM, KnowledgeEntityORM. Large file. |
+| `src/storage/annotation_store.py` | Annotation persistence layer (read/write annotations). 37KB. Check here for annotation DB operations. |
+| `src/storage/knowledge_store.py` | KnowledgeStore. Knowledge entity data access. Large file. |
+| `src/storage/tag_store.py` | Tag persistence layer. 41KB. |
 | `src/api/routers/annotations.py` | Annotation CRUD + relation endpoints. 26KB. |
 | `src/api/routers/knowledge.py` | Knowledge entity CRUD. 26KB. |
-| `src/api/deps.py` | FastAPI dependencies (auth, db session). 24.8KB. |
+| `src/api/deps.py` | FastAPI dependencies (auth, db session). |
 | `src/api/schemas.py` | Shared Pydantic request/response schemas. |
 
 ### Stable — skip unless directly relevant
@@ -62,8 +64,8 @@ With a brief, read ONLY the listed files. No speculative reads. If an unlisted f
 
 | File | Responsibility |
 |------|---------------|
-| `web/src/api/client.ts` | All API fetch calls. 1436 lines. Check here before adding fetch calls to avoid duplicates. |
-| `web/src/api/types.ts` | All TypeScript types. 820 lines. Check here before defining new types. |
+| `web/src/api/client.ts` | All API fetch calls. Large file. Check here before adding fetch calls to avoid duplicates. |
+| `web/src/api/types.ts` | All TypeScript types. Check here before defining new types. |
 | `web/src/pages/KernelCodePage.tsx` | Main kernel code browser. 105KB. Largest file. |
 | `web/src/components/AnnotationRelationsPanel.tsx` | Annotation relation display. 21.9KB. |
 | `web/src/components/kernelCode/AnnotationPanel.tsx` | Annotation panel within kernel code view. 50.6KB. |
