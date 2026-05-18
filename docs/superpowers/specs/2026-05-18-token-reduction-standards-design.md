@@ -2,7 +2,8 @@
 
 **Date**: 2026-05-18  
 **Status**: Approved  
-**Goal**: Reduce per-feature token consumption via three complementary layers: code map, feature brief protocol, and tool usage rules.
+**Goal**: Reduce per-feature token consumption via three complementary layers: code map, feature brief protocol, and tool usage rules.  
+**Constraint**: Both Claude and Codex develop this project interchangeably. All cross-session context must live in git-tracked files — no AI-specific tools as primary mechanism.
 
 ---
 
@@ -10,7 +11,7 @@
 
 New feature development consumes excessive tokens primarily because AI agents explore the codebase from scratch each session. The project has ~78 Python files and ~78 TSX/TS files, with several large files (KernelCodePage.tsx at 105KB, models.py at 1209 lines, knowledge_store.py at 1282 lines). Without a code map, each feature begins with expensive free-form exploration.
 
-Existing mitigations (RTK at 43% savings, caveman mode, claude-mem) are only partially leveraged. No Feature Brief protocol exists, so AI cannot scope work before exploring.
+Existing mitigations (RTK at 43% savings, caveman mode, claude-mem) are only partially leveraged. No Feature Brief protocol exists, so AI cannot scope work before exploring. Additionally, the project is developed by both Claude and Codex interchangeably — claude-mem is unavailable to Codex, so any cross-session memory stored only in claude-mem is invisible to half the development workflow.
 
 ---
 
@@ -62,6 +63,31 @@ Give AI agents a single file to read before starting any task, replacing open-en
 ### Maintenance Rule
 When any feature adds/removes/renames a module or significantly changes a file's responsibility, update AGENTS.md in the same commit.
 
+### Architecture Decisions Log Section
+
+AGENTS.md also serves as the canonical cross-session memory for both Claude and Codex. After every feature, AI appends to this section:
+
+```markdown
+## Architecture Decisions Log
+<!-- Append after every feature. Format: `- YYYY-MM-DD: [decision] ([file reference])` -->
+- 2026-05-18: relation routes placed before catchall thread route (src/api/routers/annotations.py)
+- 2026-05-18: annotation count computed server-side not client-side (src/api/routers/annotations.py)
+```
+
+### Current Feature Context Section
+
+Used during active development. AI writes progress here; clears on feature completion.
+
+```markdown
+## Current Feature Context
+<!-- Active only during feature development. Clear when feature is merged. -->
+目标: [one sentence]
+影响模块: [file list]
+进度: [what's done / what's next]
+```
+
+This section lets a second AI (or resuming session) pick up mid-feature without re-exploring.
+
 ---
 
 ## Layer 2: Feature Brief Protocol
@@ -84,7 +110,7 @@ Every new feature request must include a Feature Brief in the first message. AI 
 1. Receive task → check for Feature Brief
 2. If missing → return template, do NOT explore code
 3. If present → read only listed files, skip all others
-4. After feature complete → record to claude-mem (see Layer 3)
+4. After feature complete → append to AGENTS.md Architecture Decisions Log; clear Current Feature Context section
 
 ### Example
 
@@ -110,21 +136,25 @@ With this brief, AI reads 4 files instead of exploring 156 files.
 | Find function definition | `Read` entire file | `LSP goToDefinition` or `smart-explore` |
 | Find all callers | `grep` full repo | `LSP findReferences` |
 | Read large file partially | `Read` (no limit) | `Read` with `offset` + `limit` |
-| Restore cross-session context | Re-explore codebase | `claude-mem get_observations` |
+| Restore cross-session context | Re-explore codebase | Read `AGENTS.md` (Architecture Decisions Log + Current Feature Context) |
+| Restore context (Claude only) | Re-explore codebase | `claude-mem get_observations` as supplement to AGENTS.md |
 | All communication | Normal prose | caveman full mode |
 | Shell commands | Direct bash | RTK proxy (auto via hook) |
 
-### Post-Feature Memory Protocol
+### Post-Feature Protocol (both Claude and Codex)
 
-After every feature is complete, AI must call claude-mem to record:
+After every feature is complete, AI must update AGENTS.md:
 
 ```
-1. Files modified: [list]
-2. New patterns introduced: [e.g., "AnnotationCard now accepts relationsCount prop"]
-3. Architecture decisions: [e.g., "count computed server-side, not client-side"]
+1. Append to Architecture Decisions Log:
+   - YYYY-MM-DD: [decision made] ([file:context])
+2. Clear Current Feature Context section
+3. Update High-Frequency file list if new key files added
 ```
 
-This prevents re-learning the same architecture in future sessions.
+Claude additionally calls claude-mem to record the same decisions (supplementary, not primary).
+
+This ensures both AIs share identical cross-session context via git.
 
 ### File Read Budget
 
@@ -156,7 +186,7 @@ When a Feature Brief is present, AI must read only the listed files plus their d
 | Metric | Current | Target |
 |--------|---------|--------|
 | Files read per feature | Unknown (untracked) | ≤ listed files + 2 |
-| Cross-session re-exploration | Common | Eliminated via claude-mem |
+| Cross-session re-exploration | Common | Eliminated via AGENTS.md (both AIs) |
 | Feature Brief adoption | 0% | 100% of new features |
 | RTK savings | 43.4% | 50%+ (more commands covered) |
 
