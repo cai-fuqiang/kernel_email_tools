@@ -10,7 +10,7 @@ import hashlib
 import logging
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -44,12 +44,31 @@ def _compute_context_hash(version: str, file_path: str, start_line: int, content
     return hashlib.sha256(raw.encode()).hexdigest()[:64]
 
 
+def _normalize_related_targets(related_targets: list[Any]) -> list[dict]:
+    """Convert related target inputs into a stable JSON-serializable shape."""
+    normalized: list[dict] = []
+    for item in related_targets or []:
+        raw = item.model_dump() if hasattr(item, "model_dump") else dict(item)
+        normalized.append(
+            {
+                "target_type": str(raw.get("target_type", "") or "").strip(),
+                "target_ref": str(raw.get("target_ref", "") or "").strip(),
+                "target_label": str(raw.get("target_label", "") or "").strip(),
+                "target_subtitle": str(raw.get("target_subtitle", "") or "").strip(),
+                "anchor": raw.get("anchor", {}) or {},
+                "role": str(raw.get("role", "") or "").strip(),
+            }
+        )
+    return normalized
+
+
 def _normalize_annotation_payload(annotation: AnnotationCreate) -> AnnotationCreate:
     """将邮件/代码便捷字段折叠到统一 target/anchor 结构。"""
     data = annotation.model_copy(deep=True)
 
     if not data.annotation_type:
         data.annotation_type = "email"
+    data.related_targets = _normalize_related_targets(data.related_targets)
 
     if data.annotation_type == "email":
         if not data.target_type:
@@ -143,7 +162,9 @@ class UnifiedAnnotationStore:
                 "author_user_id": ann.author_user_id,
                 "visibility": ann.visibility or "public",
                 "publish_status": ann.publish_status or "none",
+                "short_label": ann.short_label or "",
                 "body": ann.body,
+                "pinned": ann.pinned,
                 "parent_annotation_id": ann.parent_annotation_id or "",
                 "publish_requested_at": ann.publish_requested_at,
                 "publish_requested_by_user_id": ann.publish_requested_by_user_id,
@@ -156,6 +177,7 @@ class UnifiedAnnotationStore:
                 "target_ref": ann.target_ref or "",
                 "target_label": ann.target_label or "",
                 "target_subtitle": ann.target_subtitle or "",
+                "related_targets": ann.related_targets or [],
                 "anchor": anchor,
                 "thread_id": ann.thread_id or "",
                 "in_reply_to": ann.in_reply_to or "",
@@ -288,7 +310,9 @@ class UnifiedAnnotationStore:
                 author_user_id=actor_user_id or data.author_user_id,
                 visibility=data.visibility or "public",
                 publish_status=publish_status,
+                short_label=data.short_label or "",
                 body=data.body,
+                pinned=data.pinned,
                 parent_annotation_id=data.parent_annotation_id or None,
                 publish_requested_at=None,
                 publish_requested_by_user_id=None,
@@ -299,6 +323,7 @@ class UnifiedAnnotationStore:
                 target_ref=data.target_ref,
                 target_label=data.target_label or "",
                 target_subtitle=data.target_subtitle or "",
+                related_targets=data.related_targets or [],
                 anchor=data.anchor or {},
                 meta=data.meta or {},
                 thread_id=data.thread_id or "",
@@ -427,7 +452,9 @@ class UnifiedAnnotationStore:
             "author_user_id": ann.author_user_id,
             "visibility": ann.visibility or "public",
             "publish_status": ann.publish_status or "none",
+            "short_label": ann.short_label or "",
             "body": ann.body,
+            "pinned": ann.pinned,
             "parent_annotation_id": ann.parent_annotation_id or "",
             "publish_requested_at": ann.publish_requested_at.isoformat() if ann.publish_requested_at else None,
             "publish_requested_by_user_id": ann.publish_requested_by_user_id,
@@ -440,6 +467,7 @@ class UnifiedAnnotationStore:
             "target_ref": ann.target_ref,
             "target_label": ann.target_label or "",
             "target_subtitle": ann.target_subtitle or "",
+            "related_targets": ann.related_targets or [],
             "anchor": anchor,
             "thread_id": ann.thread_id or "",
             "in_reply_to": ann.in_reply_to or "",

@@ -26,6 +26,7 @@ from src.api.deps import (
     _resolve_user_from_session,
 )
 from src.api.schemas import (
+    AnnotationTargetRef,
     AnnotationRelationRequest,
     AnnotationRelationResponse,
     AnnotationRelationsResponse,
@@ -114,16 +115,22 @@ async def stats():
 
 class AnnotationCreateRequest(BaseModel):
     """创建标注请求。"""
-    annotation_type: Literal["email", "code", "sdm_spec"] = Field("email", description="标注类型")
+    annotation_type: Literal["email", "code", "sdm_spec", "excerpt", "claim", "note", "summary", "link"] = Field(
+        "email",
+        description="标注类型",
+    )
     body: str = Field(..., min_length=1, description="批注正文（支持 Markdown）")
     author: str = Field("", description="批注作者（留空使用默认作者）")
     visibility: str = Field("public", description="public | private")
 
     parent_annotation_id: str = Field("", description="父批注 ID，用于回复")
+    short_label: str = Field("", description="简短标签，适合知识卡片视图")
+    pinned: bool = Field(False, description="是否置顶")
     target_type: str = Field("", description="标注目标类型，如 email_thread / kernel_file / sdm_spec")
     target_ref: str = Field("", description="目标唯一引用")
     target_label: str = Field("", description="目标标题")
     target_subtitle: str = Field("", description="目标副标题")
+    related_targets: list[AnnotationTargetRef] = Field(default_factory=list, description="关联目标列表")
     anchor: dict = Field(default_factory=dict, description="目标内锚点")
     meta: dict = Field(default_factory=dict, description="扩展元数据")
 
@@ -267,14 +274,17 @@ async def create_annotation(
             AnnotationCreate(
                 annotation_type=request.annotation_type,
                 body=request.body,
+                short_label=request.short_label,
                 author=current_user.display_name,
                 author_user_id=current_user.user_id,
                 visibility=visibility,
+                pinned=request.pinned,
                 parent_annotation_id=parent_annotation_id,
                 target_type=request.target_type,
                 target_ref=request.target_ref,
                 target_label=request.target_label,
                 target_subtitle=request.target_subtitle,
+                related_targets=request.related_targets,
                 anchor=request.anchor,
                 meta=request.meta,
                 thread_id=request.thread_id,

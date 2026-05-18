@@ -6,16 +6,28 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
+class AnnotationTargetRef(BaseModel):
+    target_type: str
+    target_ref: str
+    target_label: str = ""
+    target_subtitle: str = ""
+    anchor: dict = Field(default_factory=dict)
+    role: str = ""
+
+
 class AnnotationResponse(BaseModel):
     annotation_id: str
     annotation_type: str = ""
+    short_label: str = ""
     body: str = ""
     author: str = ""
     author_user_id: str = ""
+    pinned: bool = False
     target_type: str = ""
     target_ref: str = ""
     target_label: str = ""
     target_subtitle: str = ""
+    related_targets: list[AnnotationTargetRef] = Field(default_factory=list)
     anchor: dict = Field(default_factory=dict)
     code_target: dict = Field(default_factory=dict)
     meta: dict = Field(default_factory=dict)
@@ -94,13 +106,16 @@ def _annotation_to_response(annotation: Any) -> AnnotationResponse:
     return AnnotationResponse(
         annotation_id=_get("annotation_id", ""),
         annotation_type=_get("annotation_type", ""),
+        short_label=_get("short_label", ""),
         body=_get("body", ""),
         author=_get("author", ""),
         author_user_id=_get("author_user_id", "") or "",
+        pinned=bool(_get("pinned", False)),
         target_type=_get("target_type", ""),
         target_ref=_get("target_ref", ""),
         target_label=_get("target_label", ""),
         target_subtitle=_get("target_subtitle", ""),
+        related_targets=_get("related_targets", []) or [],
         anchor=_get("anchor", {}) or {},
         code_target=_get("code_target", {}) or {},
         meta=_get("meta", {}) or {},
