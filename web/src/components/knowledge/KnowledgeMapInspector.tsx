@@ -66,7 +66,7 @@ export default function KnowledgeMapInspector({
       <div className="mt-2 text-base font-semibold text-slate-950">{selection.node.label}</div>
       <div className="mt-1 text-sm text-slate-500">{selection.node.subtitle}</div>
       <div className="mt-2 text-xs text-slate-500">{selection.node.target_ref}</div>
-      {onOpenObject && (
+      {onOpenObject && selection.node.navigable && (
         <button
           type="button"
           onClick={() => onOpenObject(selection.node.target_ref)}

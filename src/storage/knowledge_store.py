@@ -42,6 +42,70 @@ def normalize_slug(value: str) -> str:
     return slug or "entity"
 
 
+def _knowledge_annotation_target_types(entity) -> set[str]:
+    entity_type = str(getattr(entity, "entity_type", "") or "").strip()
+    target_types = {"knowledge_entity"}
+    if entity_type:
+        target_types.add(entity_type)
+    return target_types
+
+
+def _annotation_target_matches_entity(target, entity) -> bool:
+    if not target:
+        return False
+    return (
+        str(target.get("target_ref", "") or "").strip() == str(getattr(entity, "entity_id", "") or "").strip()
+        and str(target.get("target_type", "") or "").strip() in _knowledge_annotation_target_types(entity)
+    )
+
+
+def _annotation_references_entity(annotation, entity) -> bool:
+    primary_target = {
+        "target_type": getattr(annotation, "target_type", ""),
+        "target_ref": getattr(annotation, "target_ref", ""),
+    }
+    if _annotation_target_matches_entity(primary_target, entity):
+        return True
+
+    for related_target in getattr(annotation, "related_targets", []) or []:
+        if _annotation_target_matches_entity(related_target, entity):
+            return True
+    return False
+
+
+def _retarget_annotation_entity(annotation, source_entity, target_entity) -> bool:
+    changed = False
+    source_target_types = _knowledge_annotation_target_types(source_entity)
+    target_ref = str(getattr(target_entity, "entity_id", "") or "").strip()
+    target_type = str(getattr(target_entity, "entity_type", "") or "").strip()
+    target_label = str(getattr(target_entity, "canonical_name", "") or "").strip()
+
+    if (
+        str(getattr(annotation, "target_ref", "") or "").strip() == str(getattr(source_entity, "entity_id", "") or "").strip()
+        and str(getattr(annotation, "target_type", "") or "").strip() in source_target_types
+    ):
+        annotation.target_type = target_type
+        annotation.target_ref = target_ref
+        annotation.target_label = target_label
+        annotation.target_subtitle = target_type
+        changed = True
+
+    updated_related_targets = []
+    for related_target in getattr(annotation, "related_targets", []) or []:
+        normalized = dict(related_target or {})
+        if _annotation_target_matches_entity(normalized, source_entity):
+            normalized["target_type"] = target_type
+            normalized["target_ref"] = target_ref
+            normalized["target_label"] = target_label
+            normalized["target_subtitle"] = target_type
+            changed = True
+        updated_related_targets.append(normalized)
+
+    if changed:
+        annotation.related_targets = updated_related_targets
+    return changed
+
+
 class KnowledgeStore:
     """知识实体 CRUD 与检索。"""
 
@@ -747,16 +811,10 @@ class KnowledgeStore:
                 assignment.target_ref = target_entity_id
                 counts["tag_assignments"] += 1
 
-            ann_result = await session.execute(
-                select(AnnotationORM).where(
-                    AnnotationORM.target_type == "knowledge_entity",
-                    AnnotationORM.target_ref == source_entity_id,
-                )
-            )
+            ann_result = await session.execute(select(AnnotationORM))
             for annotation in ann_result.scalars().all():
-                annotation.target_ref = target_entity_id
-                annotation.target_label = target.canonical_name
-                counts["annotations"] += 1
+                if _retarget_annotation_entity(annotation, source, target):
+                    counts["annotations"] += 1
 
             ev_result = await session.execute(
                 select(KnowledgeEvidenceORM).where(KnowledgeEvidenceORM.entity_id == source_entity_id)

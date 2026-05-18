@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   KnowledgeMapAnnotationNode,
   KnowledgeMapModel,
@@ -42,6 +42,11 @@ export default function KnowledgeGraphView({
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(
     model.relatedObjectNodes[0]?.id ?? null,
   );
+
+  useEffect(() => {
+    setSelectedAnnotationId(model.annotationNodes[0]?.annotation_id ?? null);
+    setSelectedObjectId(model.relatedObjectNodes[0]?.id ?? null);
+  }, [model]);
 
   const filterCounts = useMemo(
     () => ({

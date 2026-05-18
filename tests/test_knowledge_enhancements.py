@@ -5,10 +5,16 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from src.api.routers.knowledge import KnowledgeImportRequest
-from src.storage.knowledge_store import normalize_slug
+from src.storage.knowledge_store import (
+    _annotation_references_entity,
+    _retarget_annotation_entity,
+    normalize_slug,
+)
 from src.storage.models import (
     KnowledgeEntityORM,
     KnowledgeEntityVersionORM,
@@ -124,3 +130,92 @@ class TestNormalizeSlug:
 
     def test_strips_leading_trailing_dashes(self):
         assert normalize_slug("---hello---") == "hello"
+
+
+class TestKnowledgeAnnotationRetargeting:
+    def test_annotation_reference_matches_primary_target(self):
+        annotation = SimpleNamespace(
+            target_type="concept",
+            target_ref="concept:src",
+            related_targets=[],
+        )
+        entity = SimpleNamespace(entity_id="concept:src", entity_type="concept")
+
+        assert _annotation_references_entity(annotation, entity) is True
+
+    def test_annotation_reference_matches_related_target(self):
+        annotation = SimpleNamespace(
+            target_type="commit",
+            target_ref="commit:abc123",
+            related_targets=[
+                {
+                    "target_type": "concept",
+                    "target_ref": "concept:src",
+                    "target_label": "Source",
+                    "target_subtitle": "concept",
+                    "anchor": {},
+                    "role": "context",
+                }
+            ],
+        )
+        entity = SimpleNamespace(entity_id="concept:src", entity_type="concept")
+
+        assert _annotation_references_entity(annotation, entity) is True
+
+    def test_retarget_annotation_updates_primary_and_related_targets(self):
+        annotation = SimpleNamespace(
+            target_type="concept",
+            target_ref="concept:src",
+            target_label="Source",
+            target_subtitle="concept",
+            related_targets=[
+                {
+                    "target_type": "concept",
+                    "target_ref": "concept:src",
+                    "target_label": "Source",
+                    "target_subtitle": "concept",
+                    "anchor": {},
+                    "role": "context",
+                },
+                {
+                    "target_type": "commit",
+                    "target_ref": "commit:abc123",
+                    "target_label": "abc123",
+                    "target_subtitle": "commit",
+                    "anchor": {},
+                    "role": "evidence",
+                },
+            ],
+        )
+        source = SimpleNamespace(entity_id="concept:src", entity_type="concept")
+        target = SimpleNamespace(entity_id="concept:dst", entity_type="feature_topic", canonical_name="Target")
+
+        changed = _retarget_annotation_entity(annotation, source, target)
+
+        assert changed is True
+        assert annotation.target_type == "feature_topic"
+        assert annotation.target_ref == "concept:dst"
+        assert annotation.target_label == "Target"
+        assert annotation.target_subtitle == "feature_topic"
+        assert annotation.related_targets[0]["target_type"] == "feature_topic"
+        assert annotation.related_targets[0]["target_ref"] == "concept:dst"
+        assert annotation.related_targets[0]["target_label"] == "Target"
+        assert annotation.related_targets[0]["target_subtitle"] == "feature_topic"
+        assert annotation.related_targets[1]["target_ref"] == "commit:abc123"
+
+    def test_retarget_annotation_supports_legacy_knowledge_entity_target_type(self):
+        annotation = SimpleNamespace(
+            target_type="knowledge_entity",
+            target_ref="concept:src",
+            target_label="Source",
+            target_subtitle="knowledge_entity",
+            related_targets=[],
+        )
+        source = SimpleNamespace(entity_id="concept:src", entity_type="concept")
+        target = SimpleNamespace(entity_id="concept:dst", entity_type="concept", canonical_name="Target")
+
+        changed = _retarget_annotation_entity(annotation, source, target)
+
+        assert changed is True
+        assert annotation.target_type == "concept"
+        assert annotation.target_ref == "concept:dst"

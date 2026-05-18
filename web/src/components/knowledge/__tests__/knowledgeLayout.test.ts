@@ -4,11 +4,12 @@ import { describe, expect, it } from 'vitest';
 import type { KnowledgeEntity, KnowledgeRelation } from '../../../api/types';
 import KnowledgeGraphView from '../../KnowledgeGraphView';
 import {
+  isKnowledgeMapObjectNavigable,
   buildSupportPanelItems,
   summarizeRelations,
   summarizeTimeline,
 } from '../knowledgeLayout';
-import type { KnowledgeMapModel } from '../knowledgeMap';
+import type { KnowledgeMapModel, KnowledgeMapObjectNode } from '../knowledgeMap';
 
 function entity(patch: Partial<KnowledgeEntity>): KnowledgeEntity {
   return {
@@ -74,6 +75,7 @@ function mapModel(): KnowledgeMapModel {
         label: 'abc123',
         subtitle: 'commit',
         role: '',
+        navigable: false,
       },
     ],
     edges: [
@@ -181,5 +183,33 @@ describe('knowledge layout helpers', () => {
     expect(html).toContain('Summaries');
     expect(html).toContain('Links');
     expect(html).toContain('Pinned notes');
+  });
+
+  it('treats non-knowledge targets as non-navigable map objects', () => {
+    const node: KnowledgeMapObjectNode = {
+      id: 'commit:abc123',
+      target_type: 'commit',
+      target_ref: 'commit:abc123',
+      label: 'abc123',
+      subtitle: 'commit',
+      role: '',
+      navigable: false,
+    };
+
+    expect(isKnowledgeMapObjectNavigable(node)).toBe(false);
+  });
+
+  it('treats supported knowledge entity targets as navigable map objects', () => {
+    const node: KnowledgeMapObjectNode = {
+      id: 'concept:memory-management',
+      target_type: 'concept',
+      target_ref: 'concept:memory-management',
+      label: 'Memory management',
+      subtitle: 'concept',
+      role: '',
+      navigable: true,
+    };
+
+    expect(isKnowledgeMapObjectNavigable(node)).toBe(true);
   });
 });

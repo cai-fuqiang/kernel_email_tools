@@ -1,5 +1,5 @@
 import type { AnnotationListItem, AnnotationTargetRef, KnowledgeEntity } from '../../api/types';
-import { annotationDisplayLabel, isPromotedKnowledgeAnnotation } from './knowledgeUtils';
+import { ENTITY_TYPES, annotationDisplayLabel, isPromotedKnowledgeAnnotation } from './knowledgeUtils';
 
 export type KnowledgeMapCenterNode = {
   id: string;
@@ -26,6 +26,7 @@ export type KnowledgeMapObjectNode = {
   label: string;
   subtitle: string;
   role: string;
+  navigable: boolean;
 };
 
 export type KnowledgeMapEdge = {
@@ -57,6 +58,7 @@ function toRelatedObjectNode(target: AnnotationTargetRef): KnowledgeMapObjectNod
     label: target.target_label || target.target_ref,
     subtitle: target.target_subtitle || target.target_type,
     role: target.role || '',
+    navigable: ENTITY_TYPES.includes(target.target_type),
   };
 }
 

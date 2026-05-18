@@ -7,8 +7,7 @@ import type {
 import type { KnowledgeMapModel } from './knowledgeMap';
 import { RELATION_TYPES, relationEntityName, relationLabel } from './knowledgeUtils';
 
-// Lazy-load the graph view because cytoscape (~6 MB) is the heaviest dep on this page.
-// Users only need it when they switch to graph mode.
+// Lazy-load the map view so the main knowledge workbench stays lighter on first paint.
 const KnowledgeGraphView = lazy(() => import('../KnowledgeGraphView'));
 
 export interface RelationForm {
@@ -175,6 +174,7 @@ export default function EntityRelationsPanel({
               }
             >
               <KnowledgeGraphView
+                key={knowledgeMapModel.centerNode.id}
                 model={knowledgeMapModel}
                 onNodeClick={(entityId) => onSelectEntity(entityId)}
               />
