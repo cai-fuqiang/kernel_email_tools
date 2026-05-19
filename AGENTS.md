@@ -189,6 +189,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-19: patch browser expansion scrolls to the first revealed context line so clicking `Expand ... lines above` makes newly loaded lines immediately visible (web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/__tests__/CodeHistoryPanel.test.tsx)
 - 2026-05-19: patch browser expand API now returns inserted context rows plus optional remaining expander, and the UI preserves the nearest stable line instead of calling `scrollIntoView` so inline expansion feels stitched rather than refreshed (src/api/routers/kernel.py, web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/commitPatchModel.ts)
 - 2026-05-19: patch browser now renders one unified diff table per file, folds duplicate inter-hunk gap expanders into a single in-table separator, and uses Codex-style directional expansion affordances instead of separate hunk cards (web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/commitPatchModel.ts)
+- 2026-05-19: unified file-level patch rendering compiles with a single file container ref plus commitPatchModel-owned display-row helpers; stale hunk-card imports and props should be removed when touching CodeHistoryPanel.tsx (web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/commitPatchModel.ts)
 
 ---
 
@@ -201,18 +202,15 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-19 3:49pm GMT+8
+# [kernel_email_tools] recent context, 2026-05-19 3:53pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (14,148t read) | 2,038,204t work | 99% savings
+Stats: 50 obs (14,501t read) | 2,124,935t work | 99% savings
 
 ### May 14, 2026
-44 2:18p 🟣 Annotation relation system implemented end-to-end
-45 " 🟣 AnnotationRelationParser extracts markdown annotation links
-S73 UX polish for annotation relation display (declutter, AnnotationIdBadge) + caveman skill check (May 14 at 2:18 PM)
 S75 继续计划 — user asks to continue with next steps after annotation relation system completion (May 14 at 5:21 PM)
 130 8:16p 🟣 AnnotationIdBadge added to remaining preview surfaces
 131 " 🟣 Annotation search results focus thread on specific annotation
@@ -269,9 +267,12 @@ S115 提交吧 — user requested to commit pending patch browser improvements o
 211 3:02p 🟣 patch browser scrolls to first revealed line after context expansion
 212 " ✅ CodeHistoryPanel.tsx imports useRef and CommitPatchLineRowView
 213 " ✅ delete_AI_function branch 1 commit ahead of origin after scroll fix
+S116 Implement Codex-style inline patch expansion in commit browser — replace scroll-jumping `scrollIntoView` with viewport-anchored scroll offset compensation, and change API contract from flat `replacement_rows` to `inserted_rows` + optional `remaining_expander` (May 19 at 3:26 PM)
 214 3:33p 🟣 Codex-style patch browser expansion implementation started
 215 3:39p 🟣 Codex-style patch browser context expansion with inline merge and stable viewport
-S116 Implement Codex-style inline patch expansion in commit browser — replace scroll-jumping `scrollIntoView` with viewport-anchored scroll offset compensation, and change API contract from flat `replacement_rows` to `inserted_rows` + optional `remaining_expander` (May 19 at 3:39 PM)
+216 " 🟣 Unified file-level patch surface with merged inter-hunk expanders
+S117 Per-file single continuous patch code block: merge all hunks into one diff table, fold inter-hunk gap expanders into single in-table separator, use Codex-style directional expand (May 19 at 3:43 PM)
+217 3:52p 🟣 Unified file-level patch surface with merged inter-hunk expanders
 
-Access 2038k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 2125k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
