@@ -144,6 +144,28 @@ function buildExpanderKey(hunkKey: string, rowId: string, direction: 'up' | 'dow
   return `${hunkKey}::${rowId}::${direction}`;
 }
 
+export function buildCommitPatchExpandPayload({
+  commitVersion,
+  commitHash,
+  filePath,
+  action,
+}: {
+  commitVersion: string;
+  commitHash: string;
+  filePath: string;
+  action: CommitPatchDisplayExpanderActionView;
+}) {
+  return {
+    version: commitVersion,
+    commit_hash: commitHash,
+    file_path: filePath,
+    hunk_header: action.hunk.header,
+    // `expandKey` is stable per hunk span; `id` is only a display-row identifier.
+    expander_id: action.row.expandKey || action.row.id,
+    direction: action.direction,
+  };
+}
+
 export function buildPatchRowAnchor(row: Pick<CommitPatchLineRowView, 'oldLine' | 'newLine'>): string {
   return `${row.oldLine ?? 'n'}:${row.newLine ?? 'n'}`;
 }
@@ -996,14 +1018,14 @@ export function CommitPatchBrowser({
       return next;
     });
     try {
-      const response = await expandKernelCommitPatchHunk({
-        version: commitVersion,
-        commit_hash: commitHash,
-        file_path: file.path,
-        hunk_header: action.hunk.header,
-        expander_id: action.row.id,
-        direction: action.direction,
-      });
+      const response = await expandKernelCommitPatchHunk(
+        buildCommitPatchExpandPayload({
+          commitVersion,
+          commitHash,
+          filePath: file.path,
+          action,
+        }),
+      );
       const insertedRows = normalizePatchRows(response.inserted_rows);
       const remainingExpander = normalizePatchExpander(response.remaining_expander);
       setRowsByHunk((current) => {

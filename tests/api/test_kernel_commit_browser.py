@@ -294,6 +294,58 @@ index 1111111..2222222 100644
     }
 
 
+def test_expand_commit_hunk_uses_expand_key_when_hunk_headers_repeat(monkeypatch):
+    patch = """diff --git a/mm/mmap.c b/mm/mmap.c
+index 1111111..2222222 100644
+--- a/mm/mmap.c
++++ b/mm/mmap.c
+@@ -10,1 +10,1 @@ static int demo(void)
+-line_10_old
++line_10_new
+@@ -30,1 +30,1 @@ static int demo(void)
+-line_30_old
++line_30_new
+"""
+
+    async def _fake_run_local_git(_source, *args, **_kwargs):
+        if args[:4] == ("show", "--no-ext-diff", "--find-renames", "--format="):
+            return patch
+        if args[:2] == ("show", "abcd1234:mm/mmap.c"):
+            return "\n".join([f"line_{index}" for index in range(1, 60)]) + "\n"
+        raise AssertionError(args)
+
+    monkeypatch.setattr(kernel, "_local_git_source", lambda: object())
+    monkeypatch.setattr(kernel, "_run_local_git", _fake_run_local_git)
+
+    response = asyncio.run(kernel.kernel_commit_patch_expand(
+        payload=kernel.KernelCommitPatchExpandRequest(
+            version="v6.6",
+            commit_hash="abcd1234",
+            file_path="mm/mmap.c",
+            hunk_header="@@ -30,1 +30,1 @@ static int demo(void)",
+            expander_id="abcd1234:mm/mmap.c:30:30:up",
+            direction="up",
+        ),
+    ))
+
+    assert response["hunk_header"] == "@@ -30,1 +30,1 @@ static int demo(void)"
+    assert response["inserted_rows"][0] == {
+        "type": "line",
+        "kind": "context",
+        "text": "line_11",
+        "old_line": 11,
+        "new_line": 11,
+    }
+    assert response["inserted_rows"][-1] == {
+        "type": "line",
+        "kind": "context",
+        "text": "line_29",
+        "old_line": 29,
+        "new_line": 29,
+    }
+    assert response["remaining_expander"] is None
+
+
 def test_attach_hunk_targets_uses_first_hunk_as_file_level_anchor():
     files = [{
         "path": "mm/mmap.c",

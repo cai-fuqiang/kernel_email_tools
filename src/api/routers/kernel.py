@@ -416,6 +416,33 @@ class KernelCommitPatchExpandRequest(BaseModel):
     direction: str = Field(..., pattern="^(up|down)$")
 
 
+def _find_patch_expander(file_entry: dict, *, hunk_header: str, expander_id: str, direction: str) -> tuple[dict | None, dict | None]:
+    def _match(rows: list[dict]) -> dict | None:
+        return next(
+            (
+                row
+                for row in rows
+                if row["type"] == "expander"
+                and row.get("direction") == direction
+                and (row.get("expand_key") == expander_id or row.get("id") == expander_id)
+            ),
+            None,
+        )
+
+    header_matches = [item for item in file_entry.get("hunks", []) if item.get("header") == hunk_header]
+    for hunk in header_matches:
+        expander = _match(hunk.get("rows", []))
+        if expander is not None:
+            return hunk, expander
+
+    for hunk in file_entry.get("hunks", []):
+        expander = _match(hunk.get("rows", []))
+        if expander is not None:
+            return hunk, expander
+
+    return None, None
+
+
 async def _load_commit_file_lines(
     source: GitLocalSource,
     commit_hash: str,
@@ -1138,13 +1165,14 @@ async def kernel_commit_patch_expand(
     file_entry = next((item for item in files if item["path"] == payload.file_path), None)
     if file_entry is None:
         raise HTTPException(status_code=404, detail="Patch file not found")
-    hunk = next((item for item in file_entry["hunks"] if item["header"] == payload.hunk_header), None)
+    hunk, expander = _find_patch_expander(
+        file_entry,
+        hunk_header=payload.hunk_header,
+        expander_id=payload.expander_id,
+        direction=payload.direction,
+    )
     if hunk is None:
         raise HTTPException(status_code=404, detail="Patch hunk not found")
-    expander = next(
-        (row for row in hunk["rows"] if row["type"] == "expander" and row["id"] == payload.expander_id),
-        None,
-    )
     if expander is None:
         raise HTTPException(status_code=404, detail="Patch expander not found")
 

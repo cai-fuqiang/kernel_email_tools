@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   CommitPatchBrowserView,
+  buildCommitPatchExpandPayload,
   buildCommitPatchModel,
   buildPatchRowAnchor,
   findExpansionViewportAnchor,
@@ -275,5 +276,49 @@ describe('CodeHistoryPanel commit patch browser', () => {
     expect(countOccurrences(flattenText(tree), 'Jump to nearest tag')).toBe(1);
     expect(flattenText(tree)).not.toContain('@@ -10,1 +10,1 @@');
     expect(flattenText(tree)).not.toContain('@@ -23,1 +23,1 @@');
+  });
+
+  it('builds expand requests from the expander expand key instead of the display row id', () => {
+    expect(
+      buildCommitPatchExpandPayload({
+        commitVersion: 'v6.6',
+        commitHash: 'abcd1234',
+        filePath: 'mm/mmap.c',
+        action: {
+          key: 'mm/mmap.c::@@ -30,1 +30,1 @@::1::up',
+          direction: 'up',
+          hunkKey: 'mm/mmap.c::@@ -30,1 +30,1 @@::1',
+          hunk: {
+            header: '@@ -30,1 +30,1 @@ static int demo(void)',
+            old_start: 30,
+            old_count: 1,
+            new_start: 30,
+            new_count: 1,
+            rows: [],
+            currentVersionTarget: { available: true, version: 'v6.6', path: 'mm/mmap.c', line: 30, reason: null },
+            nearestTagTarget: { available: true, version: 'v6.5', path: 'mm/mmap.c', line: 30, reason: null },
+          },
+          row: {
+            type: 'expander',
+            id: 'mm/mmap.c:@@ -30,1 +30,1 @@ static int demo(void):up',
+            direction: 'up',
+            hiddenCount: 19,
+            stepSize: 20,
+            oldStart: 11,
+            oldEnd: 29,
+            newStart: 11,
+            newEnd: 29,
+            expandKey: 'abcd1234:mm/mmap.c:30:30:up',
+          },
+        },
+      }),
+    ).toEqual({
+      version: 'v6.6',
+      commit_hash: 'abcd1234',
+      file_path: 'mm/mmap.c',
+      hunk_header: '@@ -30,1 +30,1 @@ static int demo(void)',
+      expander_id: 'abcd1234:mm/mmap.c:30:30:up',
+      direction: 'up',
+    });
   });
 });

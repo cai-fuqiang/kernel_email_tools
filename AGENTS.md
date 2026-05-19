@@ -195,6 +195,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-19: unified file-level patch rendering compiles with a single file container ref plus commitPatchModel-owned display-row helpers; stale hunk-card imports and props should be removed when touching CodeHistoryPanel.tsx (web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/commitPatchModel.ts)
 - 2026-05-19: AGENTS.md now requires per-feature commits, sync to `home_pc`, and frontend-design verification against `http://aliyun.cloud.vm:8080` when available (AGENTS.md)
 - 2026-05-19: commit patch navigation actions now live on file patch objects while hunk headers remain model-only and are not rendered inside the diff table (src/api/routers/kernel.py, web/src/components/kernelCode/commitPatchModel.ts, web/src/components/kernelCode/CodeHistoryPanel.tsx)
+- 2026-05-19: commit patch expansion requests now use expander `expand_key` identity so repeated hunk headers still expand the intended hidden span (src/api/routers/kernel.py, web/src/components/kernelCode/CodeHistoryPanel.tsx, tests/api/test_kernel_commit_browser.py, web/src/components/kernelCode/__tests__/CodeHistoryPanel.test.tsx)
 
 ---
 
@@ -207,7 +208,7 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-19 4:17pm GMT+8
+# [kernel_email_tools] recent context, 2026-05-19 4:30pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
@@ -225,7 +226,6 @@ Stats: 50 obs (14,274t read) | 1,952,784t work | 99% savings
 148 9:05p ✅ Annotation relations system verification complete
 141 9:42p 🟣 Installed caveman skill from external GitHub repo
 149 10:28p 🔵 virtio_net module fails to load due to missing net_failover symbols
-S112 GitHub-style kernel commit patch browser redesign - replace split dual-`pre` patch preview with unified diff table with inline context expanders, backend row-based hunk model, and expansion API endpoint (May 14 at 10:38 PM)
 ### May 18, 2026
 180 10:57p 🔴 Fix merge_entities annotation retargeting for legacy knowledge_entity type
 181 " 🔴 Fix KnowledgeGraphView stale selection when model entity changes
@@ -278,6 +278,15 @@ S120 Session resume - still awaiting Feature Brief before code changes begin in 
 S118 Discuss UI gap removal and file-level granularity for "open in current version" and "open in nested gap" features in kernel_email_tools project (May 19 at 4:06 PM)
 S119 Discuss UI gap removal and file-level granularity for navigation features in kernel_email_tools; agent awaits Feature Brief per AGENTS.md conventions (May 19 at 4:06 PM)
 220 " ⚖️ Superpowers workflow initiated for kernel_email_tools feature
+S121 Added gap navigation feature - user confirmed brief, brainstorming begins (May 19 at 4:07 PM)
+**Investigated**: Project context explored via AGENTS.md and skill configs (brainstorming, TDD, verification-before-completion loaded)
+
+**Learned**: Feature Brief confirmed by user. Superpowers workflow in progress: brainstorming → design → TDD → verification.
+
+**Completed**: Feature Brief confirmed ("确认"). Skill pipeline loaded for structured development workflow.
+
+**Next Steps**: Brainstorming phase active - agent exploring project structure to propose design approaches for gap navigation feature at file-level granularity.
+
 
 Access 1953k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
