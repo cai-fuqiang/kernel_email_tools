@@ -87,6 +87,40 @@ class DraftApplyResponse(BaseModel):
     errors: list[dict] = Field(default_factory=list)
 
 
+class ManualDocumentTocNode(BaseModel):
+    id: str
+    label: str
+    page: int = Field(..., ge=1)
+    children: list["ManualDocumentTocNode"] = Field(default_factory=list)
+
+
+class ManualDocumentSearchHit(BaseModel):
+    id: str
+    page: int = Field(..., ge=1)
+    preview: str = ""
+    match_index: int = Field(..., ge=0)
+    start: int = Field(..., ge=0)
+    end: int = Field(..., ge=0)
+
+
+class ManualDocumentPageText(BaseModel):
+    page: int = Field(..., ge=1)
+    text: str = ""
+
+
+class ManualDocumentViewResponse(BaseModel):
+    document_id: str
+    title: str
+    subtitle: str = ""
+    manual_type: str
+    manual_version: str = ""
+    pdf_url: str
+    page_count: int = Field(..., ge=1)
+    initial_page: int = Field(..., ge=1)
+    toc: list[ManualDocumentTocNode] = Field(default_factory=list)
+    page_text: list[ManualDocumentPageText] = Field(default_factory=list)
+
+
 def _annotation_to_response(annotation: Any) -> AnnotationResponse:
     """Convert an AnnotationRead / AnnotationORM-like object to AnnotationResponse.
 

@@ -2,8 +2,9 @@
 
 import json
 import logging
+import os
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from sqlalchemy import select, text, delete, func
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
@@ -14,6 +15,22 @@ from src.storage.base import BaseStorage
 from src.storage.document_models import DocumentBase, DocumentChunkModel
 
 logger = logging.getLogger(__name__)
+
+
+def build_document_id(manual_type: str, manual_version: str) -> str:
+    normalized_type = (manual_type or "").strip() or "document"
+    normalized_version = (manual_version or "").strip() or "default"
+    return f"{normalized_type}:{normalized_version}"
+
+
+def parse_document_id(document_id: str) -> tuple[str, str]:
+    raw = (document_id or "").strip()
+    if not raw:
+        return "document", "default"
+    if ":" not in raw:
+        return raw, "default"
+    manual_type, manual_version = raw.split(":", 1)
+    return manual_type or "document", manual_version or "default"
 
 
 class DocumentStorage(BaseStorage):
@@ -271,6 +288,139 @@ class DocumentStorage(BaseStorage):
                 "by_manual_type": by_type,
                 "by_content_type": by_content_type,
             }
+
+    async def get_document_view(self, document_id: str) -> Optional[dict[str, Any]]:
+        manual_type, manual_version = parse_document_id(document_id)
+        chunks = await self.get_chunks_by_manual(
+            manual_type=manual_type,
+            manual_version="" if manual_version == "default" else manual_version,
+        )
+        if not chunks:
+            return None
+
+        sorted_chunks = sorted(
+            chunks,
+            key=lambda chunk: (
+                chunk.page_start,
+                chunk.page_end,
+                chunk.volume,
+                chunk.chapter,
+                chunk.section,
+                chunk.chunk_id,
+            ),
+        )
+        first = sorted_chunks[0]
+        last = sorted_chunks[-1]
+        page_count = max(chunk.page_end for chunk in sorted_chunks) + 1
+
+        volume_nodes: dict[str, dict[str, Any]] = {}
+        page_text_map: dict[int, list[str]] = {}
+
+        for chunk in sorted_chunks:
+            page_number = max(chunk.page_start + 1, 1)
+            page_text_map.setdefault(page_number, []).append(chunk.content or "")
+
+            volume_key = chunk.volume or "Document"
+            chapter_key = chunk.chapter or "0"
+            section_label = chunk.section_title or chunk.section or f"Page {page_number}"
+
+            volume_node = volume_nodes.setdefault(
+                volume_key,
+                {
+                    "id": f"volume:{volume_key}",
+                    "label": volume_key,
+                    "page": page_number,
+                    "children": {},
+                },
+            )
+            volume_node["page"] = min(volume_node["page"], page_number)
+
+            chapter_node = volume_node["children"].setdefault(
+                chapter_key,
+                {
+                    "id": f"volume:{volume_key}:chapter:{chapter_key}",
+                    "label": f"Chapter {chapter_key}" if chapter_key else volume_key,
+                    "page": page_number,
+                    "children": [],
+                },
+            )
+            chapter_node["page"] = min(chapter_node["page"], page_number)
+
+            section_id = f"{chunk.section}:{page_number}"
+            if not any(node["id"] == section_id for node in chapter_node["children"]):
+                chapter_node["children"].append(
+                    {
+                        "id": section_id,
+                        "label": section_label,
+                        "page": page_number,
+                        "children": [],
+                    }
+                )
+
+        toc = []
+        for volume_node in volume_nodes.values():
+            chapter_children = list(volume_node["children"].values())
+            chapter_children.sort(key=lambda item: (item["page"], item["label"]))
+            for child in chapter_children:
+                child["children"].sort(key=lambda item: (item["page"], item["label"]))
+            toc.append(
+                {
+                    "id": volume_node["id"],
+                    "label": volume_node["label"],
+                    "page": volume_node["page"],
+                    "children": chapter_children,
+                }
+            )
+        toc.sort(key=lambda item: (item["page"], item["label"]))
+
+        page_text = [
+            {
+                "page": page,
+                "text": "\n\n".join(part.strip() for part in texts if part.strip()),
+            }
+            for page, texts in sorted(page_text_map.items())
+        ]
+
+        pdf_path = self._extract_pdf_path(first.metadata if isinstance(first.metadata, dict) else {})
+        title = first.section_title or first.section or build_document_id(first.manual_type, first.manual_version)
+        subtitle_parts = [part for part in [first.manual_type, first.manual_version, first.volume] if part]
+
+        return {
+            "document_id": build_document_id(first.manual_type, first.manual_version),
+            "title": title,
+            "subtitle": " | ".join(subtitle_parts),
+            "manual_type": first.manual_type,
+            "manual_version": first.manual_version,
+            "pdf_url": f"/api/manual/documents/{build_document_id(first.manual_type, first.manual_version)}/file",
+            "pdf_path": pdf_path,
+            "page_count": page_count,
+            "initial_page": max(first.page_start + 1, 1),
+            "toc": toc,
+            "page_text": page_text,
+            "first_page": max(first.page_start + 1, 1),
+            "last_page": max(last.page_end + 1, 1),
+        }
+
+    async def get_document_pdf_path(self, document_id: str) -> Optional[str]:
+        view = await self.get_document_view(document_id)
+        if not view:
+            return None
+        pdf_path = str(view.get("pdf_path") or "").strip()
+        return pdf_path or None
+
+    @staticmethod
+    def _extract_pdf_path(metadata: dict[str, Any]) -> str:
+        candidates = [
+            metadata.get("pdf_path"),
+            metadata.get("source_pdf_path"),
+            metadata.get("source_path"),
+            metadata.get("document_path"),
+        ]
+        for value in candidates:
+            raw = str(value or "").strip()
+            if raw and os.path.exists(raw):
+                return raw
+        return ""
 
     async def close(self) -> None:
         """关闭数据库连接。"""

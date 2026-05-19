@@ -73,6 +73,7 @@ export default function App() {
                 <Route path="/knowledge" element={<KnowledgePage />} />
                 <Route path="/annotations" element={<AnnotationsPage />} />
                 <Route path="/manual/search" element={<ManualSearchPage />} />
+                <Route path="/manual/search/:documentId" element={<ManualSearchPage />} />
                 <Route path="/kernel-code" element={<KernelCodePage />} />
                 <Route path="/kernel-code/preview" element={<KernelSymbolPreviewPage />} />
                 <Route path="/kernel-code/annotation-preview" element={<KernelAnnotationPreviewPage />} />

@@ -10,6 +10,7 @@ import type {
   AuthSession,
   CurrentUser,
   LoginResult,
+  ManualDocumentView,
   ManualSearchResponse,
   ManualStatsResponse,
   Annotation,
@@ -569,6 +570,10 @@ export async function searchManuals(
 
 export async function getManualStats(): Promise<ManualStatsResponse> {
   return fetchJSON<ManualStatsResponse>(`${API_BASE}/manual/stats`);
+}
+
+export async function getManualDocumentView(documentId: string): Promise<ManualDocumentView> {
+  return fetchJSON<ManualDocumentView>(`${API_BASE}/manual/documents/${encodeURIComponent(documentId)}`);
 }
 
 // ============================================================

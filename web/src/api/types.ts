@@ -351,6 +351,7 @@ export interface StatsResponse {
 // 芯片手册相关类型
 export interface ManualSearchHit {
   chunk_id: string;
+  document_id: string;
   manual_type: string;
   manual_version: string;
   volume: string;
@@ -374,6 +375,31 @@ export interface ManualSearchResponse {
   mode: string;
   total: number;
   hits: ManualSearchHit[];
+}
+
+export interface ManualDocumentTocNode {
+  id: string;
+  label: string;
+  page: number;
+  children: ManualDocumentTocNode[];
+}
+
+export interface ManualDocumentPageText {
+  page: number;
+  text: string;
+}
+
+export interface ManualDocumentView {
+  document_id: string;
+  title: string;
+  subtitle: string;
+  manual_type: string;
+  manual_version: string;
+  pdf_url: string;
+  page_count: number;
+  initial_page: number;
+  toc: ManualDocumentTocNode[];
+  page_text: ManualDocumentPageText[];
 }
 
 export interface ManualSourceRef {

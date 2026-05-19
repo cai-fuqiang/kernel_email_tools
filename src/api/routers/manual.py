@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 
@@ -22,8 +23,14 @@ from src.api.deps import (
     _local_auth_config, _header_name, _pbkdf2_iterations, _fallback_user,
     _resolve_user_from_session,
 )
-from src.api.schemas import AnnotationResponse, DraftApplyRequest, DraftApplyResponse
+from src.api.schemas import (
+    AnnotationResponse,
+    DraftApplyRequest,
+    DraftApplyResponse,
+    ManualDocumentViewResponse,
+)
 from src.retriever.manual import ManualSearchQuery
+from src.storage.document_store import build_document_id
 
 router = APIRouter(tags=["manual"])
 
@@ -98,6 +105,7 @@ async def manual_search(
                 "page_end": h.page_end + 1,
                 "score": round(h.score, 4),
                 "snippet": h.snippet,
+                "document_id": build_document_id(h.manual_type, h.manual_version),
                 "target_type": "document_chunk",
                 "target_ref": h.chunk_id,
                 "target_label": h.section_title or h.section or h.chunk_id,
@@ -113,6 +121,36 @@ async def manual_search(
             for h in result.hits
         ],
     )
+
+
+@router.get("/api/manual/documents/{document_id}", response_model=ManualDocumentViewResponse)
+async def manual_document_view(document_id: str):
+    """Return a reader-friendly view model for one imported PDF document."""
+    if not state._manual_storage:
+        raise HTTPException(
+            status_code=503,
+            detail="Manual storage not initialized. Please configure storage.manual in settings.yaml",
+        )
+
+    payload = await state._manual_storage.get_document_view(document_id)
+    if not payload:
+        raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
+    return ManualDocumentViewResponse.model_validate(payload)
+
+
+@router.get("/api/manual/documents/{document_id}/file")
+async def manual_document_file(document_id: str):
+    """Serve the source PDF file for the reader view when a local file path is known."""
+    if not state._manual_storage:
+        raise HTTPException(
+            status_code=503,
+            detail="Manual storage not initialized. Please configure storage.manual in settings.yaml",
+        )
+
+    pdf_path = await state._manual_storage.get_document_pdf_path(document_id)
+    if not pdf_path:
+        raise HTTPException(status_code=404, detail=f"PDF file for document {document_id} not found")
+    return FileResponse(pdf_path, media_type="application/pdf")
 
 
 @router.get("/api/manual/ask", response_model=ManualAskResponse)
