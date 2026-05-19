@@ -44,6 +44,7 @@ With a brief, read ONLY the listed files. No speculative reads. If an unlisted f
 5. Use `rtk` for shell commands.
 6. Keep responses short by default: decision first, details only when needed.
 7. Summarize findings once. Do not restate the same context in multiple messages.
+8. For frontend design work, prefer verifying against `http://aliyun.cloud.vm:8080` when it is available.
 
 ---
 
@@ -172,6 +173,8 @@ After every feature is complete, ALL AI agents must:
    `- YYYY-MM-DD: [decision] ([file reference])`
 2. Clear **Current Feature Context** section below
 3. Update High-Frequency table above if new key files added
+4. Commit the completed feature or bugfix before ending the task
+5. Sync the committed state to `home_pc:~/workspace/kernel_email_tools`
 
 ---
 
@@ -190,6 +193,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-19: patch browser expand API now returns inserted context rows plus optional remaining expander, and the UI preserves the nearest stable line instead of calling `scrollIntoView` so inline expansion feels stitched rather than refreshed (src/api/routers/kernel.py, web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/commitPatchModel.ts)
 - 2026-05-19: patch browser now renders one unified diff table per file, folds duplicate inter-hunk gap expanders into a single in-table separator, and uses Codex-style directional expansion affordances instead of separate hunk cards (web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/commitPatchModel.ts)
 - 2026-05-19: unified file-level patch rendering compiles with a single file container ref plus commitPatchModel-owned display-row helpers; stale hunk-card imports and props should be removed when touching CodeHistoryPanel.tsx (web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/commitPatchModel.ts)
+- 2026-05-19: AGENTS.md now requires per-feature commits, sync to `home_pc`, and frontend-design verification against `http://aliyun.cloud.vm:8080` when available (AGENTS.md)
 
 ---
 
@@ -202,18 +206,17 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-19 3:53pm GMT+8
+# [kernel_email_tools] recent context, 2026-05-19 3:59pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (14,501t read) | 2,124,935t work | 99% savings
+Stats: 50 obs (14,447t read) | 2,075,020t work | 99% savings
 
 ### May 14, 2026
 S75 继续计划 — user asks to continue with next steps after annotation relation system completion (May 14 at 5:21 PM)
 130 8:16p 🟣 AnnotationIdBadge added to remaining preview surfaces
-131 " 🟣 Annotation search results focus thread on specific annotation
 S88 Confirm how annotation relationships are displayed (May 14 at 8:16 PM)
 134 " 🟣 Shareable annotation links via AnnotationIdBadge
 142 8:19p 🟣 Added shareable annotation deep links with copy-to-clipboard
@@ -273,6 +276,7 @@ S116 Implement Codex-style inline patch expansion in commit browser — replace 
 216 " 🟣 Unified file-level patch surface with merged inter-hunk expanders
 S117 Per-file single continuous patch code block: merge all hunks into one diff table, fold inter-hunk gap expanders into single in-table separator, use Codex-style directional expand (May 19 at 3:43 PM)
 217 3:52p 🟣 Unified file-level patch surface with merged inter-hunk expanders
+218 3:57p ⚖️ Configured AGENT.md with commit-and-sync workflow
 
-Access 2125k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 2075k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
