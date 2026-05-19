@@ -196,6 +196,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-19: AGENTS.md now requires per-feature commits, sync to `home_pc`, and frontend-design verification against `http://aliyun.cloud.vm:8080` when available (AGENTS.md)
 - 2026-05-19: commit patch navigation actions now live on file patch objects while hunk headers remain model-only and are not rendered inside the diff table (src/api/routers/kernel.py, web/src/components/kernelCode/commitPatchModel.ts, web/src/components/kernelCode/CodeHistoryPanel.tsx)
 - 2026-05-19: commit patch expansion requests now use expander `expand_key` identity so repeated hunk headers still expand the intended hidden span (src/api/routers/kernel.py, web/src/components/kernelCode/CodeHistoryPanel.tsx, tests/api/test_kernel_commit_browser.py, web/src/components/kernelCode/__tests__/CodeHistoryPanel.test.tsx)
+- 2026-05-19: upward patch expansion keeps newly revealed lines in view by skipping anchor-preserving scroll compensation for `up` actions while retaining it for `down` actions (web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/__tests__/CodeHistoryPanel.test.tsx)
 
 ---
 
@@ -208,7 +209,7 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-19 4:30pm GMT+8
+# [kernel_email_tools] recent context, 2026-05-19 4:54pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE

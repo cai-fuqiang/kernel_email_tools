@@ -187,6 +187,23 @@ export function findExpansionViewportAnchor(
   return anchorRow ? buildPatchRowAnchor(anchorRow) : null;
 }
 
+export function computeExpansionScrollTop({
+  direction,
+  currentScrollTop,
+  anchorTopBefore,
+  anchorTopAfter,
+}: {
+  direction: 'up' | 'down';
+  currentScrollTop: number;
+  anchorTopBefore: number | null;
+  anchorTopAfter: number | null;
+}): number {
+  if (direction === 'up' || anchorTopBefore === null || anchorTopAfter === null) {
+    return currentScrollTop;
+  }
+  return currentScrollTop + (anchorTopAfter - anchorTopBefore);
+}
+
 function expanderLabel(direction: 'up' | 'down', hiddenCount: number): string {
   const lineCount = hiddenCount > 0 ? hiddenCount : 20;
   return direction === 'up'
@@ -1049,7 +1066,12 @@ export function CommitPatchBrowser({
           const anchorTopAfter =
             container?.querySelector<HTMLElement>(`[data-patch-row-anchor="${viewportAnchor}"]`)?.getBoundingClientRect().top ?? null;
           if (!container || anchorTopAfter === null) return;
-          container.scrollTop += anchorTopAfter - anchorTopBefore;
+          container.scrollTop = computeExpansionScrollTop({
+            direction: action.direction,
+            currentScrollTop: container.scrollTop,
+            anchorTopBefore,
+            anchorTopAfter,
+          });
         });
       }
     } catch (error) {

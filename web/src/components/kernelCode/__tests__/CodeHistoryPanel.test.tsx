@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   CommitPatchBrowserView,
   buildCommitPatchExpandPayload,
+  computeExpansionScrollTop,
   buildCommitPatchModel,
   buildPatchRowAnchor,
   findExpansionViewportAnchor,
@@ -116,6 +117,28 @@ describe('CodeHistoryPanel commit patch browser', () => {
         'down',
       ),
     ).toBe(buildPatchRowAnchor({ oldLine: 11, newLine: 11 }));
+  });
+
+  it('keeps newly revealed lines visible during upward expansion', () => {
+    expect(
+      computeExpansionScrollTop({
+        direction: 'up',
+        currentScrollTop: 480,
+        anchorTopBefore: 120,
+        anchorTopAfter: 520,
+      }),
+    ).toBe(480);
+  });
+
+  it('preserves the stable anchor position during downward expansion', () => {
+    expect(
+      computeExpansionScrollTop({
+        direction: 'down',
+        currentScrollTop: 480,
+        anchorTopBefore: 120,
+        anchorTopAfter: 520,
+      }),
+    ).toBe(880);
   });
 
   it('renders the file navigator and emits nearest-tag navigation requests', () => {
