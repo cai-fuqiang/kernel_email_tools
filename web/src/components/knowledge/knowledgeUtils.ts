@@ -20,6 +20,7 @@ export const ENTITY_TYPES = [
 export const RELATION_TYPES = [
   'related_to',
   'part_of',
+  'has_subtopic',
   'explains',
   'caused_by',
   'fixed_by',
@@ -150,6 +151,19 @@ export function relationEntityName(
   fallback: string,
 ) {
   return entity?.canonical_name || fallback;
+}
+
+export function extractSubtopicParent(entity: Pick<KnowledgeEntity, 'meta'> | null | undefined) {
+  const raw = entity?.meta?.subtopic_parent;
+  if (!raw || typeof raw !== 'object') return null;
+  const parent = raw as Record<string, unknown>;
+  const entityId = String(parent.entity_id || '').trim();
+  const canonicalName = String(parent.canonical_name || '').trim();
+  if (!entityId || !canonicalName) return null;
+  return {
+    entity_id: entityId,
+    canonical_name: canonicalName,
+  };
 }
 
 export function isPromotedKnowledgeAnnotation(annotation: Pick<AnnotationListItem, 'annotation_type' | 'pinned'>) {

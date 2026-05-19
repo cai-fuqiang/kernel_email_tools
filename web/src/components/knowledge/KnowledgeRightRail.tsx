@@ -3,7 +3,11 @@ import { Clock3, FileClock, Search, ShieldCheck } from 'lucide-react';
 import type { KnowledgeDraft, KnowledgeEntity, KnowledgeStats } from '../../api/types';
 import { PrimaryButton } from '../ui';
 import type { NewEntityForm } from './EntityListPanel';
-import type { SupportPanelId, SupportPanelItem } from './knowledgeLayout';
+import {
+  buildEntityListSubtitle,
+  type SupportPanelId,
+  type SupportPanelItem,
+} from './knowledgeLayout';
 import {
   ENTITY_TYPES,
   evidenceCount,
@@ -158,7 +162,7 @@ export default function KnowledgeRightRail({
                         selected ? 'text-slate-600' : 'text-slate-600'
                       }`}
                     >
-                      <span>{readableType(entity.entity_type)}</span>
+                      <span>{buildEntityListSubtitle(entity)}</span>
                       <span>{count ? `${count} evidence` : formatDate(entity.updated_at)}</span>
                     </div>
                   </button>

@@ -1,7 +1,13 @@
-import type { KnowledgeRelation } from '../../api/types';
+import type { KnowledgeEntity, KnowledgeRelation } from '../../api/types';
 import type { KnowledgeTimelineEvent } from '../../utils/knowledgeMeta';
 import type { KnowledgeMapObjectNode } from './knowledgeMap';
-import { formatDate, relationEntityName, relationLabel } from './knowledgeUtils';
+import {
+  extractSubtopicParent,
+  formatDate,
+  readableType,
+  relationEntityName,
+  relationLabel,
+} from './knowledgeUtils';
 
 export type SupportPanelId = 'evidence' | 'notes' | 'history' | 'relations' | 'timeline';
 
@@ -117,6 +123,27 @@ export function summarizeRelations(
     items: items.slice(0, limit),
     remaining: Math.max(0, items.length - limit),
   };
+}
+
+export function splitRelationsForDocument(relations: {
+  outgoing: KnowledgeRelation[];
+  incoming: KnowledgeRelation[];
+}) {
+  return {
+    subtopics: relations.outgoing.filter((relation) => relation.relation_type === 'has_subtopic'),
+    related: {
+      outgoing: relations.outgoing.filter((relation) => relation.relation_type !== 'has_subtopic'),
+      incoming: relations.incoming.filter((relation) => relation.relation_type !== 'has_subtopic'),
+    },
+  };
+}
+
+export function buildEntityListSubtitle(entity: KnowledgeEntity) {
+  const parent = extractSubtopicParent(entity);
+  if (parent) {
+    return `Subtopic of ${parent.canonical_name}`;
+  }
+  return readableType(entity.entity_type);
 }
 
 export function isKnowledgeMapObjectNavigable(node: KnowledgeMapObjectNode) {

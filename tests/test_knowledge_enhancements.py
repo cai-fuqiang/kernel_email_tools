@@ -11,8 +11,12 @@ import pytest
 
 from src.api.routers.knowledge import KnowledgeImportRequest
 from src.storage.knowledge_store import (
+    HAS_SUBTOPIC_RELATION,
+    KNOWLEDGE_RELATION_TYPES,
+    SUBTOPIC_PARENT_META_KEY,
     _annotation_references_entity,
     _retarget_annotation_entity,
+    can_relation_become_subtopic,
     normalize_slug,
 )
 from src.storage.models import (
@@ -219,3 +223,18 @@ class TestKnowledgeAnnotationRetargeting:
         assert changed is True
         assert annotation.target_type == "concept"
         assert annotation.target_ref == "concept:dst"
+
+
+class TestKnowledgeSubtopicSemantics:
+    def test_has_subtopic_relation_type_is_registered(self):
+        assert HAS_SUBTOPIC_RELATION == "has_subtopic"
+        assert HAS_SUBTOPIC_RELATION in KNOWLEDGE_RELATION_TYPES
+
+    def test_subtopic_parent_meta_key_is_stable(self):
+        assert SUBTOPIC_PARENT_META_KEY == "subtopic_parent"
+
+    def test_subtopic_requires_aspect_style_names(self):
+        assert can_relation_become_subtopic("VMCS", "VMCS lifecycle") is True
+        assert can_relation_become_subtopic("VMCS", "VMCS fields") is True
+        assert can_relation_become_subtopic("VMCS", "Nested virtualization") is False
+        assert can_relation_become_subtopic("VMCS", "VMX") is False

@@ -2,6 +2,7 @@ import { Plus } from 'lucide-react';
 import { useRef } from 'react';
 import type { KnowledgeEntity, KnowledgeStats } from '../../api/types';
 import { PrimaryButton, SecondaryButton } from '../ui';
+import { buildEntityListSubtitle } from './knowledgeLayout';
 import {
   ENTITY_TYPES,
   evidenceCount,
@@ -277,7 +278,7 @@ export default function EntityListPanel({
               >
                 <div className="flex items-center gap-2">
                   <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-gray-600">
-                    {readableType(entity.entity_type)}
+                    {buildEntityListSubtitle(entity)}
                   </span>
                   <span
                     className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusTone(

@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest';
 import type { KnowledgeEntity, KnowledgeRelation } from '../../../api/types';
 import KnowledgeGraphView from '../../KnowledgeGraphView';
 import {
+  buildEntityListSubtitle,
   isKnowledgeMapObjectNavigable,
   buildSupportPanelItems,
+  splitRelationsForDocument,
   summarizeRelations,
   summarizeTimeline,
 } from '../knowledgeLayout';
@@ -158,6 +160,65 @@ describe('knowledge layout helpers', () => {
     expect(summary.total).toBe(2);
     expect(summary.items.map((item) => item.name)).toEqual(['B', 'C']);
     expect(summary.items.map((item) => item.direction)).toEqual(['outgoing', 'incoming']);
+  });
+
+  it('labels subtopic search results with their parent topic', () => {
+    expect(
+      buildEntityListSubtitle(
+        entity({
+          canonical_name: 'VMCS lifecycle',
+          meta: {
+            subtopic_parent: {
+              entity_id: 'concept:vmcs',
+              canonical_name: 'VMCS',
+            },
+          },
+        }),
+      ),
+    ).toBe('Subtopic of VMCS');
+  });
+
+  it('splits subtopics away from ordinary relations for document rendering', () => {
+    const groups = splitRelationsForDocument({
+      outgoing: [
+        relation({
+          relation_id: 'subtopic-1',
+          relation_type: 'has_subtopic',
+          target_entity_id: 'concept:vmcs-lifecycle',
+          target_entity: entity({
+            entity_id: 'concept:vmcs-lifecycle',
+            canonical_name: 'VMCS lifecycle',
+          }),
+        }),
+        relation({
+          relation_id: 'related-1',
+          relation_type: 'related_to',
+          target_entity_id: 'concept:vmx',
+          target_entity: entity({
+            entity_id: 'concept:vmx',
+            canonical_name: 'VMX',
+          }),
+        }),
+      ],
+      incoming: [
+        relation({
+          relation_id: 'incoming-1',
+          relation_type: 'part_of',
+          source_entity_id: 'concept:kvm',
+          source_entity: entity({
+            entity_id: 'concept:kvm',
+            canonical_name: 'KVM',
+          }),
+        }),
+      ],
+    });
+
+    expect(groups.subtopics).toHaveLength(1);
+    expect(groups.subtopics[0].relation_id).toBe('subtopic-1');
+    expect(groups.related.outgoing).toHaveLength(1);
+    expect(groups.related.outgoing[0].relation_id).toBe('related-1');
+    expect(groups.related.incoming).toHaveLength(1);
+    expect(groups.related.incoming[0].relation_id).toBe('incoming-1');
   });
 
   it('shows Knowledge Map instead of Local knowledge graph', () => {

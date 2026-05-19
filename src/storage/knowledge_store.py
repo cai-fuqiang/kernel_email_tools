@@ -35,11 +35,31 @@ from src.storage.models import (
 )
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+HAS_SUBTOPIC_RELATION = "has_subtopic"
+SUBTOPIC_PARENT_META_KEY = "subtopic_parent"
+KNOWLEDGE_RELATION_TYPES = {
+    "related_to",
+    "part_of",
+    "explains",
+    "caused_by",
+    "fixed_by",
+    "supersedes",
+    "introduced_in",
+    "removed_in",
+    "affects_version",
+    HAS_SUBTOPIC_RELATION,
+}
 
 
 def normalize_slug(value: str) -> str:
     slug = _SLUG_RE.sub("-", value.strip().lower()).strip("-")
     return slug or "entity"
+
+
+def can_relation_become_subtopic(parent_name: str, child_name: str) -> bool:
+    parent = str(parent_name or "").strip().lower()
+    child = str(child_name or "").strip().lower()
+    return bool(parent and child) and child.startswith(f"{parent} ")
 
 
 def _knowledge_annotation_target_types(entity) -> set[str]:
@@ -149,7 +169,12 @@ class KnowledgeStore:
                 select(KnowledgeEntityORM).where(KnowledgeEntityORM.entity_id == entity_id)
             )
             entity = result.scalar_one_or_none()
-            return KnowledgeEntityRead.model_validate(entity) if entity else None
+            if entity is None:
+                return None
+            return (await self._attach_subtopic_parent_meta(
+                session,
+                [KnowledgeEntityRead.model_validate(entity)],
+            ))[0]
 
     async def delete_entity(self, entity_id: str, force: bool = False) -> tuple[bool, list[dict]]:
         """删除知识实体。
@@ -373,7 +398,8 @@ class KnowledgeStore:
                 entities = [row[0] for row in rows]
             else:
                 entities = list(result.scalars().all())
-            return [KnowledgeEntityRead.model_validate(row) for row in entities], total
+            reads = [KnowledgeEntityRead.model_validate(row) for row in entities]
+            return await self._attach_subtopic_parent_meta(session, reads), total
 
     async def get_many(self, entity_ids: list[str]) -> dict[str, KnowledgeEntityRead]:
         if not entity_ids:
@@ -382,10 +408,11 @@ class KnowledgeStore:
             result = await session.execute(
                 select(KnowledgeEntityORM).where(KnowledgeEntityORM.entity_id.in_(entity_ids))
             )
-            return {
-                entity.entity_id: KnowledgeEntityRead.model_validate(entity)
-                for entity in result.scalars().all()
-            }
+            reads = await self._attach_subtopic_parent_meta(
+                session,
+                [KnowledgeEntityRead.model_validate(entity) for entity in result.scalars().all()],
+            )
+            return {entity.entity_id: entity for entity in reads}
 
     async def get_stats(self) -> dict:
         """获取知识库概览统计数据。"""
@@ -489,6 +516,8 @@ class KnowledgeStore:
         relation_type = data.relation_type.strip()
         if source_entity_id == target_entity_id:
             raise ValueError("source_entity_id and target_entity_id must be different")
+        if relation_type not in KNOWLEDGE_RELATION_TYPES:
+            raise ValueError(f"Unsupported knowledge relation type: {relation_type}")
 
         async with self._session_factory() as session:
             existing_entities = await session.execute(
@@ -500,6 +529,18 @@ class KnowledgeStore:
             missing = [entity_id for entity_id in [source_entity_id, target_entity_id] if entity_id not in existing_ids]
             if missing:
                 raise ValueError(f"Knowledge entity not found: {', '.join(missing)}")
+            if relation_type == HAS_SUBTOPIC_RELATION:
+                await self._validate_subtopic_relation(
+                    session,
+                    source_entity_id=source_entity_id,
+                    target_entity_id=target_entity_id,
+                )
+            else:
+                await self._validate_non_subtopic_relation(
+                    session,
+                    source_entity_id=source_entity_id,
+                    target_entity_id=target_entity_id,
+                )
 
             now = datetime.utcnow()
             relation = KnowledgeRelationORM(
@@ -985,7 +1026,24 @@ class KnowledgeStore:
             if relation is None:
                 return None
             if data.relation_type is not None:
-                relation.relation_type = data.relation_type.strip()
+                next_relation_type = data.relation_type.strip()
+                if next_relation_type not in KNOWLEDGE_RELATION_TYPES:
+                    raise ValueError(f"Unsupported knowledge relation type: {next_relation_type}")
+                if next_relation_type == HAS_SUBTOPIC_RELATION:
+                    await self._validate_subtopic_relation(
+                        session,
+                        source_entity_id=relation.source_entity_id,
+                        target_entity_id=relation.target_entity_id,
+                        relation_id=relation.relation_id,
+                    )
+                else:
+                    await self._validate_non_subtopic_relation(
+                        session,
+                        source_entity_id=relation.source_entity_id,
+                        target_entity_id=relation.target_entity_id,
+                        relation_id=relation.relation_id,
+                    )
+                relation.relation_type = next_relation_type
             if data.description is not None:
                 relation.description = data.description.strip()
             if data.evidence_id is not None:
@@ -1002,6 +1060,161 @@ class KnowledgeStore:
                 raise ValueError("Knowledge relation already exists") from exc
             await session.refresh(relation)
             return await self._relation_read(session, relation)
+
+    async def _attach_subtopic_parent_meta(
+        self,
+        session: AsyncSession,
+        entities: list[KnowledgeEntityRead],
+    ) -> list[KnowledgeEntityRead]:
+        if not entities:
+            return entities
+
+        entity_ids = [entity.entity_id for entity in entities]
+        relation_rows = (
+            await session.execute(
+                select(KnowledgeRelationORM).where(
+                    KnowledgeRelationORM.target_entity_id.in_(entity_ids),
+                    KnowledgeRelationORM.relation_type == HAS_SUBTOPIC_RELATION,
+                )
+            )
+        ).scalars().all()
+        parent_ids = [row.source_entity_id for row in relation_rows]
+        parent_map = await self._get_entity_map(session, parent_ids)
+        relation_map = {row.target_entity_id: row for row in relation_rows}
+
+        enriched: list[KnowledgeEntityRead] = []
+        for entity in entities:
+            meta = dict(entity.meta or {})
+            parent_relation = relation_map.get(entity.entity_id)
+            parent_entity = (
+                parent_map.get(parent_relation.source_entity_id)
+                if parent_relation is not None
+                else None
+            )
+            if parent_entity is not None:
+                meta[SUBTOPIC_PARENT_META_KEY] = {
+                    "entity_id": parent_entity.entity_id,
+                    "canonical_name": parent_entity.canonical_name,
+                }
+            else:
+                meta.pop(SUBTOPIC_PARENT_META_KEY, None)
+            enriched.append(entity.model_copy(update={"meta": meta}))
+        return enriched
+
+    async def _validate_non_subtopic_relation(
+        self,
+        session: AsyncSession,
+        source_entity_id: str,
+        target_entity_id: str,
+        relation_id: Optional[str] = None,
+    ) -> None:
+        if await self._pair_has_relation_type(
+            session,
+            source_entity_id=source_entity_id,
+            target_entity_id=target_entity_id,
+            relation_type=HAS_SUBTOPIC_RELATION,
+            exclude_relation_id=relation_id,
+        ):
+            raise ValueError(
+                "Subtopic relation already exists for this entity pair; replace it instead of adding another relation"
+            )
+
+    async def _validate_subtopic_relation(
+        self,
+        session: AsyncSession,
+        source_entity_id: str,
+        target_entity_id: str,
+        relation_id: Optional[str] = None,
+    ) -> None:
+        if source_entity_id == target_entity_id:
+            raise ValueError("Subtopic relation cannot point to the same entity")
+        if await self._has_subtopic_parent(
+            session,
+            entity_id=source_entity_id,
+            exclude_relation_id=relation_id,
+        ):
+            raise ValueError("Subtopic parents cannot also be subtopics")
+        if await self._has_subtopic_children(
+            session,
+            entity_id=target_entity_id,
+            exclude_relation_id=relation_id,
+        ):
+            raise ValueError("Subtopics cannot own subtopics yet")
+        if await self._has_subtopic_parent(
+            session,
+            entity_id=target_entity_id,
+            exclude_relation_id=relation_id,
+        ):
+            raise ValueError("Each subtopic can only have one parent")
+        if await self._pair_has_other_relations(
+            session,
+            source_entity_id=source_entity_id,
+            target_entity_id=target_entity_id,
+            exclude_relation_id=relation_id,
+        ):
+            raise ValueError(
+                "Entities already have another relation; replace it instead of adding has_subtopic"
+            )
+
+    async def _has_subtopic_parent(
+        self,
+        session: AsyncSession,
+        entity_id: str,
+        exclude_relation_id: Optional[str] = None,
+    ) -> bool:
+        stmt = select(KnowledgeRelationORM.relation_id).where(
+            KnowledgeRelationORM.target_entity_id == entity_id,
+            KnowledgeRelationORM.relation_type == HAS_SUBTOPIC_RELATION,
+        )
+        if exclude_relation_id:
+            stmt = stmt.where(KnowledgeRelationORM.relation_id != exclude_relation_id)
+        return (await session.execute(stmt.limit(1))).scalar_one_or_none() is not None
+
+    async def _has_subtopic_children(
+        self,
+        session: AsyncSession,
+        entity_id: str,
+        exclude_relation_id: Optional[str] = None,
+    ) -> bool:
+        stmt = select(KnowledgeRelationORM.relation_id).where(
+            KnowledgeRelationORM.source_entity_id == entity_id,
+            KnowledgeRelationORM.relation_type == HAS_SUBTOPIC_RELATION,
+        )
+        if exclude_relation_id:
+            stmt = stmt.where(KnowledgeRelationORM.relation_id != exclude_relation_id)
+        return (await session.execute(stmt.limit(1))).scalar_one_or_none() is not None
+
+    async def _pair_has_relation_type(
+        self,
+        session: AsyncSession,
+        source_entity_id: str,
+        target_entity_id: str,
+        relation_type: str,
+        exclude_relation_id: Optional[str] = None,
+    ) -> bool:
+        stmt = select(KnowledgeRelationORM.relation_id).where(
+            KnowledgeRelationORM.source_entity_id == source_entity_id,
+            KnowledgeRelationORM.target_entity_id == target_entity_id,
+            KnowledgeRelationORM.relation_type == relation_type,
+        )
+        if exclude_relation_id:
+            stmt = stmt.where(KnowledgeRelationORM.relation_id != exclude_relation_id)
+        return (await session.execute(stmt.limit(1))).scalar_one_or_none() is not None
+
+    async def _pair_has_other_relations(
+        self,
+        session: AsyncSession,
+        source_entity_id: str,
+        target_entity_id: str,
+        exclude_relation_id: Optional[str] = None,
+    ) -> bool:
+        stmt = select(KnowledgeRelationORM.relation_id).where(
+            KnowledgeRelationORM.source_entity_id == source_entity_id,
+            KnowledgeRelationORM.target_entity_id == target_entity_id,
+        )
+        if exclude_relation_id:
+            stmt = stmt.where(KnowledgeRelationORM.relation_id != exclude_relation_id)
+        return (await session.execute(stmt.limit(1))).scalar_one_or_none() is not None
 
     async def delete_relation(self, relation_id: str) -> bool:
         async with self._session_factory() as session:

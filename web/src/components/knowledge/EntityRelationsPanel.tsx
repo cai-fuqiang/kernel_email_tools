@@ -83,8 +83,15 @@ export default function EntityRelationsPanel({
             onClick={() => onSelectEntity(targetId)}
             className="min-w-0 text-left"
           >
-            <div className="text-xs font-semibold uppercase text-indigo-600">
-              {relationLabel(relation.relation_type)}
+            <div className="flex items-center gap-2">
+              <div className="text-xs font-semibold uppercase text-indigo-600">
+                {relationLabel(relation.relation_type)}
+              </div>
+              {relation.relation_type === 'has_subtopic' && (
+                <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700">
+                  Subtopic
+                </span>
+              )}
             </div>
             <div className="mt-1 truncate text-sm font-semibold text-gray-950">
               {relationEntityName(targetEntity, targetId)}

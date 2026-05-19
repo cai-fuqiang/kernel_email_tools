@@ -3,7 +3,14 @@ import type { KnowledgeEntity, KnowledgeRelation } from '../../api/types';
 import type { KnowledgeEntityMetaSchema } from '../../utils/knowledgeMeta';
 import EntityExplanationEditor from './EntityExplanationEditor';
 import type { SupportPanelId } from './knowledgeLayout';
-import { summarizeRelations, summarizeTimeline } from './knowledgeLayout';
+import {
+  relationEntityName,
+} from './knowledgeUtils';
+import {
+  splitRelationsForDocument,
+  summarizeRelations,
+  summarizeTimeline,
+} from './knowledgeLayout';
 
 interface KnowledgeDocumentSectionsProps {
   selectedEntity: KnowledgeEntity;
@@ -16,6 +23,7 @@ interface KnowledgeDocumentSectionsProps {
   saving: boolean;
   onSave: () => void;
   onOpenSupportPanel: (panel: SupportPanelId) => void;
+  onSelectEntity: (entityId: string) => void;
   onUpdateSummary: (value: string) => void;
   onUpdateDescription: (value: string) => void;
 }
@@ -28,11 +36,13 @@ export default function KnowledgeDocumentSections({
   saving,
   onSave,
   onOpenSupportPanel,
+  onSelectEntity,
   onUpdateSummary,
   onUpdateDescription,
 }: KnowledgeDocumentSectionsProps) {
   const timelineSummary = summarizeTimeline(selectedMetaSchema.timeline, 3);
-  const relationSummary = summarizeRelations(relations, 4);
+  const relationGroups = splitRelationsForDocument(relations);
+  const relationSummary = summarizeRelations(relationGroups.related, 4);
 
   return (
     <div className="space-y-5">
@@ -45,6 +55,59 @@ export default function KnowledgeDocumentSections({
         onUpdateDescription={onUpdateDescription}
         variant="document"
       />
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+              <GitBranch className="h-4 w-4 text-slate-500" />
+              Subtopics
+            </div>
+            <p className="mt-1 text-sm leading-5 text-slate-600">
+              Child topics that expand this page without sharing its evidence.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpenSupportPanel('relations')}
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            Manage <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="mt-4 space-y-2">
+          {relationGroups.subtopics.length > 0 ? (
+            relationGroups.subtopics.map((relation) => {
+              const subtopic = relation.target_entity;
+              const subtopicId = relation.target_entity_id;
+              return (
+                <button
+                  key={relation.relation_id}
+                  type="button"
+                  onClick={() => onSelectEntity(subtopicId)}
+                  className="flex w-full items-start justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:border-slate-300 hover:bg-slate-100"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-slate-900">
+                      {relationEntityName(subtopic, subtopicId)}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">Subtopic</div>
+                    {relation.description && (
+                      <div className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">
+                        {relation.description}
+                      </div>
+                    )}
+                  </div>
+                </button>
+              );
+            })
+          ) : (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-6 text-center text-sm text-slate-600">
+              No subtopics yet.
+            </div>
+          )}
+        </div>
+      </section>
 
       <section className="grid gap-5 lg:grid-cols-2">
         <div className="rounded-lg border border-slate-200 bg-white p-5">

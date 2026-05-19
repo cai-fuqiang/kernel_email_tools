@@ -829,6 +829,7 @@ export default function KnowledgeWorkbench() {
               saving={saving}
               onSave={handleSaveEntity}
               onOpenSupportPanel={setActiveSupportPanel}
+              onSelectEntity={handleSelectEntity}
               onUpdateSummary={(value) =>
                 setSelectedEntity((prev) => (prev ? { ...prev, summary: value } : prev))
               }
