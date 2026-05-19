@@ -1,5 +1,6 @@
 """Intel SDM 专用解析器 — 章节结构识别与内容填充。"""
 
+from collections.abc import Callable
 import logging
 import re
 from typing import Optional
@@ -14,6 +15,8 @@ logger = logging.getLogger(__name__)
 SECTION_NUM_RE = re.compile(
     r"^(?:CHAPTER\s+)?(\d+(?:\.\d+)*)\s+(.+)", re.IGNORECASE
 )
+
+SectionProgressCallback = Callable[[dict[str, object]], None]
 VOLUME_RE = re.compile(
     r"^(?:VOLUME|VOL\.?)\s*(\d+[A-D]?)\s*[:\-—]?\s*(.*)", re.IGNORECASE
 )
@@ -57,7 +60,10 @@ class IntelSDMParser(BaseManualParser):
         return "", title.strip()
 
     def build_section_tree(
-        self, pdf_path: str, toc: list[TOCEntry]
+        self,
+        pdf_path: str,
+        toc: list[TOCEntry],
+        progress_callback: Optional[SectionProgressCallback] = None,
     ) -> list[SectionNode]:
         """基于目录构建章节树，填充每节的页码范围。"""
         if not toc:
@@ -101,7 +107,13 @@ class IntelSDMParser(BaseManualParser):
             stack.append(node)
 
         # 第三遍：填充叶子节点的文本内容
-        self._fill_content(doc, roots)
+        self._fill_content(
+            doc,
+            roots,
+            total_sections=len(nodes),
+            progress_state={"current": 0},
+            progress_callback=progress_callback,
+        )
 
         doc.close()
         logger.info(
@@ -110,13 +122,27 @@ class IntelSDMParser(BaseManualParser):
         )
         return roots
 
-    def _fill_content(self, doc: fitz.Document, nodes: list[SectionNode]) -> None:
+    def _fill_content(
+        self,
+        doc: fitz.Document,
+        nodes: list[SectionNode],
+        *,
+        total_sections: int,
+        progress_state: dict[str, int],
+        progress_callback: Optional[SectionProgressCallback] = None,
+    ) -> None:
         """递归填充章节节点的文本内容。
 
         对于叶子节点：提取 page_start ~ page_end 的文本。
         对于非叶子节点：只提取自身页面到第一个子节点之间的文本。
         """
         for node in nodes:
+            self._emit_progress(
+                node=node,
+                total_sections=total_sections,
+                progress_state=progress_state,
+                progress_callback=progress_callback,
+            )
             if node.children:
                 # 非叶子：提取自身起始页到第一个子节点起始页之间的内容
                 content_end = node.children[0].page_start
@@ -139,7 +165,13 @@ class IntelSDMParser(BaseManualParser):
                     node.content = "\n".join(text_parts)
                     node.tables = tables
                 # 递归子节点
-                self._fill_content(doc, node.children)
+                self._fill_content(
+                    doc,
+                    node.children,
+                    total_sections=total_sections,
+                    progress_state=progress_state,
+                    progress_callback=progress_callback,
+                )
             else:
                 # 叶子节点：提取完整页面范围
                 text_parts = []
@@ -160,13 +192,39 @@ class IntelSDMParser(BaseManualParser):
                 node.content = "\n".join(text_parts)
                 node.tables = tables
 
-    def parse(self, pdf_path: str) -> list[SectionNode]:
+    def _emit_progress(
+        self,
+        *,
+        node: SectionNode,
+        total_sections: int,
+        progress_state: dict[str, int],
+        progress_callback: Optional[SectionProgressCallback] = None,
+    ) -> None:
+        progress_state["current"] += 1
+        if not progress_callback:
+            return
+        try:
+            progress_callback({
+                "current_section": progress_state["current"],
+                "total_sections": total_sections,
+                "section_title": node.title,
+                "page_start": node.page_start + 1,
+                "page_end": node.page_end + 1,
+            })
+        except Exception:
+            logger.debug("Section progress callback failed for %s", node.title, exc_info=True)
+
+    def parse(
+        self,
+        pdf_path: str,
+        progress_callback: Optional[SectionProgressCallback] = None,
+    ) -> list[SectionNode]:
         """完整解析 Intel SDM PDF。"""
         toc = self.parse_toc(pdf_path)
         if not toc:
             logger.warning("No TOC found, falling back to flat page extraction")
             return self._fallback_flat_parse(pdf_path)
-        return self.build_section_tree(pdf_path, toc)
+        return self.build_section_tree(pdf_path, toc, progress_callback=progress_callback)
 
     def _fallback_flat_parse(self, pdf_path: str) -> list[SectionNode]:
         """无书签时的降级方案：每页一个节点。"""

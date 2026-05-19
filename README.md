@@ -377,6 +377,8 @@ pip install sentence-transformers
 python scripts/ingest_manual.py --pdf ./manuals/intel_sdm/sdm.pdf --store
 ```
 
+手册导入命令会打印总体进度和当前章节进度，便于观察长时间解析任务的执行状态。
+
 手册使用 `storage.manual.database_url`，可以和邮件库分开。
 
 ## 内核源码与符号索引

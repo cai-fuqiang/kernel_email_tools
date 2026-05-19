@@ -11,6 +11,7 @@ import argparse
 import logging
 import sys
 import textwrap
+from collections.abc import Mapping
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -26,6 +27,63 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+class ProgressReporter:
+    """统一打印手册导入的总体进度和当前章节进度。"""
+
+    PARSING_START = 0.0
+    PARSING_END = 45.0
+    CHUNKING_END = 65.0
+    STORING_END = 100.0
+
+    def log(self, percent: float, message: str) -> None:
+        clamped = max(0, min(100, round(percent)))
+        logger.info("[%3d%%] %s", clamped, message)
+
+    def start_import(self, manual_type: str, pdf_path: Path) -> None:
+        self.log(self.PARSING_START, f"Start import: {manual_type} {pdf_path}")
+
+    def toc_extracted(self, toc_count: int) -> None:
+        self.log(8, f"TOC extracted: {toc_count} entries")
+
+    def section_progress(self, payload: Mapping[str, object]) -> None:
+        current_section = int(payload["current_section"])
+        total_sections = max(int(payload["total_sections"]), 1)
+        percent = self.PARSING_START + (current_section / total_sections) * (
+            self.PARSING_END - self.PARSING_START
+        )
+        self.log(
+            percent,
+            "Parsing section "
+            f"{current_section}/{total_sections}: "
+            f"{payload['section_title']} "
+            f"(pages {payload['page_start']}-{payload['page_end']})",
+        )
+
+    def section_parsing_complete(self, total_sections: int, total_nodes: int) -> None:
+        self.log(
+            self.PARSING_END,
+            f"Section parsing complete: {total_sections} roots, {total_nodes} total sections",
+        )
+
+    def chunking_complete(self, chunk_count: int) -> None:
+        self.log(self.CHUNKING_END, f"Chunking complete: {chunk_count} chunks")
+
+    def storing_progress(self, stored_chunks: int, total_chunks: int) -> None:
+        if total_chunks <= 0:
+            self.log(self.STORING_END, "Storing skipped: no chunks to store")
+            return
+        percent = self.CHUNKING_END + (stored_chunks / total_chunks) * (
+            self.STORING_END - self.CHUNKING_END
+        )
+        self.log(percent, f"Storing chunks: {stored_chunks}/{total_chunks}")
+
+    def import_complete(self, stored_chunks: int, *, stored: bool) -> None:
+        if stored:
+            self.log(self.STORING_END, f"Import complete: stored {stored_chunks} chunks")
+        else:
+            self.log(self.STORING_END, f"Import complete: generated {stored_chunks} chunks")
 
 
 def _load_config() -> dict:
@@ -56,20 +114,29 @@ async def main() -> None:
         logger.error("PDF file not found: %s", pdf_path)
         sys.exit(1)
 
+    reporter = ProgressReporter()
+    reporter.start_import(args.manual_type, pdf_path)
+
     # 1. 解析 PDF → 章节树
     logger.info("=== Step 1: Parsing PDF ===")
     sdm_parser = IntelSDMParser()
     toc = sdm_parser.parse_toc(str(pdf_path))
     logger.info("TOC entries: %d", len(toc))
+    reporter.toc_extracted(len(toc))
 
     # 如果限制页数，过滤 TOC
     if args.max_pages > 0:
         toc = [e for e in toc if e.page_num < args.max_pages]
         logger.info("TOC entries (filtered to %d pages): %d", args.max_pages, len(toc))
 
-    sections = sdm_parser.build_section_tree(str(pdf_path), toc)
+    sections = sdm_parser.build_section_tree(
+        str(pdf_path),
+        toc,
+        progress_callback=reporter.section_progress,
+    )
     total_nodes = _count_nodes(sections)
     logger.info("Section tree: %d roots, %d total nodes", len(sections), total_nodes)
+    reporter.section_parsing_complete(len(sections), total_nodes)
 
     # 2. 分片管线
     logger.info("=== Step 2: Chunking ===")
@@ -81,6 +148,7 @@ async def main() -> None:
         min_tokens=args.min_tokens,
     )
     chunks = pipeline.process(sections)
+    reporter.chunking_complete(len(chunks))
 
     # 3. 统计输出
     logger.info("=== Step 3: Statistics ===")
@@ -89,7 +157,13 @@ async def main() -> None:
     # 4. 可选：存储到数据库
     if args.store:
         logger.info("=== Step 4: Storing to Database ===")
-        await _store_chunks(chunks, args.manual_type, args.manual_version, args.drop_existing)
+        await _store_chunks(
+            chunks,
+            args.manual_type,
+            args.manual_version,
+            args.drop_existing,
+            reporter=reporter,
+        )
 
     # 5. 可选：打印示例分片
     if args.sample > 0:
@@ -103,6 +177,8 @@ async def main() -> None:
             print(f"    content: {preview}")
             print()
 
+    reporter.import_complete(len(chunks), stored=args.store)
+
 
 def _count_nodes(sections) -> int:
     count = 0
@@ -112,7 +188,7 @@ def _count_nodes(sections) -> int:
     return count
 
 
-async def _store_chunks(chunks, manual_type, manual_version, drop_existing):
+async def _store_chunks(chunks, manual_type, manual_version, drop_existing, reporter: ProgressReporter):
     """存储分片到数据库。"""
     config = _load_config()
     storage_cfg = config.get("storage", {}).get("manual", {})
@@ -138,6 +214,7 @@ async def _store_chunks(chunks, manual_type, manual_version, drop_existing):
         await storage.insert_chunks(batch)
         total_stored += len(batch)
         logger.info("Stored batch %d-%d/%d", i + 1, min(i + batch_size, len(chunks)), len(chunks))
+        reporter.storing_progress(total_stored, len(chunks))
 
     logger.info("Total stored: %d chunks", total_stored)
 
