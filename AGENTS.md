@@ -188,6 +188,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-19: incremental patch expansion keeps remaining `up` expanders above revealed context so `Expand ... above` stays visible while hidden lines remain (src/api/routers/kernel.py, tests/api/test_kernel_commit_browser.py)
 - 2026-05-19: patch browser expansion scrolls to the first revealed context line so clicking `Expand ... lines above` makes newly loaded lines immediately visible (web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/__tests__/CodeHistoryPanel.test.tsx)
 - 2026-05-19: patch browser expand API now returns inserted context rows plus optional remaining expander, and the UI preserves the nearest stable line instead of calling `scrollIntoView` so inline expansion feels stitched rather than refreshed (src/api/routers/kernel.py, web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/commitPatchModel.ts)
+- 2026-05-19: patch browser now renders one unified diff table per file, folds duplicate inter-hunk gap expanders into a single in-table separator, and uses Codex-style directional expansion affordances instead of separate hunk cards (web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/commitPatchModel.ts)
 
 ---
 
@@ -200,20 +201,18 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-19 3:39pm GMT+8
+# [kernel_email_tools] recent context, 2026-05-19 3:49pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (13,918t read) | 1,956,251t work | 99% savings
+Stats: 50 obs (14,148t read) | 2,038,204t work | 99% savings
 
 ### May 14, 2026
 44 2:18p 🟣 Annotation relation system implemented end-to-end
 45 " 🟣 AnnotationRelationParser extracts markdown annotation links
-46 " 🔴 Self-link bypass via whitespace trimming gap closed
 S73 UX polish for annotation relation display (declutter, AnnotationIdBadge) + caveman skill check (May 14 at 2:18 PM)
-S72 Annotation relation display UX polish — declutter interfaces and surface annotation IDs everywhere (May 14 at 2:18 PM)
 S75 继续计划 — user asks to continue with next steps after annotation relation system completion (May 14 at 5:21 PM)
 130 8:16p 🟣 AnnotationIdBadge added to remaining preview surfaces
 131 " 🟣 Annotation search results focus thread on specific annotation
@@ -264,13 +263,15 @@ S114 核对 home_pc 仓库 HEAD、进程工作目录及接口行为 — 区分�
 205 2:06p 🔄 Row-based hunk normalization for patch browser UI model
 206 2:08p 🟣 Row-based hunk normalization added to patch browser UI model
 207 2:23p 🟣 GitHub-style patch browser backend row model implemented
+S115 提交吧 — user requested to commit pending patch browser improvements on delete_AI_function branch (May 19 at 2:49 PM)
 209 3:00p 🔴 Patch browser "Expand above" button missing after upward context expansion
 210 " 🔴 Patch expander visibility preserved after incremental expansion
 211 3:02p 🟣 patch browser scrolls to first revealed line after context expansion
 212 " ✅ CodeHistoryPanel.tsx imports useRef and CommitPatchLineRowView
 213 " ✅ delete_AI_function branch 1 commit ahead of origin after scroll fix
-S115 提交吧 — user requested to commit pending patch browser improvements on delete_AI_function branch (May 19 at 3:26 PM)
 214 3:33p 🟣 Codex-style patch browser expansion implementation started
+215 3:39p 🟣 Codex-style patch browser context expansion with inline merge and stable viewport
+S116 Implement Codex-style inline patch expansion in commit browser — replace scroll-jumping `scrollIntoView` with viewport-anchored scroll offset compensation, and change API contract from flat `replacement_rows` to `inserted_rows` + optional `remaining_expander` (May 19 at 3:39 PM)
 
-Access 1956k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 2038k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

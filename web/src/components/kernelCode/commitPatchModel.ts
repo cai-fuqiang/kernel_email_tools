@@ -41,6 +41,37 @@ export interface CommitPatchHunkView extends Omit<KernelCommitPatchHunk, 'curren
   rows: CommitPatchRowView[];
 }
 
+export interface CommitPatchDisplayLineRowView extends CommitPatchLineRowView {
+  key: string;
+}
+
+export interface CommitPatchDisplayHunkHeaderRowView {
+  type: 'hunk-header';
+  key: string;
+  header: string;
+  currentVersionTarget: CommitPatchTargetView;
+  nearestTagTarget: CommitPatchTargetView;
+}
+
+export interface CommitPatchDisplayExpanderActionView {
+  key: string;
+  direction: 'up' | 'down';
+  hunk: CommitPatchHunkView;
+  hunkKey: string;
+  row: CommitPatchExpanderRowView;
+}
+
+export interface CommitPatchDisplayExpanderRowView {
+  type: 'expander';
+  key: string;
+  actions: CommitPatchDisplayExpanderActionView[];
+}
+
+export type CommitPatchDisplayRowView =
+  | CommitPatchDisplayLineRowView
+  | CommitPatchDisplayHunkHeaderRowView
+  | CommitPatchDisplayExpanderRowView;
+
 export interface CommitPatchFileView extends Omit<KernelCommitPatchFile, 'hunks'> {
   displayLabel: string;
   hunks: CommitPatchHunkView[];
@@ -49,6 +80,10 @@ export interface CommitPatchFileView extends Omit<KernelCommitPatchFile, 'hunks'
 export interface CommitPatchModel {
   nearestTagVersion: string | null;
   files: CommitPatchFileView[];
+}
+
+export function buildHunkKey(filePath: string, hunk: Pick<CommitPatchHunkView, 'header'>, index: number): string {
+  return `${filePath}::${hunk.header}::${index}`;
 }
 
 function toText(value: unknown): string {
@@ -129,6 +164,81 @@ export function mergeExpandedPatchRows({
     ...replacementRows,
     ...sourceRows.slice(rowIndex + 1),
   ];
+}
+
+function buildDisplayExpanderAction(
+  hunk: CommitPatchHunkView,
+  hunkKey: string,
+  row: CommitPatchExpanderRowView,
+  direction: 'up' | 'down',
+): CommitPatchDisplayExpanderActionView {
+  return {
+    key: `${hunkKey}::${row.id}::${direction}`,
+    direction,
+    hunk,
+    hunkKey,
+    row,
+  };
+}
+
+export function buildFilePatchDisplayRows(
+  file: CommitPatchFileView,
+  rowsByHunk: Record<string, CommitPatchRowView[]>,
+): CommitPatchDisplayRowView[] {
+  const displayRows: CommitPatchDisplayRowView[] = [];
+
+  file.hunks.forEach((hunk, index) => {
+    const hunkKey = buildHunkKey(file.path, hunk, index);
+    const sourceRows = rowsByHunk[hunkKey] || hunk.rows;
+    let startIndex = 0;
+
+    if (index > 0 && sourceRows[0]?.type === 'expander' && sourceRows[0].direction === 'up') {
+      const leadingRow = sourceRows[0];
+      const upAction = buildDisplayExpanderAction(hunk, hunkKey, leadingRow, 'up');
+      const previousRow = displayRows[displayRows.length - 1];
+      if (
+        previousRow?.type === 'expander' &&
+        previousRow.actions.some((action) => action.direction === 'down') &&
+        !previousRow.actions.some((action) => action.direction === 'up')
+      ) {
+        previousRow.actions.push(upAction);
+      } else {
+        displayRows.push({
+          type: 'expander',
+          key: `${hunkKey}::leading-expander`,
+          actions: [upAction],
+        });
+      }
+      startIndex = 1;
+    }
+
+    displayRows.push({
+      type: 'hunk-header',
+      key: `${hunkKey}::header`,
+      header: hunk.header,
+      currentVersionTarget: hunk.currentVersionTarget,
+      nearestTagTarget: hunk.nearestTagTarget,
+    });
+
+    sourceRows.slice(startIndex).forEach((row, rowIndex) => {
+      if (row.type === 'line') {
+        displayRows.push({
+          ...row,
+          key: `${hunkKey}::line::${startIndex + rowIndex}`,
+        });
+        return;
+      }
+
+      const directions = row.direction === 'both' ? (['up', 'down'] as const) : ([row.direction] as const);
+      displayRows.push({
+        type: 'expander',
+        key: `${hunkKey}::expander::${startIndex + rowIndex}`,
+        actions: directions.map((direction) => buildDisplayExpanderAction(hunk, hunkKey, row, direction)),
+      });
+    });
+  });
+
+  return displayRows;
 }
 
 function normalizeHunk(hunk: KernelCommitPatchHunk): CommitPatchHunkView {

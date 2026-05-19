@@ -24,6 +24,19 @@ function collectClickables(node: unknown): Array<Record<string, unknown>> {
   return nested;
 }
 
+function collectElementsByType(node: unknown, type: string): unknown[] {
+  if (Array.isArray(node)) {
+    return node.flatMap((entry) => collectElementsByType(entry, type));
+  }
+  if (!isValidElement(node)) {
+    return [];
+  }
+  const props = (node as { props?: Record<string, unknown> }).props || {};
+  const children = props.children;
+  const nested = collectElementsByType(children, type);
+  return (node as { type?: unknown }).type === type ? [node, ...nested] : nested;
+}
+
 function flattenText(value: unknown): string {
   if (Array.isArray(value)) {
     return value.map(flattenText).join('');
@@ -160,5 +173,90 @@ describe('CodeHistoryPanel commit patch browser', () => {
       line: 18,
       reason: null,
     });
+  });
+
+  it('renders multiple hunks inside one patch table for a file', () => {
+    const model = buildCommitPatchModel({
+      nearest_tag_version: 'v6.5',
+      files: [
+        {
+          path: 'mm/mmap.c',
+          old_path: 'mm/mmap.c',
+          new_path: 'mm/mmap.c',
+          status: 'modified',
+          added: '2',
+          deleted: '1',
+          is_binary: false,
+          truncated: false,
+          hunks: [
+            {
+              header: '@@ -10,1 +10,1 @@',
+              old_start: 10,
+              old_count: 1,
+              new_start: 10,
+              new_count: 1,
+              rows: [
+                { type: 'line', kind: 'del', text: '-old', old_line: 10, new_line: null },
+                {
+                  type: 'expander',
+                  id: 'gap-down',
+                  direction: 'down',
+                  hidden_count: 12,
+                  step_size: 20,
+                  old_start: 11,
+                  old_end: 22,
+                  new_start: 11,
+                  new_end: 22,
+                  expand_key: 'gap-down',
+                },
+              ],
+              current_version_target: { available: true, version: 'v6.6', path: 'mm/mmap.c', line: 10, reason: null },
+              nearest_tag_target: { available: true, version: 'v6.5', path: 'mm/mmap.c', line: 10, reason: null },
+            },
+            {
+              header: '@@ -23,1 +23,1 @@',
+              old_start: 23,
+              old_count: 1,
+              new_start: 23,
+              new_count: 1,
+              rows: [
+                {
+                  type: 'expander',
+                  id: 'gap-up',
+                  direction: 'up',
+                  hidden_count: 12,
+                  step_size: 20,
+                  old_start: 11,
+                  old_end: 22,
+                  new_start: 11,
+                  new_end: 22,
+                  expand_key: 'gap-up',
+                },
+                { type: 'line', kind: 'add', text: '+new', old_line: null, new_line: 23 },
+              ],
+              current_version_target: { available: true, version: 'v6.6', path: 'mm/mmap.c', line: 23, reason: null },
+              nearest_tag_target: { available: true, version: 'v6.5', path: 'mm/mmap.c', line: 23, reason: null },
+            },
+          ],
+        },
+      ],
+    });
+
+    const tree = CommitPatchBrowserView({
+      model: model!,
+      selectedFilePath: 'mm/mmap.c',
+      onSelectFile: () => {},
+      rowsByHunk: {
+        'mm/mmap.c::@@ -10,1 +10,1 @@::0': model!.files[0].hunks[0].rows,
+        'mm/mmap.c::@@ -23,1 +23,1 @@::1': model!.files[0].hunks[1].rows,
+      },
+      loadingExpanders: {},
+      expanderErrors: {},
+      onExpand: () => {},
+    });
+
+    expect(collectElementsByType(tree, 'table')).toHaveLength(1);
+    expect(flattenText(tree)).toContain('@@ -10,1 +10,1 @@');
+    expect(flattenText(tree)).toContain('@@ -23,1 +23,1 @@');
   });
 });

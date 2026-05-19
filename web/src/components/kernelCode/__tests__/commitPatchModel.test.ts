@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildCommitPatchModel,
+  buildFilePatchDisplayRows,
   choosePrimaryTarget,
   formatChangedFileLabel,
   mergeExpandedPatchRows,
@@ -176,5 +177,88 @@ describe('commitPatchModel', () => {
       { type: 'line', kind: 'context', text: 'line_12', oldLine: 12, newLine: 12 },
       { type: 'line', kind: 'context', text: 'line_13', oldLine: 13, newLine: 13 },
     ]);
+  });
+
+  it('builds one file-level patch surface and collapses duplicated inter-hunk gap expanders', () => {
+    const model = buildCommitPatchModel({
+      nearest_tag_version: 'v6.5',
+      files: [
+        {
+          path: 'mm/mmap.c',
+          old_path: 'mm/mmap.c',
+          new_path: 'mm/mmap.c',
+          status: 'modified',
+          added: '2',
+          deleted: '1',
+          is_binary: false,
+          truncated: false,
+          hunks: [
+            {
+              header: '@@ -10,1 +10,1 @@',
+              old_start: 10,
+              old_count: 1,
+              new_start: 10,
+              new_count: 1,
+              rows: [
+                { type: 'line', kind: 'del', text: '-old', old_line: 10, new_line: null },
+                {
+                  type: 'expander',
+                  id: 'gap-down',
+                  direction: 'down',
+                  hidden_count: 12,
+                  step_size: 20,
+                  old_start: 11,
+                  old_end: 22,
+                  new_start: 11,
+                  new_end: 22,
+                  expand_key: 'gap-down',
+                },
+              ],
+              current_version_target: { available: true, version: 'v6.6', path: 'mm/mmap.c', line: 10, reason: null },
+              nearest_tag_target: { available: true, version: 'v6.5', path: 'mm/mmap.c', line: 10, reason: null },
+            },
+            {
+              header: '@@ -23,1 +23,1 @@',
+              old_start: 23,
+              old_count: 1,
+              new_start: 23,
+              new_count: 1,
+              rows: [
+                {
+                  type: 'expander',
+                  id: 'gap-up',
+                  direction: 'up',
+                  hidden_count: 12,
+                  step_size: 20,
+                  old_start: 11,
+                  old_end: 22,
+                  new_start: 11,
+                  new_end: 22,
+                  expand_key: 'gap-up',
+                },
+                { type: 'line', kind: 'add', text: '+new', old_line: null, new_line: 23 },
+              ],
+              current_version_target: { available: true, version: 'v6.6', path: 'mm/mmap.c', line: 23, reason: null },
+              nearest_tag_target: { available: true, version: 'v6.5', path: 'mm/mmap.c', line: 23, reason: null },
+            },
+          ],
+        },
+      ],
+    });
+
+    const rows = buildFilePatchDisplayRows(model!.files[0], {});
+
+    expect(rows.map((row) => row.type)).toEqual([
+      'hunk-header',
+      'line',
+      'expander',
+      'hunk-header',
+      'line',
+    ]);
+    expect(rows[2].type).toBe('expander');
+    if (rows[2].type !== 'expander') {
+      throw new Error('expected expander row');
+    }
+    expect(rows[2].actions.map((action) => action.direction)).toEqual(['down', 'up']);
   });
 });

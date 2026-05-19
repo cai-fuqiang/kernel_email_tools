@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
   Clock3,
   ExternalLink,
   GitCommitHorizontal,
@@ -9,7 +11,6 @@ import {
   Link2,
   Loader2,
   Maximize2,
-  Plus,
   Search,
   X,
 } from 'lucide-react';
@@ -27,10 +28,14 @@ import { showToast } from '../Toast';
 import { SecondaryButton, StatusBadge } from '../ui';
 import InspectorDetailModal from './InspectorDetailModal';
 import {
+  buildFilePatchDisplayRows,
   buildCommitPatchModel,
+  buildHunkKey,
   mergeExpandedPatchRows,
   normalizePatchExpander,
   normalizePatchRows,
+  type CommitPatchDisplayExpanderActionView,
+  type CommitPatchDisplayRowView,
   type CommitPatchModel,
   type CommitPatchExpanderRowView,
   type CommitPatchLineRowView,
@@ -136,10 +141,6 @@ function patchCodeCellClass(kind: 'context' | 'add' | 'del' | 'meta'): string {
   if (kind === 'add') return 'text-[#1a7f37]';
   if (kind === 'del') return 'text-[#cf222e]';
   return 'text-slate-900';
-}
-
-function buildHunkKey(filePath: string, hunk: Pick<CommitPatchHunkView, 'header'>, index: number): string {
-  return `${filePath}::${hunk.header}::${index}`;
 }
 
 function buildExpanderKey(hunkKey: string, rowId: string, direction: 'up' | 'down'): string {
@@ -961,7 +962,7 @@ export function CommitPatchBrowser({
   onSelectFile: (filePath: string) => void;
   onOpenTarget?: (target: CommitPatchTargetView) => void;
 }) {
-  const hunkContainerRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const fileContainerRef = useRef<HTMLDivElement | null>(null);
   const initialRowsByHunk = useMemo(() => {
     return Object.fromEntries(
       model.files.flatMap((file) =>
@@ -981,15 +982,12 @@ export function CommitPatchBrowser({
 
   async function handleExpand(
     file: CommitPatchFileView,
-    hunk: CommitPatchHunkView,
-    hunkKey: string,
-    row: CommitPatchExpanderRowView,
-    direction: 'up' | 'down',
+    action: CommitPatchDisplayExpanderActionView,
   ) {
-    const expanderKey = buildExpanderKey(hunkKey, row.id, direction);
-    const sourceRows = rowsByHunk[hunkKey] || hunk.rows;
-    const viewportAnchor = findExpansionViewportAnchor(sourceRows, row.id, direction);
-    const container = hunkContainerRefs.current[hunkKey];
+    const expanderKey = buildExpanderKey(action.hunkKey, action.row.id, action.direction);
+    const sourceRows = rowsByHunk[action.hunkKey] || action.hunk.rows;
+    const viewportAnchor = findExpansionViewportAnchor(sourceRows, action.row.id, action.direction);
+    const container = fileContainerRef.current;
     const anchorTopBefore =
       viewportAnchor
         ? container?.querySelector<HTMLElement>(`[data-patch-row-anchor="${viewportAnchor}"]`)?.getBoundingClientRect().top ?? null
@@ -1005,30 +1003,30 @@ export function CommitPatchBrowser({
         version: commitVersion,
         commit_hash: commitHash,
         file_path: file.path,
-        hunk_header: hunk.header,
-        expander_id: row.id,
-        direction,
+        hunk_header: action.hunk.header,
+        expander_id: action.row.id,
+        direction: action.direction,
       });
       const insertedRows = normalizePatchRows(response.inserted_rows);
       const remainingExpander = normalizePatchExpander(response.remaining_expander);
       setRowsByHunk((current) => {
-        const liveRows = current[hunkKey] || hunk.rows;
+        const liveRows = current[action.hunkKey] || action.hunk.rows;
         const mergedRows = mergeExpandedPatchRows({
           sourceRows: liveRows,
-          expanderId: row.id,
-          direction,
+          expanderId: action.row.id,
+          direction: action.direction,
           insertedRows,
           remainingExpander,
         });
         if (mergedRows === liveRows) return current;
         return {
           ...current,
-          [hunkKey]: mergedRows,
+          [action.hunkKey]: mergedRows,
         };
       });
       if (viewportAnchor && anchorTopBefore !== null) {
         requestAnimationFrame(() => {
-          const container = hunkContainerRefs.current[hunkKey];
+          const container = fileContainerRef.current;
           const anchorTopAfter =
             container?.querySelector<HTMLElement>(`[data-patch-row-anchor="${viewportAnchor}"]`)?.getBoundingClientRect().top ?? null;
           if (!container || anchorTopAfter === null) return;
@@ -1054,12 +1052,12 @@ export function CommitPatchBrowser({
       selectedFilePath={selectedFilePath}
       onSelectFile={onSelectFile}
       onOpenTarget={onOpenTarget}
-      hunkContainerRefs={hunkContainerRefs}
+      fileContainerRef={fileContainerRef}
       rowsByHunk={rowsByHunk}
       loadingExpanders={loadingExpanders}
       expanderErrors={expanderErrors}
-      onExpand={(file, hunk, hunkKey, row, direction) =>
-        void handleExpand(file, hunk, hunkKey, row, direction)}
+      onExpand={(file, action) =>
+        void handleExpand(file, action)}
     />
   );
 }
@@ -1079,16 +1077,13 @@ export function CommitPatchBrowserView({
   selectedFilePath: string;
   onSelectFile: (filePath: string) => void;
   onOpenTarget?: (target: CommitPatchTargetView) => void;
-  hunkContainerRefs?: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
+  fileContainerRef?: React.MutableRefObject<HTMLDivElement | null>;
   rowsByHunk: Record<string, CommitPatchRowView[]>;
   loadingExpanders: Record<string, boolean>;
   expanderErrors: Record<string, string>;
   onExpand: (
     file: CommitPatchFileView,
-    hunk: CommitPatchHunkView,
-    hunkKey: string,
-    row: CommitPatchExpanderRowView,
-    direction: 'up' | 'down',
+    action: CommitPatchDisplayExpanderActionView,
   ) => void;
 }) {
   const selectedFile =
@@ -1109,6 +1104,29 @@ export function CommitPatchBrowserView({
       return;
     }
     onOpenTarget?.(target);
+  }
+
+  function renderExpanderAction(
+    file: CommitPatchFileView,
+    action: CommitPatchDisplayExpanderActionView,
+  ) {
+    const expanderKey = buildExpanderKey(action.hunkKey, action.row.id, action.direction);
+    const isLoading = Boolean(loadingExpanders[expanderKey]);
+    const Icon = action.direction === 'up' ? ChevronUp : ChevronDown;
+    const label = expanderLabel(action.direction, action.row.hiddenCount);
+
+    return (
+      <button
+        key={expanderKey}
+        type="button"
+        onClick={() => onExpand(file, action)}
+        disabled={isLoading}
+        className="inline-flex items-center gap-1 rounded-md border border-[#d0d7de] bg-white px-2.5 py-1 font-medium text-[#0969da] hover:bg-[#f3f4f6] disabled:cursor-wait disabled:opacity-60"
+      >
+        {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icon className="h-3.5 w-3.5" />}
+        {label}
+      </button>
+    );
   }
 
   return (
@@ -1142,20 +1160,14 @@ export function CommitPatchBrowserView({
             No hunk data returned for this file.
           </div>
         ) : (
-          selectedFile.hunks.map((hunk, index) => {
-            const hunkKey = buildHunkKey(selectedFile.path, hunk, index);
-            const rows = rowsByHunk[hunkKey] || hunk.rows;
-            const currentTarget = choosePrimaryTarget(hunk, 'current-version');
-            const nearestTagTarget = choosePrimaryTarget(hunk, 'nearest-tag');
+          (() => {
+            const rows = buildFilePatchDisplayRows(selectedFile, rowsByHunk);
             return (
-              <div key={hunkKey} className="overflow-hidden rounded-lg border border-slate-300 bg-white">
-                <div className="border-b border-slate-300 bg-[#ddf4ff] px-3 py-2 font-mono text-[11px] text-[#0969da]">
-                  {hunk.header}
-                </div>
+              <div className="overflow-hidden rounded-lg border border-slate-300 bg-white">
                 <div
                   ref={(node) => {
-                    if (hunkContainerRefs) {
-                      hunkContainerRefs.current[hunkKey] = node;
+                    if (fileContainerRef) {
+                      fileContainerRef.current = node;
                     }
                   }}
                   className="max-h-[48vh] overflow-auto"
@@ -1163,32 +1175,61 @@ export function CommitPatchBrowserView({
                 >
                   <table className="w-full border-collapse font-mono text-xs leading-5">
                     <tbody>
-                      {rows.map((row, rowIndex) => {
-                        if (row.type === 'expander') {
-                          const directions = row.direction === 'both' ? (['up', 'down'] as const) : ([row.direction] as const);
+                      {rows.map((row) => {
+                        if (row.type === 'hunk-header') {
                           return (
-                            <tr key={`${row.id}-${rowIndex}`} className="border-y border-[#d8dee4] bg-[#f6f8fa]">
+                            <tr key={row.key} className="border-y border-slate-300 bg-[#ddf4ff]">
                               <td colSpan={3} className="px-3 py-2">
-                                <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-[#57606a]">
-                                  {directions.map((direction) => {
-                                    const expanderKey = buildExpanderKey(hunkKey, row.id, direction);
-                                    const isLoading = Boolean(loadingExpanders[expanderKey]);
-                                    return (
-                                      <button
-                                        key={expanderKey}
-                                        type="button"
-                                        onClick={() => onExpand(selectedFile, hunk, hunkKey, row, direction)}
-                                        disabled={isLoading}
-                                        className="inline-flex items-center gap-1 rounded-md border border-[#d0d7de] bg-white px-2.5 py-1 font-medium text-[#0969da] hover:bg-[#f3f4f6] disabled:cursor-wait disabled:opacity-60"
-                                      >
-                                        {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-                                        {expanderLabel(direction, row.hiddenCount)}
-                                      </button>
-                                    );
-                                  })}
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="font-mono text-[11px] text-[#0969da]">{row.header}</span>
+                                  <div className="flex flex-wrap gap-2 text-[11px]">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenTarget(row.currentVersionTarget)}
+                                      disabled={!row.currentVersionTarget.available}
+                                      className="rounded-md border border-[#b6e3ff] bg-white px-2 py-1 text-[#0969da] hover:bg-[#eff8ff] disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      Open in current version
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenTarget(row.nearestTagTarget)}
+                                      disabled={!row.nearestTagTarget.available}
+                                      className="rounded-md border border-[#b6e3ff] bg-white px-2 py-1 text-[#0969da] hover:bg-[#eff8ff] disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      Jump to nearest tag
+                                    </button>
+                                  </div>
                                 </div>
-                                {directions.map((direction) => {
-                                  const expanderKey = buildExpanderKey(hunkKey, row.id, direction);
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        if (row.type === 'expander') {
+                          const maxHiddenCount = Math.max(...row.actions.map((action) => action.row.hiddenCount));
+                          return (
+                            <tr key={row.key} className="border-y border-[#d8dee4] bg-[#f6f8fa]">
+                              <td colSpan={3} className="px-3 py-2">
+                                <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-[#57606a]">
+                                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[#d0d7de] bg-white text-[#57606a]">
+                                    {row.actions.length > 1 ? (
+                                      <ChevronsUpDown className="h-3.5 w-3.5" />
+                                    ) : row.actions[0]?.direction === 'up' ? (
+                                      <ChevronUp className="h-3.5 w-3.5" />
+                                    ) : (
+                                      <ChevronDown className="h-3.5 w-3.5" />
+                                    )}
+                                  </span>
+                                  {row.actions.length > 1 && (
+                                    <span className="font-medium">{maxHiddenCount} unmodified lines</span>
+                                  )}
+                                  <div className="flex flex-wrap items-center justify-center gap-2">
+                                    {row.actions.map((action) => renderExpanderAction(selectedFile, action))}
+                                  </div>
+                                </div>
+                                {row.actions.map((action) => {
+                                  const expanderKey = buildExpanderKey(action.hunkKey, action.row.id, action.direction);
                                   const errorMessage = expanderErrors[expanderKey];
                                   return errorMessage ? (
                                     <div key={`${expanderKey}-error`} className="mt-2 text-center text-[11px] text-[#cf222e]">
@@ -1203,7 +1244,7 @@ export function CommitPatchBrowserView({
 
                         return (
                           <tr
-                            key={`${row.type}-${row.oldLine ?? 'n'}-${row.newLine ?? 'n'}-${rowIndex}`}
+                            key={row.key}
                             data-patch-row-anchor={buildPatchRowAnchor(row)}
                             className={`border-b border-[#d8dee4] ${patchRowClass(row.kind)}`}
                           >
@@ -1222,23 +1263,9 @@ export function CommitPatchBrowserView({
                     </tbody>
                   </table>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <SecondaryButton
-                    onClick={() => handleOpenTarget(currentTarget)}
-                    disabled={!currentTarget.available}
-                  >
-                    Open in current version
-                  </SecondaryButton>
-                  <SecondaryButton
-                    onClick={() => handleOpenTarget(nearestTagTarget)}
-                    disabled={!nearestTagTarget.available}
-                  >
-                    Jump to nearest tag
-                  </SecondaryButton>
-                </div>
               </div>
             );
-          })
+          })()
         )}
       </div>
     </div>
