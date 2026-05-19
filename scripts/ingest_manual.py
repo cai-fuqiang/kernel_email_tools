@@ -17,6 +17,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from sqlalchemy.exc import IntegrityError
+
 from src.parser.intel_sdm.parser import IntelSDMParser
 from src.chunker.pipeline import ChunkPipeline
 from src.storage.document_store import DocumentStorage
@@ -188,6 +190,15 @@ def _count_nodes(sections) -> int:
     return count
 
 
+def _is_duplicate_chunk_error(exc: IntegrityError) -> bool:
+    message = str(getattr(exc, "orig", exc))
+    return (
+        "ix_document_chunks_chunk_id" in message
+        or "duplicate key value violates unique constraint" in message
+        and "chunk_id" in message
+    )
+
+
 async def _store_chunks(chunks, manual_type, manual_version, drop_existing, reporter: ProgressReporter):
     """存储分片到数据库。"""
     config = _load_config()
@@ -211,7 +222,20 @@ async def _store_chunks(chunks, manual_type, manual_version, drop_existing, repo
     total_stored = 0
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i:i + batch_size]
-        await storage.insert_chunks(batch)
+        try:
+            await storage.insert_chunks(batch)
+        except IntegrityError as exc:
+            await storage.close()
+            if _is_duplicate_chunk_error(exc):
+                scope = f"manual_type={manual_type!r}, manual_version={manual_version!r}"
+                raise RuntimeError(
+                    "Duplicate document chunk IDs detected while storing PDF chunks. "
+                    "This usually means the same PDF content has already been imported for "
+                    f"{scope}. Re-run with --drop-existing to replace the existing chunks "
+                    "for that import scope, or change --manual-type/--manual-version if "
+                    "you intended to store this PDF as a separate document."
+                ) from exc
+            raise
         total_stored += len(batch)
         logger.info("Stored batch %d-%d/%d", i + 1, min(i + batch_size, len(chunks)), len(chunks))
         reporter.storing_progress(total_stored, len(chunks))
@@ -227,4 +251,8 @@ async def _store_chunks(chunks, manual_type, manual_version, drop_existing, repo
 
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except RuntimeError as exc:
+        logger.error("%s", exc)
+        sys.exit(1)
