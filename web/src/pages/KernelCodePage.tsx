@@ -271,6 +271,11 @@ const INSPECTOR_VIEW_LABELS: Record<InspectorView, string> = {
   links: 'Links',
 };
 
+export function clampRequestedLine(line: number | null | undefined, lineCount: number): number | null {
+  if (!line || line <= 0 || lineCount <= 0) return null;
+  return Math.min(line, lineCount);
+}
+
 function inspectorViewCount(
   view: InspectorView,
   data: { annotations: number; threads: number; knowledge: number },
@@ -566,10 +571,10 @@ export default function KernelCodePage() {
     setCurrentFile(null);
     setPathInput(path);
     setDirectoryEntries([]);
-    const focusLine = targetLine ?? urlLine;
-    setSelectedLines(focusLine ? new Set([focusLine]) : new Set());
+    const requestedLine = targetLine ?? urlLine;
+    setSelectedLines(requestedLine ? new Set([requestedLine]) : new Set());
     setSearchParams(
-      { v: activeVersion, path, ...(focusLine ? { line: String(focusLine) } : {}), ...(urlAnnotationId ? { annotation: urlAnnotationId } : {}) },
+      { v: activeVersion, path, ...(requestedLine ? { line: String(requestedLine) } : {}), ...(urlAnnotationId ? { annotation: urlAnnotationId } : {}) },
       { replace: true },
     );
     try {
@@ -578,6 +583,12 @@ export default function KernelCodePage() {
         getCodeAnnotations(activeVersion, path, fileAbort.signal).catch(() => [] as CodeAnnotation[]),
       ]);
       if (requestId !== pathRequestIdRef.current) return false;
+      const focusLine = clampRequestedLine(requestedLine, fileRes.line_count);
+      setSelectedLines(focusLine ? new Set([focusLine]) : new Set());
+      setSearchParams(
+        { v: activeVersion, path, ...(focusLine ? { line: String(focusLine) } : {}), ...(urlAnnotationId ? { annotation: urlAnnotationId } : {}) },
+        { replace: true },
+      );
       setCurrentFile(fileRes);
       setAnnotations(annotRes);
       await expandAncestors(path, false, requestId, fileAbort.signal);
@@ -602,7 +613,8 @@ export default function KernelCodePage() {
     async (path: string, targetLine?: number | null) => {
       if (!selectedVersion || !path) return;
       if (path === currentPath && currentPathKind) {
-        const focusTarget = targetLine ?? urlLine;
+        const requestedLine = targetLine ?? urlLine;
+        const focusTarget = clampRequestedLine(requestedLine, currentFile?.line_count || 0) ?? requestedLine;
         setSelectedLines(focusTarget ? new Set([focusTarget]) : new Set());
         return;
       }
@@ -640,6 +652,7 @@ export default function KernelCodePage() {
       resolveKnownPathKind,
       selectedVersion,
       nextPathRequestId,
+      currentFile?.line_count,
       urlLine,
     ],
   );
