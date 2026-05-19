@@ -20,7 +20,7 @@
 - Annotations：邮件、代码、知识对象批注；支持 `claim` / `summary` / `link` / `note` 等高价值类型、related targets，以及发布审核。支持 9 种 annotation 关系（`references` / `explains` / `refines` / `contradicts` / `same_variable` / `variable_evolves_to` / `value_passed_to` / `depends_on` / `evidence_for`），在 AnnotationRelationsPanel 中展示出入关系；Variable Trace 面板以代码流视角展示变量关联子集。每条 annotation 带唯一 ID（如 `code-annot-fc475b4cbec9`），可通过 AnnotationIdBadge 一键复制分享链接。Markdown 内容支持 `annotation:<id>` 格式链接，渲染为可点击的内部跳转按钮。
 - Thread Drawer：线程阅读、翻译、批注、标签、patch 展示。
 - Kernel Code：本地 kernel git 浏览、版本树、文件查看、代码批注；从统一标注中心跳转可自动切换 Notes 标签并高亮目标批注；符号索引脚本已存在，定义跳转仍在后续计划中。
-- Manuals：Intel SDM 等 PDF 导入、手册搜索和手册问答。
+- Manuals：支持导入文本型 PDF 文档，不仅限于 Intel SDM 等手册，也包括各类论文；导入后可做文档搜索、问答和段落级 annotation。
 - Auth/Admin：本地账号、角色、审批、公开/私有内容和批注发布审核。
 
 ## 环境要求
@@ -371,15 +371,35 @@ pip install sentence-transformers
 - `POST /api/admin/users/{user_id}/reject`
 - `POST /api/admin/users/{user_id}/reset-password`
 
-## 手册导入
+## PDF 导入（手册 / 论文）
 
 ```bash
 python scripts/ingest_manual.py --pdf ./manuals/intel_sdm/sdm.pdf --store
 ```
 
-手册导入命令会打印总体进度和当前章节进度，便于观察长时间解析任务的执行状态。
+这个导入命令名虽然叫 `ingest_manual.py`，但当前可以用于更广义的文本型 PDF 文档导入，不仅限于芯片手册，也包括各类论文。
 
-手册使用 `storage.manual.database_url`，可以和邮件库分开。
+推荐做法：
+
+- 手册放在类似 `./manuals/...` 的目录下，论文放在类似 `./papers/...` 的目录下，便于自己管理原始文件。
+- 每次先导入单个 PDF，确认解析效果后再批量整理。
+- 优先导入“可选中文本”的 PDF。扫描版或图片版 PDF 当前不在支持范围内，本 README 里的流程不包含 OCR。
+
+论文示例：
+
+```bash
+python scripts/ingest_manual.py --pdf ./papers/mm/example-paper.pdf --store
+```
+
+导入命令会打印总体进度和当前章节进度，便于观察长时间解析任务的执行状态。
+
+导入完成后可以这样使用：
+
+- 在 `Manual Search` 页面搜索手册或论文内容。
+- 搜索结果会展示提取出的文档片段。
+- 对文本型 PDF，可以在搜索结果的段落工作区里创建段落级 annotation。
+
+这些 PDF 文档当前使用 `storage.manual.database_url` 保存，可以和邮件库分开；这里的 `manual` 是历史命名，现在实际上也承载论文等文档型 PDF。
 
 ## 内核源码与符号索引
 
