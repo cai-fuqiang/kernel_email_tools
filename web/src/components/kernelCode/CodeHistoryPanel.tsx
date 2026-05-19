@@ -163,6 +163,18 @@ export function buildCommitPatchExpandPayload({
     // `expandKey` is stable per hunk span; `id` is only a display-row identifier.
     expander_id: action.row.expandKey || action.row.id,
     direction: action.direction,
+    expander: {
+      type: 'expander',
+      id: action.row.id,
+      direction: action.row.direction,
+      hidden_count: action.row.hiddenCount,
+      step_size: action.row.stepSize,
+      old_start: action.row.oldStart,
+      old_end: action.row.oldEnd,
+      new_start: action.row.newStart,
+      new_end: action.row.newEnd,
+      expand_key: action.row.expandKey,
+    },
   };
 }
 

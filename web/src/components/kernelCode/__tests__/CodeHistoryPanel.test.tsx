@@ -342,6 +342,18 @@ describe('CodeHistoryPanel commit patch browser', () => {
       hunk_header: '@@ -30,1 +30,1 @@ static int demo(void)',
       expander_id: 'abcd1234:mm/mmap.c:30:30:up',
       direction: 'up',
+      expander: {
+        type: 'expander',
+        id: 'mm/mmap.c:@@ -30,1 +30,1 @@ static int demo(void):up',
+        direction: 'up',
+        hidden_count: 19,
+        step_size: 20,
+        old_start: 11,
+        old_end: 29,
+        new_start: 11,
+        new_end: 29,
+        expand_key: 'abcd1234:mm/mmap.c:30:30:up',
+      },
     });
   });
 });

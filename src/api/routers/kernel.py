@@ -414,6 +414,7 @@ class KernelCommitPatchExpandRequest(BaseModel):
     hunk_header: str = Field(..., min_length=1)
     expander_id: str = Field(..., min_length=1)
     direction: str = Field(..., pattern="^(up|down)$")
+    expander: dict | None = None
 
 
 def _find_patch_expander(file_entry: dict, *, hunk_header: str, expander_id: str, direction: str) -> tuple[dict | None, dict | None]:
@@ -1165,16 +1166,23 @@ async def kernel_commit_patch_expand(
     file_entry = next((item for item in files if item["path"] == payload.file_path), None)
     if file_entry is None:
         raise HTTPException(status_code=404, detail="Patch file not found")
-    hunk, expander = _find_patch_expander(
-        file_entry,
-        hunk_header=payload.hunk_header,
-        expander_id=payload.expander_id,
-        direction=payload.direction,
-    )
-    if hunk is None:
-        raise HTTPException(status_code=404, detail="Patch hunk not found")
-    if expander is None:
-        raise HTTPException(status_code=404, detail="Patch expander not found")
+    hunk = None
+    expander = None
+    if payload.expander:
+        expander = dict(payload.expander)
+        if expander.get("direction") != payload.direction:
+            raise HTTPException(status_code=400, detail="Patch expander direction mismatch")
+    else:
+        hunk, expander = _find_patch_expander(
+            file_entry,
+            hunk_header=payload.hunk_header,
+            expander_id=payload.expander_id,
+            direction=payload.direction,
+        )
+        if hunk is None:
+            raise HTTPException(status_code=404, detail="Patch hunk not found")
+        if expander is None:
+            raise HTTPException(status_code=404, detail="Patch expander not found")
 
     file_lines = await _load_commit_file_lines(source, normalized_commit_hash, file_entry)
     inserted_rows, remaining_expander = _slice_expander_rows(
@@ -1183,7 +1191,7 @@ async def kernel_commit_patch_expand(
         direction=payload.direction,
     )
     return {
-        "hunk_header": hunk["header"],
+        "hunk_header": payload.hunk_header,
         "expander_id": expander["id"],
         "inserted_rows": inserted_rows,
         "remaining_expander": remaining_expander,

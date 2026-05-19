@@ -821,6 +821,7 @@ export interface KernelCommitPatchExpandRequest {
   hunk_header: string;
   expander_id: string;
   direction: 'up' | 'down';
+  expander?: KernelCommitPatchRowExpander;
 }
 
 export interface KernelCommitPatchExpandResponse {

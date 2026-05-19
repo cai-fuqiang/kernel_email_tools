@@ -245,6 +245,80 @@ index 1111111..2222222 100644
     assert response["inserted_rows"][-1]["type"] == "line"
 
 
+def test_expand_commit_hunk_can_continue_from_remaining_up_expander(monkeypatch):
+    patch = """diff --git a/crypto/af_alg.c b/crypto/af_alg.c
+index 1111111..2222222 100644
+--- a/crypto/af_alg.c
++++ b/crypto/af_alg.c
+@@ -531,2 +531,3 @@ static int demo(void)
+ line_a
+-line_b
++line_b2
++line_c
+"""
+
+    async def _fake_run_local_git(_source, *args, **_kwargs):
+        if args[:4] == ("show", "--no-ext-diff", "--find-renames", "--format="):
+            return patch
+        if args[:2] == ("show", "c1abe6f570af:crypto/af_alg.c"):
+            return "\n".join([f"line_{index}" for index in range(1, 540)]) + "\n"
+        raise AssertionError(args)
+
+    monkeypatch.setattr(kernel, "_local_git_source", lambda: object())
+    monkeypatch.setattr(kernel, "_run_local_git", _fake_run_local_git)
+
+    first = asyncio.run(kernel.kernel_commit_patch_expand(
+        payload=kernel.KernelCommitPatchExpandRequest(
+            version="v6.6",
+            commit_hash="c1abe6f570af",
+            file_path="crypto/af_alg.c",
+            hunk_header="@@ -531,2 +531,3 @@ static int demo(void)",
+            expander_id="c1abe6f570af:crypto/af_alg.c:531:531:up",
+            direction="up",
+        ),
+    ))
+
+    second = asyncio.run(kernel.kernel_commit_patch_expand(
+        payload=kernel.KernelCommitPatchExpandRequest(
+            version="v6.6",
+            commit_hash="c1abe6f570af",
+            file_path="crypto/af_alg.c",
+            hunk_header="@@ -531,2 +531,3 @@ static int demo(void)",
+            expander_id="c1abe6f570af:crypto/af_alg.c:531:531:up",
+            direction="up",
+            expander=first["remaining_expander"],
+        ),
+    ))
+
+    assert first["inserted_rows"][0]["text"] == "line_511"
+    assert second["inserted_rows"][0] == {
+        "type": "line",
+        "kind": "context",
+        "text": "line_491",
+        "old_line": 491,
+        "new_line": 491,
+    }
+    assert second["inserted_rows"][-1] == {
+        "type": "line",
+        "kind": "context",
+        "text": "line_510",
+        "old_line": 510,
+        "new_line": 510,
+    }
+    assert second["remaining_expander"] == {
+        "type": "expander",
+        "id": "crypto/af_alg.c:@@ -531,2 +531,3 @@ static int demo(void):up",
+        "direction": "up",
+        "hidden_count": 490,
+        "step_size": 20,
+        "old_start": 1,
+        "old_end": 490,
+        "new_start": 1,
+        "new_end": 490,
+        "expand_key": "c1abe6f570af:crypto/af_alg.c:531:531:up",
+    }
+
+
 def test_expand_commit_hunk_returns_inserted_rows_and_remaining_down_expander(monkeypatch):
     patch = """diff --git a/mm/mmap.c b/mm/mmap.c
 index 1111111..2222222 100644
