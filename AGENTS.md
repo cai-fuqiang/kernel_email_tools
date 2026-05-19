@@ -183,6 +183,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-18: AGENTS.md is primary cross-session memory for all AI agents; claude-mem is Claude-only supplement
 - 2026-05-19: project-local token workflow anchored in AGENTS.md plus kernel-email-tools-token skill and brief templates (AGENTS.md, .codex/skills/kernel-email-tools-token/SKILL.md, docs/ai/brief-templates.md)
 - 2026-05-19: kernel commit browsing uses structured file/hunk patch data plus hunk-level nearest-tag jump targets in the history inspector (src/api/routers/kernel.py, web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/pages/KernelCodePage.tsx)
+- 2026-05-19: commit detail modal uses stacked metadata-over-patch layout with dark-theme-safe diff colors to keep patch browsing readable in narrow dialogs (web/src/components/kernelCode/CodeHistoryPanel.tsx)
 
 ---
 
@@ -195,28 +196,16 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-19 1:07pm GMT+8
+# [kernel_email_tools] recent context, 2026-05-19 1:30pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 48 obs (13,766t read) | 1,931,950t work | 99% savings
+Stats: 50 obs (13,398t read) | 1,652,187t work | 99% savings
 
 ### May 14, 2026
-2 1:36p 🔵 Annotation relationship visualization design question raised
-3 1:39p 🟣 Annotation relation primitives and Markdown link parser
-5 1:55p 🟣 Annotation relation primitives and Markdown link parser implemented
-6 " ✅ Task 2 migration re-review requested
-4 " ✅ Migration execution-path tests approved after CapturingConnection rewrite
-7 " 🟣 Annotation relations migration and tests implemented
-10 " 🔵 AnnotationRelationORM SQL compilation verified for PostgreSQL
-11 " 🔵 AnnotationRelationRead model_validate fails on ORM objects with None defaults
-12 " 🔵 Regex parser correctly normalizes deprecated RELATION_TYPES
-13 " 🔵 SQLite DDL compilation fails due to ARRAY type in EmailORM
-14 " 🔵 7 unit tests pass for annotation relation primitives
-8 1:58p 🟣 Annotation relations migration and tests completed
-9 " 🔵 Task 2 migration re-review: path fixed, substring coverage unresolved
+9 1:58p 🔵 Task 2 migration re-review: path fixed, substring coverage unresolved
 21 2:06p 🔵 Review scope without session execution data
 24 2:10p 🟣 Annotation relation CRUD operations added to UnifiedAnnotationStore
 25 " 🟣 AnnotationRelationORM model and migration added
@@ -259,6 +248,20 @@ S89 Confirm how annotation relationships are displayed — created comprehensive
 184 " 🔴 Fix line number clamping in KernelCodePage when line exceeds file length
 185 " 🔵 short_label DB migration not applied on production database
 186 " 🔵 Remote home_pc server down — app not running on port 8080
+187 1:06p 🔴 Line clamping fix committed as 5d1faef
+188 " ✅ README.md doc cleanup committed
+189 " ✅ AGENTS.md memory context updated
+190 " 🔵 home_pc missing settings.yaml and backend server
+191 " 🔵 short_label DB migration not applied on aliyun.cloud.vm
+192 " 🔵 Kernel code API returns Internal Server Error on aliyun.cloud.vm
+193 1:12p 🔵 home_pc has serve.py running after initial check missed it
+194 " 🔵 aliyun.cloud.vm confirmed running uvicorn
+195 1:16p 🔵 home_pc config found in config/settings.yaml
+196 " 🔵 home_pc DB schema missing short_label/pinned/related_targets columns
+197 " 🔴 DB migration applied to home_pc annotations table
+198 " 🔴 Annotation API now returns data after migration
+199 1:25p 🔴 Patch browser UI layout fix
+200 1:26p 🔴 Patch browser layout fix - prevent squeeze on large screens
 
-Access 1932k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 1652k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

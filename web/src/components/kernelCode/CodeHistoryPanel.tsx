@@ -110,10 +110,10 @@ function diffLineClass(line: string): string {
 }
 
 function diffEntryClass(kind: 'context' | 'add' | 'del' | 'meta'): string {
-  if (kind === 'meta') return 'bg-slate-100 text-slate-600';
-  if (kind === 'add') return 'bg-emerald-50 text-emerald-800';
-  if (kind === 'del') return 'bg-rose-50 text-rose-800';
-  return 'text-slate-900';
+  if (kind === 'meta') return 'bg-slate-800/90 text-slate-300';
+  if (kind === 'add') return 'bg-emerald-950/60 text-emerald-100';
+  if (kind === 'del') return 'bg-rose-950/60 text-rose-100';
+  return 'text-slate-100';
 }
 
 export default function CodeHistoryPanel({
@@ -807,13 +807,13 @@ function CommitDetailModal({
         </div>
       ) : shown ? (
         <div className="space-y-4">
-          <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div className="grid min-h-0 gap-4">
             <section className="min-w-0 space-y-4">
               <div>
                 <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
                   Commit Message
                 </div>
-                <pre className="max-h-[56vh] overflow-auto whitespace-pre-wrap rounded-lg border border-slate-300 bg-slate-100 p-3 font-mono text-xs leading-5 text-slate-950">
+                <pre className="max-h-[24vh] overflow-auto whitespace-pre-wrap rounded-lg border border-slate-300 bg-slate-100 p-3 font-mono text-xs leading-5 text-slate-950">
                   {shown.message || 'No commit message available.'}
                 </pre>
               </div>
@@ -822,7 +822,7 @@ function CommitDetailModal({
                   <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
                     Trailers
                   </div>
-                  <div className="space-y-1 rounded-lg border border-slate-300 bg-white p-3 text-xs">
+                  <div className="max-h-40 space-y-1 overflow-auto rounded-lg border border-slate-300 bg-white p-3 text-xs">
                     {Object.entries(shown.trailers || {}).map(([key, values]) => (
                       <div key={key} className="grid grid-cols-[90px_minmax(0,1fr)] gap-3">
                         <span className="font-semibold text-slate-600">{key}</span>
@@ -837,7 +837,7 @@ function CommitDetailModal({
                   <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
                     Changed Files
                   </div>
-                  <div className="max-h-56 overflow-auto rounded-lg border border-slate-300 bg-white">
+                  <div className="max-h-40 overflow-auto rounded-lg border border-slate-300 bg-white">
                     {shown.changed_files.map((file) => (
                       <div
                         key={`${file.path}-${file.added}-${file.deleted}`}
@@ -918,8 +918,8 @@ export function CommitPatchBrowser({
   }
 
   return (
-    <div className="grid min-h-0 gap-4 xl:grid-cols-[220px_minmax(0,1fr)]">
-      <div className="max-h-[68vh] overflow-auto rounded-lg border border-slate-300 bg-white p-2">
+    <div className="grid min-h-0 gap-4 xl:grid-cols-[240px_minmax(0,1fr)]">
+      <div className="max-h-52 overflow-auto rounded-lg border border-slate-300 bg-white p-2 xl:max-h-[68vh]">
         <div className="space-y-1">
           {model.files.map((file) => {
             const active = file.path === selectedFile.path;
@@ -941,7 +941,7 @@ export function CommitPatchBrowser({
           })}
         </div>
       </div>
-      <div className="space-y-3">
+      <div className="min-w-0 space-y-3">
         <CommitPatchFileSummary file={selectedFile} nearestTagVersion={model.nearestTagVersion} />
         {selectedFile.hunks.length === 0 ? (
           <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
@@ -952,16 +952,19 @@ export function CommitPatchBrowser({
             const currentTarget = choosePrimaryTarget(hunk, 'current-version');
             const nearestTagTarget = choosePrimaryTarget(hunk, 'nearest-tag');
             return (
-              <div key={`${selectedFile.path}-${hunk.header}-${index}`} className="rounded-lg border border-slate-300 bg-white p-3">
+              <div key={`${selectedFile.path}-${hunk.header}-${index}`} className="overflow-hidden rounded-lg border border-slate-300 bg-white p-3">
                 <div className="font-mono text-[11px] text-slate-700">{hunk.header}</div>
-                <pre className="mt-2 overflow-auto rounded-lg bg-slate-950/95 p-3 font-mono text-xs text-slate-100">
+                <pre className="mt-2 max-h-[34vh] overflow-auto rounded-lg bg-slate-950/95 p-3 font-mono text-xs leading-5 text-slate-100">
                   {hunk.lines.map((line) => (
-                    <div key={`${line.text}-${line.old_line ?? 'n'}-${line.new_line ?? 'n'}`} className={diffEntryClass(line.kind)}>
+                    <div
+                      key={`${line.text}-${line.old_line ?? 'n'}-${line.new_line ?? 'n'}`}
+                      className={`px-2 ${diffEntryClass(line.kind)}`}
+                    >
                       {line.text || '\u00a0'}
                     </div>
                   ))}
                 </pre>
-                <pre className="mt-2 overflow-auto rounded-lg border border-slate-300 bg-slate-50 p-3 font-mono text-xs text-slate-900">
+                <pre className="mt-2 max-h-[22vh] overflow-auto rounded-lg border border-slate-300 bg-slate-50 p-3 font-mono text-xs leading-5 text-slate-900">
                   {hunk.context_preview.snippet}
                 </pre>
                 <div className="mt-3 flex flex-wrap gap-2">
