@@ -164,9 +164,9 @@ export function buildCommitPatchExpandPayload({
     expander_id: action.row.expandKey || action.row.id,
     direction: action.direction,
     expander: {
-      type: 'expander',
+      type: 'expander' as const,
       id: action.row.id,
-      direction: action.row.direction,
+      direction: action.direction,
       hidden_count: action.row.hiddenCount,
       step_size: action.row.stepSize,
       old_start: action.row.oldStart,
