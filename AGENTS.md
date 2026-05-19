@@ -199,13 +199,13 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-19 3:23pm GMT+8
+# [kernel_email_tools] recent context, 2026-05-19 3:27pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (13,570t read) | 1,773,610t work | 99% savings
+Stats: 50 obs (13,725t read) | 1,773,446t work | 99% savings
 
 ### May 14, 2026
 44 2:18p 🟣 Annotation relation system implemented end-to-end
@@ -215,7 +215,6 @@ Stats: 50 obs (13,570t read) | 1,773,610t work | 99% savings
 48 " 🔴 Frontend API client URL path and parameter alignment fixes
 49 " 🟣 AnnotationRelationsPanel neighborhood UI built
 50 " 🟣 Markdown annotation links render as interactive buttons
-51 " ⚖️ Annotation relation routes placed before catchall thread route
 S73 UX polish for annotation relation display (declutter, AnnotationIdBadge) + caveman skill check (May 14 at 2:18 PM)
 S72 Annotation relation display UX polish — declutter interfaces and surface annotation IDs everywhere (May 14 at 2:18 PM)
 S75 继续计划 — user asks to continue with next steps after annotation relation system completion (May 14 at 5:21 PM)
@@ -269,6 +268,7 @@ S111 Redesign patch preview from split two-block display to GitHub-style single-
 207 2:23p 🟣 GitHub-style patch browser backend row model implemented
 S114 核对 home_pc 仓库 HEAD、进程工作目录及接口行为 — 区分代码没切到 5d1faef 还是服务没重载 (May 19 at 2:49 PM)
 209 3:00p 🔴 Patch browser "Expand above" button missing after upward context expansion
+210 " 🔴 Patch expander visibility preserved after incremental expansion
 
-Access 1774k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 1773k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

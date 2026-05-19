@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   ChevronDown,
@@ -31,6 +31,7 @@ import {
   normalizePatchRows,
   type CommitPatchModel,
   type CommitPatchExpanderRowView,
+  type CommitPatchLineRowView,
   type CommitPatchTargetView,
   choosePrimaryTarget,
   type CommitPatchFileView,
