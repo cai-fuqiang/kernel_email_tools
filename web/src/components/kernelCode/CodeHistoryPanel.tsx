@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Check,
   ChevronDown,
@@ -959,17 +959,12 @@ function CommitDetailModal({
               )}
             </section>
             <section className="min-w-0">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                  Patch browser
-                </div>
-                {shown.patch_truncated && <StatusBadge tone="warning">Truncated</StatusBadge>}
-              </div>
               {structuredModel ? (
-                <CommitPatchBrowser
+                <CommitPatchBrowserPanel
                   model={structuredModel}
                   commitHash={shown.commit_hash}
                   commitVersion={shown.version || ''}
+                  patchTruncated={shown.patch_truncated}
                   selectedFilePath={selectedFilePath}
                   onSelectFile={onSelectFile}
                   onOpenTarget={(target) => onOpenTarget?.(target)}
@@ -995,10 +990,11 @@ function CommitDetailModal({
   );
 }
 
-export function CommitPatchBrowser({
+function CommitPatchBrowserPanel({
   model,
   commitHash,
   commitVersion,
+  patchTruncated,
   selectedFilePath,
   onSelectFile,
   onOpenTarget,
@@ -1006,11 +1002,12 @@ export function CommitPatchBrowser({
   model: CommitPatchModel;
   commitHash: string;
   commitVersion: string;
+  patchTruncated?: boolean;
   selectedFilePath: string;
   onSelectFile: (filePath: string) => void;
   onOpenTarget?: (target: CommitPatchTargetView) => void;
 }) {
-  const fileContainerRef = useRef<HTMLDivElement | null>(null);
+  const [zoomed, setZoomed] = useState(false);
   const initialRowsByHunk = useMemo(() => {
     return Object.fromEntries(
       model.files.flatMap((file) =>
@@ -1028,14 +1025,31 @@ export function CommitPatchBrowser({
     setExpanderErrors({});
   }, [initialRowsByHunk]);
 
+  useEffect(() => {
+    setZoomed(false);
+  }, [commitHash]);
+
+  useEffect(() => {
+    if (!zoomed) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setZoomed(false);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [zoomed]);
+
   async function handleExpand(
     file: CommitPatchFileView,
     action: CommitPatchDisplayExpanderActionView,
+    container: HTMLDivElement | null,
   ) {
     const expanderKey = buildExpanderKey(action.hunkKey, action.row.id, action.direction);
     const sourceRows = rowsByHunk[action.hunkKey] || action.hunk.rows;
     const viewportAnchor = findExpansionViewportAnchor(sourceRows, action.row.id, action.direction);
-    const container = fileContainerRef.current;
     const anchorTopBefore =
       viewportAnchor
         ? container?.querySelector<HTMLElement>(`[data-patch-row-anchor="${viewportAnchor}"]`)?.getBoundingClientRect().top ?? null
@@ -1074,7 +1088,6 @@ export function CommitPatchBrowser({
       });
       if (viewportAnchor && anchorTopBefore !== null) {
         requestAnimationFrame(() => {
-          const container = fileContainerRef.current;
           const anchorTopAfter =
             container?.querySelector<HTMLElement>(`[data-patch-row-anchor="${viewportAnchor}"]`)?.getBoundingClientRect().top ?? null;
           if (!container || anchorTopAfter === null) return;
@@ -1100,20 +1113,85 @@ export function CommitPatchBrowser({
   }
 
   return (
-    <CommitPatchBrowserView
-      model={model}
-      selectedFilePath={selectedFilePath}
-      onSelectFile={onSelectFile}
-      onOpenTarget={onOpenTarget}
-      fileContainerRef={fileContainerRef}
-      rowsByHunk={rowsByHunk}
-      loadingExpanders={loadingExpanders}
-      expanderErrors={expanderErrors}
-      onExpand={(file, action) =>
-        void handleExpand(file, action)}
-    />
+    <>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+          Patch browser
+        </div>
+        <div className="flex items-center gap-2">
+          {patchTruncated && <StatusBadge tone="warning">Truncated</StatusBadge>}
+          <button
+            type="button"
+            onClick={() => setZoomed(true)}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+            aria-label="Open patch browser zoom view"
+            title="Open patch browser zoom view"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+            Zoom
+          </button>
+        </div>
+      </div>
+      <CommitPatchBrowserView
+        model={model}
+        selectedFilePath={selectedFilePath}
+        onSelectFile={onSelectFile}
+        onOpenTarget={onOpenTarget}
+        rowsByHunk={rowsByHunk}
+        loadingExpanders={loadingExpanders}
+        expanderErrors={expanderErrors}
+        diffContainerClassName="max-h-[48vh]"
+        onExpand={(file, action, container) =>
+          void handleExpand(file, action, container)}
+      />
+      {zoomed && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/45 p-4"
+          onClick={() => setZoomed(false)}
+        >
+          <div
+            className="flex h-[92vh] w-[min(96vw,1600px)] flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-slate-300 px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-slate-950">Patch browser zoom</div>
+                <div className="truncate text-xs text-slate-600">
+                  {selectedFilePath || model.files[0]?.path || 'Commit patch'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setZoomed(false)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100"
+                aria-label="Close patch browser zoom view"
+                title="Close patch browser zoom view"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 px-4 py-4">
+              <CommitPatchBrowserView
+                model={model}
+                selectedFilePath={selectedFilePath}
+                onSelectFile={onSelectFile}
+                onOpenTarget={onOpenTarget}
+                rowsByHunk={rowsByHunk}
+                loadingExpanders={loadingExpanders}
+                expanderErrors={expanderErrors}
+                diffContainerClassName="max-h-[calc(92vh-14rem)] min-h-[50vh]"
+                onExpand={(file, action, container) =>
+                  void handleExpand(file, action, container)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
+
+export const CommitPatchBrowser = CommitPatchBrowserPanel;
 
 export function CommitPatchBrowserView({
   model,
@@ -1124,21 +1202,25 @@ export function CommitPatchBrowserView({
   rowsByHunk,
   loadingExpanders,
   expanderErrors,
+  diffContainerClassName = 'max-h-[48vh]',
   onExpand,
 }: {
   model: CommitPatchModel;
   selectedFilePath: string;
   onSelectFile: (filePath: string) => void;
   onOpenTarget?: (target: CommitPatchTargetView) => void;
-  fileContainerRef?: React.MutableRefObject<HTMLDivElement | null>;
+  fileContainerRef?: { current: HTMLDivElement | null };
   rowsByHunk: Record<string, CommitPatchRowView[]>;
   loadingExpanders: Record<string, boolean>;
   expanderErrors: Record<string, string>;
+  diffContainerClassName?: string;
   onExpand: (
     file: CommitPatchFileView,
     action: CommitPatchDisplayExpanderActionView,
+    container: HTMLDivElement | null,
   ) => void;
 }) {
+  const resolvedFileContainerRef = fileContainerRef || { current: null as HTMLDivElement | null };
   const selectedFile =
     model.files.find((file) => file.path === selectedFilePath || file.new_path === selectedFilePath || file.old_path === selectedFilePath) ||
     model.files[0];
@@ -1172,7 +1254,7 @@ export function CommitPatchBrowserView({
       <button
         key={expanderKey}
         type="button"
-        onClick={() => onExpand(file, action)}
+        onClick={() => onExpand(file, action, resolvedFileContainerRef.current)}
         disabled={isLoading}
         className="inline-flex items-center gap-1 rounded-md border border-[#d0d7de] bg-white px-2.5 py-1 font-medium text-[#0969da] hover:bg-[#f3f4f6] disabled:cursor-wait disabled:opacity-60"
       >
@@ -1223,11 +1305,9 @@ export function CommitPatchBrowserView({
               <div className="overflow-hidden rounded-lg border border-slate-300 bg-white">
                 <div
                   ref={(node) => {
-                    if (fileContainerRef) {
-                      fileContainerRef.current = node;
-                    }
+                    resolvedFileContainerRef.current = node;
                   }}
-                  className="max-h-[48vh] overflow-auto"
+                  className={`${diffContainerClassName} overflow-auto`}
                   style={{ overflowAnchor: 'none' }}
                 >
                   <table className="w-full border-collapse font-mono text-xs leading-5">

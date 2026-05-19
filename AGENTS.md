@@ -199,6 +199,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-19: upward patch expansion keeps newly revealed lines in view by skipping anchor-preserving scroll compensation for `up` actions while retaining it for `down` actions (web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/__tests__/CodeHistoryPanel.test.tsx)
 - 2026-05-19: repeated commit patch expansion is stateful now; the frontend sends the current remaining expander bounds so the backend can continue slicing from the live gap instead of replaying the original range (src/api/routers/kernel.py, web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/api/types.ts, tests/api/test_kernel_commit_browser.py, web/src/components/kernelCode/__tests__/CodeHistoryPanel.test.tsx)
 - 2026-05-19: commit patch expand payload must keep `type: 'expander'` as a literal and send the action direction, otherwise TypeScript build fails on KernelCodePage chunk generation (web/src/components/kernelCode/CodeHistoryPanel.tsx)
+- 2026-05-19: commit detail patch zoom reuses the same patch-browser state in both inline and enlarged views so file selection and context expansion stay synchronized (web/src/components/kernelCode/CodeHistoryPanel.tsx)
 
 ---
 
@@ -211,7 +212,7 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-19 6:08pm GMT+8
+# [kernel_email_tools] recent context, 2026-05-19 6:21pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
