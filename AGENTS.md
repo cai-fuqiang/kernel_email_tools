@@ -195,13 +195,13 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-18 11:03pm GMT+8
+# [kernel_email_tools] recent context, 2026-05-19 1:07pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 41 obs (11,718t read) | 1,459,796t work | 99% savings
+Stats: 48 obs (13,766t read) | 1,931,950t work | 99% savings
 
 ### May 14, 2026
 2 1:36p 🔵 Annotation relationship visualization design question raised
@@ -250,14 +250,15 @@ S88 Confirm how annotation relationships are displayed (May 14 at 8:16 PM)
 141 9:42p 🟣 Installed caveman skill from external GitHub repo
 149 10:28p 🔵 virtio_net module fails to load due to missing net_failover symbols
 S89 Confirm how annotation relationships are displayed — created comprehensive usage guide (May 14 at 10:38 PM)
-**Investigated**: Explored full annotation system: AnnotationRelationsPanel.tsx (outgoing/incoming relations), VariableTracePanel.tsx (code-flow trace), AnnotationMarkdown.tsx (annotation: links), AnnotationIdBadge.tsx, backend annotations.py router, AnnotationsPage.tsx
+### May 18, 2026
+180 10:57p 🔴 Fix merge_entities annotation retargeting for legacy knowledge_entity type
+181 " 🔴 Fix KnowledgeGraphView stale selection when model entity changes
+182 " 🟣 Add navigability guard for knowledge map related object nodes
+### May 19, 2026
+183 11:04a 🟣 Kernel commit browser feature committed
+184 " 🔴 Fix line number clamping in KernelCodePage when line exceeds file length
+185 " 🔵 short_label DB migration not applied on production database
+186 " 🔵 Remote home_pc server down — app not running on port 8080
 
-**Learned**: System supports 9 relation types (references, explains, refines, contradicts, same_variable, variable_evolves_to, value_passed_to, depends_on, evidence_for). Two display modes: Relations Panel (structured outgoing/incoming per annotation) and Variable Trace (filtered code-flow subset with variable names from meta). Markdown supports `annotation:<id>` links rendered as clickable internal buttons
-
-**Completed**: Created docs/annotation-user-guide.md (477 lines) covering annotation ID system, relationship types, variable tracing, Markdown references, preview/detail workflow, multi-entry navigation. Updated README.md with link. Committed as `c81aa3c`
-
-**Next Steps**: Session appears complete — no active work items remaining
-
-
-Access 1460k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 1932k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
