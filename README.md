@@ -17,42 +17,11 @@
 - Knowledge Workbench：知识实体、关系、evidence、annotation-centered Knowledge Map、Draft Inbox、merge。
 - Draft Review：Search 产出的 Knowledge、Annotation、Tag assignment 草稿先进入 review，不自动污染知识库。
 - Tags：层级标签、target 浏览、邮件/知识实体绑定。
-- Annotations：邮件、代码、知识对象批注；支持 `claim` / `summary` / `link` / `note` 等高价值类型、related targets，以及发布审核。
+- Annotations：邮件、代码、知识对象批注；支持 `claim` / `summary` / `link` / `note` 等高价值类型、related targets，以及发布审核。支持 9 种 annotation 关系（`references` / `explains` / `refines` / `contradicts` / `same_variable` / `variable_evolves_to` / `value_passed_to` / `depends_on` / `evidence_for`），在 AnnotationRelationsPanel 中展示出入关系；Variable Trace 面板以代码流视角展示变量关联子集。每条 annotation 带唯一 ID（如 `code-annot-fc475b4cbec9`），可通过 AnnotationIdBadge 一键复制分享链接。Markdown 内容支持 `annotation:<id>` 格式链接，渲染为可点击的内部跳转按钮。
 - Thread Drawer：线程阅读、翻译、批注、标签、patch 展示。
-- Kernel Code：本地 kernel git 浏览、版本树、文件查看、代码批注；符号索引脚本已存在，定义跳转仍在后续计划中。
+- Kernel Code：本地 kernel git 浏览、版本树、文件查看、代码批注；从统一标注中心跳转可自动切换 Notes 标签并高亮目标批注；符号索引脚本已存在，定义跳转仍在后续计划中。
 - Manuals：Intel SDM 等 PDF 导入、手册搜索和手册问答。
 - Auth/Admin：本地账号、角色、审批、公开/私有内容和批注发布审核。
-
-## 架构
-
-```text
-src/
-├── collector/       # lore git mirror 采集
-├── parser/          # 邮件、patch、PDF/SDM 解析
-├── chunker/         # 手册/文本分片
-├── storage/         # PostgreSQL ORM、标签、批注、知识、agent run、缓存
-├── indexer/         # 全文索引、邮件 RAG chunk、向量索引
-├── retriever/       # keyword / semantic / hybrid / manual 检索
-├── qa/              # ManualQA、LLM/embedding provider
-├── kernel_source/   # 本地 kernel git 浏览
-├── symbol_indexer/  # ctags 符号索引
-├── translator/      # 翻译与缓存
-└── api/             # FastAPI 服务
-    ├── server.py     # 生命周期、CORS、路由注册 (294 行)
-    ├── state.py      # 全局服务单例
-    ├── deps.py       # Auth 中间件、权限控制、依赖注入
-    ├── schemas.py    # 共享 Pydantic 模型
-    └── routers/      # domain router (auth, tags, search, translations,
-                      #   annotations, kernel, knowledge, contributions,
-                      #   manual, system)
-
-web/src/
-├── pages/           # Search / Knowledge / Tags / Annotations / Code / Manuals / Admin
-├── components/      # ThreadDrawer、DraftReviewPanel、Tag/Annotation 组件等
-├── layouts/         # MainLayout
-├── api/             # API client 和 TypeScript 类型
-└── auth.tsx         # 前端认证状态
-```
 
 ## 环境要求
 
@@ -151,14 +120,6 @@ python scripts/serve.py
 - Web 应用：http://localhost:8000/app/
 - API 文档：http://localhost:8000/docs
 
-前端开发：
-
-```bash
-cd web
-npm run dev -- --host 127.0.0.1
-# http://127.0.0.1:5173/app/
-```
-
 ## 邮件导入
 
 普通导入会采集、解析、入库、回填全文索引并重建 GIN 索引；不会默认构建 RAG chunk/vector。
@@ -244,8 +205,6 @@ python scripts/index.py --build-chunks --list lkml
 python scripts/index.py --build-vector --list lkml
 ```
 
-当前脚本的 chunk/vector 构建偏全量重建。后续计划是增量 chunk/vector，只处理新邮件。
-
 ## Embedding Provider（向量模型）
 
 Semantic 检索需要 embedding 模型，支持两种 provider：
@@ -304,10 +263,10 @@ pip install sentence-transformers
 ## Web 功能
 
 - **Search Emails**：keyword/semantic/hybrid 邮件搜索，支持 channel、sender、date、patch、tag 过滤，搜索结果可 AI 概括并生成草稿。
-- **Knowledge**：知识实体、关系、evidence、graph、Draft Inbox。
+- **Knowledge**：知识实体、关系、evidence、Draft Inbox；annotation-centered Knowledge Map 以批注为节点展示知识图谱。
 - **Tags**：层级标签管理、tag target 浏览、邮件/知识实体绑定。
-- **Annotations**：统一批注列表，支持邮件/代码/知识实体批注及关系网络。
-- **Kernel Code**：本地 kernel git 浏览、版本树、文件查看、代码批注。
+- **Annotations**：统一批注列表，支持邮件/代码/知识实体批注；AnnotationRelationsPanel 展示 9 种关系的出入连接；Variable Trace 面板追踪变量代码流；AnnotationIdBadge 提供可分享的深度链接。
+- **Kernel Code**：本地 kernel git 浏览、版本树、文件查看、代码批注；从统一标注中心跳转自动切换 Notes 标签并高亮目标批注。
 - **Manual Search**：芯片手册搜索。
 - **Users / Admin**：本地用户、审批、角色管理。
 
@@ -471,21 +430,6 @@ podman exec -it kernel-pg pg_dump -U kernel kernel_email > kernel_email.sql
 podman exec -i kernel-pg psql -U kernel -d kernel_email < kernel_email.sql
 ```
 
-## 开发与验证
-
-```bash
-# Python 语法检查
-python -m py_compile src/api/server.py
-
-# 后端单测
-pytest tests/test_semantic_retriever.py
-
-# 前端
-cd web
-npm run lint
-npm run build
-```
-
 ## 常见问题
 
 ### Semantic 搜索为什么没有结果？
@@ -508,7 +452,7 @@ python scripts/index.py --build-vector --list <list>
 
 ### 新导入邮件后 semantic 会自动更新吗？
 
-不会。普通导入只处理邮件入库和全文索引。需要额外构建 chunk/vector。当前实现偏全量，增量向量构建还在 TODO。
+不会。普通导入只处理邮件入库和全文索引。需要额外构建 chunk/vector。
 
 ### API key 应该放哪里？
 
@@ -519,15 +463,6 @@ export DASHSCOPE_API_KEY=...
 ```
 
 `settings.yaml` 的 `api_key` 只建议本地开发兜底。
-
-## 计划文档
-
-- [.joycode/plans/PLAN-34000-semantic-search.md](.joycode/plans/PLAN-34000-semantic-search.md)：Semantic 搜索落地计划。
-- [.joycode/plans/PLAN-31002-knowledge-workbench-roadmap.md](.joycode/plans/PLAN-31002-knowledge-workbench-roadmap.md)：Knowledge Workbench、Evidence、Draft Inbox 与知识沉淀路线。
-- [.joycode/plans/PLAN-31003-ui-workbench-refresh.md](.joycode/plans/PLAN-31003-ui-workbench-refresh.md)：全站 UI 统一与知识沉淀工作流优化计划。
-- [.joycode/plans/PLAN-31000-unified-knowledge-graph.md](.joycode/plans/PLAN-31000-unified-knowledge-graph.md)：统一知识对象与知识图谱设计。
-- [.joycode/plans/PLAN-30000-code-definition-navigation.md](.joycode/plans/PLAN-30000-code-definition-navigation.md)：代码定义跳转后续计划。
-- [.joycode/plans/PLAN-20000-generalized-knowledge-tagging.md](.joycode/plans/PLAN-20000-generalized-knowledge-tagging.md)：通用标签系统设计与当前状态。
 
 ## 致谢
 
