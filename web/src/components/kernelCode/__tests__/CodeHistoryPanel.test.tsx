@@ -1,7 +1,12 @@
 import { isValidElement } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { CommitPatchBrowserView, buildCommitPatchModel } from '../CodeHistoryPanel';
+import {
+  CommitPatchBrowserView,
+  buildCommitPatchModel,
+  buildPatchRowAnchor,
+  findExpansionScrollAnchor,
+} from '../CodeHistoryPanel';
 
 function collectClickables(node: unknown): Array<Record<string, unknown>> {
   if (Array.isArray(node)) {
@@ -33,6 +38,27 @@ function flattenText(value: unknown): string {
 }
 
 describe('CodeHistoryPanel commit patch browser', () => {
+  it('uses the first revealed line as the scroll anchor after expansion', () => {
+    expect(
+      findExpansionScrollAnchor([
+        {
+          type: 'expander',
+          id: 'top',
+          direction: 'up',
+          hiddenCount: 9,
+          stepSize: 20,
+          oldStart: 1,
+          oldEnd: 9,
+          newStart: 1,
+          newEnd: 9,
+          expandKey: 'expand-top',
+        },
+        { type: 'line', kind: 'context', text: 'line_10', oldLine: 10, newLine: 10 },
+        { type: 'line', kind: 'context', text: 'line_11', oldLine: 11, newLine: 11 },
+      ]),
+    ).toBe(buildPatchRowAnchor({ oldLine: 10, newLine: 10 }));
+  });
+
   it('renders the file navigator and emits nearest-tag navigation requests', () => {
     const onOpenTarget = vi.fn();
     const model = buildCommitPatchModel({

@@ -186,6 +186,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-19: commit detail modal uses stacked metadata-over-patch layout with dark-theme-safe diff colors to keep patch browsing readable in narrow dialogs (web/src/components/kernelCode/CodeHistoryPanel.tsx)
 - 2026-05-19: commit patch preview now uses row-based hunks with on-demand context expansion and a GitHub-style unified diff surface while preserving current-version and nearest-tag jumps (src/api/routers/kernel.py, web/src/api/types.ts, web/src/api/client.ts, web/src/components/kernelCode/commitPatchModel.ts, web/src/components/kernelCode/CodeHistoryPanel.tsx)
 - 2026-05-19: incremental patch expansion keeps remaining `up` expanders above revealed context so `Expand ... above` stays visible while hidden lines remain (src/api/routers/kernel.py, tests/api/test_kernel_commit_browser.py)
+- 2026-05-19: patch browser expansion scrolls to the first revealed context line so clicking `Expand ... lines above` makes newly loaded lines immediately visible (web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/__tests__/CodeHistoryPanel.test.tsx)
 
 ---
 
@@ -198,7 +199,7 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-19 3:02pm GMT+8
+# [kernel_email_tools] recent context, 2026-05-19 3:23pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE

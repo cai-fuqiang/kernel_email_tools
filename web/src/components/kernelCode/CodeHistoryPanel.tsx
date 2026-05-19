@@ -143,6 +143,15 @@ function buildExpanderKey(hunkKey: string, rowId: string, direction: 'up' | 'dow
   return `${hunkKey}::${rowId}::${direction}`;
 }
 
+export function buildPatchRowAnchor(row: Pick<CommitPatchLineRowView, 'oldLine' | 'newLine'>): string {
+  return `${row.oldLine ?? 'n'}:${row.newLine ?? 'n'}`;
+}
+
+export function findExpansionScrollAnchor(rows: CommitPatchRowView[]): string | null {
+  const firstLine = rows.find((row): row is CommitPatchLineRowView => row.type === 'line');
+  return firstLine ? buildPatchRowAnchor(firstLine) : null;
+}
+
 function expanderLabel(direction: 'up' | 'down', hiddenCount: number): string {
   const lineCount = hiddenCount > 0 ? hiddenCount : 20;
   return direction === 'up'
@@ -937,6 +946,7 @@ export function CommitPatchBrowser({
   onSelectFile: (filePath: string) => void;
   onOpenTarget?: (target: CommitPatchTargetView) => void;
 }) {
+  const hunkContainerRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const initialRowsByHunk = useMemo(() => {
     return Object.fromEntries(
       model.files.flatMap((file) =>
@@ -978,6 +988,7 @@ export function CommitPatchBrowser({
         direction,
       });
       const replacementRows = normalizePatchRows(response.replacement_rows);
+      const scrollAnchor = findExpansionScrollAnchor(replacementRows);
       setRowsByHunk((current) => {
         const sourceRows = current[hunkKey] || hunk.rows;
         const rowIndex = sourceRows.findIndex((candidate) => candidate.type === 'expander' && candidate.id === row.id);
@@ -991,6 +1002,13 @@ export function CommitPatchBrowser({
           ],
         };
       });
+      if (scrollAnchor) {
+        requestAnimationFrame(() => {
+          const container = hunkContainerRefs.current[hunkKey];
+          const anchorRow = container?.querySelector<HTMLElement>(`[data-patch-row-anchor="${scrollAnchor}"]`);
+          anchorRow?.scrollIntoView({ block: 'start' });
+        });
+      }
     } catch (error) {
       setExpanderErrors((current) => ({
         ...current,
@@ -1010,6 +1028,7 @@ export function CommitPatchBrowser({
       selectedFilePath={selectedFilePath}
       onSelectFile={onSelectFile}
       onOpenTarget={onOpenTarget}
+      hunkContainerRefs={hunkContainerRefs}
       rowsByHunk={rowsByHunk}
       loadingExpanders={loadingExpanders}
       expanderErrors={expanderErrors}
@@ -1024,6 +1043,7 @@ export function CommitPatchBrowserView({
   selectedFilePath,
   onSelectFile,
   onOpenTarget,
+  hunkContainerRefs,
   rowsByHunk,
   loadingExpanders,
   expanderErrors,
@@ -1033,6 +1053,7 @@ export function CommitPatchBrowserView({
   selectedFilePath: string;
   onSelectFile: (filePath: string) => void;
   onOpenTarget?: (target: CommitPatchTargetView) => void;
+  hunkContainerRefs?: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
   rowsByHunk: Record<string, CommitPatchRowView[]>;
   loadingExpanders: Record<string, boolean>;
   expanderErrors: Record<string, string>;
@@ -1105,7 +1126,15 @@ export function CommitPatchBrowserView({
                 <div className="border-b border-slate-300 bg-[#ddf4ff] px-3 py-2 font-mono text-[11px] text-[#0969da]">
                   {hunk.header}
                 </div>
-                <div className="max-h-[48vh] overflow-auto">
+                <div
+                  ref={(node) => {
+                    if (hunkContainerRefs) {
+                      hunkContainerRefs.current[hunkKey] = node;
+                    }
+                  }}
+                  className="max-h-[48vh] overflow-auto"
+                  style={{ overflowAnchor: 'none' }}
+                >
                   <table className="w-full border-collapse font-mono text-xs leading-5">
                     <tbody>
                       {rows.map((row, rowIndex) => {
@@ -1147,7 +1176,11 @@ export function CommitPatchBrowserView({
                         }
 
                         return (
-                          <tr key={`${row.type}-${row.oldLine ?? 'n'}-${row.newLine ?? 'n'}-${rowIndex}`} className={`border-b border-[#d8dee4] ${patchRowClass(row.kind)}`}>
+                          <tr
+                            key={`${row.type}-${row.oldLine ?? 'n'}-${row.newLine ?? 'n'}-${rowIndex}`}
+                            data-patch-row-anchor={buildPatchRowAnchor(row)}
+                            className={`border-b border-[#d8dee4] ${patchRowClass(row.kind)}`}
+                          >
                             <td className={`w-[56px] border-r border-[#d8dee4] px-2 text-right align-top ${patchGutterClass(row.kind)}`}>
                               {row.oldLine ?? ''}
                             </td>
