@@ -202,6 +202,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-19: commit detail patch zoom reuses the same patch-browser state in both inline and enlarged views so file selection and context expansion stay synchronized (web/src/components/kernelCode/CodeHistoryPanel.tsx)
 - 2026-05-19: knowledge subtopics are modeled as `has_subtopic` relations between normal knowledge entities; parent pages render them separately and search results label them via projected parent metadata while evidence remains entity-scoped (src/storage/knowledge_store.py, web/src/components/knowledge/KnowledgeDocumentSections.tsx, web/src/components/knowledge/knowledgeLayout.ts, web/src/components/knowledge/KnowledgeRightRail.tsx)
 - 2026-05-19: manual import CLI now reports stage-weighted overall progress plus parser-driven current-section progress through an optional Intel SDM parser callback (scripts/ingest_manual.py, src/parser/intel_sdm/parser.py, README.md)
+- 2026-05-19: manual search results now expose document-chunk annotation targets and the manual search page provides a paragraph-level document annotation workspace backed by shared annotations (src/api/routers/manual.py, web/src/api/types.ts, web/src/pages/ManualSearchPage.tsx)
 
 ---
 
@@ -214,7 +215,7 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-19 8:43pm GMT+8
+# [kernel_email_tools] recent context, 2026-05-19 9:22pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE

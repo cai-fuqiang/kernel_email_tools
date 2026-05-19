@@ -93,11 +93,22 @@ async def manual_search(
                 "section": h.section,
                 "section_title": h.section_title,
                 "content_type": h.content_type,
-                "content": h.content[:500],  # 限制内容长度
+                "content": h.content,
                 "page_start": h.page_start + 1,  # 转为 1-based
                 "page_end": h.page_end + 1,
                 "score": round(h.score, 4),
                 "snippet": h.snippet,
+                "target_type": "document_chunk",
+                "target_ref": h.chunk_id,
+                "target_label": h.section_title or h.section or h.chunk_id,
+                "target_subtitle": " | ".join(
+                    part for part in [
+                        h.manual_type,
+                        h.manual_version,
+                        h.volume,
+                        f"pages {h.page_start + 1}-{h.page_end + 1}",
+                    ] if part
+                ),
             }
             for h in result.hits
         ],
@@ -162,5 +173,3 @@ async def manual_stats():
         by_manual_type=stats["by_manual_type"],
         by_content_type=stats["by_content_type"],
     )
-
-

@@ -363,6 +363,10 @@ export interface ManualSearchHit {
   page_end: number;
   score: number;
   snippet: string;
+  target_type: string;
+  target_ref: string;
+  target_label: string;
+  target_subtitle: string;
 }
 
 export interface ManualSearchResponse {
