@@ -185,6 +185,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-19: kernel commit browsing uses structured file/hunk patch data plus hunk-level nearest-tag jump targets in the history inspector (src/api/routers/kernel.py, web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/pages/KernelCodePage.tsx)
 - 2026-05-19: commit detail modal uses stacked metadata-over-patch layout with dark-theme-safe diff colors to keep patch browsing readable in narrow dialogs (web/src/components/kernelCode/CodeHistoryPanel.tsx)
 - 2026-05-19: commit patch preview now uses row-based hunks with on-demand context expansion and a GitHub-style unified diff surface while preserving current-version and nearest-tag jumps (src/api/routers/kernel.py, web/src/api/types.ts, web/src/api/client.ts, web/src/components/kernelCode/commitPatchModel.ts, web/src/components/kernelCode/CodeHistoryPanel.tsx)
+- 2026-05-19: incremental patch expansion keeps remaining `up` expanders above revealed context so `Expand ... above` stays visible while hidden lines remain (src/api/routers/kernel.py, tests/api/test_kernel_commit_browser.py)
 
 ---
 
@@ -197,23 +198,15 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-19 1:30pm GMT+8
+# [kernel_email_tools] recent context, 2026-05-19 3:02pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (13,398t read) | 1,652,187t work | 99% savings
+Stats: 50 obs (13,570t read) | 1,773,610t work | 99% savings
 
 ### May 14, 2026
-9 1:58p 🔵 Task 2 migration re-review: path fixed, substring coverage unresolved
-21 2:06p 🔵 Review scope without session execution data
-24 2:10p 🟣 Annotation relation CRUD operations added to UnifiedAnnotationStore
-25 " 🟣 AnnotationRelationORM model and migration added
-26 " 🟣 Annotation relation Pydantic models for create/read
-27 " 🟣 Markdown annotation link parser utility
-28 " 🔵 Task 3 test suite passes 13 tests
-29 " 🟣 Annotation relation CRUD operations added to UnifiedAnnotationStore
 44 2:18p 🟣 Annotation relation system implemented end-to-end
 45 " 🟣 AnnotationRelationParser extracts markdown annotation links
 46 " 🔴 Self-link bypass via whitespace trimming gap closed
@@ -222,7 +215,6 @@ Stats: 50 obs (13,398t read) | 1,652,187t work | 99% savings
 49 " 🟣 AnnotationRelationsPanel neighborhood UI built
 50 " 🟣 Markdown annotation links render as interactive buttons
 51 " ⚖️ Annotation relation routes placed before catchall thread route
-52 " ✅ Annotation UI feedback: crowded layout missing annotation ID display
 S73 UX polish for annotation relation display (declutter, AnnotationIdBadge) + caveman skill check (May 14 at 2:18 PM)
 S72 Annotation relation display UX polish — declutter interfaces and surface annotation IDs everywhere (May 14 at 2:18 PM)
 S75 继续计划 — user asks to continue with next steps after annotation relation system completion (May 14 at 5:21 PM)
@@ -239,7 +231,8 @@ S88 Confirm how annotation relationships are displayed (May 14 at 8:16 PM)
 148 9:05p ✅ Annotation relations system verification complete
 141 9:42p 🟣 Installed caveman skill from external GitHub repo
 149 10:28p 🔵 virtio_net module fails to load due to missing net_failover symbols
-S89 Confirm how annotation relationships are displayed — created comprehensive usage guide (May 14 at 10:38 PM)
+S89 Confirm how annotation relationships are displayed — created comprehensive usage guide (May 14 at 10:35 PM)
+S112 GitHub-style kernel commit patch browser redesign - replace split dual-`pre` patch preview with unified diff table with inline context expanders, backend row-based hunk model, and expansion API endpoint (May 14 at 10:38 PM)
 ### May 18, 2026
 180 10:57p 🔴 Fix merge_entities annotation retargeting for legacy knowledge_entity type
 181 " 🔴 Fix KnowledgeGraphView stale selection when model entity changes
@@ -261,8 +254,20 @@ S89 Confirm how annotation relationships are displayed — created comprehensive
 196 " 🔵 home_pc DB schema missing short_label/pinned/related_targets columns
 197 " 🔴 DB migration applied to home_pc annotations table
 198 " 🔴 Annotation API now returns data after migration
+208 1:19p 🔵 Commit 5d1faef confirmed on home_pc
 199 1:25p 🔴 Patch browser UI layout fix
 200 1:26p 🔴 Patch browser layout fix - prevent squeeze on large screens
+201 " ✅ Patch browser layout approach pivoted to stacked layout
+202 1:53p ✅ Patch preview redesign to GitHub-style single-block diff
+S113 GitHub-style kernel commit patch browser redesign - replace split dual-`pre` patch preview with unified diff table with inline context expanders (May 19 at 1:53 PM)
+S111 Redesign patch preview from split two-block display to GitHub-style single-block diff with inline context expansion (May 19 at 1:53 PM)
+203 " 🟣 Implementation plan written for GitHub-style patch browser
+204 1:54p 🔵 Session initiated for GitHub-style patch browser implementation
+205 2:06p 🔄 Row-based hunk normalization for patch browser UI model
+206 2:08p 🟣 Row-based hunk normalization added to patch browser UI model
+207 2:23p 🟣 GitHub-style patch browser backend row model implemented
+S114 核对 home_pc 仓库 HEAD、进程工作目录及接口行为 — 区分代码没切到 5d1faef 还是服务没重载 (May 19 at 2:49 PM)
+209 3:00p 🔴 Patch browser "Expand above" button missing after upward context expansion
 
-Access 1652k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 1774k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

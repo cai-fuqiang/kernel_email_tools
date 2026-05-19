@@ -164,6 +164,62 @@ def test_expand_commit_hunk_returns_replacement_rows(monkeypatch):
 index 1111111..2222222 100644
 --- a/mm/mmap.c
 +++ b/mm/mmap.c
+@@ -30,2 +30,3 @@ static int demo(void)
+ line_a
+-line_b
++line_b2
++line_c
+"""
+
+    async def _fake_run_local_git(_source, *args, **_kwargs):
+        if args[:4] == ("show", "--no-ext-diff", "--find-renames", "--format="):
+            return patch
+        if args[:2] == ("show", "abcd1234:mm/mmap.c"):
+            return "\n".join([f"line_{index}" for index in range(1, 40)]) + "\n"
+        raise AssertionError(args)
+
+    monkeypatch.setattr(kernel, "_local_git_source", lambda: object())
+    monkeypatch.setattr(kernel, "_run_local_git", _fake_run_local_git)
+
+    response = asyncio.run(kernel.kernel_commit_patch_expand(
+        payload=kernel.KernelCommitPatchExpandRequest(
+            version="v6.6",
+            commit_hash="abcd1234",
+            file_path="mm/mmap.c",
+            hunk_header="@@ -30,2 +30,3 @@ static int demo(void)",
+            expander_id="mm/mmap.c:@@ -30,2 +30,3 @@ static int demo(void):up",
+            direction="up",
+        ),
+    ))
+
+    assert response["expander_id"].endswith(":up")
+    assert response["replacement_rows"][0] == {
+        "type": "expander",
+        "id": "mm/mmap.c:@@ -30,2 +30,3 @@ static int demo(void):up",
+        "direction": "up",
+        "hidden_count": 9,
+        "step_size": 20,
+        "old_start": 1,
+        "old_end": 9,
+        "new_start": 1,
+        "new_end": 9,
+        "expand_key": "abcd1234:mm/mmap.c:30:30:up",
+    }
+    assert response["replacement_rows"][1] == {
+        "type": "line",
+        "kind": "context",
+        "text": "line_10",
+        "old_line": 10,
+        "new_line": 10,
+    }
+    assert response["replacement_rows"][-1]["type"] == "line"
+
+
+def test_expand_commit_hunk_keeps_remaining_down_expander_below_revealed_rows(monkeypatch):
+    patch = """diff --git a/mm/mmap.c b/mm/mmap.c
+index 1111111..2222222 100644
+--- a/mm/mmap.c
++++ b/mm/mmap.c
 @@ -10,2 +10,3 @@ static int demo(void)
  line_a
 -line_b
@@ -187,14 +243,25 @@ index 1111111..2222222 100644
             commit_hash="abcd1234",
             file_path="mm/mmap.c",
             hunk_header="@@ -10,2 +10,3 @@ static int demo(void)",
-            expander_id="mm/mmap.c:@@ -10,2 +10,3 @@ static int demo(void):up",
-            direction="up",
+            expander_id="mm/mmap.c:@@ -10,2 +10,3 @@ static int demo(void):down",
+            direction="down",
         ),
     ))
 
-    assert response["expander_id"].endswith(":up")
+    assert response["expander_id"].endswith(":down")
     assert response["replacement_rows"][0]["type"] == "line"
-    assert response["replacement_rows"][-1]["type"] in {"line", "expander"}
+    assert response["replacement_rows"][-1] == {
+        "type": "expander",
+        "id": "mm/mmap.c:@@ -10,2 +10,3 @@ static int demo(void):down",
+        "direction": "down",
+        "hidden_count": 7,
+        "step_size": 20,
+        "old_start": 32,
+        "old_end": None,
+        "new_start": 33,
+        "new_end": None,
+        "expand_key": "abcd1234:mm/mmap.c:10:10:down",
+    }
 
 
 def test_kernel_commit_returns_rows_and_not_context_preview(monkeypatch):

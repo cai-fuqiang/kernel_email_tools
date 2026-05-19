@@ -460,7 +460,7 @@ def _slice_replacement_rows(*, file_lines: list[str], expander: dict, direction:
             _hidden_span(new_start, remaining_new_end),
         )
         if remaining_hidden > 0:
-            rows.append(_expander_row(
+            rows.insert(0, _expander_row(
                 row_id=expander["id"],
                 direction=direction,
                 hidden_count=remaining_hidden,
