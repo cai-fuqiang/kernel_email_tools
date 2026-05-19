@@ -114,13 +114,6 @@ function diffLineClass(line: string): string {
   return 'text-slate-900';
 }
 
-function diffEntryClass(kind: 'context' | 'add' | 'del' | 'meta'): string {
-  if (kind === 'meta') return 'bg-slate-800/90 text-slate-300';
-  if (kind === 'add') return 'bg-emerald-950/60 text-emerald-100';
-  if (kind === 'del') return 'bg-rose-950/60 text-rose-100';
-  return 'text-slate-100';
-}
-
 function patchRowClass(kind: 'context' | 'add' | 'del' | 'meta'): string {
   if (kind === 'add') return 'bg-[#e6ffec] text-[#1a7f37] hover:bg-[#d8f5dd]';
   if (kind === 'del') return 'bg-[#ffebe9] text-[#cf222e] hover:bg-[#ffd8d3]';
