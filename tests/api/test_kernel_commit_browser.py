@@ -109,6 +109,22 @@ def test_attach_hunk_targets_prefers_new_path_and_line():
 
     resolved = kernel._attach_hunk_targets(files, current_version="v6.6", nearest_tag_version="v6.5")
 
+    file_entry = resolved[0]
+    assert file_entry["current_version_target"] == {
+        "available": True,
+        "version": "v6.6",
+        "path": "mm/mmap.c",
+        "line": 20,
+        "reason": None,
+    }
+    assert file_entry["nearest_tag_target"] == {
+        "available": True,
+        "version": "v6.5",
+        "path": "mm/mmap.c",
+        "line": 20,
+        "reason": None,
+    }
+
     hunk = resolved[0]["hunks"][0]
     assert hunk["current_version_target"] == {
         "available": True,
@@ -150,6 +166,20 @@ def test_attach_hunk_targets_marks_unavailable_when_no_path_can_open():
 
     resolved = kernel._attach_hunk_targets(files, current_version="v6.6", nearest_tag_version=None)
 
+    assert resolved[0]["current_version_target"] == {
+        "available": False,
+        "version": "",
+        "path": "",
+        "line": 0,
+        "reason": "No navigable file target",
+    }
+    assert resolved[0]["nearest_tag_target"] == {
+        "available": False,
+        "version": "",
+        "path": "",
+        "line": 0,
+        "reason": "No browsable tag mapping found",
+    }
     assert resolved[0]["hunks"][0]["nearest_tag_target"] == {
         "available": False,
         "version": "",
@@ -264,6 +294,46 @@ index 1111111..2222222 100644
     }
 
 
+def test_attach_hunk_targets_uses_first_hunk_as_file_level_anchor():
+    files = [{
+        "path": "mm/mmap.c",
+        "old_path": "mm/mmap.c",
+        "new_path": "mm/mmap.c",
+        "status": "modified",
+        "added": "2",
+        "deleted": "1",
+        "is_binary": False,
+        "truncated": False,
+        "hunks": [
+            {
+                "header": "@@ -10,1 +10,1 @@",
+                "old_start": 10,
+                "old_count": 1,
+                "new_start": 10,
+                "new_count": 1,
+                "rows": [],
+                "current_version_target": None,
+                "nearest_tag_target": None,
+            },
+            {
+                "header": "@@ -23,1 +23,1 @@",
+                "old_start": 23,
+                "old_count": 1,
+                "new_start": 23,
+                "new_count": 1,
+                "rows": [],
+                "current_version_target": None,
+                "nearest_tag_target": None,
+            },
+        ],
+    }]
+
+    resolved = kernel._attach_hunk_targets(files, current_version="v6.6", nearest_tag_version="v6.5")
+
+    assert resolved[0]["current_version_target"]["line"] == 10
+    assert resolved[0]["nearest_tag_target"]["line"] == 10
+
+
 def test_kernel_commit_returns_rows_and_not_context_preview(monkeypatch):
     async def _fake_run_local_git(_source, *args, **_kwargs):
         if args[:3] == ("show", "--no-patch", "--format=%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%B"):
@@ -296,6 +366,20 @@ index 1111111..2222222 100644
     assert response["patch"].startswith("diff --git")
     assert response["files"][0]["path"] == "mm/mmap.c"
     assert response["files"][0]["added"] == "1"
+    assert response["files"][0]["current_version_target"] == {
+        "available": True,
+        "version": "v6.6",
+        "path": "mm/mmap.c",
+        "line": 10,
+        "reason": None,
+    }
+    assert response["files"][0]["nearest_tag_target"] == {
+        "available": True,
+        "version": "v6.5",
+        "path": "mm/mmap.c",
+        "line": 10,
+        "reason": None,
+    }
     hunk = response["files"][0]["hunks"][0]
     assert "rows" in hunk
     assert "context_preview" not in hunk

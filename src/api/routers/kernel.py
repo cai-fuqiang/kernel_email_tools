@@ -219,6 +219,8 @@ def _new_patch_file(path: str, old_path: str | None = None, new_path: str | None
         "deleted": "0",
         "is_binary": False,
         "truncated": False,
+        "current_version_target": None,
+        "nearest_tag_target": None,
         "hunks": [],
     }
 
@@ -531,13 +533,75 @@ def _pick_hunk_target(hunk: dict, new_path: str, old_path: str) -> tuple[str, in
     return "", 0
 
 
+def _normalized_patch_path(path: str | None) -> str:
+    value = str(path or "")
+    return "" if value == "/dev/null" else value
+
+
+def _pick_file_target(file_entry: dict, prefer_current_path: bool) -> tuple[str, int]:
+    current_path = _normalized_patch_path(file_entry.get("new_path"))
+    previous_path = _normalized_patch_path(file_entry.get("old_path"))
+    first_hunk = file_entry.get("hunks", [None])[0] if file_entry.get("hunks") else None
+
+    if prefer_current_path:
+        if not current_path:
+            return "", 0
+        if first_hunk and int(first_hunk.get("new_start") or 0) > 0:
+            return current_path, int(first_hunk["new_start"])
+        return current_path, 1
+
+    if current_path:
+        if first_hunk and int(first_hunk.get("new_start") or 0) > 0:
+            return current_path, int(first_hunk["new_start"])
+        return current_path, 1
+    if previous_path:
+        if first_hunk and int(first_hunk.get("old_start") or 0) > 0:
+            return previous_path, int(first_hunk["old_start"])
+        return previous_path, 1
+    return "", 0
+
+
 def _attach_hunk_targets(files: list[dict], current_version: str, nearest_tag_version: str | None) -> list[dict]:
     for file_entry in files:
+        current_path, current_line = _pick_file_target(file_entry, prefer_current_path=True)
+        if current_path and current_line > 0:
+            file_entry["current_version_target"] = _make_jump_target(
+                True,
+                current_version,
+                current_path,
+                current_line,
+            )
+        else:
+            file_entry["current_version_target"] = _make_jump_target(
+                False,
+                "",
+                "",
+                0,
+                "No navigable file target",
+            )
+
+        tag_path, tag_line = _pick_file_target(file_entry, prefer_current_path=False)
+        if nearest_tag_version and tag_path and tag_line > 0:
+            file_entry["nearest_tag_target"] = _make_jump_target(
+                True,
+                nearest_tag_version,
+                tag_path,
+                tag_line,
+            )
+        else:
+            file_entry["nearest_tag_target"] = _make_jump_target(
+                False,
+                "",
+                "",
+                0,
+                "No browsable tag mapping found",
+            )
+
         for hunk in file_entry.get("hunks", []):
             path, line = _pick_hunk_target(
                 hunk,
-                str(file_entry.get("new_path") or ""),
-                str(file_entry.get("old_path") or ""),
+                _normalized_patch_path(file_entry.get("new_path")),
+                _normalized_patch_path(file_entry.get("old_path")),
             )
             if path and line > 0:
                 hunk["current_version_target"] = _make_jump_target(True, current_version, path, line)

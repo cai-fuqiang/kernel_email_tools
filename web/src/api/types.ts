@@ -772,8 +772,8 @@ export interface KernelCommitPatchHunk {
   new_start: number;
   new_count: number;
   rows: KernelCommitPatchRow[];
-  current_version_target: KernelCommitJumpTarget;
-  nearest_tag_target: KernelCommitJumpTarget;
+  current_version_target?: KernelCommitJumpTarget;
+  nearest_tag_target?: KernelCommitJumpTarget;
 }
 
 export interface KernelCommitPatchFile {
@@ -785,6 +785,8 @@ export interface KernelCommitPatchFile {
   deleted: string;
   is_binary: boolean;
   truncated: boolean;
+  current_version_target?: KernelCommitJumpTarget;
+  nearest_tag_target?: KernelCommitJumpTarget;
   hunks: KernelCommitPatchHunk[];
 }
 

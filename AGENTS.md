@@ -194,6 +194,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-19: patch browser now renders one unified diff table per file, folds duplicate inter-hunk gap expanders into a single in-table separator, and uses Codex-style directional expansion affordances instead of separate hunk cards (web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/commitPatchModel.ts)
 - 2026-05-19: unified file-level patch rendering compiles with a single file container ref plus commitPatchModel-owned display-row helpers; stale hunk-card imports and props should be removed when touching CodeHistoryPanel.tsx (web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/commitPatchModel.ts)
 - 2026-05-19: AGENTS.md now requires per-feature commits, sync to `home_pc`, and frontend-design verification against `http://aliyun.cloud.vm:8080` when available (AGENTS.md)
+- 2026-05-19: commit patch navigation actions now live on file patch objects while hunk headers remain model-only and are not rendered inside the diff table (src/api/routers/kernel.py, web/src/components/kernelCode/commitPatchModel.ts, web/src/components/kernelCode/CodeHistoryPanel.tsx)
 
 ---
 
@@ -206,19 +207,15 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-19 3:59pm GMT+8
+# [kernel_email_tools] recent context, 2026-05-19 4:17pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (14,447t read) | 2,075,020t work | 99% savings
+Stats: 50 obs (14,274t read) | 1,952,784t work | 99% savings
 
 ### May 14, 2026
-S75 继续计划 — user asks to continue with next steps after annotation relation system completion (May 14 at 5:21 PM)
-130 8:16p 🟣 AnnotationIdBadge added to remaining preview surfaces
-S88 Confirm how annotation relationships are displayed (May 14 at 8:16 PM)
-134 " 🟣 Shareable annotation links via AnnotationIdBadge
 142 8:19p 🟣 Added shareable annotation deep links with copy-to-clipboard
 143 " 🟣 Backend search now matches annotation_id, target_ref, file_path directly
 144 " 🟣 Exact annotation ID search highlighted and promoted in both annotation pages
@@ -228,7 +225,6 @@ S88 Confirm how annotation relationships are displayed (May 14 at 8:16 PM)
 148 9:05p ✅ Annotation relations system verification complete
 141 9:42p 🟣 Installed caveman skill from external GitHub repo
 149 10:28p 🔵 virtio_net module fails to load due to missing net_failover symbols
-S89 Confirm how annotation relationships are displayed — created comprehensive usage guide (May 14 at 10:35 PM)
 S112 GitHub-style kernel commit patch browser redesign - replace split dual-`pre` patch preview with unified diff table with inline context expanders, backend row-based hunk model, and expansion API endpoint (May 14 at 10:38 PM)
 ### May 18, 2026
 180 10:57p 🔴 Fix merge_entities annotation retargeting for legacy knowledge_entity type
@@ -274,9 +270,14 @@ S116 Implement Codex-style inline patch expansion in commit browser — replace 
 214 3:33p 🟣 Codex-style patch browser expansion implementation started
 215 3:39p 🟣 Codex-style patch browser context expansion with inline merge and stable viewport
 216 " 🟣 Unified file-level patch surface with merged inter-hunk expanders
-S117 Per-file single continuous patch code block: merge all hunks into one diff table, fold inter-hunk gap expanders into single in-table separator, use Codex-style directional expand (May 19 at 3:43 PM)
+S117 Per-file single continuous patch code block: merge all hunks into one diff table, fold inter-hunk gap expanders into single in-table separator, use Codex-style directional expand (May 19 at 3:39 PM)
+S120 Session resume - still awaiting Feature Brief before code changes begin in kernel_email_tools (May 19 at 3:43 PM)
 217 3:52p 🟣 Unified file-level patch surface with merged inter-hunk expanders
 218 3:57p ⚖️ Configured AGENT.md with commit-and-sync workflow
+219 4:06p ⚖️ File-level granularity for gap navigation features
+S118 Discuss UI gap removal and file-level granularity for "open in current version" and "open in nested gap" features in kernel_email_tools project (May 19 at 4:06 PM)
+S119 Discuss UI gap removal and file-level granularity for navigation features in kernel_email_tools; agent awaits Feature Brief per AGENTS.md conventions (May 19 at 4:06 PM)
+220 " ⚖️ Superpowers workflow initiated for kernel_email_tools feature
 
-Access 2075k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 1953k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

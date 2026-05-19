@@ -72,8 +72,10 @@ export type CommitPatchDisplayRowView =
   | CommitPatchDisplayHunkHeaderRowView
   | CommitPatchDisplayExpanderRowView;
 
-export interface CommitPatchFileView extends Omit<KernelCommitPatchFile, 'hunks'> {
+export interface CommitPatchFileView extends Omit<KernelCommitPatchFile, 'current_version_target' | 'nearest_tag_target' | 'hunks'> {
   displayLabel: string;
+  currentVersionTarget: CommitPatchTargetView;
+  nearestTagTarget: CommitPatchTargetView;
   hunks: CommitPatchHunkView[];
 }
 
@@ -254,6 +256,8 @@ function normalizeFile(file: KernelCommitPatchFile): CommitPatchFileView {
   return {
     ...file,
     displayLabel: formatChangedFileLabel(file),
+    currentVersionTarget: normalizeTarget(file.current_version_target),
+    nearestTagTarget: normalizeTarget(file.nearest_tag_target),
     hunks: Array.isArray(file.hunks) ? file.hunks.map(normalizeHunk) : [],
   };
 }

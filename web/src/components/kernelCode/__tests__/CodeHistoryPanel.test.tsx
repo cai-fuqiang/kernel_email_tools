@@ -15,7 +15,11 @@ function collectClickables(node: unknown): Array<Record<string, unknown>> {
   if (!isValidElement(node)) {
     return [];
   }
-  const props = (node as { props?: Record<string, unknown> }).props || {};
+  const element = node as { props?: Record<string, unknown>; type?: unknown };
+  if (typeof element.type === 'function') {
+    return collectClickables(element.type(element.props || {}));
+  }
+  const props = element.props || {};
   const children = props.children;
   const nested = collectClickables(children);
   if (typeof props.onClick === 'function') {
@@ -31,10 +35,14 @@ function collectElementsByType(node: unknown, type: string): unknown[] {
   if (!isValidElement(node)) {
     return [];
   }
-  const props = (node as { props?: Record<string, unknown> }).props || {};
+  const element = node as { props?: Record<string, unknown>; type?: unknown };
+  if (typeof element.type === 'function') {
+    return collectElementsByType(element.type(element.props || {}), type);
+  }
+  const props = element.props || {};
   const children = props.children;
   const nested = collectElementsByType(children, type);
-  return (node as { type?: unknown }).type === type ? [node, ...nested] : nested;
+  return element.type === type ? [node, ...nested] : nested;
 }
 
 function flattenText(value: unknown): string {
@@ -45,9 +53,17 @@ function flattenText(value: unknown): string {
     return String(value);
   }
   if (isValidElement(value)) {
-    return flattenText((value as { props?: Record<string, unknown> }).props?.children);
+    const element = value as { props?: Record<string, unknown>; type?: unknown };
+    if (typeof element.type === 'function') {
+      return flattenText(element.type(element.props || {}));
+    }
+    return flattenText(element.props?.children);
   }
   return '';
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
 }
 
 describe('CodeHistoryPanel commit patch browser', () => {
@@ -115,6 +131,8 @@ describe('CodeHistoryPanel commit patch browser', () => {
           deleted: '1',
           is_binary: false,
           truncated: false,
+          current_version_target: { available: true, version: 'v6.6', path: 'mm/mmap.c', line: 20, reason: null },
+          nearest_tag_target: { available: true, version: 'v6.5', path: 'mm/mmap.c', line: 18, reason: null },
           hunks: [
             {
               header: '@@ -10,1 +20,2 @@',
@@ -137,8 +155,6 @@ describe('CodeHistoryPanel commit patch browser', () => {
                 },
                 { type: 'line', kind: 'add', text: '+line_c', old_line: null, new_line: 20 },
               ],
-              current_version_target: { available: true, version: 'v6.6', path: 'mm/mmap.c', line: 20, reason: null },
-              nearest_tag_target: { available: true, version: 'v6.5', path: 'mm/mmap.c', line: 18, reason: null },
             },
           ],
         },
@@ -162,6 +178,7 @@ describe('CodeHistoryPanel commit patch browser', () => {
 
     expect(flattenText(tree)).toContain('mm/mmap.c');
     expect(flattenText(tree)).toContain('+line_c');
+    expect(flattenText(tree)).not.toContain('@@ -10,1 +20,2 @@');
     expect(jumpButton).toBeTruthy();
 
     (jumpButton?.onClick as (() => void) | undefined)?.();
@@ -188,6 +205,8 @@ describe('CodeHistoryPanel commit patch browser', () => {
           deleted: '1',
           is_binary: false,
           truncated: false,
+          current_version_target: { available: true, version: 'v6.6', path: 'mm/mmap.c', line: 10, reason: null },
+          nearest_tag_target: { available: true, version: 'v6.5', path: 'mm/mmap.c', line: 10, reason: null },
           hunks: [
             {
               header: '@@ -10,1 +10,1 @@',
@@ -210,8 +229,6 @@ describe('CodeHistoryPanel commit patch browser', () => {
                   expand_key: 'gap-down',
                 },
               ],
-              current_version_target: { available: true, version: 'v6.6', path: 'mm/mmap.c', line: 10, reason: null },
-              nearest_tag_target: { available: true, version: 'v6.5', path: 'mm/mmap.c', line: 10, reason: null },
             },
             {
               header: '@@ -23,1 +23,1 @@',
@@ -234,8 +251,6 @@ describe('CodeHistoryPanel commit patch browser', () => {
                 },
                 { type: 'line', kind: 'add', text: '+new', old_line: null, new_line: 23 },
               ],
-              current_version_target: { available: true, version: 'v6.6', path: 'mm/mmap.c', line: 23, reason: null },
-              nearest_tag_target: { available: true, version: 'v6.5', path: 'mm/mmap.c', line: 23, reason: null },
             },
           ],
         },
@@ -256,7 +271,9 @@ describe('CodeHistoryPanel commit patch browser', () => {
     });
 
     expect(collectElementsByType(tree, 'table')).toHaveLength(1);
-    expect(flattenText(tree)).toContain('@@ -10,1 +10,1 @@');
-    expect(flattenText(tree)).toContain('@@ -23,1 +23,1 @@');
+    expect(countOccurrences(flattenText(tree), 'Open in current version')).toBe(1);
+    expect(countOccurrences(flattenText(tree), 'Jump to nearest tag')).toBe(1);
+    expect(flattenText(tree)).not.toContain('@@ -10,1 +10,1 @@');
+    expect(flattenText(tree)).not.toContain('@@ -23,1 +23,1 @@');
   });
 });

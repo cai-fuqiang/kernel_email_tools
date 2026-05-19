@@ -1151,7 +1151,11 @@ export function CommitPatchBrowserView({
         </div>
       </div>
       <div className="min-w-0 space-y-3">
-        <CommitPatchFileSummary file={selectedFile} nearestTagVersion={model.nearestTagVersion} />
+        <CommitPatchFileSummary
+          file={selectedFile}
+          nearestTagVersion={model.nearestTagVersion}
+          onOpenTarget={handleOpenTarget}
+        />
         {selectedFile.hunks.length === 0 ? (
           <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
             No hunk data returned for this file.
@@ -1174,33 +1178,7 @@ export function CommitPatchBrowserView({
                     <tbody>
                       {rows.map((row) => {
                         if (row.type === 'hunk-header') {
-                          return (
-                            <tr key={row.key} className="border-y border-slate-300 bg-[#ddf4ff]">
-                              <td colSpan={3} className="px-3 py-2">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <span className="font-mono text-[11px] text-[#0969da]">{row.header}</span>
-                                  <div className="flex flex-wrap gap-2 text-[11px]">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenTarget(row.currentVersionTarget)}
-                                      disabled={!row.currentVersionTarget.available}
-                                      className="rounded-md border border-[#b6e3ff] bg-white px-2 py-1 text-[#0969da] hover:bg-[#eff8ff] disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                      Open in current version
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenTarget(row.nearestTagTarget)}
-                                      disabled={!row.nearestTagTarget.available}
-                                      className="rounded-md border border-[#b6e3ff] bg-white px-2 py-1 text-[#0969da] hover:bg-[#eff8ff] disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                      Jump to nearest tag
-                                    </button>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          );
+                          return null;
                         }
 
                         if (row.type === 'expander') {
@@ -1272,9 +1250,11 @@ export function CommitPatchBrowserView({
 function CommitPatchFileSummary({
   file,
   nearestTagVersion,
+  onOpenTarget,
 }: {
   file: CommitPatchFileView;
   nearestTagVersion: string | null;
+  onOpenTarget?: (target: CommitPatchTargetView) => void;
 }) {
   return (
     <div className="rounded-lg border border-slate-300 bg-white px-3 py-2">
@@ -1289,6 +1269,24 @@ function CommitPatchFileSummary({
           </div>
         </div>
         <StatusBadge tone={file.is_binary ? 'warning' : 'info'}>{file.status}</StatusBadge>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+        <button
+          type="button"
+          onClick={() => onOpenTarget?.(file.currentVersionTarget)}
+          disabled={!file.currentVersionTarget.available}
+          className="rounded-md border border-[#b6e3ff] bg-white px-2 py-1 text-[#0969da] hover:bg-[#eff8ff] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Open in current version
+        </button>
+        <button
+          type="button"
+          onClick={() => onOpenTarget?.(file.nearestTagTarget)}
+          disabled={!file.nearestTagTarget.available}
+          className="rounded-md border border-[#b6e3ff] bg-white px-2 py-1 text-[#0969da] hover:bg-[#eff8ff] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Jump to nearest tag
+        </button>
       </div>
     </div>
   );
