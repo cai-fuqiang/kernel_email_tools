@@ -742,20 +742,28 @@ export interface KernelCommitJumpTarget {
   reason?: string | null;
 }
 
-export interface KernelCommitPatchLine {
+export interface KernelCommitPatchRowLine {
+  type: 'line';
   kind: 'context' | 'add' | 'del' | 'meta';
   text: string;
-  old_line?: number | null;
-  new_line?: number | null;
+  old_line: number | null;
+  new_line: number | null;
 }
 
-export interface KernelCommitPatchContextPreview {
-  focus_start_line: number;
-  focus_end_line: number;
-  snippet: string;
-  before_lines?: string[];
-  after_lines?: string[];
+export interface KernelCommitPatchRowExpander {
+  type: 'expander';
+  id: string;
+  direction: 'up' | 'down' | 'both';
+  hidden_count: number;
+  step_size: number;
+  old_start: number | null;
+  old_end: number | null;
+  new_start: number | null;
+  new_end: number | null;
+  expand_key: string;
 }
+
+export type KernelCommitPatchRow = KernelCommitPatchRowLine | KernelCommitPatchRowExpander;
 
 export interface KernelCommitPatchHunk {
   header: string;
@@ -763,8 +771,7 @@ export interface KernelCommitPatchHunk {
   old_count: number;
   new_start: number;
   new_count: number;
-  lines: KernelCommitPatchLine[];
-  context_preview: KernelCommitPatchContextPreview;
+  rows: KernelCommitPatchRow[];
   current_version_target: KernelCommitJumpTarget;
   nearest_tag_target: KernelCommitJumpTarget;
 }
@@ -803,6 +810,21 @@ export interface KernelHistoryCommit {
   patch?: string;
   patch_truncated?: boolean;
   version?: string;
+}
+
+export interface KernelCommitPatchExpandRequest {
+  version: string;
+  commit_hash: string;
+  file_path: string;
+  hunk_header: string;
+  expander_id: string;
+  direction: 'up' | 'down';
+}
+
+export interface KernelCommitPatchExpandResponse {
+  hunk_header: string;
+  expander_id: string;
+  replacement_rows: KernelCommitPatchRow[];
 }
 
 export interface KernelLineHistoryResponse {

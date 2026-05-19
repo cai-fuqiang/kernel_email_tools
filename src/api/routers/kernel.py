@@ -38,6 +38,8 @@ from src.storage.models import AnnotationCreate, AnnotationORM, AnnotationUpdate
 
 router = APIRouter(tags=["kernel"])
 
+_PATCH_EXPAND_STEP_SIZE = 20
+
 
 def _encode_kernel_path(path: str) -> str:
     return "/".join(quote(part, safe="") for part in path.split("/") if part)
@@ -221,29 +223,102 @@ def _new_patch_file(path: str, old_path: str | None = None, new_path: str | None
     }
 
 
-def _build_hunk_context_preview(hunk: dict, context_radius: int) -> dict:
-    preview_lines = hunk["lines"][: max(1, min(len(hunk["lines"]), context_radius * 2 + 3))]
-    numbered: list[str] = []
-    focus_start = None
-    focus_end = None
-    for line in preview_lines:
-        line_no = line.get("new_line") or line.get("old_line")
-        if line["kind"] in {"add", "del"}:
-            if focus_start is None and line_no is not None:
-                focus_start = line_no
-            if line_no is not None:
-                focus_end = line_no
-        numbered.append(line["text"])
+def _line_row(kind: str, text: str, old_line: int | None, new_line: int | None) -> dict:
     return {
-        "focus_start_line": focus_start or hunk["new_start"] or hunk["old_start"],
-        "focus_end_line": focus_end or focus_start or hunk["new_start"] or hunk["old_start"],
-        "snippet": "\n".join(numbered),
-        "before_lines": [],
-        "after_lines": [],
+        "type": "line",
+        "kind": kind,
+        "text": text,
+        "old_line": old_line,
+        "new_line": new_line,
     }
 
 
-def _parse_commit_patch(patch: str, context_radius: int = 3) -> list[dict]:
+def _expander_row(
+    *,
+    row_id: str,
+    direction: str,
+    hidden_count: int,
+    old_start: int | None,
+    old_end: int | None,
+    new_start: int | None,
+    new_end: int | None,
+    expand_key: str,
+    step_size: int = _PATCH_EXPAND_STEP_SIZE,
+) -> dict:
+    return {
+        "type": "expander",
+        "id": row_id,
+        "direction": direction,
+        "hidden_count": hidden_count,
+        "step_size": step_size,
+        "old_start": old_start,
+        "old_end": old_end,
+        "new_start": new_start,
+        "new_end": new_end,
+        "expand_key": expand_key,
+    }
+
+
+def _hidden_span(start: int | None, end: int | None) -> int:
+    if start is None or end is None or end < start:
+        return 0
+    return end - start + 1
+
+
+def _finalize_hunk_rows(commit_hash: str, file_entry: dict, hunk: dict, prev_hunk: dict | None, next_hunk: dict | None) -> None:
+    rows: list[dict] = []
+    prefix_old_start = (int(prev_hunk["old_start"]) + int(prev_hunk["old_count"])) if prev_hunk else 1
+    prefix_new_start = (int(prev_hunk["new_start"]) + int(prev_hunk["new_count"])) if prev_hunk else 1
+    prefix_old_end = int(hunk["old_start"]) - 1
+    prefix_new_end = int(hunk["new_start"]) - 1
+    prefix_hidden_count = max(
+        _hidden_span(prefix_old_start, prefix_old_end),
+        _hidden_span(prefix_new_start, prefix_new_end),
+    )
+    if prefix_hidden_count > 0:
+        rows.append(_expander_row(
+            row_id=f'{file_entry["path"]}:{hunk["header"]}:up',
+            direction="up",
+            hidden_count=prefix_hidden_count,
+            old_start=prefix_old_start if prefix_old_end >= prefix_old_start else None,
+            old_end=prefix_old_end if prefix_old_end >= prefix_old_start else None,
+            new_start=prefix_new_start if prefix_new_end >= prefix_new_start else None,
+            new_end=prefix_new_end if prefix_new_end >= prefix_new_start else None,
+            expand_key=f'{commit_hash}:{file_entry["path"]}:{hunk["old_start"]}:{hunk["new_start"]}:up',
+        ))
+
+    rows.extend(hunk["lines"])
+
+    suffix_old_start = int(hunk["old_start"]) + int(hunk["old_count"])
+    suffix_new_start = int(hunk["new_start"]) + int(hunk["new_count"])
+    suffix_old_end = (int(next_hunk["old_start"]) - 1) if next_hunk else None
+    suffix_new_end = (int(next_hunk["new_start"]) - 1) if next_hunk else None
+    suffix_hidden_count = (
+        max(
+            _hidden_span(suffix_old_start, suffix_old_end),
+            _hidden_span(suffix_new_start, suffix_new_end),
+        )
+        if next_hunk
+        else _PATCH_EXPAND_STEP_SIZE
+    )
+    if suffix_hidden_count > 0:
+        rows.append(_expander_row(
+            row_id=f'{file_entry["path"]}:{hunk["header"]}:down',
+            direction="down",
+            hidden_count=suffix_hidden_count,
+            old_start=suffix_old_start if suffix_old_start > 0 else None,
+            old_end=suffix_old_end,
+            new_start=suffix_new_start if suffix_new_start > 0 else None,
+            new_end=suffix_new_end,
+            expand_key=f'{commit_hash}:{file_entry["path"]}:{hunk["old_start"]}:{hunk["new_start"]}:down',
+        ))
+
+    hunk["rows"] = rows
+    hunk.pop("lines", None)
+
+
+def _parse_commit_patch(patch: str, context_radius: int = 3, commit_hash: str = "") -> list[dict]:
+    del context_radius
     files: list[dict] = []
     current_file: dict | None = None
     current_hunk: dict | None = None
@@ -298,7 +373,7 @@ def _parse_commit_patch(patch: str, context_radius: int = 3) -> list[dict]:
                 "new_start": new_start,
                 "new_count": new_count,
                 "lines": [],
-                "context_preview": None,
+                "rows": [],
                 "current_version_target": None,
                 "nearest_tag_target": None,
             }
@@ -307,44 +382,123 @@ def _parse_commit_patch(patch: str, context_radius: int = 3) -> list[dict]:
         if current_hunk is None:
             continue
         if raw_line.startswith("+") and not raw_line.startswith("+++"):
-            current_hunk["lines"].append({
-                "kind": "add",
-                "text": raw_line,
-                "old_line": None,
-                "new_line": new_line,
-            })
+            current_hunk["lines"].append(_line_row("add", raw_line, None, new_line))
             new_line += 1
             continue
         if raw_line.startswith("-") and not raw_line.startswith("---"):
-            current_hunk["lines"].append({
-                "kind": "del",
-                "text": raw_line,
-                "old_line": old_line,
-                "new_line": None,
-            })
+            current_hunk["lines"].append(_line_row("del", raw_line, old_line, None))
             old_line += 1
             continue
         if raw_line.startswith("\\ "):
-            current_hunk["lines"].append({
-                "kind": "meta",
-                "text": raw_line,
-                "old_line": None,
-                "new_line": None,
-            })
+            current_hunk["lines"].append(_line_row("meta", raw_line, None, None))
             continue
-        current_hunk["lines"].append({
-            "kind": "context",
-            "text": raw_line,
-            "old_line": old_line,
-            "new_line": new_line,
-        })
+        current_hunk["lines"].append(_line_row("context", raw_line[1:] if raw_line.startswith(" ") else raw_line, old_line, new_line))
         old_line += 1
         new_line += 1
 
     for file_entry in files:
-        for hunk in file_entry["hunks"]:
-            hunk["context_preview"] = _build_hunk_context_preview(hunk, context_radius)
+        hunks = file_entry["hunks"]
+        for index, hunk in enumerate(hunks):
+            prev_hunk = hunks[index - 1] if index > 0 else None
+            next_hunk = hunks[index + 1] if index + 1 < len(hunks) else None
+            _finalize_hunk_rows(commit_hash, file_entry, hunk, prev_hunk, next_hunk)
     return files
+
+
+class KernelCommitPatchExpandRequest(BaseModel):
+    version: str = Field(..., min_length=1)
+    commit_hash: str = Field(..., min_length=7)
+    file_path: str = Field(..., min_length=1)
+    hunk_header: str = Field(..., min_length=1)
+    expander_id: str = Field(..., min_length=1)
+    direction: str = Field(..., pattern="^(up|down)$")
+
+
+async def _load_commit_file_lines(
+    source: GitLocalSource,
+    commit_hash: str,
+    file_entry: dict,
+) -> list[str]:
+    if file_entry.get("status") == "deleted":
+        blob = await _run_local_git(source, "show", f"{commit_hash}^:{file_entry['old_path']}")
+    else:
+        blob = await _run_local_git(source, "show", f"{commit_hash}:{file_entry['new_path']}")
+    return blob.splitlines()
+
+
+def _slice_replacement_rows(*, file_lines: list[str], expander: dict, direction: str) -> list[dict]:
+    old_start = expander.get("old_start")
+    old_end = expander.get("old_end")
+    new_start = expander.get("new_start")
+    new_end = expander.get("new_end")
+    anchor_start = int(new_start or old_start or 1)
+
+    if direction == "up":
+        anchor_end = int(new_end or old_end or anchor_start)
+        reveal_start = max(anchor_start, anchor_end - (_PATCH_EXPAND_STEP_SIZE - 1))
+        reveal_end = anchor_end
+    else:
+        reveal_start = anchor_start
+        if new_end is not None or old_end is not None:
+            anchor_end = int(new_end or old_end or anchor_start)
+        else:
+            anchor_end = len(file_lines)
+        reveal_end = min(anchor_end, reveal_start + (_PATCH_EXPAND_STEP_SIZE - 1))
+
+    rows: list[dict] = []
+    for line_number in range(reveal_start, reveal_end + 1):
+        old_line = None if old_start is None else int(old_start) + (line_number - anchor_start)
+        new_line = None if new_start is None else int(new_start) + (line_number - anchor_start)
+        if 1 <= line_number <= len(file_lines):
+            rows.append(_line_row("context", file_lines[line_number - 1], old_line, new_line))
+
+    if direction == "up":
+        remaining_old_end = (int(old_start) + (reveal_start - anchor_start) - 1) if old_start is not None else None
+        remaining_new_end = (int(new_start) + (reveal_start - anchor_start) - 1) if new_start is not None else None
+        remaining_hidden = max(
+            _hidden_span(old_start, remaining_old_end),
+            _hidden_span(new_start, remaining_new_end),
+        )
+        if remaining_hidden > 0:
+            rows.append(_expander_row(
+                row_id=expander["id"],
+                direction=direction,
+                hidden_count=remaining_hidden,
+                old_start=old_start,
+                old_end=remaining_old_end,
+                new_start=new_start,
+                new_end=remaining_new_end,
+                expand_key=expander["expand_key"],
+            ))
+        return rows
+
+    remaining_old_start = (int(old_start) + (reveal_end - anchor_start) + 1) if old_start is not None else None
+    remaining_new_start = (int(new_start) + (reveal_end - anchor_start) + 1) if new_start is not None else None
+    remaining_old_end = old_end
+    remaining_new_end = new_end
+    if remaining_new_start is not None:
+        remaining_hidden = max(0, len(file_lines) - remaining_new_start + 1)
+    elif remaining_old_start is not None:
+        remaining_hidden = max(0, len(file_lines) - remaining_old_start + 1)
+    else:
+        remaining_hidden = 0
+    if remaining_old_end is not None or remaining_new_end is not None:
+        remaining_hidden = max(
+            _hidden_span(remaining_old_start, remaining_old_end),
+            _hidden_span(remaining_new_start, remaining_new_end),
+        )
+    if remaining_hidden > 0:
+        rows.append(_expander_row(
+            row_id=expander["id"],
+            direction=direction,
+            hidden_count=remaining_hidden,
+            old_start=remaining_old_start,
+            old_end=remaining_old_end,
+            new_start=remaining_new_start,
+            new_end=remaining_new_end,
+            expand_key=expander["expand_key"],
+        ))
+    return rows
 
 
 def _make_jump_target(
@@ -884,7 +1038,7 @@ async def kernel_commit(
     entry["version"] = version
     entry["patch_truncated"] = patch_truncated
     entry["nearest_tag_version"] = nearest_tag_version
-    files = _parse_commit_patch(entry["patch"])
+    files = _parse_commit_patch(entry["patch"], commit_hash=normalized_commit_hash)
     files = _attach_file_stats(files, changed_files)
     entry["files"] = _attach_hunk_targets(
         files,
@@ -892,6 +1046,48 @@ async def kernel_commit(
         nearest_tag_version=nearest_tag_version,
     )
     return entry
+
+
+@router.post("/api/kernel/commit/expand")
+async def kernel_commit_patch_expand(
+    payload: KernelCommitPatchExpandRequest = Body(...),
+):
+    source = _local_git_source()
+    normalized_commit_hash = _normalize_commit_hash(payload.commit_hash)
+    patch = await _run_local_git(
+        source,
+        "show",
+        "--no-ext-diff",
+        "--find-renames",
+        "--format=",
+        "--patch",
+        normalized_commit_hash,
+        timeout=20.0,
+    )
+    files = _parse_commit_patch(patch, commit_hash=normalized_commit_hash)
+    file_entry = next((item for item in files if item["path"] == payload.file_path), None)
+    if file_entry is None:
+        raise HTTPException(status_code=404, detail="Patch file not found")
+    hunk = next((item for item in file_entry["hunks"] if item["header"] == payload.hunk_header), None)
+    if hunk is None:
+        raise HTTPException(status_code=404, detail="Patch hunk not found")
+    expander = next(
+        (row for row in hunk["rows"] if row["type"] == "expander" and row["id"] == payload.expander_id),
+        None,
+    )
+    if expander is None:
+        raise HTTPException(status_code=404, detail="Patch expander not found")
+
+    file_lines = await _load_commit_file_lines(source, normalized_commit_hash, file_entry)
+    return {
+        "hunk_header": hunk["header"],
+        "expander_id": expander["id"],
+        "replacement_rows": _slice_replacement_rows(
+            file_lines=file_lines,
+            expander=expander,
+            direction=payload.direction,
+        ),
+    }
 
 
 @router.get("/api/kernel/annotations")

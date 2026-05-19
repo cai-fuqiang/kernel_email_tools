@@ -184,6 +184,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-19: project-local token workflow anchored in AGENTS.md plus kernel-email-tools-token skill and brief templates (AGENTS.md, .codex/skills/kernel-email-tools-token/SKILL.md, docs/ai/brief-templates.md)
 - 2026-05-19: kernel commit browsing uses structured file/hunk patch data plus hunk-level nearest-tag jump targets in the history inspector (src/api/routers/kernel.py, web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/pages/KernelCodePage.tsx)
 - 2026-05-19: commit detail modal uses stacked metadata-over-patch layout with dark-theme-safe diff colors to keep patch browsing readable in narrow dialogs (web/src/components/kernelCode/CodeHistoryPanel.tsx)
+- 2026-05-19: commit patch preview now uses row-based hunks with on-demand context expansion and a GitHub-style unified diff surface while preserving current-version and nearest-tag jumps (src/api/routers/kernel.py, web/src/api/types.ts, web/src/api/client.ts, web/src/components/kernelCode/commitPatchModel.ts, web/src/components/kernelCode/CodeHistoryPanel.tsx)
 
 ---
 

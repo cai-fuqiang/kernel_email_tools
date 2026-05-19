@@ -2,6 +2,9 @@ import type {
   KernelCommitJumpTarget,
   KernelCommitPatchFile,
   KernelCommitPatchHunk,
+  KernelCommitPatchRow,
+  KernelCommitPatchRowExpander,
+  KernelCommitPatchRowLine,
   KernelHistoryCommit,
 } from '../../api/types';
 
@@ -9,9 +12,33 @@ export type CommitPatchTargetMode = 'current-version' | 'nearest-tag';
 
 export interface CommitPatchTargetView extends KernelCommitJumpTarget {}
 
-export interface CommitPatchHunkView extends Omit<KernelCommitPatchHunk, 'current_version_target' | 'nearest_tag_target'> {
+export interface CommitPatchLineRowView {
+  type: 'line';
+  kind: KernelCommitPatchRowLine['kind'];
+  text: string;
+  oldLine: number | null;
+  newLine: number | null;
+}
+
+export interface CommitPatchExpanderRowView {
+  type: 'expander';
+  id: string;
+  direction: KernelCommitPatchRowExpander['direction'];
+  hiddenCount: number;
+  stepSize: number;
+  oldStart: number | null;
+  oldEnd: number | null;
+  newStart: number | null;
+  newEnd: number | null;
+  expandKey: string;
+}
+
+export type CommitPatchRowView = CommitPatchLineRowView | CommitPatchExpanderRowView;
+
+export interface CommitPatchHunkView extends Omit<KernelCommitPatchHunk, 'current_version_target' | 'nearest_tag_target' | 'rows'> {
   currentVersionTarget: CommitPatchTargetView;
   nearestTagTarget: CommitPatchTargetView;
+  rows: CommitPatchRowView[];
 }
 
 export interface CommitPatchFileView extends Omit<KernelCommitPatchFile, 'hunks'> {
@@ -38,9 +65,43 @@ function normalizeTarget(target: KernelCommitJumpTarget | null | undefined): Com
   };
 }
 
+function toNullableNumber(value: unknown): number | null {
+  return value === null || value === undefined ? null : Number(value);
+}
+
+function normalizeRow(row: KernelCommitPatchRow): CommitPatchRowView {
+  if (row.type === 'expander') {
+    return {
+      type: 'expander',
+      id: toText(row.id),
+      direction: row.direction,
+      hiddenCount: Number(row.hidden_count || 0),
+      stepSize: Number(row.step_size || 0),
+      oldStart: toNullableNumber(row.old_start),
+      oldEnd: toNullableNumber(row.old_end),
+      newStart: toNullableNumber(row.new_start),
+      newEnd: toNullableNumber(row.new_end),
+      expandKey: toText(row.expand_key),
+    };
+  }
+
+  return {
+    type: 'line',
+    kind: row.kind,
+    text: toText(row.text),
+    oldLine: toNullableNumber(row.old_line),
+    newLine: toNullableNumber(row.new_line),
+  };
+}
+
+export function normalizePatchRows(rows: KernelCommitPatchRow[]): CommitPatchRowView[] {
+  return Array.isArray(rows) ? rows.map(normalizeRow) : [];
+}
+
 function normalizeHunk(hunk: KernelCommitPatchHunk): CommitPatchHunkView {
   return {
     ...hunk,
+    rows: normalizePatchRows(hunk.rows),
     currentVersionTarget: normalizeTarget(hunk.current_version_target),
     nearestTagTarget: normalizeTarget(hunk.nearest_tag_target),
   };

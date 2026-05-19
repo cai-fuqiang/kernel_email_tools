@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import {
   createKnowledgeDraft,
+  expandKernelCommitPatchHunk,
   getKernelBlame,
   getKernelCommit,
   getKernelLineHistory,
@@ -27,10 +28,14 @@ import { SecondaryButton, StatusBadge } from '../ui';
 import InspectorDetailModal from './InspectorDetailModal';
 import {
   buildCommitPatchModel,
+  normalizePatchRows,
   type CommitPatchModel,
+  type CommitPatchExpanderRowView,
   type CommitPatchTargetView,
   choosePrimaryTarget,
   type CommitPatchFileView,
+  type CommitPatchHunkView,
+  type CommitPatchRowView,
   formatChangedFileLabel,
 } from './commitPatchModel';
 
@@ -114,6 +119,42 @@ function diffEntryClass(kind: 'context' | 'add' | 'del' | 'meta'): string {
   if (kind === 'add') return 'bg-emerald-950/60 text-emerald-100';
   if (kind === 'del') return 'bg-rose-950/60 text-rose-100';
   return 'text-slate-100';
+}
+
+function patchRowClass(kind: 'context' | 'add' | 'del' | 'meta'): string {
+  if (kind === 'add') return 'bg-[#e6ffec] text-[#1a7f37] hover:bg-[#d8f5dd]';
+  if (kind === 'del') return 'bg-[#ffebe9] text-[#cf222e] hover:bg-[#ffd8d3]';
+  if (kind === 'meta') return 'bg-slate-100 text-slate-600 hover:bg-slate-100';
+  return 'bg-white text-slate-900 hover:bg-slate-50';
+}
+
+function patchGutterClass(kind: 'context' | 'add' | 'del' | 'meta'): string {
+  if (kind === 'add') return 'bg-[#dafbe1] text-[#1f883d]';
+  if (kind === 'del') return 'bg-[#ffcecb] text-[#cf222e]';
+  if (kind === 'meta') return 'bg-slate-100 text-slate-500';
+  return 'bg-[#f6f8fa] text-slate-500';
+}
+
+function patchCodeCellClass(kind: 'context' | 'add' | 'del' | 'meta'): string {
+  if (kind === 'meta') return 'text-slate-600';
+  if (kind === 'add') return 'text-[#1a7f37]';
+  if (kind === 'del') return 'text-[#cf222e]';
+  return 'text-slate-900';
+}
+
+function buildHunkKey(filePath: string, hunk: Pick<CommitPatchHunkView, 'header'>, index: number): string {
+  return `${filePath}::${hunk.header}::${index}`;
+}
+
+function buildExpanderKey(hunkKey: string, rowId: string, direction: 'up' | 'down'): string {
+  return `${hunkKey}::${rowId}::${direction}`;
+}
+
+function expanderLabel(direction: 'up' | 'down', hiddenCount: number): string {
+  const lineCount = hiddenCount > 0 ? hiddenCount : 20;
+  return direction === 'up'
+    ? `Expand ${lineCount} lines above`
+    : `Expand ${lineCount} lines below`;
 }
 
 export default function CodeHistoryPanel({
@@ -861,6 +902,8 @@ function CommitDetailModal({
               {structuredModel ? (
                 <CommitPatchBrowser
                   model={structuredModel}
+                  commitHash={shown.commit_hash}
+                  commitVersion={shown.version || ''}
                   selectedFilePath={selectedFilePath}
                   onSelectFile={onSelectFile}
                   onOpenTarget={(target) => onOpenTarget?.(target)}
@@ -888,14 +931,125 @@ function CommitDetailModal({
 
 export function CommitPatchBrowser({
   model,
+  commitHash,
+  commitVersion,
   selectedFilePath,
   onSelectFile,
   onOpenTarget,
 }: {
   model: CommitPatchModel;
+  commitHash: string;
+  commitVersion: string;
   selectedFilePath: string;
   onSelectFile: (filePath: string) => void;
   onOpenTarget?: (target: CommitPatchTargetView) => void;
+}) {
+  const initialRowsByHunk = useMemo(() => {
+    return Object.fromEntries(
+      model.files.flatMap((file) =>
+        file.hunks.map((hunk, index) => [buildHunkKey(file.path, hunk, index), hunk.rows] as const),
+      ),
+    ) as Record<string, CommitPatchRowView[]>;
+  }, [model]);
+  const [rowsByHunk, setRowsByHunk] = useState<Record<string, CommitPatchRowView[]>>(initialRowsByHunk);
+  const [loadingExpanders, setLoadingExpanders] = useState<Record<string, boolean>>({});
+  const [expanderErrors, setExpanderErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setRowsByHunk(initialRowsByHunk);
+    setLoadingExpanders({});
+    setExpanderErrors({});
+  }, [initialRowsByHunk]);
+
+  async function handleExpand(
+    file: CommitPatchFileView,
+    hunk: CommitPatchHunkView,
+    hunkKey: string,
+    row: CommitPatchExpanderRowView,
+    direction: 'up' | 'down',
+  ) {
+    const expanderKey = buildExpanderKey(hunkKey, row.id, direction);
+    setLoadingExpanders((current) => ({ ...current, [expanderKey]: true }));
+    setExpanderErrors((current) => {
+      const next = { ...current };
+      delete next[expanderKey];
+      return next;
+    });
+    try {
+      const response = await expandKernelCommitPatchHunk({
+        version: commitVersion,
+        commit_hash: commitHash,
+        file_path: file.path,
+        hunk_header: hunk.header,
+        expander_id: row.id,
+        direction,
+      });
+      const replacementRows = normalizePatchRows(response.replacement_rows);
+      setRowsByHunk((current) => {
+        const sourceRows = current[hunkKey] || hunk.rows;
+        const rowIndex = sourceRows.findIndex((candidate) => candidate.type === 'expander' && candidate.id === row.id);
+        if (rowIndex < 0) return current;
+        return {
+          ...current,
+          [hunkKey]: [
+            ...sourceRows.slice(0, rowIndex),
+            ...replacementRows,
+            ...sourceRows.slice(rowIndex + 1),
+          ],
+        };
+      });
+    } catch (error) {
+      setExpanderErrors((current) => ({
+        ...current,
+        [expanderKey]: error instanceof Error ? error.message : 'Unable to expand context',
+      }));
+    } finally {
+      setLoadingExpanders((current) => ({
+        ...current,
+        [expanderKey]: false,
+      }));
+    }
+  }
+
+  return (
+    <CommitPatchBrowserView
+      model={model}
+      selectedFilePath={selectedFilePath}
+      onSelectFile={onSelectFile}
+      onOpenTarget={onOpenTarget}
+      rowsByHunk={rowsByHunk}
+      loadingExpanders={loadingExpanders}
+      expanderErrors={expanderErrors}
+      onExpand={(file, hunk, hunkKey, row, direction) =>
+        void handleExpand(file, hunk, hunkKey, row, direction)}
+    />
+  );
+}
+
+export function CommitPatchBrowserView({
+  model,
+  selectedFilePath,
+  onSelectFile,
+  onOpenTarget,
+  rowsByHunk,
+  loadingExpanders,
+  expanderErrors,
+  onExpand,
+}: {
+  model: CommitPatchModel;
+  selectedFilePath: string;
+  onSelectFile: (filePath: string) => void;
+  onOpenTarget?: (target: CommitPatchTargetView) => void;
+  rowsByHunk: Record<string, CommitPatchRowView[]>;
+  loadingExpanders: Record<string, boolean>;
+  expanderErrors: Record<string, string>;
+  onExpand: (
+    file: CommitPatchFileView,
+    hunk: CommitPatchHunkView,
+    hunkKey: string,
+    row: CommitPatchExpanderRowView,
+    direction: 'up' | 'down',
+  ) => void;
 }) {
   const selectedFile =
     model.files.find((file) => file.path === selectedFilePath || file.new_path === selectedFilePath || file.old_path === selectedFilePath) ||
@@ -919,7 +1073,7 @@ export function CommitPatchBrowser({
 
   return (
     <div className="grid min-h-0 gap-4 xl:grid-cols-[240px_minmax(0,1fr)]">
-      <div className="max-h-52 overflow-auto rounded-lg border border-slate-300 bg-white p-2 xl:max-h-[68vh]">
+      <div className="max-h-52 overflow-auto rounded-lg border border-slate-300 bg-[#f6f8fa] p-2 xl:max-h-[68vh]">
         <div className="space-y-1">
           {model.files.map((file) => {
             const active = file.path === selectedFile.path;
@@ -928,10 +1082,10 @@ export function CommitPatchBrowser({
                 key={`${file.path}-${file.status}`}
                 type="button"
                 onClick={() => onSelectFile(file.path)}
-                className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-xs ${
+                className={`flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-xs ${
                   active
-                    ? 'border-sky-300 bg-sky-50'
-                    : 'border-slate-300 bg-white hover:border-sky-300 hover:bg-sky-50'
+                    ? 'border-[#0969da] bg-white shadow-sm'
+                    : 'border-transparent bg-transparent hover:border-slate-300 hover:bg-white'
                 }`}
               >
                 <span className="truncate font-mono text-slate-900">{formatChangedFileLabel(file)}</span>
@@ -949,24 +1103,73 @@ export function CommitPatchBrowser({
           </div>
         ) : (
           selectedFile.hunks.map((hunk, index) => {
+            const hunkKey = buildHunkKey(selectedFile.path, hunk, index);
+            const rows = rowsByHunk[hunkKey] || hunk.rows;
             const currentTarget = choosePrimaryTarget(hunk, 'current-version');
             const nearestTagTarget = choosePrimaryTarget(hunk, 'nearest-tag');
             return (
-              <div key={`${selectedFile.path}-${hunk.header}-${index}`} className="overflow-hidden rounded-lg border border-slate-300 bg-white p-3">
-                <div className="font-mono text-[11px] text-slate-700">{hunk.header}</div>
-                <pre className="mt-2 max-h-[34vh] overflow-auto rounded-lg bg-slate-950/95 p-3 font-mono text-xs leading-5 text-slate-100">
-                  {hunk.lines.map((line) => (
-                    <div
-                      key={`${line.text}-${line.old_line ?? 'n'}-${line.new_line ?? 'n'}`}
-                      className={`px-2 ${diffEntryClass(line.kind)}`}
-                    >
-                      {line.text || '\u00a0'}
-                    </div>
-                  ))}
-                </pre>
-                <pre className="mt-2 max-h-[22vh] overflow-auto rounded-lg border border-slate-300 bg-slate-50 p-3 font-mono text-xs leading-5 text-slate-900">
-                  {hunk.context_preview.snippet}
-                </pre>
+              <div key={hunkKey} className="overflow-hidden rounded-lg border border-slate-300 bg-white">
+                <div className="border-b border-slate-300 bg-[#ddf4ff] px-3 py-2 font-mono text-[11px] text-[#0969da]">
+                  {hunk.header}
+                </div>
+                <div className="max-h-[48vh] overflow-auto">
+                  <table className="w-full border-collapse font-mono text-xs leading-5">
+                    <tbody>
+                      {rows.map((row, rowIndex) => {
+                        if (row.type === 'expander') {
+                          const directions = row.direction === 'both' ? (['up', 'down'] as const) : ([row.direction] as const);
+                          return (
+                            <tr key={`${row.id}-${rowIndex}`} className="border-y border-[#d8dee4] bg-[#f6f8fa]">
+                              <td colSpan={3} className="px-3 py-2">
+                                <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-[#57606a]">
+                                  {directions.map((direction) => {
+                                    const expanderKey = buildExpanderKey(hunkKey, row.id, direction);
+                                    const isLoading = Boolean(loadingExpanders[expanderKey]);
+                                    return (
+                                      <button
+                                        key={expanderKey}
+                                        type="button"
+                                        onClick={() => onExpand(selectedFile, hunk, hunkKey, row, direction)}
+                                        disabled={isLoading}
+                                        className="inline-flex items-center gap-1 rounded-md border border-[#d0d7de] bg-white px-2.5 py-1 font-medium text-[#0969da] hover:bg-[#f3f4f6] disabled:cursor-wait disabled:opacity-60"
+                                      >
+                                        {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                                        {expanderLabel(direction, row.hiddenCount)}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                {directions.map((direction) => {
+                                  const expanderKey = buildExpanderKey(hunkKey, row.id, direction);
+                                  const errorMessage = expanderErrors[expanderKey];
+                                  return errorMessage ? (
+                                    <div key={`${expanderKey}-error`} className="mt-2 text-center text-[11px] text-[#cf222e]">
+                                      {errorMessage}
+                                    </div>
+                                  ) : null;
+                                })}
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return (
+                          <tr key={`${row.type}-${row.oldLine ?? 'n'}-${row.newLine ?? 'n'}-${rowIndex}`} className={`border-b border-[#d8dee4] ${patchRowClass(row.kind)}`}>
+                            <td className={`w-[56px] border-r border-[#d8dee4] px-2 text-right align-top ${patchGutterClass(row.kind)}`}>
+                              {row.oldLine ?? ''}
+                            </td>
+                            <td className={`w-[56px] border-r border-[#d8dee4] px-2 text-right align-top ${patchGutterClass(row.kind)}`}>
+                              {row.newLine ?? ''}
+                            </td>
+                            <td className={`px-3 align-top ${patchCodeCellClass(row.kind)}`}>
+                              <span className="whitespace-pre">{row.text || '\u00a0'}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <SecondaryButton
                     onClick={() => handleOpenTarget(currentTarget)}
