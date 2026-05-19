@@ -426,7 +426,7 @@ async def _load_commit_file_lines(
     return blob.splitlines()
 
 
-def _slice_replacement_rows(*, file_lines: list[str], expander: dict, direction: str) -> list[dict]:
+def _slice_expander_rows(*, file_lines: list[str], expander: dict, direction: str) -> tuple[list[dict], dict | None]:
     old_start = expander.get("old_start")
     old_end = expander.get("old_end")
     new_start = expander.get("new_start")
@@ -445,12 +445,12 @@ def _slice_replacement_rows(*, file_lines: list[str], expander: dict, direction:
             anchor_end = len(file_lines)
         reveal_end = min(anchor_end, reveal_start + (_PATCH_EXPAND_STEP_SIZE - 1))
 
-    rows: list[dict] = []
+    inserted_rows: list[dict] = []
     for line_number in range(reveal_start, reveal_end + 1):
         old_line = None if old_start is None else int(old_start) + (line_number - anchor_start)
         new_line = None if new_start is None else int(new_start) + (line_number - anchor_start)
         if 1 <= line_number <= len(file_lines):
-            rows.append(_line_row("context", file_lines[line_number - 1], old_line, new_line))
+            inserted_rows.append(_line_row("context", file_lines[line_number - 1], old_line, new_line))
 
     if direction == "up":
         remaining_old_end = (int(old_start) + (reveal_start - anchor_start) - 1) if old_start is not None else None
@@ -459,8 +459,8 @@ def _slice_replacement_rows(*, file_lines: list[str], expander: dict, direction:
             _hidden_span(old_start, remaining_old_end),
             _hidden_span(new_start, remaining_new_end),
         )
-        if remaining_hidden > 0:
-            rows.insert(0, _expander_row(
+        remaining_expander = (
+            _expander_row(
                 row_id=expander["id"],
                 direction=direction,
                 hidden_count=remaining_hidden,
@@ -469,8 +469,11 @@ def _slice_replacement_rows(*, file_lines: list[str], expander: dict, direction:
                 new_start=new_start,
                 new_end=remaining_new_end,
                 expand_key=expander["expand_key"],
-            ))
-        return rows
+            )
+            if remaining_hidden > 0
+            else None
+        )
+        return inserted_rows, remaining_expander
 
     remaining_old_start = (int(old_start) + (reveal_end - anchor_start) + 1) if old_start is not None else None
     remaining_new_start = (int(new_start) + (reveal_end - anchor_start) + 1) if new_start is not None else None
@@ -487,8 +490,8 @@ def _slice_replacement_rows(*, file_lines: list[str], expander: dict, direction:
             _hidden_span(remaining_old_start, remaining_old_end),
             _hidden_span(remaining_new_start, remaining_new_end),
         )
-    if remaining_hidden > 0:
-        rows.append(_expander_row(
+    remaining_expander = (
+        _expander_row(
             row_id=expander["id"],
             direction=direction,
             hidden_count=remaining_hidden,
@@ -497,8 +500,11 @@ def _slice_replacement_rows(*, file_lines: list[str], expander: dict, direction:
             new_start=remaining_new_start,
             new_end=remaining_new_end,
             expand_key=expander["expand_key"],
-        ))
-    return rows
+        )
+        if remaining_hidden > 0
+        else None
+    )
+    return inserted_rows, remaining_expander
 
 
 def _make_jump_target(
@@ -1079,14 +1085,16 @@ async def kernel_commit_patch_expand(
         raise HTTPException(status_code=404, detail="Patch expander not found")
 
     file_lines = await _load_commit_file_lines(source, normalized_commit_hash, file_entry)
+    inserted_rows, remaining_expander = _slice_expander_rows(
+        file_lines=file_lines,
+        expander=expander,
+        direction=payload.direction,
+    )
     return {
         "hunk_header": hunk["header"],
         "expander_id": expander["id"],
-        "replacement_rows": _slice_replacement_rows(
-            file_lines=file_lines,
-            expander=expander,
-            direction=payload.direction,
-        ),
+        "inserted_rows": inserted_rows,
+        "remaining_expander": remaining_expander,
     }
 
 

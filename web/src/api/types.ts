@@ -824,7 +824,8 @@ export interface KernelCommitPatchExpandRequest {
 export interface KernelCommitPatchExpandResponse {
   hunk_header: string;
   expander_id: string;
-  replacement_rows: KernelCommitPatchRow[];
+  inserted_rows: KernelCommitPatchRow[];
+  remaining_expander: KernelCommitPatchRowExpander | null;
 }
 
 export interface KernelLineHistoryResponse {

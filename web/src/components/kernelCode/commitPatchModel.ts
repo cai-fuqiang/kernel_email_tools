@@ -69,20 +69,27 @@ function toNullableNumber(value: unknown): number | null {
   return value === null || value === undefined ? null : Number(value);
 }
 
+export function normalizePatchExpander(
+  row: KernelCommitPatchRowExpander | null | undefined,
+): CommitPatchExpanderRowView | null {
+  if (!row) return null;
+  return {
+    type: 'expander',
+    id: toText(row.id),
+    direction: row.direction,
+    hiddenCount: Number(row.hidden_count || 0),
+    stepSize: Number(row.step_size || 0),
+    oldStart: toNullableNumber(row.old_start),
+    oldEnd: toNullableNumber(row.old_end),
+    newStart: toNullableNumber(row.new_start),
+    newEnd: toNullableNumber(row.new_end),
+    expandKey: toText(row.expand_key),
+  };
+}
+
 function normalizeRow(row: KernelCommitPatchRow): CommitPatchRowView {
   if (row.type === 'expander') {
-    return {
-      type: 'expander',
-      id: toText(row.id),
-      direction: row.direction,
-      hiddenCount: Number(row.hidden_count || 0),
-      stepSize: Number(row.step_size || 0),
-      oldStart: toNullableNumber(row.old_start),
-      oldEnd: toNullableNumber(row.old_end),
-      newStart: toNullableNumber(row.new_start),
-      newEnd: toNullableNumber(row.new_end),
-      expandKey: toText(row.expand_key),
-    };
+    return normalizePatchExpander(row)!;
   }
 
   return {
@@ -96,6 +103,32 @@ function normalizeRow(row: KernelCommitPatchRow): CommitPatchRowView {
 
 export function normalizePatchRows(rows: KernelCommitPatchRow[]): CommitPatchRowView[] {
   return Array.isArray(rows) ? rows.map(normalizeRow) : [];
+}
+
+export function mergeExpandedPatchRows({
+  sourceRows,
+  expanderId,
+  direction,
+  insertedRows,
+  remainingExpander,
+}: {
+  sourceRows: CommitPatchRowView[];
+  expanderId: string;
+  direction: 'up' | 'down';
+  insertedRows: CommitPatchRowView[];
+  remainingExpander: CommitPatchExpanderRowView | null;
+}): CommitPatchRowView[] {
+  const rowIndex = sourceRows.findIndex((row) => row.type === 'expander' && row.id === expanderId);
+  if (rowIndex < 0) return sourceRows;
+  const replacementRows =
+    direction === 'up'
+      ? [...(remainingExpander ? [remainingExpander] : []), ...insertedRows]
+      : [...insertedRows, ...(remainingExpander ? [remainingExpander] : [])];
+  return [
+    ...sourceRows.slice(0, rowIndex),
+    ...replacementRows,
+    ...sourceRows.slice(rowIndex + 1),
+  ];
 }
 
 function normalizeHunk(hunk: KernelCommitPatchHunk): CommitPatchHunkView {

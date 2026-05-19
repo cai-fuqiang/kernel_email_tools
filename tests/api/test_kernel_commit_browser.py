@@ -159,7 +159,7 @@ def test_attach_hunk_targets_marks_unavailable_when_no_path_can_open():
     }
 
 
-def test_expand_commit_hunk_returns_replacement_rows(monkeypatch):
+def test_expand_commit_hunk_returns_inserted_rows_and_remaining_up_expander(monkeypatch):
     patch = """diff --git a/mm/mmap.c b/mm/mmap.c
 index 1111111..2222222 100644
 --- a/mm/mmap.c
@@ -193,7 +193,7 @@ index 1111111..2222222 100644
     ))
 
     assert response["expander_id"].endswith(":up")
-    assert response["replacement_rows"][0] == {
+    assert response["remaining_expander"] == {
         "type": "expander",
         "id": "mm/mmap.c:@@ -30,2 +30,3 @@ static int demo(void):up",
         "direction": "up",
@@ -205,17 +205,17 @@ index 1111111..2222222 100644
         "new_end": 9,
         "expand_key": "abcd1234:mm/mmap.c:30:30:up",
     }
-    assert response["replacement_rows"][1] == {
+    assert response["inserted_rows"][0] == {
         "type": "line",
         "kind": "context",
         "text": "line_10",
         "old_line": 10,
         "new_line": 10,
     }
-    assert response["replacement_rows"][-1]["type"] == "line"
+    assert response["inserted_rows"][-1]["type"] == "line"
 
 
-def test_expand_commit_hunk_keeps_remaining_down_expander_below_revealed_rows(monkeypatch):
+def test_expand_commit_hunk_returns_inserted_rows_and_remaining_down_expander(monkeypatch):
     patch = """diff --git a/mm/mmap.c b/mm/mmap.c
 index 1111111..2222222 100644
 --- a/mm/mmap.c
@@ -249,8 +249,8 @@ index 1111111..2222222 100644
     ))
 
     assert response["expander_id"].endswith(":down")
-    assert response["replacement_rows"][0]["type"] == "line"
-    assert response["replacement_rows"][-1] == {
+    assert response["inserted_rows"][0]["type"] == "line"
+    assert response["remaining_expander"] == {
         "type": "expander",
         "id": "mm/mmap.c:@@ -10,2 +10,3 @@ static int demo(void):down",
         "direction": "down",

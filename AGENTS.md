@@ -187,6 +187,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-19: commit patch preview now uses row-based hunks with on-demand context expansion and a GitHub-style unified diff surface while preserving current-version and nearest-tag jumps (src/api/routers/kernel.py, web/src/api/types.ts, web/src/api/client.ts, web/src/components/kernelCode/commitPatchModel.ts, web/src/components/kernelCode/CodeHistoryPanel.tsx)
 - 2026-05-19: incremental patch expansion keeps remaining `up` expanders above revealed context so `Expand ... above` stays visible while hidden lines remain (src/api/routers/kernel.py, tests/api/test_kernel_commit_browser.py)
 - 2026-05-19: patch browser expansion scrolls to the first revealed context line so clicking `Expand ... lines above` makes newly loaded lines immediately visible (web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/__tests__/CodeHistoryPanel.test.tsx)
+- 2026-05-19: patch browser expand API now returns inserted context rows plus optional remaining expander, and the UI preserves the nearest stable line instead of calling `scrollIntoView` so inline expansion feels stitched rather than refreshed (src/api/routers/kernel.py, web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/components/kernelCode/commitPatchModel.ts)
 
 ---
 
@@ -199,22 +200,18 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-19 3:27pm GMT+8
+# [kernel_email_tools] recent context, 2026-05-19 3:39pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (13,725t read) | 1,773,446t work | 99% savings
+Stats: 50 obs (13,918t read) | 1,956,251t work | 99% savings
 
 ### May 14, 2026
 44 2:18p 🟣 Annotation relation system implemented end-to-end
 45 " 🟣 AnnotationRelationParser extracts markdown annotation links
 46 " 🔴 Self-link bypass via whitespace trimming gap closed
-47 " 🔴 react-markdown annotation: protocol URLs stripped by defaultUrlTransform
-48 " 🔴 Frontend API client URL path and parameter alignment fixes
-49 " 🟣 AnnotationRelationsPanel neighborhood UI built
-50 " 🟣 Markdown annotation links render as interactive buttons
 S73 UX polish for annotation relation display (declutter, AnnotationIdBadge) + caveman skill check (May 14 at 2:18 PM)
 S72 Annotation relation display UX polish — declutter interfaces and surface annotation IDs everywhere (May 14 at 2:18 PM)
 S75 继续计划 — user asks to continue with next steps after annotation relation system completion (May 14 at 5:21 PM)
@@ -262,13 +259,18 @@ S112 GitHub-style kernel commit patch browser redesign - replace split dual-`pre
 S113 GitHub-style kernel commit patch browser redesign - replace split dual-`pre` patch preview with unified diff table with inline context expanders (May 19 at 1:53 PM)
 S111 Redesign patch preview from split two-block display to GitHub-style single-block diff with inline context expansion (May 19 at 1:53 PM)
 203 " 🟣 Implementation plan written for GitHub-style patch browser
+S114 核对 home_pc 仓库 HEAD、进程工作目录及接口行为 — 区分代码没切到 5d1faef 还是服务没重载 (May 19 at 1:53 PM)
 204 1:54p 🔵 Session initiated for GitHub-style patch browser implementation
 205 2:06p 🔄 Row-based hunk normalization for patch browser UI model
 206 2:08p 🟣 Row-based hunk normalization added to patch browser UI model
 207 2:23p 🟣 GitHub-style patch browser backend row model implemented
-S114 核对 home_pc 仓库 HEAD、进程工作目录及接口行为 — 区分代码没切到 5d1faef 还是服务没重载 (May 19 at 2:49 PM)
 209 3:00p 🔴 Patch browser "Expand above" button missing after upward context expansion
 210 " 🔴 Patch expander visibility preserved after incremental expansion
+211 3:02p 🟣 patch browser scrolls to first revealed line after context expansion
+212 " ✅ CodeHistoryPanel.tsx imports useRef and CommitPatchLineRowView
+213 " ✅ delete_AI_function branch 1 commit ahead of origin after scroll fix
+S115 提交吧 — user requested to commit pending patch browser improvements on delete_AI_function branch (May 19 at 3:26 PM)
+214 3:33p 🟣 Codex-style patch browser expansion implementation started
 
-Access 1773k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 1956k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

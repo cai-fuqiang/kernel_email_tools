@@ -5,7 +5,7 @@ import {
   CommitPatchBrowserView,
   buildCommitPatchModel,
   buildPatchRowAnchor,
-  findExpansionScrollAnchor,
+  findExpansionViewportAnchor,
 } from '../CodeHistoryPanel';
 
 function collectClickables(node: unknown): Array<Record<string, unknown>> {
@@ -38,25 +38,54 @@ function flattenText(value: unknown): string {
 }
 
 describe('CodeHistoryPanel commit patch browser', () => {
-  it('uses the first revealed line as the scroll anchor after expansion', () => {
+  it('keeps the closest stable line as the viewport anchor during upward expansion', () => {
     expect(
-      findExpansionScrollAnchor([
-        {
-          type: 'expander',
-          id: 'top',
-          direction: 'up',
-          hiddenCount: 9,
-          stepSize: 20,
-          oldStart: 1,
-          oldEnd: 9,
-          newStart: 1,
-          newEnd: 9,
-          expandKey: 'expand-top',
-        },
-        { type: 'line', kind: 'context', text: 'line_10', oldLine: 10, newLine: 10 },
-        { type: 'line', kind: 'context', text: 'line_11', oldLine: 11, newLine: 11 },
-      ]),
+      findExpansionViewportAnchor(
+        [
+          {
+            type: 'expander',
+            id: 'top',
+            direction: 'up',
+            hiddenCount: 9,
+            stepSize: 20,
+            oldStart: 1,
+            oldEnd: 9,
+            newStart: 1,
+            newEnd: 9,
+            expandKey: 'expand-top',
+          },
+          { type: 'line', kind: 'context', text: 'line_10', oldLine: 10, newLine: 10 },
+          { type: 'line', kind: 'context', text: 'line_11', oldLine: 11, newLine: 11 },
+        ],
+        'top',
+        'up',
+      ),
     ).toBe(buildPatchRowAnchor({ oldLine: 10, newLine: 10 }));
+  });
+
+  it('keeps the closest stable line as the viewport anchor during downward expansion', () => {
+    expect(
+      findExpansionViewportAnchor(
+        [
+          { type: 'line', kind: 'context', text: 'line_10', oldLine: 10, newLine: 10 },
+          { type: 'line', kind: 'context', text: 'line_11', oldLine: 11, newLine: 11 },
+          {
+            type: 'expander',
+            id: 'bottom',
+            direction: 'down',
+            hiddenCount: 9,
+            stepSize: 20,
+            oldStart: 12,
+            oldEnd: 20,
+            newStart: 12,
+            newEnd: 20,
+            expandKey: 'expand-bottom',
+          },
+        ],
+        'bottom',
+        'down',
+      ),
+    ).toBe(buildPatchRowAnchor({ oldLine: 11, newLine: 11 }));
   });
 
   it('renders the file navigator and emits nearest-tag navigation requests', () => {

@@ -4,6 +4,7 @@ import {
   buildCommitPatchModel,
   choosePrimaryTarget,
   formatChangedFileLabel,
+  mergeExpandedPatchRows,
 } from '../commitPatchModel';
 
 describe('commitPatchModel', () => {
@@ -82,5 +83,98 @@ describe('commitPatchModel', () => {
     expect(
       formatChangedFileLabel({ status: 'deleted', old_path: 'old.c', new_path: '/dev/null', path: 'old.c' }),
     ).toBe('old.c');
+  });
+
+  it('merges upward expansion rows before the existing hunk body', () => {
+    expect(
+      mergeExpandedPatchRows({
+        sourceRows: [
+          {
+            type: 'expander',
+            id: 'top',
+            direction: 'up',
+            hiddenCount: 9,
+            stepSize: 20,
+            oldStart: 1,
+            oldEnd: 9,
+            newStart: 1,
+            newEnd: 9,
+            expandKey: 'expand-top',
+          },
+          { type: 'line', kind: 'context', text: 'line_10', oldLine: 10, newLine: 10 },
+          { type: 'line', kind: 'add', text: '+line_11', oldLine: null, newLine: 11 },
+        ],
+        expanderId: 'top',
+        direction: 'up',
+        insertedRows: [
+          { type: 'line', kind: 'context', text: 'line_8', oldLine: 8, newLine: 8 },
+          { type: 'line', kind: 'context', text: 'line_9', oldLine: 9, newLine: 9 },
+        ],
+        remainingExpander: {
+          type: 'expander',
+          id: 'top',
+          direction: 'up',
+          hiddenCount: 7,
+          stepSize: 20,
+          oldStart: 1,
+          oldEnd: 7,
+          newStart: 1,
+          newEnd: 7,
+          expandKey: 'expand-top',
+        },
+      }),
+    ).toEqual([
+      {
+        type: 'expander',
+        id: 'top',
+        direction: 'up',
+        hiddenCount: 7,
+        stepSize: 20,
+        oldStart: 1,
+        oldEnd: 7,
+        newStart: 1,
+        newEnd: 7,
+        expandKey: 'expand-top',
+      },
+      { type: 'line', kind: 'context', text: 'line_8', oldLine: 8, newLine: 8 },
+      { type: 'line', kind: 'context', text: 'line_9', oldLine: 9, newLine: 9 },
+      { type: 'line', kind: 'context', text: 'line_10', oldLine: 10, newLine: 10 },
+      { type: 'line', kind: 'add', text: '+line_11', oldLine: null, newLine: 11 },
+    ]);
+  });
+
+  it('merges downward expansion rows after the existing hunk body', () => {
+    expect(
+      mergeExpandedPatchRows({
+        sourceRows: [
+          { type: 'line', kind: 'context', text: 'line_10', oldLine: 10, newLine: 10 },
+          { type: 'line', kind: 'add', text: '+line_11', oldLine: null, newLine: 11 },
+          {
+            type: 'expander',
+            id: 'bottom',
+            direction: 'down',
+            hiddenCount: 9,
+            stepSize: 20,
+            oldStart: 12,
+            oldEnd: 20,
+            newStart: 12,
+            newEnd: 20,
+            expandKey: 'expand-bottom',
+          },
+        ],
+        expanderId: 'bottom',
+        direction: 'down',
+        insertedRows: [
+          { type: 'line', kind: 'context', text: 'line_12', oldLine: 12, newLine: 12 },
+          { type: 'line', kind: 'context', text: 'line_13', oldLine: 13, newLine: 13 },
+        ],
+        remainingExpander: null,
+      }),
+    ).toEqual([
+      { type: 'line', kind: 'context', text: 'line_10', oldLine: 10, newLine: 10 },
+      { type: 'line', kind: 'add', text: '+line_11', oldLine: null, newLine: 11 },
+      { type: 'line', kind: 'context', text: 'line_12', oldLine: 12, newLine: 12 },
+      { type: 'line', kind: 'context', text: 'line_13', oldLine: 13, newLine: 13 },
+    ]);
   });
 });

@@ -28,6 +28,8 @@ import { SecondaryButton, StatusBadge } from '../ui';
 import InspectorDetailModal from './InspectorDetailModal';
 import {
   buildCommitPatchModel,
+  mergeExpandedPatchRows,
+  normalizePatchExpander,
   normalizePatchRows,
   type CommitPatchModel,
   type CommitPatchExpanderRowView,
@@ -148,9 +150,21 @@ export function buildPatchRowAnchor(row: Pick<CommitPatchLineRowView, 'oldLine' 
   return `${row.oldLine ?? 'n'}:${row.newLine ?? 'n'}`;
 }
 
-export function findExpansionScrollAnchor(rows: CommitPatchRowView[]): string | null {
-  const firstLine = rows.find((row): row is CommitPatchLineRowView => row.type === 'line');
-  return firstLine ? buildPatchRowAnchor(firstLine) : null;
+export function findExpansionViewportAnchor(
+  rows: CommitPatchRowView[],
+  expanderId: string,
+  direction: 'up' | 'down',
+): string | null {
+  const rowIndex = rows.findIndex((row) => row.type === 'expander' && row.id === expanderId);
+  if (rowIndex < 0) return null;
+  const candidates =
+    direction === 'up'
+      ? rows.slice(rowIndex + 1)
+      : rows
+          .slice(0, rowIndex)
+          .reverse();
+  const anchorRow = candidates.find((row): row is CommitPatchLineRowView => row.type === 'line');
+  return anchorRow ? buildPatchRowAnchor(anchorRow) : null;
 }
 
 function expanderLabel(direction: 'up' | 'down', hiddenCount: number): string {
@@ -973,6 +987,13 @@ export function CommitPatchBrowser({
     direction: 'up' | 'down',
   ) {
     const expanderKey = buildExpanderKey(hunkKey, row.id, direction);
+    const sourceRows = rowsByHunk[hunkKey] || hunk.rows;
+    const viewportAnchor = findExpansionViewportAnchor(sourceRows, row.id, direction);
+    const container = hunkContainerRefs.current[hunkKey];
+    const anchorTopBefore =
+      viewportAnchor
+        ? container?.querySelector<HTMLElement>(`[data-patch-row-anchor="${viewportAnchor}"]`)?.getBoundingClientRect().top ?? null
+        : null;
     setLoadingExpanders((current) => ({ ...current, [expanderKey]: true }));
     setExpanderErrors((current) => {
       const next = { ...current };
@@ -988,26 +1009,30 @@ export function CommitPatchBrowser({
         expander_id: row.id,
         direction,
       });
-      const replacementRows = normalizePatchRows(response.replacement_rows);
-      const scrollAnchor = findExpansionScrollAnchor(replacementRows);
+      const insertedRows = normalizePatchRows(response.inserted_rows);
+      const remainingExpander = normalizePatchExpander(response.remaining_expander);
       setRowsByHunk((current) => {
-        const sourceRows = current[hunkKey] || hunk.rows;
-        const rowIndex = sourceRows.findIndex((candidate) => candidate.type === 'expander' && candidate.id === row.id);
-        if (rowIndex < 0) return current;
+        const liveRows = current[hunkKey] || hunk.rows;
+        const mergedRows = mergeExpandedPatchRows({
+          sourceRows: liveRows,
+          expanderId: row.id,
+          direction,
+          insertedRows,
+          remainingExpander,
+        });
+        if (mergedRows === liveRows) return current;
         return {
           ...current,
-          [hunkKey]: [
-            ...sourceRows.slice(0, rowIndex),
-            ...replacementRows,
-            ...sourceRows.slice(rowIndex + 1),
-          ],
+          [hunkKey]: mergedRows,
         };
       });
-      if (scrollAnchor) {
+      if (viewportAnchor && anchorTopBefore !== null) {
         requestAnimationFrame(() => {
           const container = hunkContainerRefs.current[hunkKey];
-          const anchorRow = container?.querySelector<HTMLElement>(`[data-patch-row-anchor="${scrollAnchor}"]`);
-          anchorRow?.scrollIntoView({ block: 'start' });
+          const anchorTopAfter =
+            container?.querySelector<HTMLElement>(`[data-patch-row-anchor="${viewportAnchor}"]`)?.getBoundingClientRect().top ?? null;
+          if (!container || anchorTopAfter === null) return;
+          container.scrollTop += anchorTopAfter - anchorTopBefore;
         });
       }
     } catch (error) {
