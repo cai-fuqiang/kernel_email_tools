@@ -138,6 +138,8 @@ async def _run_local_git(source: GitLocalSource, *args: str, timeout: float = 20
 _TRAILER_RE = re.compile(r"^([A-Za-z][A-Za-z0-9-]*):\s*(.+)$")
 _LORE_RE = re.compile(r"https?://lore\.kernel\.org/\S+")
 _URL_RE = re.compile(r"https?://[^\s>]+")
+_DIFF_GIT_RE = re.compile(r"^diff --git a/(.+?) b/(.+)$")
+_HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
 def _parse_commit_trailers(message: str) -> dict[str, list[str]]:
@@ -201,6 +203,248 @@ def _normalize_commit_hash(commit_hash: str) -> str:
     if not re.match(r"^[0-9a-fA-F]{7,64}$", normalized):
         raise HTTPException(status_code=400, detail="Invalid commit hash")
     return normalized
+
+
+def _new_patch_file(path: str, old_path: str | None = None, new_path: str | None = None) -> dict:
+    resolved_old = old_path or path
+    resolved_new = new_path or path
+    return {
+        "path": resolved_new or resolved_old,
+        "old_path": resolved_old,
+        "new_path": resolved_new,
+        "status": "modified",
+        "added": "0",
+        "deleted": "0",
+        "is_binary": False,
+        "truncated": False,
+        "hunks": [],
+    }
+
+
+def _build_hunk_context_preview(hunk: dict, context_radius: int) -> dict:
+    preview_lines = hunk["lines"][: max(1, min(len(hunk["lines"]), context_radius * 2 + 3))]
+    numbered: list[str] = []
+    focus_start = None
+    focus_end = None
+    for line in preview_lines:
+        line_no = line.get("new_line") or line.get("old_line")
+        if line["kind"] in {"add", "del"}:
+            if focus_start is None and line_no is not None:
+                focus_start = line_no
+            if line_no is not None:
+                focus_end = line_no
+        numbered.append(line["text"])
+    return {
+        "focus_start_line": focus_start or hunk["new_start"] or hunk["old_start"],
+        "focus_end_line": focus_end or focus_start or hunk["new_start"] or hunk["old_start"],
+        "snippet": "\n".join(numbered),
+        "before_lines": [],
+        "after_lines": [],
+    }
+
+
+def _parse_commit_patch(patch: str, context_radius: int = 3) -> list[dict]:
+    files: list[dict] = []
+    current_file: dict | None = None
+    current_hunk: dict | None = None
+    old_line = 0
+    new_line = 0
+
+    for raw_line in patch.splitlines():
+        diff_match = _DIFF_GIT_RE.match(raw_line)
+        if diff_match:
+            old_path, new_path = diff_match.group(1), diff_match.group(2)
+            path = new_path if new_path != "/dev/null" else old_path
+            current_file = _new_patch_file(path, old_path, new_path)
+            files.append(current_file)
+            current_hunk = None
+            continue
+        if current_file is None:
+            continue
+        if raw_line.startswith("rename from "):
+            current_file["status"] = "renamed"
+            current_file["old_path"] = raw_line.replace("rename from ", "", 1).strip()
+            continue
+        if raw_line.startswith("rename to "):
+            current_file["status"] = "renamed"
+            current_file["new_path"] = raw_line.replace("rename to ", "", 1).strip()
+            current_file["path"] = current_file["new_path"]
+            continue
+        if raw_line.startswith("new file mode "):
+            current_file["status"] = "added"
+            continue
+        if raw_line.startswith("deleted file mode "):
+            current_file["status"] = "deleted"
+            continue
+        if raw_line.startswith("Binary files "):
+            current_file["is_binary"] = True
+            current_file["status"] = "binary"
+            current_hunk = None
+            continue
+        if raw_line.startswith("@@ "):
+            hunk_match = _HUNK_RE.match(raw_line)
+            if not hunk_match:
+                continue
+            old_start = int(hunk_match.group(1))
+            old_count = int(hunk_match.group(2) or "1")
+            new_start = int(hunk_match.group(3))
+            new_count = int(hunk_match.group(4) or "1")
+            old_line = old_start
+            new_line = new_start
+            current_hunk = {
+                "header": raw_line,
+                "old_start": old_start,
+                "old_count": old_count,
+                "new_start": new_start,
+                "new_count": new_count,
+                "lines": [],
+                "context_preview": None,
+                "current_version_target": None,
+                "nearest_tag_target": None,
+            }
+            current_file["hunks"].append(current_hunk)
+            continue
+        if current_hunk is None:
+            continue
+        if raw_line.startswith("+") and not raw_line.startswith("+++"):
+            current_hunk["lines"].append({
+                "kind": "add",
+                "text": raw_line,
+                "old_line": None,
+                "new_line": new_line,
+            })
+            new_line += 1
+            continue
+        if raw_line.startswith("-") and not raw_line.startswith("---"):
+            current_hunk["lines"].append({
+                "kind": "del",
+                "text": raw_line,
+                "old_line": old_line,
+                "new_line": None,
+            })
+            old_line += 1
+            continue
+        if raw_line.startswith("\\ "):
+            current_hunk["lines"].append({
+                "kind": "meta",
+                "text": raw_line,
+                "old_line": None,
+                "new_line": None,
+            })
+            continue
+        current_hunk["lines"].append({
+            "kind": "context",
+            "text": raw_line,
+            "old_line": old_line,
+            "new_line": new_line,
+        })
+        old_line += 1
+        new_line += 1
+
+    for file_entry in files:
+        for hunk in file_entry["hunks"]:
+            hunk["context_preview"] = _build_hunk_context_preview(hunk, context_radius)
+    return files
+
+
+def _make_jump_target(
+    available: bool,
+    version: str,
+    path: str,
+    line: int,
+    reason: str | None = None,
+) -> dict:
+    return {
+        "available": available,
+        "version": version,
+        "path": path,
+        "line": line,
+        "reason": reason,
+    }
+
+
+def _pick_hunk_target(hunk: dict, new_path: str, old_path: str) -> tuple[str, int]:
+    if new_path and int(hunk.get("new_start") or 0) > 0:
+        return new_path, int(hunk["new_start"])
+    if old_path and int(hunk.get("old_start") or 0) > 0:
+        return old_path, int(hunk["old_start"])
+    return "", 0
+
+
+def _attach_hunk_targets(files: list[dict], current_version: str, nearest_tag_version: str | None) -> list[dict]:
+    for file_entry in files:
+        for hunk in file_entry.get("hunks", []):
+            path, line = _pick_hunk_target(
+                hunk,
+                str(file_entry.get("new_path") or ""),
+                str(file_entry.get("old_path") or ""),
+            )
+            if path and line > 0:
+                hunk["current_version_target"] = _make_jump_target(True, current_version, path, line)
+            else:
+                hunk["current_version_target"] = _make_jump_target(
+                    False,
+                    "",
+                    "",
+                    0,
+                    "No navigable file target",
+                )
+            if nearest_tag_version:
+                if path and line > 0:
+                    hunk["nearest_tag_target"] = _make_jump_target(
+                        True,
+                        nearest_tag_version,
+                        path,
+                        line,
+                    )
+                else:
+                    hunk["nearest_tag_target"] = _make_jump_target(
+                        False,
+                        "",
+                        "",
+                        0,
+                        "No browsable tag mapping found",
+                    )
+            else:
+                hunk["nearest_tag_target"] = _make_jump_target(
+                    False,
+                    "",
+                    "",
+                    0,
+                    "No browsable tag mapping found",
+                )
+    return files
+
+
+async def _resolve_nearest_tag_version(source: GitLocalSource, commit_hash: str) -> str | None:
+    try:
+        output = await _run_local_git(source, "describe", "--tags", "--abbrev=0", commit_hash, timeout=8.0)
+    except HTTPException:
+        return None
+    nearest = output.strip()
+    return nearest or None
+
+
+def _attach_file_stats(files: list[dict], changed_files: list[dict]) -> list[dict]:
+    stats_by_path = {
+        str(item.get("path") or ""): {
+            "added": str(item.get("added") or "0"),
+            "deleted": str(item.get("deleted") or "0"),
+        }
+        for item in changed_files
+        if item.get("path")
+    }
+    for file_entry in files:
+        candidates = [
+            str(file_entry.get("path") or ""),
+            str(file_entry.get("new_path") or ""),
+            str(file_entry.get("old_path") or ""),
+        ]
+        for candidate in candidates:
+            if candidate and candidate in stats_by_path:
+                file_entry.update(stats_by_path[candidate])
+                break
+    return files
 
 @router.get("/api/kernel/versions")
 async def kernel_versions(
@@ -611,6 +855,7 @@ async def kernel_commit(
         normalized_commit_hash,
         timeout=20.0,
     )
+    nearest_tag_version = await _resolve_nearest_tag_version(source, normalized_commit_hash)
     max_patch_chars = 180_000
     patch_truncated = len(patch_output) > max_patch_chars
     changed_files = []
@@ -638,6 +883,14 @@ async def kernel_commit(
     )
     entry["version"] = version
     entry["patch_truncated"] = patch_truncated
+    entry["nearest_tag_version"] = nearest_tag_version
+    files = _parse_commit_patch(entry["patch"])
+    files = _attach_file_stats(files, changed_files)
+    entry["files"] = _attach_hunk_targets(
+        files,
+        current_version=version,
+        nearest_tag_version=nearest_tag_version,
+    )
     return entry
 
 

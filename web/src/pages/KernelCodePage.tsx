@@ -78,6 +78,7 @@ import {
   kernelSymbolPreviewPath,
 } from '../utils/externalLinks';
 import { detectNearestSymbol } from '../utils/kernelSymbols';
+import type { CommitPatchTargetView } from '../components/kernelCode/commitPatchModel';
 
 function isValidFilePath(path: string): boolean {
   return path.trim().length > 0;
@@ -548,14 +549,18 @@ export default function KernelCodePage() {
   const loadFile = useCallback(async (
     path: string,
     targetLine?: number | null,
-    options?: { silent?: boolean; requestId?: number },
+    options?: { silent?: boolean; requestId?: number; version?: string },
   ): Promise<boolean> => {
-    if (!selectedVersion || !path) return false;
+    const activeVersion = options?.version || selectedVersion;
+    if (!activeVersion || !path) return false;
     abortPathRequests();
     const requestId = options?.requestId ?? nextPathRequestId();
     const fileAbort = new AbortController();
     fileAbortRef.current = fileAbort;
     setFileLoading(true);
+    if (activeVersion !== selectedVersion) {
+      setSelectedVersion(activeVersion);
+    }
     setCurrentPath(path);
     setCurrentPathKind('file');
     setCurrentFile(null);
@@ -564,13 +569,13 @@ export default function KernelCodePage() {
     const focusLine = targetLine ?? urlLine;
     setSelectedLines(focusLine ? new Set([focusLine]) : new Set());
     setSearchParams(
-      { v: selectedVersion, path, ...(focusLine ? { line: String(focusLine) } : {}), ...(urlAnnotationId ? { annotation: urlAnnotationId } : {}) },
+      { v: activeVersion, path, ...(focusLine ? { line: String(focusLine) } : {}), ...(urlAnnotationId ? { annotation: urlAnnotationId } : {}) },
       { replace: true },
     );
     try {
       const [fileRes, annotRes] = await Promise.all([
-        getKernelFile(selectedVersion, path, fileAbort.signal),
-        getCodeAnnotations(selectedVersion, path, fileAbort.signal).catch(() => [] as CodeAnnotation[]),
+        getKernelFile(activeVersion, path, fileAbort.signal),
+        getCodeAnnotations(activeVersion, path, fileAbort.signal).catch(() => [] as CodeAnnotation[]),
       ]);
       if (requestId !== pathRequestIdRef.current) return false;
       setCurrentFile(fileRes);
@@ -640,6 +645,18 @@ export default function KernelCodePage() {
   );
 
   const openPathRef = useRef(openPath);
+
+  const openCommitTarget = useCallback(
+    async (target: CommitPatchTargetView) => {
+      if (!target.path) return;
+      const requestId = nextPathRequestId();
+      await loadFile(target.path, target.line, {
+        requestId,
+        version: target.version,
+      });
+    },
+    [loadFile, nextPathRequestId],
+  );
 
   useEffect(() => {
     openPathRef.current = openPath;
@@ -2197,6 +2214,9 @@ export default function KernelCodePage() {
                                 filePath={currentPath}
                                 selectedRange={selectedRange}
                                 selectedText={selectedText}
+                                onOpenCommitTarget={(target) => {
+                                  void openCommitTarget(target);
+                                }}
                               />
                             </InspectorSection>
                           ) : (

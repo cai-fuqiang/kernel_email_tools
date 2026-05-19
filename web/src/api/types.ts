@@ -734,6 +734,53 @@ export interface KernelSymbolResolveResponse {
   fallback_reason: string | null;
 }
 
+export interface KernelCommitJumpTarget {
+  available: boolean;
+  version: string;
+  path: string;
+  line: number;
+  reason?: string | null;
+}
+
+export interface KernelCommitPatchLine {
+  kind: 'context' | 'add' | 'del' | 'meta';
+  text: string;
+  old_line?: number | null;
+  new_line?: number | null;
+}
+
+export interface KernelCommitPatchContextPreview {
+  focus_start_line: number;
+  focus_end_line: number;
+  snippet: string;
+  before_lines?: string[];
+  after_lines?: string[];
+}
+
+export interface KernelCommitPatchHunk {
+  header: string;
+  old_start: number;
+  old_count: number;
+  new_start: number;
+  new_count: number;
+  lines: KernelCommitPatchLine[];
+  context_preview: KernelCommitPatchContextPreview;
+  current_version_target: KernelCommitJumpTarget;
+  nearest_tag_target: KernelCommitJumpTarget;
+}
+
+export interface KernelCommitPatchFile {
+  path: string;
+  old_path: string;
+  new_path: string;
+  status: string;
+  added: string;
+  deleted: string;
+  is_binary: boolean;
+  truncated: boolean;
+  hunks: KernelCommitPatchHunk[];
+}
+
 export interface KernelHistoryCommit {
   commit_hash: string;
   short_hash: string;
@@ -746,6 +793,8 @@ export interface KernelHistoryCommit {
   urls: string[];
   lore_links: string[];
   has_lore_link: boolean;
+  nearest_tag_version?: string | null;
+  files?: KernelCommitPatchFile[];
   changed_files: Array<{
     added: string;
     deleted: string;

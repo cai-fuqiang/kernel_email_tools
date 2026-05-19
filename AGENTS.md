@@ -182,6 +182,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-18: annotation count computed server-side not client-side (src/api/routers/annotations.py)
 - 2026-05-18: AGENTS.md is primary cross-session memory for all AI agents; claude-mem is Claude-only supplement
 - 2026-05-19: project-local token workflow anchored in AGENTS.md plus kernel-email-tools-token skill and brief templates (AGENTS.md, .codex/skills/kernel-email-tools-token/SKILL.md, docs/ai/brief-templates.md)
+- 2026-05-19: kernel commit browsing uses structured file/hunk patch data plus hunk-level nearest-tag jump targets in the history inspector (src/api/routers/kernel.py, web/src/components/kernelCode/CodeHistoryPanel.tsx, web/src/pages/KernelCodePage.tsx)
 
 ---
 

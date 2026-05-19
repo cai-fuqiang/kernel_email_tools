@@ -25,6 +25,16 @@ import { useAuth } from '../../auth';
 import { showToast } from '../Toast';
 import { SecondaryButton, StatusBadge } from '../ui';
 import InspectorDetailModal from './InspectorDetailModal';
+import {
+  buildCommitPatchModel,
+  type CommitPatchModel,
+  type CommitPatchTargetView,
+  choosePrimaryTarget,
+  type CommitPatchFileView,
+  formatChangedFileLabel,
+} from './commitPatchModel';
+
+export { buildCommitPatchModel } from './commitPatchModel';
 
 type SelectedRange = {
   startLine: number;
@@ -36,6 +46,7 @@ interface CodeHistoryPanelProps {
   filePath: string;
   selectedRange: SelectedRange | null;
   selectedText: string;
+  onOpenCommitTarget?: (target: CommitPatchTargetView) => void;
 }
 
 function formatLineRange(range: SelectedRange | null): string {
@@ -98,11 +109,19 @@ function diffLineClass(line: string): string {
   return 'text-slate-900';
 }
 
+function diffEntryClass(kind: 'context' | 'add' | 'del' | 'meta'): string {
+  if (kind === 'meta') return 'bg-slate-100 text-slate-600';
+  if (kind === 'add') return 'bg-emerald-50 text-emerald-800';
+  if (kind === 'del') return 'bg-rose-50 text-rose-800';
+  return 'text-slate-900';
+}
+
 export default function CodeHistoryPanel({
   version,
   filePath,
   selectedRange,
   selectedText,
+  onOpenCommitTarget,
 }: CodeHistoryPanelProps) {
   const { canWrite } = useAuth();
   const [blameLoading, setBlameLoading] = useState(false);
@@ -118,6 +137,7 @@ export default function CodeHistoryPanel({
   const [expandedHash, setExpandedHash] = useState('');
   const [detailModalHash, setDetailModalHash] = useState('');
   const [details, setDetails] = useState<Record<string, KernelHistoryCommit>>({});
+  const [selectedPatchFilePath, setSelectedPatchFilePath] = useState('');
   const [claim, setClaim] = useState('');
   const [note, setNote] = useState('');
   const [targetMode, setTargetMode] = useState<'new' | 'existing'>('new');
@@ -273,6 +293,7 @@ export default function CodeHistoryPanel({
 
   async function openCommitDetail(commit: KernelHistoryCommit) {
     setDetailModalHash(commit.commit_hash);
+    setSelectedPatchFilePath('');
     await ensureCommitDetail(commit);
   }
 
@@ -604,6 +625,9 @@ export default function CodeHistoryPanel({
         detail={detailModalHash ? details[detailModalHash] : undefined}
         detailError={detailModalHash ? detailErrors[detailModalHash] : undefined}
         loading={detailLoadingHash === detailModalHash}
+        selectedFilePath={selectedPatchFilePath}
+        onSelectFile={setSelectedPatchFilePath}
+        onOpenTarget={onOpenCommitTarget}
         onClose={() => setDetailModalHash('')}
       />
     </div>
@@ -742,15 +766,22 @@ function CommitDetailModal({
   detail,
   detailError,
   loading,
+  selectedFilePath,
+  onSelectFile,
+  onOpenTarget,
   onClose,
 }: {
   commit: KernelHistoryCommit | null;
   detail?: KernelHistoryCommit;
   detailError?: string;
   loading: boolean;
+  selectedFilePath: string;
+  onSelectFile: (filePath: string) => void;
+  onOpenTarget?: (target: CommitPatchTargetView) => void;
   onClose: () => void;
 }) {
   const shown = detail || commit;
+  const structuredModel: CommitPatchModel | null = shown ? buildCommitPatchModel(shown) : null;
   return (
     <InspectorDetailModal
       isOpen={!!commit}
@@ -775,74 +806,209 @@ function CommitDetailModal({
           Loading commit detail...
         </div>
       ) : shown ? (
-        <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <section className="min-w-0 space-y-4">
-            <div>
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                Commit Message
-              </div>
-              <pre className="max-h-[56vh] overflow-auto whitespace-pre-wrap rounded-lg border border-slate-300 bg-slate-100 p-3 font-mono text-xs leading-5 text-slate-950">
-                {shown.message || 'No commit message available.'}
-              </pre>
-            </div>
-            {Object.keys(shown.trailers || {}).length > 0 && (
+        <div className="space-y-4">
+          <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <section className="min-w-0 space-y-4">
               <div>
                 <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                  Trailers
+                  Commit Message
                 </div>
-                <div className="space-y-1 rounded-lg border border-slate-300 bg-white p-3 text-xs">
-                  {Object.entries(shown.trailers || {}).map(([key, values]) => (
-                    <div key={key} className="grid grid-cols-[90px_minmax(0,1fr)] gap-3">
-                      <span className="font-semibold text-slate-600">{key}</span>
-                      <span className="min-w-0 break-words text-slate-900">{values.join(', ')}</span>
-                    </div>
-                  ))}
-                </div>
+                <pre className="max-h-[56vh] overflow-auto whitespace-pre-wrap rounded-lg border border-slate-300 bg-slate-100 p-3 font-mono text-xs leading-5 text-slate-950">
+                  {shown.message || 'No commit message available.'}
+                </pre>
               </div>
-            )}
-            {shown.changed_files.length > 0 && (
-              <div>
-                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                  Changed Files
-                </div>
-                <div className="max-h-56 overflow-auto rounded-lg border border-slate-300 bg-white">
-                  {shown.changed_files.map((file) => (
-                    <div
-                      key={`${file.path}-${file.added}-${file.deleted}`}
-                      className="grid grid-cols-[minmax(0,1fr)_80px] gap-3 border-b border-slate-300 px-3 py-2 text-xs last:border-b-0"
-                    >
-                      <span className="truncate font-mono text-slate-900">{file.path}</span>
-                      <span className="text-right text-slate-600">+{file.added} -{file.deleted}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </section>
-          <section className="min-w-0">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                Diff
-              </div>
-              {shown.patch_truncated && <StatusBadge tone="warning">Truncated</StatusBadge>}
-            </div>
-            {shown.patch ? (
-              <pre className="max-h-[72vh] overflow-auto rounded-lg border border-slate-300 bg-white font-mono text-xs leading-5">
-                {shown.patch.split('\n').map((line, index) => (
-                  <div key={`${index}-${line.slice(0, 16)}`} className={`px-3 ${diffLineClass(line)}`}>
-                    {line || '\u00a0'}
+              {Object.keys(shown.trailers || {}).length > 0 && (
+                <div>
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+                    Trailers
                   </div>
-                ))}
-              </pre>
-            ) : (
-              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-100 px-4 py-8 text-sm text-slate-600">
-                No diff loaded for this commit.
+                  <div className="space-y-1 rounded-lg border border-slate-300 bg-white p-3 text-xs">
+                    {Object.entries(shown.trailers || {}).map(([key, values]) => (
+                      <div key={key} className="grid grid-cols-[90px_minmax(0,1fr)] gap-3">
+                        <span className="font-semibold text-slate-600">{key}</span>
+                        <span className="min-w-0 break-words text-slate-900">{values.join(', ')}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {shown.changed_files.length > 0 && (
+                <div>
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+                    Changed Files
+                  </div>
+                  <div className="max-h-56 overflow-auto rounded-lg border border-slate-300 bg-white">
+                    {shown.changed_files.map((file) => (
+                      <div
+                        key={`${file.path}-${file.added}-${file.deleted}`}
+                        className="grid grid-cols-[minmax(0,1fr)_80px] gap-3 border-b border-slate-300 px-3 py-2 text-xs last:border-b-0"
+                      >
+                        <span className="truncate font-mono text-slate-900">{file.path}</span>
+                        <span className="text-right text-slate-600">+{file.added} -{file.deleted}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+            <section className="min-w-0">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+                  Patch browser
+                </div>
+                {shown.patch_truncated && <StatusBadge tone="warning">Truncated</StatusBadge>}
               </div>
-            )}
-          </section>
+              {structuredModel ? (
+                <CommitPatchBrowser
+                  model={structuredModel}
+                  selectedFilePath={selectedFilePath}
+                  onSelectFile={onSelectFile}
+                  onOpenTarget={(target) => onOpenTarget?.(target)}
+                />
+              ) : shown.patch ? (
+                <pre className="max-h-[72vh] overflow-auto rounded-lg border border-slate-300 bg-white font-mono text-xs leading-5">
+                  {shown.patch.split('\n').map((line, index) => (
+                    <div key={`${index}-${line.slice(0, 16)}`} className={`px-3 ${diffLineClass(line)}`}>
+                      {line || '\u00a0'}
+                    </div>
+                  ))}
+                </pre>
+              ) : (
+                <div className="rounded-lg border border-dashed border-slate-300 bg-slate-100 px-4 py-8 text-sm text-slate-600">
+                  No diff loaded for this commit.
+                </div>
+              )}
+            </section>
+          </div>
         </div>
       ) : null}
     </InspectorDetailModal>
+  );
+}
+
+export function CommitPatchBrowser({
+  model,
+  selectedFilePath,
+  onSelectFile,
+  onOpenTarget,
+}: {
+  model: CommitPatchModel;
+  selectedFilePath: string;
+  onSelectFile: (filePath: string) => void;
+  onOpenTarget?: (target: CommitPatchTargetView) => void;
+}) {
+  const selectedFile =
+    model.files.find((file) => file.path === selectedFilePath || file.new_path === selectedFilePath || file.old_path === selectedFilePath) ||
+    model.files[0];
+
+  if (!selectedFile) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-100 px-4 py-8 text-sm text-slate-600">
+        No structured patch data available.
+      </div>
+    );
+  }
+
+  function handleOpenTarget(target: CommitPatchTargetView) {
+    if (!target.available) {
+      showToast(target.reason || 'Navigation target unavailable', 'info');
+      return;
+    }
+    onOpenTarget?.(target);
+  }
+
+  return (
+    <div className="grid min-h-0 gap-4 xl:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="max-h-[68vh] overflow-auto rounded-lg border border-slate-300 bg-white p-2">
+        <div className="space-y-1">
+          {model.files.map((file) => {
+            const active = file.path === selectedFile.path;
+            return (
+              <button
+                key={`${file.path}-${file.status}`}
+                type="button"
+                onClick={() => onSelectFile(file.path)}
+                className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-xs ${
+                  active
+                    ? 'border-sky-300 bg-sky-50'
+                    : 'border-slate-300 bg-white hover:border-sky-300 hover:bg-sky-50'
+                }`}
+              >
+                <span className="truncate font-mono text-slate-900">{formatChangedFileLabel(file)}</span>
+                <span className="shrink-0 text-slate-600">+{file.added} -{file.deleted}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="space-y-3">
+        <CommitPatchFileSummary file={selectedFile} nearestTagVersion={model.nearestTagVersion} />
+        {selectedFile.hunks.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+            No hunk data returned for this file.
+          </div>
+        ) : (
+          selectedFile.hunks.map((hunk, index) => {
+            const currentTarget = choosePrimaryTarget(hunk, 'current-version');
+            const nearestTagTarget = choosePrimaryTarget(hunk, 'nearest-tag');
+            return (
+              <div key={`${selectedFile.path}-${hunk.header}-${index}`} className="rounded-lg border border-slate-300 bg-white p-3">
+                <div className="font-mono text-[11px] text-slate-700">{hunk.header}</div>
+                <pre className="mt-2 overflow-auto rounded-lg bg-slate-950/95 p-3 font-mono text-xs text-slate-100">
+                  {hunk.lines.map((line) => (
+                    <div key={`${line.text}-${line.old_line ?? 'n'}-${line.new_line ?? 'n'}`} className={diffEntryClass(line.kind)}>
+                      {line.text || '\u00a0'}
+                    </div>
+                  ))}
+                </pre>
+                <pre className="mt-2 overflow-auto rounded-lg border border-slate-300 bg-slate-50 p-3 font-mono text-xs text-slate-900">
+                  {hunk.context_preview.snippet}
+                </pre>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <SecondaryButton
+                    onClick={() => handleOpenTarget(currentTarget)}
+                    disabled={!currentTarget.available}
+                  >
+                    Open in current version
+                  </SecondaryButton>
+                  <SecondaryButton
+                    onClick={() => handleOpenTarget(nearestTagTarget)}
+                    disabled={!nearestTagTarget.available}
+                  >
+                    Jump to nearest tag
+                  </SecondaryButton>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CommitPatchFileSummary({
+  file,
+  nearestTagVersion,
+}: {
+  file: CommitPatchFileView;
+  nearestTagVersion: string | null;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-300 bg-white px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-slate-950">{formatChangedFileLabel(file)}</div>
+          <div className="mt-1 text-xs text-slate-600">
+            {file.status} · +{file.added} -{file.deleted}
+            {file.is_binary ? ' · binary' : ''}
+            {file.truncated ? ' · truncated' : ''}
+            {nearestTagVersion ? ` · nearest ${nearestTagVersion}` : ''}
+          </div>
+        </div>
+        <StatusBadge tone={file.is_binary ? 'warning' : 'info'}>{file.status}</StatusBadge>
+      </div>
+    </div>
   );
 }
 
