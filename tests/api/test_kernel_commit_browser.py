@@ -5,7 +5,45 @@ import asyncio
 from src.api.routers import kernel
 
 
-def test_parse_commit_patch_groups_lines_by_file_and_hunk():
+def test_parse_commit_patch_builds_rows_with_inline_expanders():
+    patch = """diff --git a/mm/mmap.c b/mm/mmap.c
+index 1111111..2222222 100644
+--- a/mm/mmap.c
++++ b/mm/mmap.c
+@@ -10,4 +10,5 @@ static int demo(void)
+line_a
+line_b
+-line_b
++line_b2
++line_c
+line_d
+"""
+
+    files = kernel._parse_commit_patch(patch, context_radius=3, commit_hash="abcd1234")
+
+    assert len(files) == 1
+    assert files[0]["path"] == "mm/mmap.c"
+    assert files[0]["status"] == "modified"
+    hunk = files[0]["hunks"][0]
+
+    assert hunk["header"] == "@@ -10,4 +10,5 @@ static int demo(void)"
+    assert hunk["rows"][0] == {
+        "type": "expander",
+        "id": "mm/mmap.c:@@ -10,4 +10,5 @@ static int demo(void):up",
+        "direction": "up",
+        "hidden_count": 9,
+        "step_size": 20,
+        "old_start": 1,
+        "old_end": 9,
+        "new_start": 1,
+        "new_end": 9,
+        "expand_key": "abcd1234:mm/mmap.c:10:10:up",
+    }
+    assert [row["type"] for row in hunk["rows"][1:7]] == ["line", "line", "line", "line", "line", "line"]
+    assert hunk["rows"][-1]["type"] == "expander"
+
+
+def test_parse_commit_patch_preserves_line_numbers_inside_line_rows():
     patch = """diff --git a/mm/mmap.c b/mm/mmap.c
 index 1111111..2222222 100644
 --- a/mm/mmap.c
@@ -17,15 +55,16 @@ index 1111111..2222222 100644
 +line_c
 """
 
-    files = kernel._parse_commit_patch(patch, context_radius=3)
+    files = kernel._parse_commit_patch(patch, context_radius=3, commit_hash="abcd1234")
+    rows = files[0]["hunks"][0]["rows"]
+    line_rows = [row for row in rows if row["type"] == "line"]
 
-    assert len(files) == 1
-    assert files[0]["path"] == "mm/mmap.c"
-    assert files[0]["status"] == "modified"
-    assert files[0]["hunks"][0]["header"] == "@@ -10,2 +10,3 @@ static int demo(void)"
-    assert [line["kind"] for line in files[0]["hunks"][0]["lines"]] == ["context", "del", "add", "add"]
-    assert files[0]["hunks"][0]["context_preview"]["focus_start_line"] == 11
-    assert "line_b2" in files[0]["hunks"][0]["context_preview"]["snippet"]
+    assert line_rows == [
+        {"type": "line", "kind": "context", "text": "line_a", "old_line": 10, "new_line": 10},
+        {"type": "line", "kind": "del", "text": "-line_b", "old_line": 11, "new_line": None},
+        {"type": "line", "kind": "add", "text": "+line_b2", "old_line": None, "new_line": 11},
+        {"type": "line", "kind": "add", "text": "+line_c", "old_line": None, "new_line": 12},
+    ]
 
 
 def test_parse_commit_patch_marks_rename_and_binary_sections():
@@ -37,7 +76,7 @@ diff --git a/logo.png b/logo.png
 Binary files a/logo.png and b/logo.png differ
 """
 
-    files = kernel._parse_commit_patch(patch, context_radius=3)
+    files = kernel._parse_commit_patch(patch, context_radius=3, commit_hash="abcd1234")
 
     assert files[0]["status"] == "renamed"
     assert files[0]["old_path"] == "old.c"
@@ -62,8 +101,7 @@ def test_attach_hunk_targets_prefers_new_path_and_line():
             "old_count": 1,
             "new_start": 20,
             "new_count": 1,
-            "lines": [],
-            "context_preview": {"focus_start_line": 20, "focus_end_line": 20, "snippet": ""},
+            "rows": [],
             "current_version_target": None,
             "nearest_tag_target": None,
         }],
@@ -104,8 +142,7 @@ def test_attach_hunk_targets_marks_unavailable_when_no_path_can_open():
             "old_count": 4,
             "new_start": 0,
             "new_count": 0,
-            "lines": [],
-            "context_preview": {"focus_start_line": 40, "focus_end_line": 43, "snippet": ""},
+            "rows": [],
             "current_version_target": None,
             "nearest_tag_target": None,
         }],
@@ -122,7 +159,45 @@ def test_attach_hunk_targets_marks_unavailable_when_no_path_can_open():
     }
 
 
-def test_kernel_commit_returns_structured_files_and_nearest_tag(monkeypatch):
+def test_expand_commit_hunk_returns_replacement_rows(monkeypatch):
+    patch = """diff --git a/mm/mmap.c b/mm/mmap.c
+index 1111111..2222222 100644
+--- a/mm/mmap.c
++++ b/mm/mmap.c
+@@ -10,2 +10,3 @@ static int demo(void)
+ line_a
+-line_b
++line_b2
++line_c
+"""
+
+    async def _fake_run_local_git(_source, *args, **_kwargs):
+        if args[:4] == ("show", "--no-ext-diff", "--find-renames", "--format="):
+            return patch
+        if args[:2] == ("show", "abcd1234:mm/mmap.c"):
+            return "\n".join([f"line_{index}" for index in range(1, 40)]) + "\n"
+        raise AssertionError(args)
+
+    monkeypatch.setattr(kernel, "_local_git_source", lambda: object())
+    monkeypatch.setattr(kernel, "_run_local_git", _fake_run_local_git)
+
+    response = asyncio.run(kernel.kernel_commit_patch_expand(
+        payload=kernel.KernelCommitPatchExpandRequest(
+            version="v6.6",
+            commit_hash="abcd1234",
+            file_path="mm/mmap.c",
+            hunk_header="@@ -10,2 +10,3 @@ static int demo(void)",
+            expander_id="mm/mmap.c:@@ -10,2 +10,3 @@ static int demo(void):up",
+            direction="up",
+        ),
+    ))
+
+    assert response["expander_id"].endswith(":up")
+    assert response["replacement_rows"][0]["type"] == "line"
+    assert response["replacement_rows"][-1]["type"] in {"line", "expander"}
+
+
+def test_kernel_commit_returns_rows_and_not_context_preview(monkeypatch):
     async def _fake_run_local_git(_source, *args, **_kwargs):
         if args[:3] == ("show", "--no-patch", "--format=%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%B"):
             return (
@@ -154,15 +229,18 @@ index 1111111..2222222 100644
     assert response["patch"].startswith("diff --git")
     assert response["files"][0]["path"] == "mm/mmap.c"
     assert response["files"][0]["added"] == "1"
-    assert response["files"][0]["hunks"][0]["lines"][0]["kind"] == "del"
-    assert response["files"][0]["hunks"][0]["current_version_target"] == {
+    hunk = response["files"][0]["hunks"][0]
+    assert "rows" in hunk
+    assert "context_preview" not in hunk
+    assert hunk["rows"][0]["type"] in {"expander", "line"}
+    assert hunk["current_version_target"] == {
         "available": True,
         "version": "v6.6",
         "path": "mm/mmap.c",
         "line": 10,
         "reason": None,
     }
-    assert response["files"][0]["hunks"][0]["nearest_tag_target"] == {
+    assert hunk["nearest_tag_target"] == {
         "available": True,
         "version": "v6.5",
         "path": "mm/mmap.c",

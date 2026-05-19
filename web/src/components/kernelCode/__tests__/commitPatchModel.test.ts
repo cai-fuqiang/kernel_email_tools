@@ -27,8 +27,21 @@ describe('commitPatchModel', () => {
               old_count: 1,
               new_start: 20,
               new_count: 2,
-              lines: [],
-              context_preview: { focus_start_line: 20, focus_end_line: 21, snippet: 'line_b2\nline_c' },
+              rows: [
+                {
+                  type: 'expander',
+                  id: 'top',
+                  direction: 'up',
+                  hidden_count: 9,
+                  step_size: 20,
+                  old_start: 1,
+                  old_end: 9,
+                  new_start: 1,
+                  new_end: 9,
+                  expand_key: 'expand-top',
+                },
+                { type: 'line', kind: 'add', text: '+line_c', old_line: null, new_line: 20 },
+              ],
               current_version_target: { available: true, version: 'v6.6', path: 'mm/mmap.c', line: 20, reason: null },
               nearest_tag_target: { available: true, version: 'v6.5', path: 'mm/mmap.c', line: 18, reason: null },
             },
@@ -38,6 +51,18 @@ describe('commitPatchModel', () => {
     });
 
     const hunk = model!.files[0].hunks[0];
+    expect(hunk.rows[0]).toEqual({
+      type: 'expander',
+      id: 'top',
+      direction: 'up',
+      hiddenCount: 9,
+      stepSize: 20,
+      oldStart: 1,
+      oldEnd: 9,
+      newStart: 1,
+      newEnd: 9,
+      expandKey: 'expand-top',
+    });
     expect(choosePrimaryTarget(hunk, 'nearest-tag')).toEqual({
       available: true,
       version: 'v6.5',

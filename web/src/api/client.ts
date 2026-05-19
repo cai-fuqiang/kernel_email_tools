@@ -38,6 +38,8 @@ import type {
   KernelResolveResponse,
   KernelSymbolResolveResponse,
   KernelHistoryCommit,
+  KernelCommitPatchExpandRequest,
+  KernelCommitPatchExpandResponse,
   KernelLineHistoryResponse,
   KernelTreeResponse,
   CodeAnnotation,
@@ -1343,6 +1345,16 @@ export async function getKernelCommit(
   params.set('version', version);
   params.set('commit_hash', commitHash);
   return fetchJSON<KernelHistoryCommit>(`${API_BASE}/kernel/commit?${params}`);
+}
+
+export async function expandKernelCommitPatchHunk(
+  payload: KernelCommitPatchExpandRequest,
+): Promise<KernelCommitPatchExpandResponse> {
+  return fetchWithBody<KernelCommitPatchExpandResponse>(`${API_BASE}/kernel/commit/expand`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function getCodeAnnotations(
