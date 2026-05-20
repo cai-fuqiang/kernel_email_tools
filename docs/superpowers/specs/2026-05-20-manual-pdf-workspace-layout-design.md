@@ -11,6 +11,7 @@ Make the PDF workspace feel closer to the kernel code browser on desktop by upgr
 - add elegant left and right collapsible rails
 - allow dragging rail widths on desktop
 - prioritize the center reader pane
+- replace placeholder page cards with real PDF page rendering and visible text content
 - remove placeholder paragraph copy from the reader surface
 
 This change is intentionally limited to the existing manual PDF page and does not change backend APIs, annotation data, or routing.
@@ -22,6 +23,8 @@ The current PDF workspace has the right pieces but not the right interaction mod
 - left and right panels collapse as large cards instead of editor-style rails
 - panel widths are fixed and cannot be resized
 - the reader is pushed down by metadata cards that are not needed during reading
+- the center pane shows placeholder page shells instead of real PDF content
+- visible document text is not available in the page surface
 - placeholder explanatory paragraphs make the page feel unfinished
 - the center pane does not yet behave like the dominant surface
 
@@ -137,9 +140,18 @@ Remove the inline metadata cards from above the PDF viewport:
 
 Those details move to the left rail so the reader surface starts earlier.
 
-### Page Surface
+### Real PDF Surface
 
-Keep the current placeholder canvas blocks for now, but remove all placeholder prose such as:
+The page surface must render the actual PDF rather than placeholder cards.
+
+Behavior:
+
+- each page row renders the real PDF page for the current document
+- the text layer remains visible and selectable so the page contains real document text
+- continuous mode renders a scrollable stack of real pages
+- single-page focus renders the selected page at larger emphasis
+
+Remove all placeholder prose such as:
 
 - center-pane readiness copy
 - continuous-scroll explanation paragraphs inside page cards
@@ -149,9 +161,9 @@ Each page card should only show:
 
 - page label
 - active/focused status
-- the canvas placeholder area
+- the real rendered PDF page surface
 
-This keeps the page surface visually quiet and ready for future real rendering work.
+This keeps the page surface visually quiet while making the workspace immediately useful for reading.
 
 ## Visual Direction
 
@@ -163,6 +175,7 @@ Key cues:
 - restrained handles between panels
 - a dominant dark reader shell
 - clean white page surfaces inside the reader
+- real document text visible inside the page surface
 - compact state labels instead of descriptive paragraphs
 
 The goal is not perfect visual parity, but matching the same mental model: rails frame the work, the center pane owns attention, and controls stay compact.
@@ -183,6 +196,7 @@ Expected implementation approach:
 - add desktop-only resize handles
 - update shell layout classes to support fixed-width rails plus flexible center pane
 - move reader metadata into the left rail
+- replace page placeholders with real PDF rendering in both reader modes
 - delete placeholder copy from the reader pane
 
 No backend work is required.
@@ -196,13 +210,16 @@ Verify at minimum:
 3. Dragging each expanded rail changes width live on desktop.
 4. Drag handles are hidden when the corresponding rail is collapsed.
 5. The reader grows when one or both rails collapse.
-6. Placeholder paragraph text is removed from the reader pane.
-7. Narrow-screen layout still stacks cleanly without desktop resize behavior.
+6. The center pane renders actual PDF pages instead of placeholder blocks.
+7. Real document text is visible/selectable in the page surface.
+8. Placeholder paragraph text is removed from the reader pane.
+9. Narrow-screen layout still stacks cleanly without desktop resize behavior.
 
 ## Risks
 
 - `ManualPdfPage.tsx` is already responsible for multiple concerns, so interaction logic may become denser.
 - Pointer event cleanup must be handled carefully to avoid stuck drag state.
+- Real PDF page rendering and text-layer layout can introduce viewport and performance tuning work.
 - Desktop tuning must not regress the stacked mobile layout.
 
 These risks are acceptable because the scope stays in one file and the user explicitly requested a focused interaction upgrade rather than a broader refactor.
