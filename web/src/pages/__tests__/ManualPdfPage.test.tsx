@@ -6,7 +6,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 import App from '../../App';
 import { getManualDocumentView } from '../../api/client';
-import ManualPdfPage, { resolveMostVisiblePage } from '../ManualPdfPage';
+import ManualPdfPage, { createPageRefRegistry, resolveMostVisiblePage } from '../ManualPdfPage';
 
 vi.mock('../../auth', () => ({
   AuthProvider: ({ children }: { children: ReactNode }) => children,
@@ -98,11 +98,22 @@ describe('ManualPdfPage', () => {
   it('exports a resolver that picks the page with the largest visible area', () => {
     expect(
       resolveMostVisiblePage([
-        { page: 3, visibleArea: 1200 },
-        { page: 1, visibleArea: 4000 },
-        { page: 2, visibleArea: 2200 },
+        { page: 3, visibleRatio: 0.25 },
+        { page: 1, visibleRatio: 0.4 },
+        { page: 2, visibleRatio: 0.6 },
       ]),
-    ).toBe(1);
+    ).toBe(2);
+  });
+
+  it('exports a page-ref registry helper that adds and removes page nodes', () => {
+    const { pageRefs, setPageRef } = createPageRefRegistry();
+    const pageNode = document.createElement('div');
+
+    setPageRef(4, pageNode);
+    expect(pageRefs.get(4)).toBe(pageNode);
+
+    setPageRef(4, null);
+    expect(pageRefs.has(4)).toBe(false);
   });
 
   it('shows a distinct error state when document loading fails', async () => {

@@ -8,7 +8,7 @@ import { PageHeader, PageShell, PrimaryButton, SectionPanel } from '../component
 type ManualPdfReaderMode = 'continuous' | 'single';
 type ManualPdfZoomPreset = 'fit' | '1.00' | '1.25' | '1.50';
 type ManualPdfLoadState = 'idle' | 'loading' | 'ready' | 'error';
-type VisiblePageCandidate = { page: number; visibleArea: number };
+type VisiblePageCandidate = { page: number; visibleRatio: number };
 
 const ZOOM_PRESETS: Array<{ label: string; value: ManualPdfZoomPreset }> = [
   { label: 'Fit width', value: 'fit' },
@@ -23,20 +23,34 @@ function zoomPresetToScale(zoomPreset: ManualPdfZoomPreset): string {
 
 export function resolveMostVisiblePage(candidates: VisiblePageCandidate[]) {
   let bestPage: number | null = null;
-  let bestVisibleArea = -1;
+  let bestVisibleRatio = -1;
 
   for (const candidate of candidates) {
     if (
-      candidate.visibleArea > bestVisibleArea ||
-      (candidate.visibleArea === bestVisibleArea && bestPage !== null && candidate.page < bestPage) ||
-      (candidate.visibleArea === bestVisibleArea && bestPage === null)
+      candidate.visibleRatio > bestVisibleRatio ||
+      (candidate.visibleRatio === bestVisibleRatio && bestPage !== null && candidate.page < bestPage) ||
+      (candidate.visibleRatio === bestVisibleRatio && bestPage === null)
     ) {
       bestPage = candidate.page;
-      bestVisibleArea = candidate.visibleArea;
+      bestVisibleRatio = candidate.visibleRatio;
     }
   }
 
   return bestPage;
+}
+
+export function createPageRefRegistry() {
+  const pageRefs = new Map<number, HTMLElement>();
+
+  const setPageRef = (page: number, node: HTMLElement | null) => {
+    if (node) {
+      pageRefs.set(page, node);
+      return;
+    }
+    pageRefs.delete(page);
+  };
+
+  return { pageRefs, setPageRef };
 }
 
 function clampPage(page: number, pageCount: number) {
@@ -346,7 +360,7 @@ function PdfReaderPane({
 
 function useManualPdfPageNavigation(document: ManualDocumentView | null, readerMode: ManualPdfReaderMode) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const pageRefs = useRef<Map<number, HTMLElement>>(new Map());
+  const pageRefRegistry = useRef(createPageRefRegistry()).current;
   const pageCount = document?.page_count ?? 0;
   const pages = useMemo(() => Array.from({ length: pageCount }, (_, index) => index + 1), [pageCount]);
   const [activePage, setActivePage] = useState(() => clampPage(document?.initial_page ?? 1, pageCount));
@@ -364,14 +378,6 @@ function useManualPdfPageNavigation(document: ManualDocumentView | null, readerM
     setFocusedPage(nextPage);
   }, [document?.document_id, document?.initial_page, document?.page_count]);
 
-  const setPageRef = useCallback((page: number, node: HTMLElement | null) => {
-    if (node) {
-      pageRefs.current.set(page, node);
-      return;
-    }
-    pageRefs.current.delete(page);
-  }, []);
-
   const syncVisiblePageFromViewport = useCallback(() => {
     if (readerMode !== 'continuous') {
       return;
@@ -385,7 +391,7 @@ function useManualPdfPageNavigation(document: ManualDocumentView | null, readerM
     const containerRect = container.getBoundingClientRect();
     const candidates = pages
       .map((page) => {
-        const node = pageRefs.current.get(page);
+        const node = pageRefRegistry.pageRefs.get(page);
         if (!node) {
           return null;
         }
@@ -393,14 +399,12 @@ function useManualPdfPageNavigation(document: ManualDocumentView | null, readerM
         const rect = node.getBoundingClientRect();
         const visibleTop = Math.max(rect.top, containerRect.top);
         const visibleBottom = Math.min(rect.bottom, containerRect.bottom);
-        const visibleLeft = Math.max(rect.left, containerRect.left);
-        const visibleRight = Math.min(rect.right, containerRect.right);
         const visibleHeight = Math.max(0, visibleBottom - visibleTop);
-        const visibleWidth = Math.max(0, visibleRight - visibleLeft);
+        const visibleRatio = rect.height > 0 ? visibleHeight / rect.height : 0;
 
         return {
           page,
-          visibleArea: visibleHeight * visibleWidth,
+          visibleRatio,
         };
       })
       .filter((candidate): candidate is VisiblePageCandidate => candidate !== null);
@@ -446,7 +450,7 @@ function useManualPdfPageNavigation(document: ManualDocumentView | null, readerM
       setFocusedPage(nextPage);
 
       if (readerMode === 'continuous') {
-        pageRefs.current.get(nextPage)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        pageRefRegistry.pageRefs.get(nextPage)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     },
     [document, readerMode],
@@ -458,7 +462,7 @@ function useManualPdfPageNavigation(document: ManualDocumentView | null, readerM
     jumpToPage,
     readerPage: readerMode === 'continuous' ? activePage : focusedPage,
     scrollContainerRef,
-    setPageRef,
+    setPageRef: pageRefRegistry.setPageRef,
   };
 }
 
