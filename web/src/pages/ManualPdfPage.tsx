@@ -14,7 +14,6 @@ import remarkGfm from 'remark-gfm';
 
 import { Worker, Viewer } from '@react-pdf-viewer/core';
 import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
-import { pageNavigationPlugin } from '@react-pdf-viewer/page-navigation';
 import '@react-pdf-viewer/core/lib/styles/index.css';
 import '@react-pdf-viewer/default-layout/lib/styles/index.css';
 
@@ -299,28 +298,19 @@ function useManualPdfAnnotations(document: ManualDocumentView | null) {
 
 function PdfViewer({
   pdfUrl,
-  initialPage,
-  onJumpToPageReady,
+  targetPage,
 }: {
   pdfUrl: string;
-  initialPage: number;
-  onJumpToPageReady: (jumpFn: (pageIndex: number) => void) => void;
+  targetPage: number;
 }) {
-  const [pageNavPlugin] = useState(() => pageNavigationPlugin());
   const [defaultLayout] = useState(() => defaultLayoutPlugin());
-
-  useEffect(() => {
-    onJumpToPageReady((pageIndex: number) => {
-      pageNavPlugin.jumpToPage(pageIndex);
-    });
-  }, [onJumpToPageReady, pageNavPlugin]);
 
   return (
     <Worker workerUrl={PDFJS_WORKER_URL}>
       <Viewer
         fileUrl={pdfUrl}
-        initialPage={initialPage > 0 ? initialPage - 1 : 0}
-        plugins={[defaultLayout, pageNavPlugin]}
+        initialPage={targetPage > 0 ? targetPage - 1 : 0}
+        plugins={[defaultLayout]}
       />
     </Worker>
   );
@@ -348,7 +338,6 @@ function ManualPdfWorkspace({
   const isDesktop = useIsDesktopWorkspace();
   const [rightRailWidth, setRightRailWidth] = useState(EXPANDED_RAIL_WIDTH);
   const previousRightCollapsed = useRef(isRightCollapsed);
-  const jumpToPageRef = useRef<((pageIndex: number) => void) | null>(null);
 
   const { annotations, annotationsError } = useManualPdfAnnotations(document);
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
@@ -371,16 +360,8 @@ function ManualPdfWorkspace({
     previousRightCollapsed.current = isRightCollapsed;
   }, [isRightCollapsed]);
 
-  const handleJumpToPageReady = useCallback((jumpFn: (pageIndex: number) => void) => {
-    jumpToPageRef.current = jumpFn;
-  }, []);
-
   const jumpToPage = useCallback((page: number) => {
     setActivePage(page);
-    if (jumpToPageRef.current) {
-      // @react-pdf-viewer uses 0-based page index
-      jumpToPageRef.current(page - 1);
-    }
   }, []);
 
   const focusAnnotation = useCallback(
@@ -459,9 +440,9 @@ function ManualPdfWorkspace({
         ) : document ? (
           <div className="h-full min-h-[40rem]">
             <PdfViewer
+              key={activePage}
               pdfUrl={document.pdf_url}
-              initialPage={document.initial_page}
-              onJumpToPageReady={handleJumpToPageReady}
+              targetPage={activePage}
             />
           </div>
         ) : (
