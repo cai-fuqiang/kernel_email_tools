@@ -360,7 +360,11 @@ function PdfReaderPane({
 
 function useManualPdfPageNavigation(document: ManualDocumentView | null, readerMode: ManualPdfReaderMode) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const pageRefRegistry = useRef(createPageRefRegistry()).current;
+  const pageRefRegistryRef = useRef<ReturnType<typeof createPageRefRegistry> | null>(null);
+  if (!pageRefRegistryRef.current) {
+    pageRefRegistryRef.current = createPageRefRegistry();
+  }
+  const pageRefRegistry = pageRefRegistryRef.current;
   const pageCount = document?.page_count ?? 0;
   const pages = useMemo(() => Array.from({ length: pageCount }, (_, index) => index + 1), [pageCount]);
   const [activePage, setActivePage] = useState(() => clampPage(document?.initial_page ?? 1, pageCount));
@@ -388,7 +392,8 @@ function useManualPdfPageNavigation(document: ManualDocumentView | null, readerM
       return;
     }
 
-    const containerRect = container.getBoundingClientRect();
+    const viewportTop = container.scrollTop;
+    const viewportBottom = viewportTop + container.clientHeight;
     const candidates = pages
       .map((page) => {
         const node = pageRefRegistry.pageRefs.get(page);
@@ -396,11 +401,20 @@ function useManualPdfPageNavigation(document: ManualDocumentView | null, readerM
           return null;
         }
 
-        const rect = node.getBoundingClientRect();
-        const visibleTop = Math.max(rect.top, containerRect.top);
-        const visibleBottom = Math.min(rect.bottom, containerRect.bottom);
+        const pageTop = node.offsetTop;
+        const pageBottom = pageTop + node.offsetHeight;
+
+        if (pageBottom <= viewportTop) {
+          return null;
+        }
+        if (pageTop >= viewportBottom) {
+          return null;
+        }
+
+        const visibleTop = Math.max(pageTop, viewportTop);
+        const visibleBottom = Math.min(pageBottom, viewportBottom);
         const visibleHeight = Math.max(0, visibleBottom - visibleTop);
-        const visibleRatio = rect.height > 0 ? visibleHeight / rect.height : 0;
+        const visibleRatio = node.offsetHeight > 0 ? visibleHeight / node.offsetHeight : 0;
 
         return {
           page,
@@ -453,7 +467,7 @@ function useManualPdfPageNavigation(document: ManualDocumentView | null, readerM
         pageRefRegistry.pageRefs.get(nextPage)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     },
-    [document, readerMode],
+    [document, pageRefRegistry, readerMode],
   );
 
   return {

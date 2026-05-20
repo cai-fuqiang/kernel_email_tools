@@ -95,7 +95,7 @@ async function waitFor(assertion: () => void, timeoutMs = 1000) {
 }
 
 describe('ManualPdfPage', () => {
-  it('exports a resolver that picks the page with the largest visible area', () => {
+  it('exports a resolver that picks the page with the largest visible ratio', () => {
     expect(
       resolveMostVisiblePage([
         { page: 3, visibleRatio: 0.25 },
@@ -232,9 +232,13 @@ describe('ManualPdfPage', () => {
       page_text: [],
     });
 
+    const originalScrollIntoView = (HTMLElement.prototype as typeof HTMLElement.prototype & {
+      scrollIntoView?: (options?: ScrollIntoViewOptions) => void;
+    }).scrollIntoView;
     const scrollIntoView = vi.fn();
-    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
-    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    (HTMLElement.prototype as typeof HTMLElement.prototype & {
+      scrollIntoView?: (options?: ScrollIntoViewOptions) => void;
+    }).scrollIntoView = scrollIntoView;
 
     try {
       const { container } = await renderRoute('/manual/pdf/doc-779');
@@ -247,9 +251,18 @@ describe('ManualPdfPage', () => {
         findButton(container, 'Chapter 2').click();
       });
 
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
       expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
     } finally {
-      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+      if (originalScrollIntoView) {
+        (HTMLElement.prototype as typeof HTMLElement.prototype & {
+          scrollIntoView?: (options?: ScrollIntoViewOptions) => void;
+        }).scrollIntoView = originalScrollIntoView;
+      } else {
+        delete (HTMLElement.prototype as typeof HTMLElement.prototype & {
+          scrollIntoView?: (options?: ScrollIntoViewOptions) => void;
+        }).scrollIntoView;
+      }
     }
   });
 
