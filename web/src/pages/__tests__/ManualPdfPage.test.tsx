@@ -124,6 +124,7 @@ async function waitFor(assertion: () => void, timeoutMs = 1000) {
   const startedAt = Date.now();
   while (true) {
     try {
+      await act(async () => {});
       assertion();
       return;
     } catch (error) {
