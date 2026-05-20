@@ -11,6 +11,7 @@ import type {
   CurrentUser,
   LoginResult,
   ManualDocumentView,
+  ManualDocumentListResponse,
   ManualSearchResponse,
   ManualStatsResponse,
   Annotation,
@@ -578,6 +579,10 @@ export async function searchManuals(
 
 export async function getManualStats(): Promise<ManualStatsResponse> {
   return fetchJSON<ManualStatsResponse>(`${API_BASE}/manual/stats`);
+}
+
+export async function listManualDocuments(): Promise<ManualDocumentListResponse> {
+  return fetchJSON<ManualDocumentListResponse>(`${API_BASE}/manual/documents`);
 }
 
 export async function getManualDocumentView(documentId: string): Promise<ManualDocumentView> {

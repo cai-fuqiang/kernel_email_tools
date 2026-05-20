@@ -389,6 +389,20 @@ export interface ManualDocumentPageText {
   text: string;
 }
 
+export interface ManualDocumentSummary {
+  document_id: string;
+  title: string;
+  manual_type: string;
+  manual_version: string;
+  page_count: number;
+  chunk_count: number;
+  has_pdf: boolean;
+}
+
+export interface ManualDocumentListResponse {
+  documents: ManualDocumentSummary[];
+}
+
 export interface ManualDocumentView {
   document_id: string;
   title: string;
