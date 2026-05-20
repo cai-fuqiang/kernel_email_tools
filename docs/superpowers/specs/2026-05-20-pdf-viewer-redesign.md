@@ -35,7 +35,7 @@ ManualPdfPage
 │       └── Toolbar: zoom, page number, search, fit-width
 ├── RightRail (custom, collapsible, 320px)
 │   └── AnnotationListPanel
-│       ├── Items sorted by anchor.page ascending
+│       ├── Items filtered to current active page only
 │       ├── Each item: page badge + react-markdown body
 │       ├── Click → viewer.jumpToPage(page)
 │       └── Independent scroll container (overflow-y: auto)
@@ -121,7 +121,7 @@ No bbox/region coordinates stored — region mode UI exists but annotation stora
 - Default: expanded (320px)
 - Collapsed: 48px icon strip
 - Resize handle: drag to resize between 240px–520px
-- Annotation items: sorted ascending by page number
+- Annotation items: filtered to current active page only
 - Empty state: "No annotations yet"
 - Error state: inline error message
 
