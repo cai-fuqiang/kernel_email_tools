@@ -6,6 +6,12 @@ import autoprefixer from 'autoprefixer'
 export default defineConfig({
   plugins: [react()],
   base: '/app/',
+  optimizeDeps: {
+    include: [
+      '@react-pdf-viewer/core',
+      '@react-pdf-viewer/default-layout',
+    ],
+  },
   css: {
     postcss: {
       plugins: [tailwindcss(), autoprefixer()],
