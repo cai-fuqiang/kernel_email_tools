@@ -183,6 +183,7 @@ function loadReactPdfModule() {
   if (!reactPdfModulePromise) {
     reactPdfModulePromise = import('react-pdf')
       .then((module) => {
+        // Keep the worker on the exact same pdfjs-dist version that react-pdf is wired against.
         module.pdfjs.GlobalWorkerOptions.workerSrc = new URL(
           'pdfjs-dist/build/pdf.worker.min.mjs',
           import.meta.url,
