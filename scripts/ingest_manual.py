@@ -159,6 +159,10 @@ async def main() -> None:
     # 4. 可选：存储到数据库
     if args.store:
         logger.info("=== Step 4: Storing to Database ===")
+        # Persist the source PDF path so the reader can serve the file later.
+        abs_pdf_path = str(pdf_path.resolve())
+        for chunk in chunks:
+            chunk.metadata = {**(chunk.metadata or {}), "pdf_path": abs_pdf_path}
         await _store_chunks(
             chunks,
             args.manual_type,
