@@ -402,10 +402,6 @@ export interface ManualDocumentView {
   page_text: ManualDocumentPageText[];
 }
 
-export type ManualPdfReaderMode = 'continuous' | 'single';
-
-export type ManualPdfZoomPreset = 'fit' | '1.00' | '1.25' | '1.50';
-
 export interface ManualSourceRef {
   chunk_id: string;
   section: string;

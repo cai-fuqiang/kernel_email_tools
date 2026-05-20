@@ -26,6 +26,12 @@ vi.mock('../../layouts/MainLayout', () => ({
 }));
 
 afterEach(() => {
+  mountedRoots.forEach((root) => {
+    act(() => {
+      root.unmount();
+    });
+  });
+  mountedRoots.length = 0;
   document.body.innerHTML = '';
 });
 
@@ -34,6 +40,7 @@ beforeAll(() => {
 });
 
 const getManualDocumentViewMock = vi.mocked(getManualDocumentView);
+const mountedRoots: Array<{ unmount: () => void }> = [];
 
 beforeEach(() => {
   getManualDocumentViewMock.mockImplementation(async (documentId: string) => ({
@@ -54,6 +61,7 @@ async function renderRoute(initialEntry: string) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
+  mountedRoots.push(root);
 
   await act(async () => {
     root.render(
@@ -83,6 +91,18 @@ async function waitFor(assertion: () => void, timeoutMs = 1000) {
 }
 
 describe('ManualPdfPage', () => {
+  it('shows a distinct error state when document loading fails', async () => {
+    getManualDocumentViewMock.mockRejectedValueOnce(new Error('backend exploded'));
+
+    const { container } = await renderRoute('/manual/pdf/doc-error');
+
+    await waitFor(() => {
+      expect(container.textContent).toContain('Unable to load PDF workspace.');
+      expect(container.textContent).toContain('backend exploded');
+      expect(container.textContent).toContain('Document id: doc-error');
+    });
+  });
+
   it('tracks collapse state for both sidebars and marks the reader as focus layout when both are collapsed', async () => {
     getManualDocumentViewMock.mockResolvedValue({
       document_id: 'doc-777',

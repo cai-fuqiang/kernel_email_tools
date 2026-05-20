@@ -11,8 +11,6 @@ import type {
   CurrentUser,
   LoginResult,
   ManualDocumentView,
-  ManualPdfReaderMode,
-  ManualPdfZoomPreset,
   ManualSearchResponse,
   ManualStatsResponse,
   Annotation,
@@ -52,8 +50,6 @@ import type {
 } from './types';
 import { withNormalizedCodeTarget } from '../utils/codeTarget';
 export type {
-  ManualPdfReaderMode,
-  ManualPdfZoomPreset,
   TagAssignment,
   TagRead,
   TagStats,
