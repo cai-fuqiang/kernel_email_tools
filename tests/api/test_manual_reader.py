@@ -129,3 +129,52 @@ def test_manual_search_includes_document_id(monkeypatch):
         state._manual_retriever = original
 
     assert response.hits[0]["document_id"] == "intel_sdm:9.6"
+
+
+def test_list_documents_returns_summary_per_manual():
+    """list_documents groups chunks by manual_type+version and returns summaries."""
+    from src.storage.document_store import DocumentStorage
+
+    class FakeStorage(DocumentStorage):
+        def __init__(self):
+            pass  # skip DB init
+
+        async def get_chunks_by_manual(self, manual_type, manual_version=""):
+            if manual_type == "intel_sdm":
+                return [
+                    _make_chunk("intel_sdm", "default", pdf_path="/docs/sdm.pdf", page_end=100),
+                    _make_chunk("intel_sdm", "default", pdf_path="/docs/sdm.pdf", page_end=200),
+                ]
+            return []
+
+        async def _get_distinct_manuals(self):
+            return [("intel_sdm", "default"), ("other_manual", "v1")]
+
+    import asyncio
+    storage = FakeStorage()
+    results = asyncio.run(storage.list_documents())
+
+    assert len(results) == 2
+    sdm = next(r for r in results if r["manual_type"] == "intel_sdm")
+    assert sdm["document_id"] == "intel_sdm:default"
+    assert sdm["chunk_count"] == 2
+    assert sdm["page_count"] == 201  # MAX(page_end) + 1
+    # has_pdf is False because /docs/sdm.pdf doesn't exist on disk in CI
+    assert isinstance(sdm["has_pdf"], bool)
+
+
+def _make_chunk(manual_type, manual_version, pdf_path="", page_end=10):
+    from src.chunker.base import DocumentChunk, ContentType
+    return DocumentChunk(
+        chunk_id=f"{manual_type}:{manual_version}:{page_end}",
+        manual_type=manual_type,
+        manual_version=manual_version,
+        content_type=ContentType.TEXT,
+        content="test",
+        section="s1",
+        section_title="S1",
+        page_start=0,
+        page_end=page_end,
+        token_count=1,
+        metadata={"pdf_path": pdf_path} if pdf_path else {},
+    )

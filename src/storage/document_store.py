@@ -422,6 +422,42 @@ class DocumentStorage(BaseStorage):
                 return raw
         return ""
 
+    async def _get_distinct_manuals(self) -> list[tuple[str, str]]:
+        """Return distinct (manual_type, manual_version) pairs."""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(
+                    DocumentChunkModel.manual_type,
+                    DocumentChunkModel.manual_version,
+                ).distinct()
+            )
+            return [(row.manual_type, row.manual_version) for row in result]
+
+    async def list_documents(self) -> list[dict[str, Any]]:
+        """Return one summary dict per ingested document."""
+        pairs = await self._get_distinct_manuals()
+        summaries = []
+        for manual_type, manual_version in pairs:
+            chunks = await self.get_chunks_by_manual(manual_type, manual_version)
+            chunk_count = len(chunks)
+            page_count = max((c.page_end for c in chunks), default=-1) + 1
+            first = chunks[0] if chunks else None
+            title = (
+                (first.section_title or first.section if first else None)
+                or build_document_id(manual_type, manual_version)
+            )
+            pdf_path = self._extract_pdf_path(first.metadata if first and isinstance(first.metadata, dict) else {})
+            summaries.append({
+                "document_id": build_document_id(manual_type, manual_version),
+                "title": title,
+                "manual_type": manual_type,
+                "manual_version": manual_version,
+                "page_count": page_count,
+                "chunk_count": chunk_count,
+                "has_pdf": bool(pdf_path),
+            })
+        return summaries
+
     async def close(self) -> None:
         """关闭数据库连接。"""
         await self.engine.dispose()
