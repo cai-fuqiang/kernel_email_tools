@@ -6,10 +6,11 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import ManualPdfPage from '../ManualPdfPage';
 import ManualSearchPage, { buildDocumentSearchHits, flattenTocPages } from '../ManualSearchPage';
-import { searchManuals } from '../../api/client';
+import { getManualDocumentView, searchManuals } from '../../api/client';
 
 vi.mock('../../api/client', () => ({
   searchManuals: vi.fn(),
+  getManualDocumentView: vi.fn(),
 }));
 
 vi.mock('../../components/Toast', () => ({
@@ -17,6 +18,7 @@ vi.mock('../../components/Toast', () => ({
 }));
 
 const searchManualsMock = vi.mocked(searchManuals);
+const getManualDocumentViewMock = vi.mocked(getManualDocumentView);
 
 afterEach(() => {
   document.body.innerHTML = '';
@@ -140,6 +142,17 @@ describe('ManualSearchPage reader helpers', () => {
           target_subtitle: 'Volume 1 | pages 10-12',
         },
       ],
+    });
+    getManualDocumentViewMock.mockResolvedValue({
+      document_id: 'doc-123',
+      manual_type: 'intel_sdm',
+      manual_version: 'vol-1',
+      title: 'Intel SDM',
+      subtitle: 'Volume 1 | pages 10-12',
+      page_count: 3,
+      initial_page: 1,
+      pdf_url: '/manual/doc-123.pdf',
+      toc: [],
     });
 
     const { container } = renderRoute('/manual/search');

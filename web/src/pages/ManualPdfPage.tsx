@@ -195,12 +195,10 @@ function ReaderModeControls({
 
 function AnnotationModeControls({
   annotationMode,
-  readerMode,
   blockedMessage,
   onChange,
 }: {
   annotationMode: ManualPdfAnnotationMode;
-  readerMode: ManualPdfReaderMode;
   blockedMessage: string | null;
   onChange: (mode: ManualPdfAnnotationMode) => void;
 }) {
@@ -275,7 +273,7 @@ function PdfReaderPane({
   focusLayout: boolean;
   activePage: number;
   readerPage: number;
-  scrollContainerRef: RefObject<HTMLDivElement | null>;
+  scrollContainerRef: RefObject<HTMLDivElement>;
   setPageRef: (page: number, node: HTMLElement | null) => void;
   onReaderModeChange: (mode: ManualPdfReaderMode) => void;
   onZoomChange: (preset: ManualPdfZoomPreset) => void;
@@ -748,7 +746,6 @@ function ManualPdfWorkspace({
         <SectionPanel title="Annotation tools">
           <AnnotationModeControls
             annotationMode={annotationMode}
-            readerMode={readerMode}
             blockedMessage={regionBlockedMessage}
             onChange={handleAnnotationModeChange}
           />
