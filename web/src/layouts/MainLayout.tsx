@@ -96,10 +96,12 @@ export default function MainLayout() {
     { to: '/search', label: 'Search', icon: Search },
     { to: '/knowledge', label: 'Knowledge', icon: Library },
   ];
+  const isManualPdfRoute = location.pathname.startsWith('/manual/pdf/');
   const contextItems: NavItem[] = [
     { to: '/dashboard', label: 'Workbench Home', icon: LayoutDashboard },
     { to: '/annotations', label: 'Annotations', icon: Bookmark },
     { to: '/manual/search', label: 'Manuals', icon: BookOpen },
+    ...(isManualPdfRoute ? [{ to: location.pathname, label: 'PDF Workspace', icon: BookOpen }] : []),
     { to: '/tags', label: 'Tags', icon: Tags },
   ];
 

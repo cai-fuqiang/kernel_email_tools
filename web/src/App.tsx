@@ -69,6 +69,7 @@ export default function App() {
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/search" element={<SearchPage />} />
                 <Route path="/workspace" element={<Navigate to="/search" replace />} />
+                <Route path="/manual" element={<Navigate to="/manual/search" replace />} />
 
                 <Route path="/tags" element={<TagsPage />} />
                 <Route path="/knowledge" element={<KnowledgePage />} />

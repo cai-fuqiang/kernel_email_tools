@@ -9,7 +9,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 
 import { getManualDocumentView, listAnnotations } from '../api/client';
 import type { AnnotationListItem, ManualDocumentTocNode, ManualDocumentView } from '../api/types';
@@ -1336,6 +1336,14 @@ export default function ManualPdfPage() {
 
   return (
     <PageShell>
+      <div className="mb-4">
+        <Link
+          to="/manual/search"
+          className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-950"
+        >
+          Back to manuals
+        </Link>
+      </div>
       <PageHeader
         eyebrow="PDF Workspace"
         title="Open PDF document"
