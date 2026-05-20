@@ -11,6 +11,8 @@ import type {
   CurrentUser,
   LoginResult,
   ManualDocumentView,
+  ManualPdfReaderMode,
+  ManualPdfZoomPreset,
   ManualSearchResponse,
   ManualStatsResponse,
   Annotation,
@@ -49,7 +51,17 @@ import type {
 
 } from './types';
 import { withNormalizedCodeTarget } from '../utils/codeTarget';
-export type { TagAssignment, TagRead, TagStats, TagTargetBundle, TagTargetItem, TagTargetsResponse, TagTree } from './types';
+export type {
+  ManualPdfReaderMode,
+  ManualPdfZoomPreset,
+  TagAssignment,
+  TagRead,
+  TagStats,
+  TagTargetBundle,
+  TagTargetItem,
+  TagTargetsResponse,
+  TagTree,
+} from './types';
 
 // 使用相对路径，同源请求不会有 CORS 问题
 // 开发环境：Vite 代理 /api -> localhost:8000
