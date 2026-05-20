@@ -306,8 +306,8 @@ function PdfViewer({
   initialPage: number;
   onJumpToPageReady: (jumpFn: (pageIndex: number) => void) => void;
 }) {
-  const pageNavPlugin = useMemo(() => pageNavigationPlugin(), []);
-  const defaultLayout = useMemo(() => defaultLayoutPlugin(), []);
+  const [pageNavPlugin] = useState(() => pageNavigationPlugin());
+  const [defaultLayout] = useState(() => defaultLayoutPlugin());
 
   useEffect(() => {
     onJumpToPageReady((pageIndex: number) => {
