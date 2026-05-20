@@ -438,12 +438,39 @@ describe('ManualPdfPage', () => {
       manual_type: 'intel_sdm',
       manual_version: 'vol-7',
       pdf_url: '/api/manual/doc-783.pdf',
-      page_count: 1,
+      page_count: 3,
       initial_page: 1,
       toc: [],
       page_text: [],
     });
-    listAnnotationsMock.mockRejectedValueOnce(new Error('annotation backend exploded'));
+    listAnnotationsMock
+      .mockResolvedValueOnce({
+        annotations: [
+          {
+            annotation_id: 'ann-3',
+            annotation_type: 'note',
+            short_label: 'Page 1 note',
+            author: 'Ada',
+            visibility: 'public',
+            publish_status: 'approved',
+            body: 'Annotation on page 1',
+            pinned: false,
+            parent_annotation_id: '',
+            created_at: '2026-05-20T00:00:00Z',
+            updated_at: '2026-05-20T00:00:00Z',
+            target_type: 'document_pdf',
+            target_ref: 'doc-783',
+            target_label: 'Intel SDM',
+            target_subtitle: 'Volume 7',
+            related_targets: [],
+            anchor: { page: 1 },
+          },
+        ],
+        total: 101,
+        page: 1,
+        page_size: 100,
+      })
+      .mockRejectedValueOnce(new Error('annotation backend exploded'));
 
     const { container: errorContainer } = await renderRoute('/manual/pdf/doc-783');
 
@@ -451,6 +478,8 @@ describe('ManualPdfPage', () => {
       expect(errorContainer.textContent).toContain('Unable to load annotations.');
       expect(errorContainer.textContent).toContain('annotation backend exploded');
     });
+    expect(errorContainer.textContent).toContain('Page 1 note');
+    expect(errorContainer.textContent).not.toContain('Page 2 note');
   });
 
   it('blocks region annotation mode in continuous scroll and allows it in single-page focus', async () => {

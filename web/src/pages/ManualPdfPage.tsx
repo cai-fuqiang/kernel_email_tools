@@ -558,7 +558,6 @@ function useManualPdfAnnotations(document: ManualDocumentView | null) {
       };
     }
 
-    setAnnotations([]);
     setAnnotationsError(null);
 
     const loadAnnotations = async () => {
@@ -566,28 +565,30 @@ function useManualPdfAnnotations(document: ManualDocumentView | null) {
       let page = 1;
       let totalPages = 1;
 
-      while (page <= totalPages) {
-        const response = await listAnnotations({
-          target_type: 'document_pdf',
-          target_ref: document.document_id,
-          page,
-          page_size: 100,
-        });
-        collected.push(...response.annotations);
-        const pageSize = response.page_size || 100;
-        totalPages = Math.max(totalPages, Math.ceil(response.total / pageSize));
-        page += 1;
-      }
+      try {
+        while (page <= totalPages) {
+          const response = await listAnnotations({
+            target_type: 'document_pdf',
+            target_ref: document.document_id,
+            page,
+            page_size: 100,
+          });
+          collected.push(...response.annotations);
+          if (!active) return;
+          setAnnotations([...collected]);
+          const pageSize = response.page_size || 100;
+          totalPages = Math.max(totalPages, Math.ceil(response.total / pageSize));
+          page += 1;
+        }
 
-      if (!active) return;
-      setAnnotations(collected);
+        if (!active) return;
+      } catch (error: unknown) {
+        if (!active) return;
+        setAnnotationsError(error instanceof Error && error.message.trim() ? error.message : 'Unable to load annotations.');
+      }
     };
 
-    void loadAnnotations().catch((error: unknown) => {
-      if (!active) return;
-      setAnnotations([]);
-      setAnnotationsError(error instanceof Error && error.message.trim() ? error.message : 'Unable to load annotations.');
-    });
+    void loadAnnotations();
 
     return () => {
       active = false;
