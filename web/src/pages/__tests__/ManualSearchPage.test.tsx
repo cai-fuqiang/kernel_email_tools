@@ -62,6 +62,20 @@ function findButton(container: HTMLElement, text: string): HTMLButtonElement {
   return button;
 }
 
+async function waitFor(assertion: () => void, timeoutMs = 1000) {
+  const startedAt = Date.now();
+  // Poll briefly so the test waits for the rendered route change instead of a single microtask.
+  while (true) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      if (Date.now() - startedAt > timeoutMs) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+}
+
 describe('ManualSearchPage reader helpers', () => {
   it('builds document-local search hits across pages', () => {
     const hits = buildDocumentSearchHits(
@@ -134,24 +148,25 @@ describe('ManualSearchPage reader helpers', () => {
 
     await act(async () => {
       setInputValue(input, 'dma');
-      await Promise.resolve();
     });
 
     await act(async () => {
       findButton(container, 'Search').click();
-      await Promise.resolve();
     });
 
-    expect(findButton(container, 'Open PDF workspace')).toBeTruthy();
+    await waitFor(() => {
+      expect(findButton(container, 'Open PDF workspace')).toBeTruthy();
+    });
 
     await act(async () => {
       findButton(container, 'Open PDF workspace').click();
-      await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('PDF Workspace');
-    expect(container.textContent).toContain('Open PDF document');
-    expect(container.textContent).toContain('doc-123');
-    expect(container.textContent).not.toContain('Search Chip Manuals');
+    await waitFor(() => {
+      expect(container.textContent).toContain('PDF Workspace');
+      expect(container.textContent).toContain('Open PDF document');
+      expect(container.textContent).toContain('doc-123');
+      expect(container.textContent).not.toContain('Search Chip Manuals');
+    });
   });
 });
