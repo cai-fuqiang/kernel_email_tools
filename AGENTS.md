@@ -127,6 +127,7 @@ If a task is project-specific and token efficiency matters, load `kernel-email-t
 | `web/src/api/client.ts` | All API fetch calls. Large file. Check here before adding fetch calls to avoid duplicates. |
 | `web/src/api/types.ts` | All TypeScript types. Check here before defining new types. |
 | `web/src/pages/KernelCodePage.tsx` | Main kernel code browser. 105KB. Largest file. |
+| `web/src/pages/ManualPdfPage.tsx` | Dedicated manual PDF workspace for document reading, selection, and annotation. |
 | `web/src/components/AnnotationRelationsPanel.tsx` | Annotation relation display. 21.9KB. |
 | `web/src/components/kernelCode/AnnotationPanel.tsx` | Annotation panel within kernel code view. 50.6KB. |
 | `web/src/components/knowledge/KnowledgeWorkbench.tsx` | Knowledge entity workbench. 38.7KB. |
@@ -145,7 +146,7 @@ If a task is project-specific and token efficiency matters, load `kernel-email-t
 | Path | Purpose |
 |------|---------|
 | `web/src/App.tsx` | Route definitions — all page routes registered here |
-| `web/src/pages/` | Top-level pages (12): AnnotationsPage, DashboardPage, KernelCodePage, KernelAnnotationPreviewPage, KernelSymbolPreviewPage, KnowledgePage, LoginPage, ManualSearchPage, RegisterPage, SearchPage, TagsPage, UsersPage |
+| `web/src/pages/` | Top-level pages (13): AnnotationsPage, DashboardPage, KernelCodePage, KernelAnnotationPreviewPage, KernelSymbolPreviewPage, KnowledgePage, LoginPage, ManualPdfPage, ManualSearchPage, RegisterPage, SearchPage, TagsPage, UsersPage |
 | `web/src/components/kernelCode/` | Kernel code sub-components: AnnotationPanel, CodeHistoryPanel, AnnotationQuickPreviewPopover, KernelSymbolQuickPreviewPopover |
 | `web/src/components/knowledge/` | Knowledge sub-components: KnowledgeWorkbench, KnowledgeRightRail, EntityListPanel, EntityRelationsPanel, EvidencePanel, KnowledgeTimelinePanel |
 | `web/src/components/search/` | Search sub-components: SearchBar, AdvancedFilters, AnnotationResults, ResultCard |
@@ -204,6 +205,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-19: manual import CLI now reports stage-weighted overall progress plus parser-driven current-section progress through an optional Intel SDM parser callback (scripts/ingest_manual.py, src/parser/intel_sdm/parser.py, README.md)
 - 2026-05-19: manual search results now expose document-chunk annotation targets and the manual search page provides a paragraph-level document annotation workspace backed by shared annotations (src/api/routers/manual.py, web/src/api/types.ts, web/src/pages/ManualSearchPage.tsx)
 - 2026-05-19: PDF reader uses document-level `document_pdf` annotation targets, `DocumentStorage`-aggregated document views, `react-pdf` page rendering, and page-text sidecar search hits for TOC navigation plus text/region annotations (src/storage/document_store.py, src/api/routers/manual.py, src/api/schemas.py, web/src/api/client.ts, web/src/api/types.ts, web/src/pages/ManualSearchPage.tsx)
+- 2026-05-20: dedicated manual PDF workspace now lives on `web/src/pages/ManualPdfPage.tsx` while `ManualSearchPage` stays search-only and links into `/manual/pdf/:documentId` for reading and annotation (src/api/routers/manual.py, src/api/schemas.py, src/storage/document_store.py, web/src/pages/ManualPdfPage.tsx, web/src/pages/ManualSearchPage.tsx)
 
 ---
 
@@ -216,7 +218,7 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-19 10:33pm GMT+8
+# [kernel_email_tools] recent context, 2026-05-20 10:49am GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
