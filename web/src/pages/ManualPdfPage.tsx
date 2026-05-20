@@ -306,15 +306,14 @@ function PdfViewer({
   initialPage: number;
   onJumpToPageReady: (jumpFn: (pageIndex: number) => void) => void;
 }) {
-  const pageNavPlugin = pageNavigationPlugin();
-  const defaultLayout = defaultLayoutPlugin();
+  const pageNavPlugin = useMemo(() => pageNavigationPlugin(), []);
+  const defaultLayout = useMemo(() => defaultLayoutPlugin(), []);
 
   useEffect(() => {
     onJumpToPageReady((pageIndex: number) => {
       pageNavPlugin.jumpToPage(pageIndex);
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [onJumpToPageReady, pageNavPlugin]);
 
   return (
     <Worker workerUrl={PDFJS_WORKER_URL}>
