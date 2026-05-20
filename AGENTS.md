@@ -206,6 +206,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-19: manual search results now expose document-chunk annotation targets and the manual search page provides a paragraph-level document annotation workspace backed by shared annotations (src/api/routers/manual.py, web/src/api/types.ts, web/src/pages/ManualSearchPage.tsx)
 - 2026-05-19: PDF reader uses document-level `document_pdf` annotation targets, `DocumentStorage`-aggregated document views, `react-pdf` page rendering, and page-text sidecar search hits for TOC navigation plus text/region annotations (src/storage/document_store.py, src/api/routers/manual.py, src/api/schemas.py, web/src/api/client.ts, web/src/api/types.ts, web/src/pages/ManualSearchPage.tsx)
 - 2026-05-20: dedicated manual PDF workspace now lives on `web/src/pages/ManualPdfPage.tsx` while `ManualSearchPage` stays search-only and links into `/manual/pdf/:documentId` for reading and annotation (src/api/routers/manual.py, src/api/schemas.py, src/storage/document_store.py, web/src/pages/ManualPdfPage.tsx, web/src/pages/ManualSearchPage.tsx)
+- 2026-05-20: manual PDF workspace now renders real PDF/text layers in the center pane, moves document metadata into the left rail, and uses collapsible plus desktop-resizable side rails with default-width reset on re-expand (web/src/pages/ManualPdfPage.tsx, web/src/pages/__tests__/ManualPdfPage.test.tsx)
 
 ---
 
@@ -218,7 +219,7 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-20 10:49am GMT+8
+# [kernel_email_tools] recent context, 2026-05-20 2:02pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE

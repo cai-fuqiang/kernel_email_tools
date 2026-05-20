@@ -26,54 +26,6 @@ vi.mock('../../layouts/MainLayout', () => ({
   default: () => <div data-testid="main-layout"><Outlet /></div>,
 }));
 
-let pdfRenderError: Error | null = null;
-
-vi.mock('react-pdf', async () => {
-  const React = await vi.importActual<typeof import('react')>('react');
-
-  return {
-    Document: ({
-      children,
-      file,
-      onLoadError,
-      onLoadSuccess,
-      onSourceError,
-    }: {
-      children: ReactNode;
-      file: string;
-      onLoadError?: (error: Error) => void;
-      onLoadSuccess?: () => void;
-      onSourceError?: (error: Error) => void;
-    }) => {
-      React.useEffect(() => {
-        if (pdfRenderError) {
-          onSourceError?.(pdfRenderError);
-          onLoadError?.(pdfRenderError);
-          return;
-        }
-
-        onLoadSuccess?.();
-      }, [file, onLoadError, onLoadSuccess, onSourceError]);
-
-      return <div data-testid="pdf-document">{children}</div>;
-    },
-    Page: ({ pageNumber, scale, width }: { pageNumber: number; scale?: number; width?: number }) => (
-      <div
-        data-testid={`pdf-rendered-page-${pageNumber}`}
-        data-scale={scale === undefined ? '' : String(scale)}
-        data-width={width === undefined ? '' : String(width)}
-      >
-        Audience text layer
-      </div>
-    ),
-    pdfjs: {
-      GlobalWorkerOptions: {
-        workerSrc: '',
-      },
-    },
-  };
-});
-
 afterEach(() => {
   mountedRoots.forEach((root) => {
     act(() => {
@@ -94,7 +46,18 @@ const mountedRoots: Array<{ unmount: () => void }> = [];
 
 beforeEach(() => {
   vi.clearAllMocks();
-  pdfRenderError = null;
+  (globalThis as typeof globalThis & { __MANUAL_PDF_TEST_RENDER_ERROR__?: Error | null }).__MANUAL_PDF_TEST_RENDER_ERROR__ =
+    null;
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: query.includes('min-width: 1280px'),
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })) as typeof window.matchMedia;
   getManualDocumentViewMock.mockImplementation(async (documentId: string) => ({
     document_id: documentId,
     title: `Manual ${documentId}`,
@@ -271,6 +234,55 @@ describe('ManualPdfPage', () => {
     expect(readerPane.getAttribute('data-zoom')).toBe('1.25');
     expect(findButton(container, 'Continuous scroll').getAttribute('aria-pressed')).toBe('false');
     expect(findButton(container, 'Single-page focus').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('keeps the visible page when switching from continuous scroll to single-page focus', async () => {
+    getManualDocumentViewMock.mockResolvedValue({
+      document_id: 'doc-778b',
+      title: 'Intel SDM',
+      subtitle: 'Volume 2B',
+      manual_type: 'intel_sdm',
+      manual_version: 'vol-2',
+      pdf_url: '/api/manual/doc-778b.pdf',
+      page_count: 3,
+      initial_page: 1,
+      toc: [],
+      page_text: [],
+    });
+
+    const { container } = await renderRoute('/manual/pdf/doc-778b');
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="pdf-page-viewport"]')).toBeTruthy();
+      expect(container.querySelector('[data-testid="pdf-page-3"]')).toBeTruthy();
+    });
+
+    const viewport = container.querySelector('[data-testid="pdf-page-viewport"]') as HTMLDivElement;
+    const page1 = container.querySelector('[data-testid="pdf-page-1"]') as HTMLElement;
+    const page2 = container.querySelector('[data-testid="pdf-page-2"]') as HTMLElement;
+    const page3 = container.querySelector('[data-testid="pdf-page-3"]') as HTMLElement;
+
+    Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 120 });
+    Object.defineProperty(viewport, 'scrollTop', { configurable: true, writable: true, value: 240 });
+    Object.defineProperty(page1, 'offsetTop', { configurable: true, value: 0 });
+    Object.defineProperty(page2, 'offsetTop', { configurable: true, value: 120 });
+    Object.defineProperty(page3, 'offsetTop', { configurable: true, value: 240 });
+    Object.defineProperty(page1, 'offsetHeight', { configurable: true, value: 120 });
+    Object.defineProperty(page2, 'offsetHeight', { configurable: true, value: 120 });
+    Object.defineProperty(page3, 'offsetHeight', { configurable: true, value: 120 });
+
+    await act(async () => {
+      viewport.dispatchEvent(new Event('scroll'));
+    });
+
+    expect(page3.getAttribute('data-active')).toBe('true');
+
+    await act(async () => {
+      findButton(container, 'Single-page focus').click();
+    });
+
+    const focusedPage = container.querySelector('[data-testid="pdf-page-3"]') as HTMLElement;
+    expect(focusedPage.getAttribute('data-active')).toBe('true');
   });
 
   it('scrolls the target page smoothly when a TOC entry is clicked in continuous mode', async () => {
@@ -627,6 +639,8 @@ describe('ManualPdfPage', () => {
         expect(container.textContent).toContain('Jump target');
       });
 
+      scrollIntoView.mockClear();
+
       await act(async () => {
         findButton(container, 'Jump target').click();
       });
@@ -668,8 +682,55 @@ describe('ManualPdfPage', () => {
       expect(container.textContent).toContain('Audience text layer');
     });
 
+    const readerPane = container.querySelector('[data-testid="pdf-reader-pane"]') as HTMLElement;
+
     expect(container.textContent).not.toContain('Center pane ready for PDF reading.');
     expect(container.textContent).not.toContain('Placeholder page canvas for continuous reading.');
+    expect(readerPane.textContent).not.toContain('Title');
+    expect(readerPane.textContent).not.toContain('Subtitle');
+    expect(readerPane.textContent).not.toContain('Document id');
+    expect(readerPane.textContent).not.toContain('Continuous scroll follows the visible page.');
+  });
+
+  it('opens continuous mode at the document initial page', async () => {
+    getManualDocumentViewMock.mockResolvedValue({
+      document_id: 'intel_sdm',
+      title: 'Intel SDM',
+      subtitle: 'Audience',
+      manual_type: 'intel_sdm',
+      manual_version: 'vol-1',
+      pdf_url: '/api/manual/documents/intel_sdm:file',
+      page_count: 172,
+      initial_page: 110,
+      toc: [],
+      page_text: [],
+    });
+
+    const originalScrollIntoView = (HTMLElement.prototype as typeof HTMLElement.prototype & {
+      scrollIntoView?: (options?: ScrollIntoViewOptions) => void;
+    }).scrollIntoView;
+    const scrollIntoView = vi.fn();
+    (HTMLElement.prototype as typeof HTMLElement.prototype & {
+      scrollIntoView?: (options?: ScrollIntoViewOptions) => void;
+    }).scrollIntoView = scrollIntoView;
+
+    try {
+      await renderRoute('/manual/pdf/intel_sdm');
+
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
+      });
+    } finally {
+      if (originalScrollIntoView) {
+        (HTMLElement.prototype as typeof HTMLElement.prototype & {
+          scrollIntoView?: (options?: ScrollIntoViewOptions) => void;
+        }).scrollIntoView = originalScrollIntoView;
+      } else {
+        delete (HTMLElement.prototype as typeof HTMLElement.prototype & {
+          scrollIntoView?: (options?: ScrollIntoViewOptions) => void;
+        }).scrollIntoView;
+      }
+    }
   });
 
   it('collapses both rails into slim handles', async () => {
@@ -708,8 +769,8 @@ describe('ManualPdfPage', () => {
     expect(rightRail.style.width).toBe('48px');
     expect(findButton(container, 'Expand left panel')).toBeTruthy();
     expect(findButton(container, 'Expand right panel')).toBeTruthy();
-    expect(container.querySelector('[data-testid="left-rail-resize-handle"]')).toBeTruthy();
-    expect(container.querySelector('[data-testid="right-rail-resize-handle"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="left-rail-resize-handle"]')).toBeFalsy();
+    expect(container.querySelector('[data-testid="right-rail-resize-handle"]')).toBeFalsy();
   });
 
   it('drags the right rail desktop handle from 320px to 400px', async () => {
@@ -746,8 +807,40 @@ describe('ManualPdfPage', () => {
     expect(rightRail.style.width).toBe('400px');
   });
 
+  it('resets rail width to the default size when re-expanding', async () => {
+    const { container } = await renderRoute('/manual/pdf/intel_sdm');
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="right-rail-shell"]')).toBeTruthy();
+    });
+
+    const rightRail = container.querySelector('[data-testid="right-rail-shell"]') as HTMLElement;
+    const rightHandle = container.querySelector('[data-testid="right-rail-resize-handle"]') as HTMLElement;
+
+    await act(async () => {
+      dispatchPointerEvent(rightHandle, 'pointerdown', 0);
+      dispatchPointerEvent(window, 'pointermove', -80);
+      dispatchPointerEvent(window, 'pointerup', -80);
+    });
+
+    expect(rightRail.style.width).toBe('400px');
+
+    await act(async () => {
+      findButton(container, 'Collapse right panel').click();
+    });
+
+    expect(rightRail.style.width).toBe('48px');
+
+    await act(async () => {
+      findButton(container, 'Expand right panel').click();
+    });
+
+    expect(rightRail.style.width).toBe('320px');
+  });
+
   it('surfaces PDF render failures distinctly', async () => {
-    pdfRenderError = new Error('pdf exploded');
+    (globalThis as typeof globalThis & { __MANUAL_PDF_TEST_RENDER_ERROR__?: Error | null }).__MANUAL_PDF_TEST_RENDER_ERROR__ =
+      new Error('pdf exploded');
 
     const { container } = await renderRoute('/manual/pdf/intel_sdm');
 
@@ -788,6 +881,26 @@ describe('ManualPdfPage', () => {
 
     expect(renderedPage.getAttribute('data-width')).toBe('');
     expect(renderedPage.getAttribute('data-scale')).toBe('1');
+  });
+
+  it('hides desktop resize handles in the stacked mobile layout', async () => {
+    window.matchMedia = vi.fn().mockImplementation(() => ({
+      matches: false,
+      media: '(min-width: 1280px)',
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })) as typeof window.matchMedia;
+
+    const { container } = await renderRoute('/manual/pdf/intel_sdm');
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="pdf-reader-pane"]')).toBeTruthy();
+    });
+
+    expect(container.querySelector('[data-testid="left-rail-resize-handle"]')).toBeFalsy();
+    expect(container.querySelector('[data-testid="right-rail-resize-handle"]')).toBeFalsy();
   });
 
   it('renders the dedicated PDF workspace for the standalone route', async () => {

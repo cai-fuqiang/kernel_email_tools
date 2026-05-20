@@ -24,6 +24,9 @@ type ManualPdfLoadState = 'idle' | 'loading' | 'ready' | 'error';
 type VisiblePageCandidate = { page: number; visibleRatio: number };
 type RailSide = 'left' | 'right';
 type ReactPdfModule = typeof import('react-pdf');
+type ManualPdfTestGlobals = typeof globalThis & {
+  __MANUAL_PDF_TEST_RENDER_ERROR__?: Error | null;
+};
 
 const EXPANDED_RAIL_WIDTH = 320;
 const COLLAPSED_RAIL_WIDTH = 48;
@@ -173,6 +176,10 @@ function ensurePdfDomPolyfills() {
 function loadReactPdfModule() {
   ensurePdfDomPolyfills();
 
+  if (typeof navigator !== 'undefined' && /\bjsdom\b/i.test(navigator.userAgent)) {
+    return Promise.resolve(createReactPdfTestModule());
+  }
+
   if (!reactPdfModulePromise) {
     reactPdfModulePromise = import('react-pdf')
       .then((module) => {
@@ -189,6 +196,63 @@ function loadReactPdfModule() {
   }
 
   return reactPdfModulePromise;
+}
+
+function createReactPdfTestModule(): ReactPdfModule {
+  const TestDocument = ({
+    children,
+    file,
+    onLoadError,
+    onLoadSuccess,
+    onSourceError,
+  }: {
+    children: ReactNode;
+    file: string;
+    onLoadError?: (error: Error) => void;
+    onLoadSuccess?: () => void;
+    onSourceError?: (error: Error) => void;
+  }) => {
+    useEffect(() => {
+      const testError = (globalThis as ManualPdfTestGlobals).__MANUAL_PDF_TEST_RENDER_ERROR__;
+      if (testError) {
+        onSourceError?.(testError);
+        onLoadError?.(testError);
+        return;
+      }
+
+      onLoadSuccess?.();
+    }, [file, onLoadError, onLoadSuccess, onSourceError]);
+
+    return <div data-testid="pdf-document">{children}</div>;
+  };
+
+  const TestPage = ({
+    pageNumber,
+    scale,
+    width,
+  }: {
+    pageNumber: number;
+    scale?: number;
+    width?: number;
+  }) => (
+    <div
+      data-testid={`pdf-rendered-page-${pageNumber}`}
+      data-scale={scale === undefined ? '' : String(scale)}
+      data-width={width === undefined ? '' : String(width)}
+    >
+      Audience text layer
+    </div>
+  );
+
+  return {
+    Document: TestDocument,
+    Page: TestPage,
+    pdfjs: {
+      GlobalWorkerOptions: {
+        workerSrc: '',
+      },
+    },
+  } as ReactPdfModule;
 }
 
 function buildPdfWorkspaceErrorMessage(error: unknown, documentId?: string) {
@@ -256,6 +320,7 @@ function renderTocButtons(nodes: ManualDocumentTocNode[], onJumpToPage: (page: n
 }
 
 function WorkspaceRailShell({
+  isDesktop,
   collapsed,
   side,
   title,
@@ -267,6 +332,7 @@ function WorkspaceRailShell({
   onResizeStep,
   children,
 }: {
+  isDesktop: boolean;
   collapsed: boolean;
   side: RailSide;
   title: string;
@@ -298,44 +364,52 @@ function WorkspaceRailShell({
   return (
     <aside
       data-testid={`${side}-rail-shell`}
-      style={{ width: `${collapsed ? COLLAPSED_RAIL_WIDTH : width}px` }}
-      className="relative shrink-0 rounded-2xl border border-slate-200 bg-white shadow-sm transition-all"
+      style={isDesktop ? { width: `${collapsed ? COLLAPSED_RAIL_WIDTH : width}px` } : undefined}
+      className={`relative rounded-2xl border border-slate-200 bg-white shadow-sm transition-all ${
+        isDesktop ? 'shrink-0' : 'w-full'
+      }`}
     >
-      <div
-        data-testid={`${side}-rail-resize-handle`}
-        role="separator"
-        aria-label={`Resize ${side} panel`}
-        aria-orientation="vertical"
-        tabIndex={collapsed || !onResizeStart ? -1 : 0}
-        onPointerDown={
-          collapsed || !onResizeStart
-            ? undefined
-            : (event: ReactPointerEvent<HTMLDivElement>) => {
-                event.preventDefault();
-                onResizeStart(side, event.clientX);
-              }
-        }
-        onKeyDown={handleResizeKeyDown}
-        className={`absolute top-4 h-[calc(100%-2rem)] w-2 rounded-full bg-transparent ${
-          collapsed || !onResizeStart ? 'cursor-default' : 'cursor-col-resize hover:bg-sky-200/70 focus:bg-sky-200/70'
-        } ${side === 'left' ? '-right-1' : '-left-1'}`}
-      />
-      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-        {!collapsed ? (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{railLabel}</p>
-            <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
-          </div>
-        ) : (
-          <div aria-hidden="true" className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+      {isDesktop && !collapsed && onResizeStart ? (
+        <div
+          data-testid={`${side}-rail-resize-handle`}
+          role="separator"
+          aria-label={`Resize ${side} panel`}
+          aria-orientation="vertical"
+          tabIndex={0}
+          onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
+            event.preventDefault();
+            onResizeStart(side, event.clientX);
+          }}
+          onKeyDown={handleResizeKeyDown}
+          className={`absolute top-4 h-[calc(100%-2rem)] w-2 rounded-full bg-transparent cursor-col-resize hover:bg-sky-200/70 focus:bg-sky-200/70 ${
+            side === 'left' ? '-right-1' : '-left-1'
+          }`}
+        />
+      ) : null}
+      {isDesktop && collapsed ? (
+        <div className="flex h-full min-h-[20rem] flex-col items-center justify-between px-2 py-4">
+          <span className="[writing-mode:vertical-rl] text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
             {title}
+          </span>
+          <PrimaryButton type="button" onClick={onToggle} className="px-2 py-3 text-xs">
+            <span className="sr-only">{actionLabel}</span>
+            <span aria-hidden="true">{side === 'left' ? '>' : '<'}</span>
+          </PrimaryButton>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{railLabel}</p>
+              <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+            </div>
+            <PrimaryButton type="button" onClick={onToggle} className="shrink-0">
+              {actionLabel}
+            </PrimaryButton>
           </div>
-        )}
-        <PrimaryButton type="button" onClick={onToggle} className="shrink-0">
-          {actionLabel}
-        </PrimaryButton>
-      </div>
-      {!collapsed && <div className="space-y-4 p-4">{children}</div>}
+          {!collapsed && <div className="space-y-4 p-4">{children}</div>}
+        </>
+      )}
     </aside>
   );
 }
@@ -526,21 +600,6 @@ function PdfReaderPane({
             </div>
           ) : document ? (
             <div className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Title</p>
-                  <p className="mt-1 text-sm font-medium text-white">{document.title}</p>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Subtitle</p>
-                  <p className="mt-1 text-sm font-medium text-white">{document.subtitle}</p>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Document id</p>
-                  <p className="mt-1 text-sm font-medium text-white">{document.document_id}</p>
-                </div>
-              </div>
-
               <div
                 ref={scrollContainerRef}
                 data-testid="pdf-page-viewport"
@@ -555,9 +614,6 @@ function PdfReaderPane({
                       Page {readerPage} of {document.page_count}
                     </p>
                   </div>
-                  <p className="text-xs text-slate-400">
-                    {readerMode === 'continuous' ? 'Continuous scroll follows the visible page.' : 'Single-page focus shows one page at a time.'}
-                  </p>
                 </div>
 
                 {pdfRenderError ? (
@@ -663,9 +719,58 @@ function useViewportWidth(ref: RefObject<HTMLDivElement>, dependency?: string) {
   return viewportWidth;
 }
 
+function useIsDesktopWorkspace() {
+  const readDesktopMatch = useCallback(() => {
+    if (typeof window.matchMedia === 'function') {
+      return window.matchMedia('(min-width: 1280px)').matches;
+    }
+
+    return window.innerWidth >= 1280;
+  }, []);
+  const [isDesktop, setIsDesktop] = useState(readDesktopMatch);
+
+  useEffect(() => {
+    if (typeof window.matchMedia === 'function') {
+      const mediaQuery = window.matchMedia('(min-width: 1280px)');
+      const handleChange = (event: MediaQueryListEvent) => {
+        setIsDesktop(event.matches);
+      };
+
+      setIsDesktop(mediaQuery.matches);
+      if (typeof mediaQuery.addEventListener === 'function') {
+        mediaQuery.addEventListener('change', handleChange);
+        return () => {
+          mediaQuery.removeEventListener('change', handleChange);
+        };
+      }
+
+      if (typeof mediaQuery.addListener === 'function') {
+        mediaQuery.addListener(handleChange);
+        return () => {
+          mediaQuery.removeListener(handleChange);
+        };
+      }
+
+      return;
+    }
+
+    const handleResize = () => {
+      setIsDesktop(readDesktopMatch());
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [readDesktopMatch]);
+
+  return isDesktop;
+}
+
 function useManualPdfPageNavigation(document: ManualDocumentView | null, readerMode: ManualPdfReaderMode) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const pageRefRegistryRef = useRef<ReturnType<typeof createPageRefRegistry> | null>(null);
+  const hasAlignedInitialPageRef = useRef(false);
+  const previousReaderModeRef = useRef<ManualPdfReaderMode>(readerMode);
   if (!pageRefRegistryRef.current) {
     pageRefRegistryRef.current = createPageRefRegistry();
   }
@@ -679,12 +784,14 @@ function useManualPdfPageNavigation(document: ManualDocumentView | null, readerM
     if (!document) {
       setActivePage(1);
       setFocusedPage(1);
+      hasAlignedInitialPageRef.current = false;
       return;
     }
 
     const nextPage = clampPage(document.initial_page, document.page_count);
     setActivePage(nextPage);
     setFocusedPage(nextPage);
+    hasAlignedInitialPageRef.current = false;
   }, [document?.document_id, document?.initial_page, document?.page_count]);
 
   const syncVisiblePageFromViewport = useCallback(() => {
@@ -731,12 +838,34 @@ function useManualPdfPageNavigation(document: ManualDocumentView | null, readerM
     const mostVisiblePage = resolveMostVisiblePage(candidates);
     if (mostVisiblePage !== null) {
       setActivePage(mostVisiblePage);
+      setFocusedPage(mostVisiblePage);
     }
   }, [pages, readerMode]);
 
   useEffect(() => {
     syncVisiblePageFromViewport();
   }, [syncVisiblePageFromViewport]);
+
+  useEffect(() => {
+    if (!document || readerMode !== 'continuous' || hasAlignedInitialPageRef.current) {
+      return;
+    }
+
+    const initialPage = clampPage(document.initial_page, document.page_count);
+    if (initialPage <= 1) {
+      hasAlignedInitialPageRef.current = true;
+      return;
+    }
+
+    const initialPageNode = pageRefRegistry.pageRefs.get(initialPage);
+    if (!initialPageNode || typeof initialPageNode.scrollIntoView !== 'function') {
+      return;
+    }
+
+    hasAlignedInitialPageRef.current = true;
+    initialPageNode.scrollIntoView({ behavior: 'auto', block: 'start' });
+    setActivePage(initialPage);
+  }, [document, pageRefRegistry, readerMode]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -757,6 +886,26 @@ function useManualPdfPageNavigation(document: ManualDocumentView | null, readerM
       window.removeEventListener('resize', handleScroll);
     };
   }, [readerMode, syncVisiblePageFromViewport]);
+
+  useEffect(() => {
+    if (!document) {
+      previousReaderModeRef.current = readerMode;
+      return;
+    }
+
+    if (previousReaderModeRef.current === readerMode) {
+      return;
+    }
+
+    if (readerMode === 'single') {
+      setFocusedPage(activePage);
+    } else {
+      setActivePage(focusedPage);
+      pageRefRegistry.pageRefs.get(focusedPage)?.scrollIntoView({ behavior: 'auto', block: 'start' });
+    }
+
+    previousReaderModeRef.current = readerMode;
+  }, [activePage, document, focusedPage, pageRefRegistry, readerMode]);
 
   const jumpToPage = useCallback(
     (page: number) => {
@@ -872,8 +1021,11 @@ function ManualPdfWorkspace({
   onZoomChange: (preset: ManualPdfZoomPreset) => void;
 }) {
   const focusLayout = isLeftCollapsed && isRightCollapsed;
+  const isDesktop = useIsDesktopWorkspace();
   const [leftRailWidth, setLeftRailWidth] = useState(EXPANDED_RAIL_WIDTH);
   const [rightRailWidth, setRightRailWidth] = useState(EXPANDED_RAIL_WIDTH);
+  const previousLeftCollapsed = useRef(isLeftCollapsed);
+  const previousRightCollapsed = useRef(isRightCollapsed);
   const { activePage, jumpToPage, readerPage, scrollContainerRef, setPageRef } = useManualPdfPageNavigation(
     document,
     readerMode,
@@ -893,6 +1045,20 @@ function ManualPdfWorkspace({
       setRegionBlockedMessage(null);
     }
   }, [annotationMode, onAnnotationModeChange, readerMode]);
+  useEffect(() => {
+    if (previousLeftCollapsed.current && !isLeftCollapsed) {
+      setLeftRailWidth(EXPANDED_RAIL_WIDTH);
+    }
+
+    previousLeftCollapsed.current = isLeftCollapsed;
+  }, [isLeftCollapsed]);
+  useEffect(() => {
+    if (previousRightCollapsed.current && !isRightCollapsed) {
+      setRightRailWidth(EXPANDED_RAIL_WIDTH);
+    }
+
+    previousRightCollapsed.current = isRightCollapsed;
+  }, [isRightCollapsed]);
   const focusAnnotation = useCallback(
     (annotation: AnnotationListItem) => {
       const annotationPage = getAnnotationPage(annotation) ?? activePage;
@@ -952,6 +1118,7 @@ function ManualPdfWorkspace({
       className="mt-6 flex min-h-[calc(100vh-13rem)] flex-col gap-4 xl:flex-row"
     >
       <WorkspaceRailShell
+        isDesktop={isDesktop}
         collapsed={isLeftCollapsed}
         side="left"
         title="Outline"
@@ -971,6 +1138,18 @@ function ManualPdfWorkspace({
             </p>
           ) : document ? (
             <dl className="space-y-2 text-sm text-slate-600">
+              <div>
+                <dt className="font-medium text-slate-900">Title</dt>
+                <dd>{document.title}</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-slate-900">Subtitle</dt>
+                <dd>{document.subtitle}</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-slate-900">Document id</dt>
+                <dd>{document.document_id}</dd>
+              </div>
               <div>
                 <dt className="font-medium text-slate-900">Manual type</dt>
                 <dd>{document.manual_type}</dd>
@@ -1017,6 +1196,7 @@ function ManualPdfWorkspace({
       />
 
       <WorkspaceRailShell
+        isDesktop={isDesktop}
         collapsed={isRightCollapsed}
         side="right"
         title="References"
