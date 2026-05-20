@@ -307,8 +307,11 @@ function PdfViewer({
     if (prevPageRef.current === targetPage) return;
     prevPageRef.current = targetPage;
     const iframe = iframeRef.current;
-    if (!iframe?.contentWindow) return;
-    iframe.contentWindow.postMessage({ type: 'jump', page: targetPage }, window.location.origin);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const app = (iframe?.contentWindow as any)?.PDFViewerApplication;
+    if (app) {
+      app.page = targetPage;
+    }
   }, [targetPage]);
 
   return (
