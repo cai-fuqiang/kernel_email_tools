@@ -6,7 +6,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 import App from '../../App';
 import { getManualDocumentView } from '../../api/client';
-import ManualPdfPage from '../ManualPdfPage';
+import ManualPdfPage, { resolveMostVisiblePage } from '../ManualPdfPage';
 
 vi.mock('../../auth', () => ({
   AuthProvider: ({ children }: { children: ReactNode }) => children,
@@ -95,6 +95,16 @@ async function waitFor(assertion: () => void, timeoutMs = 1000) {
 }
 
 describe('ManualPdfPage', () => {
+  it('exports a resolver that picks the page with the largest visible area', () => {
+    expect(
+      resolveMostVisiblePage([
+        { page: 3, visibleArea: 1200 },
+        { page: 1, visibleArea: 4000 },
+        { page: 2, visibleArea: 2200 },
+      ]),
+    ).toBe(1);
+  });
+
   it('shows a distinct error state when document loading fails', async () => {
     getManualDocumentViewMock.mockRejectedValueOnce(new Error('backend exploded'));
 
@@ -192,6 +202,44 @@ describe('ManualPdfPage', () => {
     expect(readerPane.getAttribute('data-zoom')).toBe('1.25');
     expect(findButton(container, 'Continuous scroll').getAttribute('aria-pressed')).toBe('false');
     expect(findButton(container, 'Single-page focus').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('scrolls the target page smoothly when a TOC entry is clicked in continuous mode', async () => {
+    getManualDocumentViewMock.mockResolvedValue({
+      document_id: 'doc-779',
+      title: 'Intel SDM',
+      subtitle: 'Volume 3',
+      manual_type: 'intel_sdm',
+      manual_version: 'vol-3',
+      pdf_url: '/api/manual/doc-779.pdf',
+      page_count: 3,
+      initial_page: 1,
+      toc: [
+        { id: 'toc-1', label: 'Overview', page: 1, children: [] },
+        { id: 'toc-2', label: 'Chapter 2', page: 2, children: [] },
+      ],
+      page_text: [],
+    });
+
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+
+    try {
+      const { container } = await renderRoute('/manual/pdf/doc-779');
+
+      await waitFor(() => {
+        expect(container.querySelector('[data-testid="pdf-reader-pane"]')).toBeTruthy();
+      });
+
+      await act(async () => {
+        findButton(container, 'Chapter 2').click();
+      });
+
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    } finally {
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
   });
 
   it('renders the dedicated PDF workspace for the standalone route', async () => {

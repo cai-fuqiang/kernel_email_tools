@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { getManualDocumentView } from '../api/client';
@@ -8,6 +8,7 @@ import { PageHeader, PageShell, PrimaryButton, SectionPanel } from '../component
 type ManualPdfReaderMode = 'continuous' | 'single';
 type ManualPdfZoomPreset = 'fit' | '1.00' | '1.25' | '1.50';
 type ManualPdfLoadState = 'idle' | 'loading' | 'ready' | 'error';
+type VisiblePageCandidate = { page: number; visibleArea: number };
 
 const ZOOM_PRESETS: Array<{ label: string; value: ManualPdfZoomPreset }> = [
   { label: 'Fit width', value: 'fit' },
@@ -20,6 +21,29 @@ function zoomPresetToScale(zoomPreset: ManualPdfZoomPreset): string {
   return zoomPreset === 'fit' ? '1' : zoomPreset;
 }
 
+export function resolveMostVisiblePage(candidates: VisiblePageCandidate[]) {
+  let bestPage: number | null = null;
+  let bestVisibleArea = -1;
+
+  for (const candidate of candidates) {
+    if (
+      candidate.visibleArea > bestVisibleArea ||
+      (candidate.visibleArea === bestVisibleArea && bestPage !== null && candidate.page < bestPage) ||
+      (candidate.visibleArea === bestVisibleArea && bestPage === null)
+    ) {
+      bestPage = candidate.page;
+      bestVisibleArea = candidate.visibleArea;
+    }
+  }
+
+  return bestPage;
+}
+
+function clampPage(page: number, pageCount: number) {
+  if (!pageCount) return 1;
+  return Math.min(Math.max(1, page), pageCount);
+}
+
 function buildPdfWorkspaceErrorMessage(error: unknown, documentId?: string) {
   if (error instanceof Error && error.message.trim()) {
     return error.message;
@@ -30,7 +54,7 @@ function buildPdfWorkspaceErrorMessage(error: unknown, documentId?: string) {
   return 'Unable to load PDF workspace.';
 }
 
-function renderToc(nodes: ManualDocumentTocNode[]) {
+function renderTocButtons(nodes: ManualDocumentTocNode[], onJumpToPage: (page: number) => void) {
   if (!nodes.length) {
     return <p className="text-sm text-slate-500">No outline available yet.</p>;
   }
@@ -40,9 +64,15 @@ function renderToc(nodes: ManualDocumentTocNode[]) {
       {nodes.map((node) => (
         <li key={node.id}>
           <div className="rounded-lg bg-slate-50 px-3 py-2">
-            <p className="font-medium text-slate-900">{node.label}</p>
+            <button
+              type="button"
+              onClick={() => onJumpToPage(node.page)}
+              className="text-left font-medium text-sky-700 underline-offset-2 hover:underline"
+            >
+              {node.label}
+            </button>
             <p className="text-xs text-slate-500">Page {node.page}</p>
-            {node.children.length > 0 && <div className="mt-2 pl-3">{renderToc(node.children)}</div>}
+            {node.children.length > 0 && <div className="mt-2 pl-3">{renderTocButtons(node.children, onJumpToPage)}</div>}
           </div>
         </li>
       ))}
@@ -152,6 +182,10 @@ function PdfReaderPane({
   readerMode,
   zoomPreset,
   focusLayout,
+  activePage,
+  readerPage,
+  scrollContainerRef,
+  setPageRef,
   onReaderModeChange,
   onZoomChange,
 }: {
@@ -162,10 +196,16 @@ function PdfReaderPane({
   readerMode: ManualPdfReaderMode;
   zoomPreset: ManualPdfZoomPreset;
   focusLayout: boolean;
+  activePage: number;
+  readerPage: number;
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
+  setPageRef: (page: number, node: HTMLElement | null) => void;
   onReaderModeChange: (mode: ManualPdfReaderMode) => void;
   onZoomChange: (preset: ManualPdfZoomPreset) => void;
 }) {
   const zoomScale = zoomPresetToScale(zoomPreset);
+  const pageCount = document?.page_count ?? 0;
+  const pages = useMemo(() => Array.from({ length: pageCount }, (_, index) => index + 1), [pageCount]);
 
   return (
     <section
@@ -220,6 +260,78 @@ function PdfReaderPane({
                   <p className="mt-1 text-sm font-medium text-white">{document.document_id}</p>
                 </div>
               </div>
+
+              <div
+                ref={scrollContainerRef}
+                data-testid="pdf-page-viewport"
+                className={`rounded-2xl border border-white/10 bg-slate-900/70 p-4 ${
+                  readerMode === 'continuous' ? 'max-h-[34rem] overflow-y-auto' : 'overflow-hidden'
+                }`}
+              >
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-400">Visible page</p>
+                    <p className="text-sm font-medium text-white">
+                      Page {readerPage} of {document.page_count}
+                    </p>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    {readerMode === 'continuous' ? 'Continuous scroll follows the visible page.' : 'Single-page focus shows one page at a time.'}
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  {readerMode === 'continuous' ? (
+                    pages.map((page) => (
+                      <article
+                        key={page}
+                        ref={(node) => setPageRef(page, node)}
+                        data-testid={`pdf-page-${page}`}
+                        data-active={String(page === activePage)}
+                        className={`min-h-64 rounded-2xl border p-4 shadow-sm ${
+                          page === activePage
+                            ? 'border-sky-300 bg-white text-slate-900'
+                            : 'border-white/10 bg-white/5 text-white'
+                        }`}
+                      >
+                        <div className="mb-4 flex items-center justify-between">
+                          <p className="text-sm font-semibold">Page {page}</p>
+                          <p className="text-xs uppercase tracking-wide text-current/60">
+                            {page === activePage ? 'Active' : 'Idle'}
+                          </p>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="h-40 rounded-xl border border-dashed border-current/20 bg-current/5" />
+                          <p className="text-sm text-current/70">
+                            Placeholder page canvas for continuous reading. Visible-page sync keeps this stack aligned
+                            with the reader viewport.
+                          </p>
+                        </div>
+                      </article>
+                    ))
+                  ) : (
+                    <article
+                      key={readerPage}
+                      ref={(node) => setPageRef(readerPage, node)}
+                      data-testid={`pdf-page-${readerPage}`}
+                      data-active="true"
+                      className="min-h-96 rounded-2xl border border-sky-300 bg-white p-4 text-slate-900 shadow-sm"
+                    >
+                      <div className="mb-4 flex items-center justify-between">
+                        <p className="text-sm font-semibold">Page {readerPage}</p>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Focused</p>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="h-64 rounded-xl border border-dashed border-slate-300 bg-slate-50" />
+                        <p className="text-sm text-slate-600">
+                          Single-page focus keeps the selected page pinned here until a new TOC jump or page selection
+                          changes it.
+                        </p>
+                      </div>
+                    </article>
+                  )}
+                </div>
+              </div>
             </div>
           ) : (
             <p className="text-sm text-slate-300">
@@ -230,6 +342,124 @@ function PdfReaderPane({
       </div>
     </section>
   );
+}
+
+function useManualPdfPageNavigation(document: ManualDocumentView | null, readerMode: ManualPdfReaderMode) {
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const pageRefs = useRef<Map<number, HTMLElement>>(new Map());
+  const pageCount = document?.page_count ?? 0;
+  const pages = useMemo(() => Array.from({ length: pageCount }, (_, index) => index + 1), [pageCount]);
+  const [activePage, setActivePage] = useState(() => clampPage(document?.initial_page ?? 1, pageCount));
+  const [focusedPage, setFocusedPage] = useState(() => clampPage(document?.initial_page ?? 1, pageCount));
+
+  useEffect(() => {
+    if (!document) {
+      setActivePage(1);
+      setFocusedPage(1);
+      return;
+    }
+
+    const nextPage = clampPage(document.initial_page, document.page_count);
+    setActivePage(nextPage);
+    setFocusedPage(nextPage);
+  }, [document?.document_id, document?.initial_page, document?.page_count]);
+
+  const setPageRef = useCallback((page: number, node: HTMLElement | null) => {
+    if (node) {
+      pageRefs.current.set(page, node);
+      return;
+    }
+    pageRefs.current.delete(page);
+  }, []);
+
+  const syncVisiblePageFromViewport = useCallback(() => {
+    if (readerMode !== 'continuous') {
+      return;
+    }
+
+    const container = scrollContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const candidates = pages
+      .map((page) => {
+        const node = pageRefs.current.get(page);
+        if (!node) {
+          return null;
+        }
+
+        const rect = node.getBoundingClientRect();
+        const visibleTop = Math.max(rect.top, containerRect.top);
+        const visibleBottom = Math.min(rect.bottom, containerRect.bottom);
+        const visibleLeft = Math.max(rect.left, containerRect.left);
+        const visibleRight = Math.min(rect.right, containerRect.right);
+        const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+        const visibleWidth = Math.max(0, visibleRight - visibleLeft);
+
+        return {
+          page,
+          visibleArea: visibleHeight * visibleWidth,
+        };
+      })
+      .filter((candidate): candidate is VisiblePageCandidate => candidate !== null);
+
+    const mostVisiblePage = resolveMostVisiblePage(candidates);
+    if (mostVisiblePage !== null) {
+      setActivePage(mostVisiblePage);
+    }
+  }, [pages, readerMode]);
+
+  useEffect(() => {
+    syncVisiblePageFromViewport();
+  }, [syncVisiblePageFromViewport]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || readerMode !== 'continuous') {
+      return;
+    }
+
+    const handleScroll = () => {
+      syncVisiblePageFromViewport();
+    };
+
+    handleScroll();
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleScroll);
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleScroll);
+    };
+  }, [readerMode, syncVisiblePageFromViewport]);
+
+  const jumpToPage = useCallback(
+    (page: number) => {
+      if (!document) {
+        return;
+      }
+
+      const nextPage = clampPage(page, document.page_count);
+      setActivePage(nextPage);
+      setFocusedPage(nextPage);
+
+      if (readerMode === 'continuous') {
+        pageRefs.current.get(nextPage)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    },
+    [document, readerMode],
+  );
+
+  return {
+    activePage,
+    focusedPage,
+    jumpToPage,
+    readerPage: readerMode === 'continuous' ? activePage : focusedPage,
+    scrollContainerRef,
+    setPageRef,
+  };
 }
 
 function ManualPdfWorkspace({
@@ -260,6 +490,10 @@ function ManualPdfWorkspace({
   onZoomChange: (preset: ManualPdfZoomPreset) => void;
 }) {
   const focusLayout = isLeftCollapsed && isRightCollapsed;
+  const { activePage, jumpToPage, readerPage, scrollContainerRef, setPageRef } = useManualPdfPageNavigation(
+    document,
+    readerMode,
+  );
 
   return (
     <div
@@ -309,7 +543,7 @@ function ManualPdfWorkspace({
         </SectionPanel>
 
         <SectionPanel title="Outline">
-          {document ? renderToc(document.toc) : <p className="text-sm text-slate-500">Loading outline...</p>}
+          {document ? renderTocButtons(document.toc, jumpToPage) : <p className="text-sm text-slate-500">Loading outline...</p>}
         </SectionPanel>
       </WorkspaceRailShell>
 
@@ -321,6 +555,10 @@ function ManualPdfWorkspace({
         readerMode={readerMode}
         zoomPreset={zoomPreset}
         focusLayout={focusLayout}
+        activePage={activePage}
+        readerPage={readerPage}
+        scrollContainerRef={scrollContainerRef}
+        setPageRef={setPageRef}
         onReaderModeChange={onReaderModeChange}
         onZoomChange={onZoomChange}
       />
