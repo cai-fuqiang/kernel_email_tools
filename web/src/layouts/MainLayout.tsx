@@ -4,6 +4,7 @@ import {
   BookOpen,
   Bookmark,
   Code2,
+  FileText,
   Library,
   LayoutDashboard,
   LogOut,
@@ -101,6 +102,7 @@ export default function MainLayout() {
     { to: '/dashboard', label: 'Workbench Home', icon: LayoutDashboard },
     { to: '/annotations', label: 'Annotations', icon: Bookmark },
     { to: '/manual/search', label: 'Manuals', icon: BookOpen },
+    { to: '/manual/browser', label: 'PDF Browser', icon: FileText },
     ...(isManualPdfRoute ? [{ to: location.pathname, label: 'PDF Workspace', icon: BookOpen }] : []),
     { to: '/tags', label: 'Tags', icon: Tags },
   ];
