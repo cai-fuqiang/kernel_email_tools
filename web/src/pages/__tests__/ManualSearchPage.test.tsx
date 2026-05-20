@@ -1,18 +1,66 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+/** @vitest-environment jsdom */
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-vi.mock('react-pdf', () => ({
-  Document: () => null,
-  Page: () => null,
-  pdfjs: {
-    GlobalWorkerOptions: {
-      workerSrc: '',
-    },
-  },
+import ManualPdfPage from '../ManualPdfPage';
+import ManualSearchPage, { buildDocumentSearchHits, flattenTocPages } from '../ManualSearchPage';
+import { searchManuals } from '../../api/client';
+
+vi.mock('../../api/client', () => ({
+  searchManuals: vi.fn(),
 }));
 
-import { buildDocumentSearchHits, flattenTocPages } from '../ManualSearchPage';
+vi.mock('../../components/Toast', () => ({
+  showToast: vi.fn(),
+}));
+
+const searchManualsMock = vi.mocked(searchManuals);
+
+afterEach(() => {
+  document.body.innerHTML = '';
+  vi.clearAllMocks();
+});
+
+beforeAll(() => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+});
+
+function renderRoute(initialEntry: string) {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  act(() => {
+    root.render(
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <Routes>
+          <Route path="/manual/search" element={<ManualSearchPage />} />
+          <Route path="/manual/pdf/:documentId" element={<ManualPdfPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  });
+
+  return { container, root };
+}
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  descriptor?.set?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function findButton(container: HTMLElement, text: string): HTMLButtonElement {
+  const button = Array.from(container.querySelectorAll('button')).find((node) =>
+    node.textContent?.includes(text),
+  ) as HTMLButtonElement | undefined;
+  if (!button) {
+    throw new Error(`Missing button with text: ${text}`);
+  }
+  return button;
+}
 
 describe('ManualSearchPage reader helpers', () => {
   it('builds document-local search hits across pages', () => {
@@ -51,11 +99,59 @@ describe('ManualSearchPage reader helpers', () => {
     expect(pages).toEqual([1, 176, 177]);
   });
 
-  it('opens the dedicated PDF workspace route from manual search hits', () => {
-    const filePath = resolve(import.meta.dirname, '..', 'ManualSearchPage.tsx');
-    const source = readFileSync(filePath, 'utf8');
+  it('opens the dedicated PDF workspace route from manual search hits', async () => {
+    searchManualsMock.mockResolvedValue({
+      query: 'dma',
+      mode: 'hybrid',
+      total: 1,
+      hits: [
+        {
+          chunk_id: 'chunk-1',
+          document_id: 'doc-123',
+          manual_type: 'intel_sdm',
+          manual_version: 'vol-1',
+          volume: 'Volume 1',
+          chapter: '3',
+          section: '2.1',
+          section_title: 'DMA remapping',
+          content_type: 'text',
+          content: 'DMA remapping content',
+          page_start: 10,
+          page_end: 12,
+          score: 0.991,
+          snippet: 'DMA remapping content',
+          target_type: 'document_pdf',
+          target_ref: 'doc-123',
+          target_label: 'Intel SDM',
+          target_subtitle: 'Volume 1 | pages 10-12',
+        },
+      ],
+    });
 
-    expect(source).toContain('/manual/pdf/${encodeURIComponent(hit.document_id)}');
-    expect(source).toContain('Open PDF workspace');
+    const { container } = renderRoute('/manual/search');
+    const input = container.querySelector('input') as HTMLInputElement;
+    expect(input).toBeTruthy();
+
+    await act(async () => {
+      setInputValue(input, 'dma');
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      findButton(container, 'Search').click();
+      await Promise.resolve();
+    });
+
+    expect(findButton(container, 'Open PDF workspace')).toBeTruthy();
+
+    await act(async () => {
+      findButton(container, 'Open PDF workspace').click();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('PDF Workspace');
+    expect(container.textContent).toContain('Open PDF document');
+    expect(container.textContent).toContain('doc-123');
+    expect(container.textContent).not.toContain('Search Chip Manuals');
   });
 });
