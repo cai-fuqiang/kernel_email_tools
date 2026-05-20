@@ -60,8 +60,7 @@ beforeEach(() => {
 async function renderRoute(initialEntry: string) {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  const root = createRoot(container);
-  mountedRoots.push(root);
+  const root = trackRoot(createRoot(container));
 
   await act(async () => {
     root.render(
@@ -75,6 +74,11 @@ async function renderRoute(initialEntry: string) {
   });
 
   return { container, root };
+}
+
+function trackRoot(root: ReturnType<typeof createRoot>) {
+  mountedRoots.push(root);
+  return root;
 }
 
 async function waitFor(assertion: () => void, timeoutMs = 1000) {
@@ -206,7 +210,7 @@ describe('ManualPdfPage', () => {
 
     const container = document.createElement('div');
     document.body.appendChild(container);
-    const root = createRoot(container);
+    const root = trackRoot(createRoot(container));
 
     await act(async () => {
       root.render(<App />);
