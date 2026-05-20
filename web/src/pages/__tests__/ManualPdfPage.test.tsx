@@ -45,6 +45,7 @@ const listAnnotationsMock = vi.mocked(listAnnotations);
 const mountedRoots: Array<{ unmount: () => void }> = [];
 
 beforeEach(() => {
+  vi.clearAllMocks();
   getManualDocumentViewMock.mockImplementation(async (documentId: string) => ({
     document_id: documentId,
     title: `Manual ${documentId}`,
@@ -343,6 +344,115 @@ describe('ManualPdfPage', () => {
     expect(container.textContent).not.toContain('Page 1 note');
   });
 
+  it('fetches paginated annotations and surfaces load failures distinctly', async () => {
+    getManualDocumentViewMock.mockResolvedValue({
+      document_id: 'doc-782',
+      title: 'Intel SDM',
+      subtitle: 'Volume 6',
+      manual_type: 'intel_sdm',
+      manual_version: 'vol-6',
+      pdf_url: '/api/manual/doc-782.pdf',
+      page_count: 3,
+      initial_page: 1,
+      toc: [],
+      page_text: [],
+    });
+    listAnnotationsMock
+      .mockResolvedValueOnce({
+        annotations: [
+          {
+            annotation_id: 'ann-1',
+            annotation_type: 'note',
+            short_label: 'Page 1 note',
+            author: 'Ada',
+            visibility: 'public',
+            publish_status: 'approved',
+            body: 'Annotation on page 1',
+            pinned: false,
+            parent_annotation_id: '',
+            created_at: '2026-05-20T00:00:00Z',
+            updated_at: '2026-05-20T00:00:00Z',
+            target_type: 'document_pdf',
+            target_ref: 'doc-782',
+            target_label: 'Intel SDM',
+            target_subtitle: 'Volume 6',
+            related_targets: [],
+            anchor: { page: 1 },
+          },
+        ],
+        total: 101,
+        page: 1,
+        page_size: 100,
+      })
+      .mockResolvedValueOnce({
+        annotations: [
+          {
+            annotation_id: 'ann-2',
+            annotation_type: 'note',
+            short_label: 'Page 2 note',
+            author: 'Bea',
+            visibility: 'public',
+            publish_status: 'approved',
+            body: 'Annotation on page 2',
+            pinned: false,
+            parent_annotation_id: '',
+            created_at: '2026-05-20T00:00:00Z',
+            updated_at: '2026-05-20T00:00:00Z',
+            target_type: 'document_pdf',
+            target_ref: 'doc-782',
+            target_label: 'Intel SDM',
+            target_subtitle: 'Volume 6',
+            related_targets: [],
+            anchor: { page: 2 },
+          },
+        ],
+        total: 101,
+        page: 2,
+        page_size: 100,
+      });
+
+    const { container } = await renderRoute('/manual/pdf/doc-782');
+
+    await waitFor(() => {
+      expect(listAnnotationsMock).toHaveBeenCalledTimes(2);
+    });
+
+    expect(listAnnotationsMock).toHaveBeenNthCalledWith(1, {
+      target_type: 'document_pdf',
+      target_ref: 'doc-782',
+      page: 1,
+      page_size: 100,
+    });
+    expect(listAnnotationsMock).toHaveBeenNthCalledWith(2, {
+      target_type: 'document_pdf',
+      target_ref: 'doc-782',
+      page: 2,
+      page_size: 100,
+    });
+    expect(container.textContent).toContain('Page 1 note');
+
+    getManualDocumentViewMock.mockResolvedValue({
+      document_id: 'doc-783',
+      title: 'Intel SDM',
+      subtitle: 'Volume 7',
+      manual_type: 'intel_sdm',
+      manual_version: 'vol-7',
+      pdf_url: '/api/manual/doc-783.pdf',
+      page_count: 1,
+      initial_page: 1,
+      toc: [],
+      page_text: [],
+    });
+    listAnnotationsMock.mockRejectedValueOnce(new Error('annotation backend exploded'));
+
+    const { container: errorContainer } = await renderRoute('/manual/pdf/doc-783');
+
+    await waitFor(() => {
+      expect(errorContainer.textContent).toContain('Unable to load annotations.');
+      expect(errorContainer.textContent).toContain('annotation backend exploded');
+    });
+  });
+
   it('blocks region annotation mode in continuous scroll and allows it in single-page focus', async () => {
     getManualDocumentViewMock.mockResolvedValue({
       document_id: 'doc-781',
@@ -368,12 +478,94 @@ describe('ManualPdfPage', () => {
     });
 
     expect(container.textContent).toContain('Switch to single-page focus mode before drawing region annotations.');
+    expect(findButton(container, 'Text').getAttribute('aria-pressed')).toBe('true');
+    expect(findButton(container, 'Region').getAttribute('aria-pressed')).toBe('false');
 
     await act(async () => {
       findButton(container, 'Single-page focus').click();
     });
 
+    await act(async () => {
+      findButton(container, 'Region').click();
+    });
+
     expect(container.textContent).not.toContain('Switch to single-page focus mode before drawing region annotations.');
+    expect(findButton(container, 'Text').getAttribute('aria-pressed')).toBe('false');
+    expect(findButton(container, 'Region').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('jumps through the shared page navigation path when an annotation card is clicked', async () => {
+    getManualDocumentViewMock.mockResolvedValue({
+      document_id: 'doc-784',
+      title: 'Intel SDM',
+      subtitle: 'Volume 8',
+      manual_type: 'intel_sdm',
+      manual_version: 'vol-8',
+      pdf_url: '/api/manual/doc-784.pdf',
+      page_count: 2,
+      initial_page: 2,
+      toc: [],
+      page_text: [],
+    });
+    listAnnotationsMock.mockResolvedValue({
+      annotations: [
+        {
+          annotation_id: 'ann-4',
+          annotation_type: 'note',
+          short_label: 'Jump target',
+          author: 'Ada',
+          visibility: 'public',
+          publish_status: 'approved',
+          body: 'Annotation used to test jump handling',
+          pinned: false,
+          parent_annotation_id: '',
+          created_at: '2026-05-20T00:00:00Z',
+          updated_at: '2026-05-20T00:00:00Z',
+          target_type: 'document_pdf',
+          target_ref: 'doc-784',
+          target_label: 'Intel SDM',
+          target_subtitle: 'Volume 8',
+          related_targets: [],
+          anchor: { page: 2 },
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 100,
+    });
+
+    const originalScrollIntoView = (HTMLElement.prototype as typeof HTMLElement.prototype & {
+      scrollIntoView?: (options?: ScrollIntoViewOptions) => void;
+    }).scrollIntoView;
+    const scrollIntoView = vi.fn();
+    (HTMLElement.prototype as typeof HTMLElement.prototype & {
+      scrollIntoView?: (options?: ScrollIntoViewOptions) => void;
+    }).scrollIntoView = scrollIntoView;
+
+    try {
+      const { container } = await renderRoute('/manual/pdf/doc-784');
+
+      await waitFor(() => {
+        expect(container.textContent).toContain('Jump target');
+      });
+
+      await act(async () => {
+        findButton(container, 'Jump target').click();
+      });
+
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    } finally {
+      if (originalScrollIntoView) {
+        (HTMLElement.prototype as typeof HTMLElement.prototype & {
+          scrollIntoView?: (options?: ScrollIntoViewOptions) => void;
+        }).scrollIntoView = originalScrollIntoView;
+      } else {
+        delete (HTMLElement.prototype as typeof HTMLElement.prototype & {
+          scrollIntoView?: (options?: ScrollIntoViewOptions) => void;
+        }).scrollIntoView;
+      }
+    }
   });
 
   it('renders the dedicated PDF workspace for the standalone route', async () => {

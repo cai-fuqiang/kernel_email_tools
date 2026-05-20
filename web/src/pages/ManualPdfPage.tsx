@@ -196,10 +196,12 @@ function ReaderModeControls({
 function AnnotationModeControls({
   annotationMode,
   readerMode,
+  blockedMessage,
   onChange,
 }: {
   annotationMode: ManualPdfAnnotationMode;
   readerMode: ManualPdfReaderMode;
+  blockedMessage: string | null;
   onChange: (mode: ManualPdfAnnotationMode) => void;
 }) {
   return (
@@ -220,9 +222,7 @@ function AnnotationModeControls({
       >
         Region
       </PrimaryButton>
-      {readerMode === 'continuous' && annotationMode === 'region' && (
-        <p className="text-xs text-amber-200">Switch to single-page focus mode before drawing region annotations.</p>
-      )}
+      {blockedMessage && <p className="text-xs text-amber-200">{blockedMessage}</p>}
     </div>
   );
 }
@@ -545,40 +545,56 @@ function useManualPdfPageNavigation(document: ManualDocumentView | null, readerM
 
 function useManualPdfAnnotations(document: ManualDocumentView | null) {
   const [annotations, setAnnotations] = useState<AnnotationListItem[]>([]);
+  const [annotationsError, setAnnotationsError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
 
     if (!document) {
       setAnnotations([]);
+      setAnnotationsError(null);
       return () => {
         active = false;
       };
     }
 
     setAnnotations([]);
+    setAnnotationsError(null);
 
-    void listAnnotations({
-      target_type: 'document_pdf',
-      target_ref: document.document_id,
-      page: 1,
-      page_size: 100,
-    })
-      .then((response) => {
-        if (!active) return;
-        setAnnotations(response.annotations);
-      })
-      .catch(() => {
-        if (!active) return;
-        setAnnotations([]);
-      });
+    const loadAnnotations = async () => {
+      const collected: AnnotationListItem[] = [];
+      let page = 1;
+      let totalPages = 1;
+
+      while (page <= totalPages) {
+        const response = await listAnnotations({
+          target_type: 'document_pdf',
+          target_ref: document.document_id,
+          page,
+          page_size: 100,
+        });
+        collected.push(...response.annotations);
+        const pageSize = response.page_size || 100;
+        totalPages = Math.max(totalPages, Math.ceil(response.total / pageSize));
+        page += 1;
+      }
+
+      if (!active) return;
+      setAnnotations(collected);
+    };
+
+    void loadAnnotations().catch((error: unknown) => {
+      if (!active) return;
+      setAnnotations([]);
+      setAnnotationsError(error instanceof Error && error.message.trim() ? error.message : 'Unable to load annotations.');
+    });
 
     return () => {
       active = false;
     };
   }, [document?.document_id]);
 
-  return { annotations };
+  return { annotations, annotationsError };
 }
 
 function ManualPdfWorkspace({
@@ -617,12 +633,21 @@ function ManualPdfWorkspace({
     document,
     readerMode,
   );
-  const { annotations } = useManualPdfAnnotations(document);
+  const { annotations, annotationsError } = useManualPdfAnnotations(document);
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
+  const [regionBlockedMessage, setRegionBlockedMessage] = useState<string | null>(null);
   const annotationsForActivePage = useMemo(
     () => annotations.filter((annotation) => getAnnotationPage(annotation) === activePage),
     [annotations, activePage],
   );
+  useEffect(() => {
+    if (readerMode === 'continuous' && annotationMode === 'region') {
+      onAnnotationModeChange('text');
+    }
+    if (readerMode !== 'continuous') {
+      setRegionBlockedMessage(null);
+    }
+  }, [annotationMode, onAnnotationModeChange, readerMode]);
   const focusAnnotation = useCallback(
     (annotation: AnnotationListItem) => {
       const annotationPage = getAnnotationPage(annotation) ?? activePage;
@@ -630,6 +655,18 @@ function ManualPdfWorkspace({
       jumpToPage(annotationPage);
     },
     [activePage, jumpToPage],
+  );
+  const handleAnnotationModeChange = useCallback(
+    (mode: ManualPdfAnnotationMode) => {
+      if (mode === 'region' && readerMode === 'continuous') {
+        setRegionBlockedMessage('Switch to single-page focus mode before drawing region annotations.');
+        onAnnotationModeChange('text');
+        return;
+      }
+      setRegionBlockedMessage(null);
+      onAnnotationModeChange(mode);
+    },
+    [onAnnotationModeChange, readerMode],
   );
 
   return (
@@ -711,10 +748,14 @@ function ManualPdfWorkspace({
           <AnnotationModeControls
             annotationMode={annotationMode}
             readerMode={readerMode}
-            onChange={onAnnotationModeChange}
+            blockedMessage={regionBlockedMessage}
+            onChange={handleAnnotationModeChange}
           />
         </SectionPanel>
         <SectionPanel title="Annotations">
+          {annotationsError ? (
+            <p className="text-sm text-rose-600">Unable to load annotations. {annotationsError}</p>
+          ) : null}
           {annotationsForActivePage.length ? (
             <div className="space-y-3">
               <p className="text-xs uppercase tracking-wide text-slate-500">Active page {activePage} annotations</p>
