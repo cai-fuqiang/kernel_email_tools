@@ -5,7 +5,7 @@ import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from '../../App';
-import { getManualDocumentView } from '../../api/client';
+import { getManualDocumentView, listAnnotations } from '../../api/client';
 import ManualPdfPage, { createPageRefRegistry, resolveMostVisiblePage } from '../ManualPdfPage';
 
 vi.mock('../../auth', () => ({
@@ -18,6 +18,7 @@ vi.mock('../../api/client', async () => {
   return {
     ...actual,
     getManualDocumentView: vi.fn(),
+    listAnnotations: vi.fn(),
   };
 });
 
@@ -40,6 +41,7 @@ beforeAll(() => {
 });
 
 const getManualDocumentViewMock = vi.mocked(getManualDocumentView);
+const listAnnotationsMock = vi.mocked(listAnnotations);
 const mountedRoots: Array<{ unmount: () => void }> = [];
 
 beforeEach(() => {
@@ -55,6 +57,12 @@ beforeEach(() => {
     toc: [],
     page_text: [],
   }));
+  listAnnotationsMock.mockResolvedValue({
+    annotations: [],
+    total: 0,
+    page: 1,
+    page_size: 100,
+  });
 });
 
 async function renderRoute(initialEntry: string) {
@@ -264,6 +272,108 @@ describe('ManualPdfPage', () => {
         }).scrollIntoView;
       }
     }
+  });
+
+  it('shows only annotations for the active page in the right rail', async () => {
+    getManualDocumentViewMock.mockResolvedValue({
+      document_id: 'doc-780',
+      title: 'Intel SDM',
+      subtitle: 'Volume 4',
+      manual_type: 'intel_sdm',
+      manual_version: 'vol-4',
+      pdf_url: '/api/manual/doc-780.pdf',
+      page_count: 3,
+      initial_page: 2,
+      toc: [],
+      page_text: [],
+    });
+    listAnnotationsMock.mockResolvedValue({
+      annotations: [
+        {
+          annotation_id: 'ann-1',
+          annotation_type: 'note',
+          short_label: 'Page 1 note',
+          author: 'Ada',
+          visibility: 'public',
+          publish_status: 'approved',
+          body: 'Annotation on page 1',
+          pinned: false,
+          parent_annotation_id: '',
+          created_at: '2026-05-20T00:00:00Z',
+          updated_at: '2026-05-20T00:00:00Z',
+          target_type: 'document_pdf',
+          target_ref: 'doc-780',
+          target_label: 'Intel SDM',
+          target_subtitle: 'Volume 4',
+          related_targets: [],
+          anchor: { page: 1 },
+        },
+        {
+          annotation_id: 'ann-2',
+          annotation_type: 'note',
+          short_label: 'Page 2 note',
+          author: 'Bea',
+          visibility: 'public',
+          publish_status: 'approved',
+          body: 'Annotation on page 2',
+          pinned: false,
+          parent_annotation_id: '',
+          created_at: '2026-05-20T00:00:00Z',
+          updated_at: '2026-05-20T00:00:00Z',
+          target_type: 'document_pdf',
+          target_ref: 'doc-780',
+          target_label: 'Intel SDM',
+          target_subtitle: 'Volume 4',
+          related_targets: [],
+          anchor: { page: 2 },
+        },
+      ],
+      total: 2,
+      page: 1,
+      page_size: 100,
+    });
+
+    const { container } = await renderRoute('/manual/pdf/doc-780');
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="pdf-reader-pane"]')).toBeTruthy();
+    });
+
+    expect(container.textContent).toContain('Page 2 note');
+    expect(container.textContent).not.toContain('Page 1 note');
+  });
+
+  it('blocks region annotation mode in continuous scroll and allows it in single-page focus', async () => {
+    getManualDocumentViewMock.mockResolvedValue({
+      document_id: 'doc-781',
+      title: 'Intel SDM',
+      subtitle: 'Volume 5',
+      manual_type: 'intel_sdm',
+      manual_version: 'vol-5',
+      pdf_url: '/api/manual/doc-781.pdf',
+      page_count: 2,
+      initial_page: 1,
+      toc: [],
+      page_text: [],
+    });
+
+    const { container } = await renderRoute('/manual/pdf/doc-781');
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="pdf-reader-pane"]')).toBeTruthy();
+    });
+
+    await act(async () => {
+      findButton(container, 'Region').click();
+    });
+
+    expect(container.textContent).toContain('Switch to single-page focus mode before drawing region annotations.');
+
+    await act(async () => {
+      findButton(container, 'Single-page focus').click();
+    });
+
+    expect(container.textContent).not.toContain('Switch to single-page focus mode before drawing region annotations.');
   });
 
   it('renders the dedicated PDF workspace for the standalone route', async () => {

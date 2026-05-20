@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useParams } from 'react-router-dom';
 
-import { getManualDocumentView } from '../api/client';
-import type { ManualDocumentTocNode, ManualDocumentView } from '../api/types';
+import { getManualDocumentView, listAnnotations } from '../api/client';
+import type { AnnotationListItem, ManualDocumentTocNode, ManualDocumentView } from '../api/types';
 import { PageHeader, PageShell, PrimaryButton, SectionPanel } from '../components/ui';
 
 type ManualPdfReaderMode = 'continuous' | 'single';
+type ManualPdfAnnotationMode = 'text' | 'region';
 type ManualPdfZoomPreset = 'fit' | '1.00' | '1.25' | '1.50';
 type ManualPdfLoadState = 'idle' | 'loading' | 'ready' | 'error';
 type VisiblePageCandidate = { page: number; visibleRatio: number };
@@ -66,6 +67,34 @@ function buildPdfWorkspaceErrorMessage(error: unknown, documentId?: string) {
     return `Unable to load PDF workspace for ${documentId}.`;
   }
   return 'Unable to load PDF workspace.';
+}
+
+function getAnnotationPage(annotation: AnnotationListItem) {
+  const page = annotation.anchor?.page;
+  if (typeof page === 'number' && Number.isFinite(page)) {
+    return page;
+  }
+  if (typeof page === 'string') {
+    const parsedPage = Number.parseInt(page, 10);
+    if (!Number.isNaN(parsedPage)) {
+      return parsedPage;
+    }
+  }
+  return null;
+}
+
+function getAnnotationSummary(annotation: AnnotationListItem) {
+  const quote = annotation.anchor?.quote;
+  if (typeof quote === 'string' && quote.trim()) {
+    return quote;
+  }
+
+  const selectedText = annotation.anchor?.selected_text;
+  if (typeof selectedText === 'string' && selectedText.trim()) {
+    return selectedText;
+  }
+
+  return annotation.body;
 }
 
 function renderTocButtons(nodes: ManualDocumentTocNode[], onJumpToPage: (page: number) => void) {
@@ -160,6 +189,40 @@ function ReaderModeControls({
       >
         Single-page focus
       </PrimaryButton>
+    </div>
+  );
+}
+
+function AnnotationModeControls({
+  annotationMode,
+  readerMode,
+  onChange,
+}: {
+  annotationMode: ManualPdfAnnotationMode;
+  readerMode: ManualPdfReaderMode;
+  onChange: (mode: ManualPdfAnnotationMode) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <PrimaryButton
+        type="button"
+        aria-pressed={annotationMode === 'text'}
+        onClick={() => onChange('text')}
+        className={annotationMode === 'text' ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-slate-700 hover:bg-slate-600'}
+      >
+        Text
+      </PrimaryButton>
+      <PrimaryButton
+        type="button"
+        aria-pressed={annotationMode === 'region'}
+        onClick={() => onChange('region')}
+        className={annotationMode === 'region' ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-slate-700 hover:bg-slate-600'}
+      >
+        Region
+      </PrimaryButton>
+      {readerMode === 'continuous' && annotationMode === 'region' && (
+        <p className="text-xs text-amber-200">Switch to single-page focus mode before drawing region annotations.</p>
+      )}
     </div>
   );
 }
@@ -480,6 +543,44 @@ function useManualPdfPageNavigation(document: ManualDocumentView | null, readerM
   };
 }
 
+function useManualPdfAnnotations(document: ManualDocumentView | null) {
+  const [annotations, setAnnotations] = useState<AnnotationListItem[]>([]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!document) {
+      setAnnotations([]);
+      return () => {
+        active = false;
+      };
+    }
+
+    setAnnotations([]);
+
+    void listAnnotations({
+      target_type: 'document_pdf',
+      target_ref: document.document_id,
+      page: 1,
+      page_size: 100,
+    })
+      .then((response) => {
+        if (!active) return;
+        setAnnotations(response.annotations);
+      })
+      .catch(() => {
+        if (!active) return;
+        setAnnotations([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [document?.document_id]);
+
+  return { annotations };
+}
+
 function ManualPdfWorkspace({
   documentId,
   document,
@@ -488,10 +589,12 @@ function ManualPdfWorkspace({
   isLeftCollapsed,
   isRightCollapsed,
   readerMode,
+  annotationMode,
   zoomPreset,
   onToggleLeft,
   onToggleRight,
   onReaderModeChange,
+  onAnnotationModeChange,
   onZoomChange,
 }: {
   documentId?: string;
@@ -501,16 +604,32 @@ function ManualPdfWorkspace({
   isLeftCollapsed: boolean;
   isRightCollapsed: boolean;
   readerMode: ManualPdfReaderMode;
+  annotationMode: ManualPdfAnnotationMode;
   zoomPreset: ManualPdfZoomPreset;
   onToggleLeft: () => void;
   onToggleRight: () => void;
   onReaderModeChange: (mode: ManualPdfReaderMode) => void;
+  onAnnotationModeChange: (mode: ManualPdfAnnotationMode) => void;
   onZoomChange: (preset: ManualPdfZoomPreset) => void;
 }) {
   const focusLayout = isLeftCollapsed && isRightCollapsed;
   const { activePage, jumpToPage, readerPage, scrollContainerRef, setPageRef } = useManualPdfPageNavigation(
     document,
     readerMode,
+  );
+  const { annotations } = useManualPdfAnnotations(document);
+  const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
+  const annotationsForActivePage = useMemo(
+    () => annotations.filter((annotation) => getAnnotationPage(annotation) === activePage),
+    [annotations, activePage],
+  );
+  const focusAnnotation = useCallback(
+    (annotation: AnnotationListItem) => {
+      const annotationPage = getAnnotationPage(annotation) ?? activePage;
+      setActiveAnnotationId(annotation.annotation_id);
+      jumpToPage(annotationPage);
+    },
+    [activePage, jumpToPage],
   );
 
   return (
@@ -588,10 +707,53 @@ function ManualPdfWorkspace({
         actionLabel={isRightCollapsed ? 'Expand right panel' : 'Collapse right panel'}
         onToggle={onToggleRight}
       >
-        <SectionPanel title="Workspace notes">
-          <p className="text-sm text-slate-500">
-            This shell reserves the right rail for annotations, evidence, and document references.
-          </p>
+        <SectionPanel title="Annotation tools">
+          <AnnotationModeControls
+            annotationMode={annotationMode}
+            readerMode={readerMode}
+            onChange={onAnnotationModeChange}
+          />
+        </SectionPanel>
+        <SectionPanel title="Annotations">
+          {annotationsForActivePage.length ? (
+            <div className="space-y-3">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Active page {activePage} annotations</p>
+              <div className="space-y-2">
+                {annotationsForActivePage.map((annotation) => {
+                  const selected = annotation.annotation_id === activeAnnotationId;
+                  return (
+                    <button
+                      key={annotation.annotation_id}
+                      type="button"
+                      onClick={() => focusAnnotation(annotation)}
+                      className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                        selected
+                          ? 'border-sky-300 bg-sky-50 text-slate-900 shadow-sm'
+                          : 'border-slate-200 bg-white text-slate-700 hover:border-sky-200 hover:bg-sky-50/60'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold">{annotation.short_label || annotation.body}</p>
+                          <p className="mt-1 line-clamp-2 text-xs text-slate-500">{getAnnotationSummary(annotation)}</p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[11px] uppercase tracking-wide text-slate-500">
+                          Page {getAnnotationPage(annotation) ?? activePage}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">No annotations on page {activePage} yet.</p>
+          )}
+          {readerMode === 'continuous' && annotationMode === 'region' && (
+            <p className="mt-3 text-sm text-amber-600">
+              Switch to single-page focus mode before drawing region annotations.
+            </p>
+          )}
         </SectionPanel>
         <SectionPanel title="Document stats">
           {document ? (
@@ -666,6 +828,7 @@ export default function ManualPdfPage() {
   const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
   const [isRightCollapsed, setIsRightCollapsed] = useState(false);
   const [readerMode, setReaderMode] = useState<ManualPdfReaderMode>('continuous');
+  const [annotationMode, setAnnotationMode] = useState<ManualPdfAnnotationMode>('text');
   const [zoomPreset, setZoomPreset] = useState<ManualPdfZoomPreset>('fit');
 
   return (
@@ -688,10 +851,12 @@ export default function ManualPdfPage() {
         isLeftCollapsed={isLeftCollapsed}
         isRightCollapsed={isRightCollapsed}
         readerMode={readerMode}
+        annotationMode={annotationMode}
         zoomPreset={zoomPreset}
         onToggleLeft={() => setIsLeftCollapsed((collapsed) => !collapsed)}
         onToggleRight={() => setIsRightCollapsed((collapsed) => !collapsed)}
         onReaderModeChange={setReaderMode}
+        onAnnotationModeChange={setAnnotationMode}
         onZoomChange={setZoomPreset}
       />
     </PageShell>
