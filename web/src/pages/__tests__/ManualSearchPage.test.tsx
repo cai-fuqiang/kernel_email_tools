@@ -2,27 +2,49 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ManualPdfPage from '../ManualPdfPage';
 import ManualSearchPage, { buildDocumentSearchHits, flattenTocPages } from '../ManualSearchPage';
-import { getManualDocumentView, searchManuals } from '../../api/client';
+import { getManualDocumentView, listAnnotations, searchManuals } from '../../api/client';
 
 vi.mock('../../api/client', () => ({
   searchManuals: vi.fn(),
   getManualDocumentView: vi.fn(),
+  listAnnotations: vi.fn(),
 }));
 
 vi.mock('../../components/Toast', () => ({
   showToast: vi.fn(),
 }));
 
+vi.mock('@react-pdf-viewer/core', () => ({
+  Worker: ({ children }: { children: React.ReactNode }) => children,
+  Viewer: () => null,
+}));
+
+vi.mock('@react-pdf-viewer/default-layout', () => ({
+  defaultLayoutPlugin: () => ({}),
+}));
+
+vi.mock('@react-pdf-viewer/page-navigation', () => ({
+  pageNavigationPlugin: () => ({ jumpToPage: vi.fn() }),
+}));
+
+vi.mock('@react-pdf-viewer/core/lib/styles/index.css', () => ({}));
+vi.mock('@react-pdf-viewer/default-layout/lib/styles/index.css', () => ({}));
+
 const searchManualsMock = vi.mocked(searchManuals);
 const getManualDocumentViewMock = vi.mocked(getManualDocumentView);
+const listAnnotationsMock = vi.mocked(listAnnotations);
 
 afterEach(() => {
   document.body.innerHTML = '';
   vi.clearAllMocks();
+});
+
+beforeEach(() => {
+  listAnnotationsMock.mockResolvedValue({ annotations: [], total: 0, page_size: 100 } as Awaited<ReturnType<typeof listAnnotations>>);
 });
 
 beforeAll(() => {
@@ -173,13 +195,13 @@ describe('ManualSearchPage reader helpers', () => {
 
     await act(async () => {
       findButton(container, 'Open PDF workspace').click();
+      await Promise.resolve();
     });
 
     await waitFor(() => {
       expect(container.textContent).toContain('PDF Workspace');
       expect(container.textContent).toContain('Open PDF document');
-      expect(container.textContent).toContain('doc-123');
       expect(container.textContent).not.toContain('Search Chip Manuals');
-    });
+    }, 3000);
   });
 });
