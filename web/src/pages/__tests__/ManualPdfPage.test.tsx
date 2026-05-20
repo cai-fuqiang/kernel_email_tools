@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { type ReactNode, act } from 'react';
+import React, { type ReactNode, act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -26,17 +26,53 @@ vi.mock('../../layouts/MainLayout', () => ({
   default: () => <div data-testid="main-layout"><Outlet /></div>,
 }));
 
-vi.mock('react-pdf', () => ({
-  Document: ({ children }: { children: ReactNode }) => <div data-testid="pdf-document">{children}</div>,
-  Page: ({ pageNumber }: { pageNumber: number }) => (
-    <div data-testid={`pdf-rendered-page-${pageNumber}`}>Audience text layer</div>
-  ),
-  pdfjs: {
-    GlobalWorkerOptions: {
-      workerSrc: '',
+let pdfRenderError: Error | null = null;
+
+vi.mock('react-pdf', async () => {
+  const React = await vi.importActual<typeof import('react')>('react');
+
+  return {
+    Document: ({
+      children,
+      file,
+      onLoadError,
+      onLoadSuccess,
+      onSourceError,
+    }: {
+      children: ReactNode;
+      file: string;
+      onLoadError?: (error: Error) => void;
+      onLoadSuccess?: () => void;
+      onSourceError?: (error: Error) => void;
+    }) => {
+      React.useEffect(() => {
+        if (pdfRenderError) {
+          onSourceError?.(pdfRenderError);
+          onLoadError?.(pdfRenderError);
+          return;
+        }
+
+        onLoadSuccess?.();
+      }, [file, onLoadError, onLoadSuccess, onSourceError]);
+
+      return <div data-testid="pdf-document">{children}</div>;
     },
-  },
-}));
+    Page: ({ pageNumber, scale, width }: { pageNumber: number; scale?: number; width?: number }) => (
+      <div
+        data-testid={`pdf-rendered-page-${pageNumber}`}
+        data-scale={scale === undefined ? '' : String(scale)}
+        data-width={width === undefined ? '' : String(width)}
+      >
+        Audience text layer
+      </div>
+    ),
+    pdfjs: {
+      GlobalWorkerOptions: {
+        workerSrc: '',
+      },
+    },
+  };
+});
 
 afterEach(() => {
   mountedRoots.forEach((root) => {
@@ -58,6 +94,7 @@ const mountedRoots: Array<{ unmount: () => void }> = [];
 
 beforeEach(() => {
   vi.clearAllMocks();
+  pdfRenderError = null;
   getManualDocumentViewMock.mockImplementation(async (documentId: string) => ({
     document_id: documentId,
     title: `Manual ${documentId}`,
@@ -609,7 +646,7 @@ describe('ManualPdfPage', () => {
     }
   });
 
-  it('renders real PDF pages and removes the placeholder reader copy', async () => {
+  it('wires PDF page rendering and removes the placeholder reader copy', async () => {
     getManualDocumentViewMock.mockResolvedValue({
       document_id: 'intel_sdm',
       title: 'Intel SDM',
@@ -701,12 +738,56 @@ describe('ManualPdfPage', () => {
     expect(rightRail.style.width).toBe('320px');
 
     await act(async () => {
-      rightHandle.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 0 }));
-      window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: -80 }));
-      window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      dispatchPointerEvent(rightHandle, 'pointerdown', 0);
+      dispatchPointerEvent(window, 'pointermove', -80);
+      dispatchPointerEvent(window, 'pointerup', -80);
     });
 
     expect(rightRail.style.width).toBe('400px');
+  });
+
+  it('surfaces PDF render failures distinctly', async () => {
+    pdfRenderError = new Error('pdf exploded');
+
+    const { container } = await renderRoute('/manual/pdf/intel_sdm');
+
+    await waitFor(() => {
+      expect(container.textContent).toContain('Unable to render PDF pages.');
+      expect(container.textContent).toContain('pdf exploded');
+    });
+  });
+
+  it('treats fit width differently from 100 percent zoom', async () => {
+    getManualDocumentViewMock.mockResolvedValue({
+      document_id: 'intel_sdm',
+      title: 'Intel SDM',
+      subtitle: 'Audience',
+      manual_type: 'intel_sdm',
+      manual_version: 'vol-1',
+      pdf_url: '/api/manual/documents/intel_sdm:file',
+      page_count: 172,
+      initial_page: 110,
+      toc: [],
+      page_text: [],
+    });
+
+    const { container } = await renderRoute('/manual/pdf/intel_sdm');
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="pdf-rendered-page-110"]')).toBeTruthy();
+    });
+
+    const renderedPage = container.querySelector('[data-testid="pdf-rendered-page-110"]') as HTMLElement;
+
+    expect(renderedPage.getAttribute('data-width')).not.toBe('');
+    expect(renderedPage.getAttribute('data-scale')).toBe('');
+
+    await act(async () => {
+      findButton(container, '100%').click();
+    });
+
+    expect(renderedPage.getAttribute('data-width')).toBe('');
+    expect(renderedPage.getAttribute('data-scale')).toBe('1');
   });
 
   it('renders the dedicated PDF workspace for the standalone route', async () => {
@@ -748,4 +829,13 @@ function findButton(container: HTMLElement, text: string): HTMLButtonElement {
     throw new Error(`Missing button with text: ${text}`);
   }
   return button;
+}
+
+function dispatchPointerEvent(target: EventTarget, type: string, clientX: number) {
+  const event =
+    typeof PointerEvent === 'function'
+      ? new PointerEvent(type, { bubbles: true, clientX })
+      : new MouseEvent(type, { bubbles: true, clientX });
+
+  target.dispatchEvent(event);
 }

@@ -4,11 +4,11 @@ import {
   useMemo,
   useRef,
   useState,
-  type MouseEvent as ReactMouseEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type RefObject,
 } from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
 import { useParams } from 'react-router-dom';
 
 import { getManualDocumentView, listAnnotations } from '../api/client';
@@ -22,11 +22,14 @@ type ManualPdfAnnotationMode = 'text' | 'region';
 type ManualPdfZoomPreset = 'fit' | '1.00' | '1.25' | '1.50';
 type ManualPdfLoadState = 'idle' | 'loading' | 'ready' | 'error';
 type VisiblePageCandidate = { page: number; visibleRatio: number };
+type RailSide = 'left' | 'right';
+type ReactPdfModule = typeof import('react-pdf');
 
 const EXPANDED_RAIL_WIDTH = 320;
 const COLLAPSED_RAIL_WIDTH = 48;
 const MIN_RAIL_WIDTH = 240;
 const MAX_RAIL_WIDTH = 520;
+let reactPdfModulePromise: Promise<ReactPdfModule> | null = null;
 
 const ZOOM_PRESETS: Array<{ label: string; value: ManualPdfZoomPreset }> = [
   { label: 'Fit width', value: 'fit' },
@@ -38,8 +41,6 @@ const ZOOM_PRESETS: Array<{ label: string; value: ManualPdfZoomPreset }> = [
 function zoomPresetToScale(zoomPreset: ManualPdfZoomPreset): string {
   return zoomPreset === 'fit' ? '1' : zoomPreset;
 }
-
-pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
 export function resolveMostVisiblePage(candidates: VisiblePageCandidate[]) {
   let bestPage: number | null = null;
@@ -80,6 +81,114 @@ function clampPage(page: number, pageCount: number) {
 
 function clampRailWidth(width: number) {
   return Math.min(Math.max(MIN_RAIL_WIDTH, width), MAX_RAIL_WIDTH);
+}
+
+function normalizePdfRenderErrorMessage(error: unknown) {
+  return error instanceof Error && error.message.trim() ? error.message : 'Unable to render PDF pages.';
+}
+
+function ensurePdfDomPolyfills() {
+  const globalScope = globalThis as typeof globalThis & {
+    DOMMatrix?: new () => {
+      a: number;
+      b: number;
+      c: number;
+      d: number;
+      e: number;
+      f: number;
+      multiply: () => unknown;
+      translate: () => unknown;
+      scale: () => unknown;
+      rotate: () => unknown;
+      inverse: () => unknown;
+      transformPoint: (point?: unknown) => unknown;
+      preMultiplySelf: () => unknown;
+      translateSelf: () => unknown;
+      scaleSelf: () => unknown;
+      rotateSelf: () => unknown;
+      invertSelf: () => unknown;
+    };
+  };
+
+  if (typeof globalScope.DOMMatrix !== 'undefined') {
+    return;
+  }
+
+  class DOMMatrixShim {
+    a = 1;
+    b = 0;
+    c = 0;
+    d = 1;
+    e = 0;
+    f = 0;
+
+    multiply() {
+      return new DOMMatrixShim();
+    }
+
+    translate() {
+      return new DOMMatrixShim();
+    }
+
+    scale() {
+      return new DOMMatrixShim();
+    }
+
+    rotate() {
+      return new DOMMatrixShim();
+    }
+
+    inverse() {
+      return new DOMMatrixShim();
+    }
+
+    transformPoint<T>(point: T) {
+      return point;
+    }
+
+    preMultiplySelf() {
+      return this;
+    }
+
+    translateSelf() {
+      return this;
+    }
+
+    scaleSelf() {
+      return this;
+    }
+
+    rotateSelf() {
+      return this;
+    }
+
+    invertSelf() {
+      return this;
+    }
+  }
+
+  globalScope.DOMMatrix = DOMMatrixShim as typeof globalScope.DOMMatrix;
+}
+
+function loadReactPdfModule() {
+  ensurePdfDomPolyfills();
+
+  if (!reactPdfModulePromise) {
+    reactPdfModulePromise = import('react-pdf')
+      .then((module) => {
+        module.pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+          'pdfjs-dist/build/pdf.worker.min.mjs',
+          import.meta.url,
+        ).toString();
+        return module;
+      })
+      .catch((error) => {
+        reactPdfModulePromise = null;
+        throw error;
+      });
+  }
+
+  return reactPdfModulePromise;
 }
 
 function buildPdfWorkspaceErrorMessage(error: unknown, documentId?: string) {
@@ -155,18 +264,37 @@ function WorkspaceRailShell({
   width = EXPANDED_RAIL_WIDTH,
   onToggle,
   onResizeStart,
+  onResizeStep,
   children,
 }: {
   collapsed: boolean;
-  side: 'left' | 'right';
+  side: RailSide;
   title: string;
   railLabel: string;
   actionLabel: string;
   width?: number;
   onToggle: () => void;
-  onResizeStart?: (event: ReactMouseEvent<HTMLDivElement>) => void;
+  onResizeStart?: (side: RailSide, clientX: number) => void;
+  onResizeStep?: (side: RailSide, delta: number) => void;
   children: ReactNode;
 }) {
+  const handleResizeKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (!onResizeStep || collapsed) {
+        return;
+      }
+
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        onResizeStep(side, -16);
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        onResizeStep(side, 16);
+      }
+    },
+    [collapsed, onResizeStep, side],
+  );
+
   return (
     <aside
       data-testid={`${side}-rail-shell`}
@@ -175,11 +303,22 @@ function WorkspaceRailShell({
     >
       <div
         data-testid={`${side}-rail-resize-handle`}
-        onMouseDown={collapsed ? undefined : onResizeStart}
-        className={`absolute top-4 h-[calc(100%-2rem)] w-2 cursor-col-resize rounded-full bg-transparent hover:bg-sky-200/70 ${
-          side === 'left' ? '-right-1' : '-left-1'
-        }`}
-        aria-hidden="true"
+        role="separator"
+        aria-label={`Resize ${side} panel`}
+        aria-orientation="vertical"
+        tabIndex={collapsed || !onResizeStart ? -1 : 0}
+        onPointerDown={
+          collapsed || !onResizeStart
+            ? undefined
+            : (event: ReactPointerEvent<HTMLDivElement>) => {
+                event.preventDefault();
+                onResizeStart(side, event.clientX);
+              }
+        }
+        onKeyDown={handleResizeKeyDown}
+        className={`absolute top-4 h-[calc(100%-2rem)] w-2 rounded-full bg-transparent ${
+          collapsed || !onResizeStart ? 'cursor-default' : 'cursor-col-resize hover:bg-sky-200/70 focus:bg-sky-200/70'
+        } ${side === 'left' ? '-right-1' : '-left-1'}`}
       />
       <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
         {!collapsed ? (
@@ -316,9 +455,41 @@ function PdfReaderPane({
   onZoomChange: (preset: ManualPdfZoomPreset) => void;
 }) {
   const zoomScale = zoomPresetToScale(zoomPreset);
-  const pageScale = Number(zoomScale);
+  const viewportWidth = useViewportWidth(scrollContainerRef, document?.pdf_url);
+  const pageScale = zoomPreset === 'fit' ? undefined : Number(zoomScale);
+  const pageWidth = zoomPreset === 'fit' ? Math.max(280, Math.floor(viewportWidth - 32)) : undefined;
   const pageCount = document?.page_count ?? 0;
   const pages = useMemo(() => Array.from({ length: pageCount }, (_, index) => index + 1), [pageCount]);
+  const [pdfRenderError, setPdfRenderError] = useState<string | null>(null);
+  const [reactPdfModule, setReactPdfModule] = useState<ReactPdfModule | null>(null);
+  const DocumentComponent = reactPdfModule?.Document;
+  const PageComponent = reactPdfModule?.Page;
+
+  useEffect(() => {
+    setPdfRenderError(null);
+  }, [document?.pdf_url]);
+
+  useEffect(() => {
+    let active = true;
+
+    void loadReactPdfModule()
+      .then((module) => {
+        if (!active) {
+          return;
+        }
+        setReactPdfModule(module);
+      })
+      .catch((error: unknown) => {
+        if (!active) {
+          return;
+        }
+        setPdfRenderError(normalizePdfRenderErrorMessage(error));
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <section
@@ -389,51 +560,65 @@ function PdfReaderPane({
                   </p>
                 </div>
 
-                <div className="space-y-4">
-                  <Document file={document.pdf_url}>
-                    {readerMode === 'continuous' ? (
-                      pages.map((page) => (
+                {pdfRenderError ? (
+                  <div className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    <p className="font-medium text-rose-800">Unable to render PDF pages.</p>
+                    <p className="mt-1">{pdfRenderError}</p>
+                  </div>
+                ) : !DocumentComponent || !PageComponent ? (
+                  <p className="text-sm text-slate-300">Loading PDF renderer...</p>
+                ) : (
+                  <div className="space-y-4">
+                    <DocumentComponent
+                      file={document.pdf_url}
+                      onLoadSuccess={() => setPdfRenderError(null)}
+                      onLoadError={(error) => setPdfRenderError(normalizePdfRenderErrorMessage(error))}
+                      onSourceError={(error) => setPdfRenderError(normalizePdfRenderErrorMessage(error))}
+                    >
+                      {readerMode === 'continuous' ? (
+                        pages.map((page) => (
+                          <article
+                            key={page}
+                            ref={(node) => setPageRef(page, node)}
+                            data-testid={`pdf-page-${page}`}
+                            data-active={String(page === activePage)}
+                            className={`overflow-hidden rounded-2xl border p-4 shadow-sm ${
+                              page === activePage
+                                ? 'border-sky-300 bg-white text-slate-900'
+                                : 'border-white/10 bg-white/5 text-white'
+                            }`}
+                          >
+                            <div className="mb-4 flex items-center justify-between">
+                              <p className="text-sm font-semibold">Page {page}</p>
+                              <p className="text-xs uppercase tracking-wide text-current/60">
+                                {page === activePage ? 'Active' : 'Idle'}
+                              </p>
+                            </div>
+                            <div className="overflow-auto rounded-xl bg-white text-slate-900">
+                              <PageComponent pageNumber={page} scale={pageScale} width={pageWidth} />
+                            </div>
+                          </article>
+                        ))
+                      ) : (
                         <article
-                          key={page}
-                          ref={(node) => setPageRef(page, node)}
-                          data-testid={`pdf-page-${page}`}
-                          data-active={String(page === activePage)}
-                          className={`overflow-hidden rounded-2xl border p-4 shadow-sm ${
-                            page === activePage
-                              ? 'border-sky-300 bg-white text-slate-900'
-                              : 'border-white/10 bg-white/5 text-white'
-                          }`}
+                          key={readerPage}
+                          ref={(node) => setPageRef(readerPage, node)}
+                          data-testid={`pdf-page-${readerPage}`}
+                          data-active="true"
+                          className="overflow-hidden rounded-2xl border border-sky-300 bg-white p-4 text-slate-900 shadow-sm"
                         >
                           <div className="mb-4 flex items-center justify-between">
-                            <p className="text-sm font-semibold">Page {page}</p>
-                            <p className="text-xs uppercase tracking-wide text-current/60">
-                              {page === activePage ? 'Active' : 'Idle'}
-                            </p>
+                            <p className="text-sm font-semibold">Page {readerPage}</p>
+                            <p className="text-xs uppercase tracking-wide text-slate-500">Focused</p>
                           </div>
-                          <div className="overflow-auto rounded-xl bg-white text-slate-900">
-                            <Page pageNumber={page} scale={pageScale} />
+                          <div className="overflow-auto rounded-xl bg-white">
+                            <PageComponent pageNumber={readerPage} scale={pageScale} width={pageWidth} />
                           </div>
                         </article>
-                      ))
-                    ) : (
-                      <article
-                        key={readerPage}
-                        ref={(node) => setPageRef(readerPage, node)}
-                        data-testid={`pdf-page-${readerPage}`}
-                        data-active="true"
-                        className="overflow-hidden rounded-2xl border border-sky-300 bg-white p-4 text-slate-900 shadow-sm"
-                      >
-                        <div className="mb-4 flex items-center justify-between">
-                          <p className="text-sm font-semibold">Page {readerPage}</p>
-                          <p className="text-xs uppercase tracking-wide text-slate-500">Focused</p>
-                        </div>
-                        <div className="overflow-auto rounded-xl bg-white">
-                          <Page pageNumber={readerPage} scale={pageScale} />
-                        </div>
-                      </article>
-                    )}
-                  </Document>
-                </div>
+                      )}
+                    </DocumentComponent>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -445,6 +630,37 @@ function PdfReaderPane({
       </div>
     </section>
   );
+}
+
+function useViewportWidth(ref: RefObject<HTMLDivElement>, dependency?: string) {
+  const [viewportWidth, setViewportWidth] = useState(0);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) {
+      return;
+    }
+
+    const updateWidth = () => {
+      setViewportWidth(node.getBoundingClientRect().width);
+    };
+
+    updateWidth();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateWidth);
+      return () => window.removeEventListener('resize', updateWidth);
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateWidth();
+    });
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }, [ref, dependency]);
+
+  return viewportWidth;
 }
 
 function useManualPdfPageNavigation(document: ManualDocumentView | null, readerMode: ManualPdfReaderMode) {
@@ -656,6 +872,7 @@ function ManualPdfWorkspace({
   onZoomChange: (preset: ManualPdfZoomPreset) => void;
 }) {
   const focusLayout = isLeftCollapsed && isRightCollapsed;
+  const [leftRailWidth, setLeftRailWidth] = useState(EXPANDED_RAIL_WIDTH);
   const [rightRailWidth, setRightRailWidth] = useState(EXPANDED_RAIL_WIDTH);
   const { activePage, jumpToPage, readerPage, scrollContainerRef, setPageRef } = useManualPdfPageNavigation(
     document,
@@ -696,24 +913,35 @@ function ManualPdfWorkspace({
     },
     [onAnnotationModeChange, readerMode],
   );
-  const handleRightRailResizeStart = useCallback(
-    (event: ReactMouseEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      const startX = event.clientX;
-      const startWidth = rightRailWidth;
+  const adjustRailWidth = useCallback((side: RailSide, delta: number) => {
+    if (side === 'left') {
+      setLeftRailWidth((width) => clampRailWidth(width + delta));
+      return;
+    }
 
-      const handleMouseMove = (moveEvent: MouseEvent) => {
-        setRightRailWidth(clampRailWidth(startWidth + startX - moveEvent.clientX));
+    setRightRailWidth((width) => clampRailWidth(width - delta));
+  }, []);
+  const handleRailResizeStart = useCallback(
+    (side: RailSide, clientX: number) => {
+      const startWidth = side === 'left' ? leftRailWidth : rightRailWidth;
+
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        const delta = moveEvent.clientX - clientX;
+        if (side === 'left') {
+          setLeftRailWidth(clampRailWidth(startWidth + delta));
+        } else {
+          setRightRailWidth(clampRailWidth(startWidth - delta));
+        }
       };
-      const handleMouseUp = () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
+      const handlePointerUp = () => {
+        window.removeEventListener('pointermove', handlePointerMove);
+        window.removeEventListener('pointerup', handlePointerUp);
       };
 
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('pointermove', handlePointerMove);
+      window.addEventListener('pointerup', handlePointerUp);
     },
-    [rightRailWidth],
+    [leftRailWidth, rightRailWidth],
   );
 
   return (
@@ -729,7 +957,10 @@ function ManualPdfWorkspace({
         title="Outline"
         railLabel="Document rail"
         actionLabel={isLeftCollapsed ? 'Expand left panel' : 'Collapse left panel'}
+        width={leftRailWidth}
         onToggle={onToggleLeft}
+        onResizeStart={handleRailResizeStart}
+        onResizeStep={adjustRailWidth}
       >
         <SectionPanel title={document?.title || 'Document details'}>
           {loading ? (
@@ -793,7 +1024,8 @@ function ManualPdfWorkspace({
         actionLabel={isRightCollapsed ? 'Expand right panel' : 'Collapse right panel'}
         width={rightRailWidth}
         onToggle={onToggleRight}
-        onResizeStart={handleRightRailResizeStart}
+        onResizeStart={handleRailResizeStart}
+        onResizeStep={adjustRailWidth}
       >
         <SectionPanel title="Annotation tools">
           <AnnotationModeControls
