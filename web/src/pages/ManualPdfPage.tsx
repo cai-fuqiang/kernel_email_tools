@@ -1,15 +1,32 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
+import { Document, Page, pdfjs } from 'react-pdf';
 import { useParams } from 'react-router-dom';
 
 import { getManualDocumentView, listAnnotations } from '../api/client';
 import type { AnnotationListItem, ManualDocumentTocNode, ManualDocumentView } from '../api/types';
 import { PageHeader, PageShell, PrimaryButton, SectionPanel } from '../components/ui';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
 
 type ManualPdfReaderMode = 'continuous' | 'single';
 type ManualPdfAnnotationMode = 'text' | 'region';
 type ManualPdfZoomPreset = 'fit' | '1.00' | '1.25' | '1.50';
 type ManualPdfLoadState = 'idle' | 'loading' | 'ready' | 'error';
 type VisiblePageCandidate = { page: number; visibleRatio: number };
+
+const EXPANDED_RAIL_WIDTH = 320;
+const COLLAPSED_RAIL_WIDTH = 48;
+const MIN_RAIL_WIDTH = 240;
+const MAX_RAIL_WIDTH = 520;
 
 const ZOOM_PRESETS: Array<{ label: string; value: ManualPdfZoomPreset }> = [
   { label: 'Fit width', value: 'fit' },
@@ -21,6 +38,8 @@ const ZOOM_PRESETS: Array<{ label: string; value: ManualPdfZoomPreset }> = [
 function zoomPresetToScale(zoomPreset: ManualPdfZoomPreset): string {
   return zoomPreset === 'fit' ? '1' : zoomPreset;
 }
+
+pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
 export function resolveMostVisiblePage(candidates: VisiblePageCandidate[]) {
   let bestPage: number | null = null;
@@ -57,6 +76,10 @@ export function createPageRefRegistry() {
 function clampPage(page: number, pageCount: number) {
   if (!pageCount) return 1;
   return Math.min(Math.max(1, page), pageCount);
+}
+
+function clampRailWidth(width: number) {
+  return Math.min(Math.max(MIN_RAIL_WIDTH, width), MAX_RAIL_WIDTH);
 }
 
 function buildPdfWorkspaceErrorMessage(error: unknown, documentId?: string) {
@@ -125,25 +148,39 @@ function renderTocButtons(nodes: ManualDocumentTocNode[], onJumpToPage: (page: n
 
 function WorkspaceRailShell({
   collapsed,
+  side,
   title,
   railLabel,
   actionLabel,
+  width = EXPANDED_RAIL_WIDTH,
   onToggle,
+  onResizeStart,
   children,
 }: {
   collapsed: boolean;
+  side: 'left' | 'right';
   title: string;
   railLabel: string;
   actionLabel: string;
+  width?: number;
   onToggle: () => void;
+  onResizeStart?: (event: ReactMouseEvent<HTMLDivElement>) => void;
   children: ReactNode;
 }) {
   return (
     <aside
-      className={`shrink-0 rounded-2xl border border-slate-200 bg-white shadow-sm transition-all ${
-        collapsed ? 'w-full xl:w-16' : 'w-full xl:w-80'
-      }`}
+      data-testid={`${side}-rail-shell`}
+      style={{ width: `${collapsed ? COLLAPSED_RAIL_WIDTH : width}px` }}
+      className="relative shrink-0 rounded-2xl border border-slate-200 bg-white shadow-sm transition-all"
     >
+      <div
+        data-testid={`${side}-rail-resize-handle`}
+        onMouseDown={collapsed ? undefined : onResizeStart}
+        className={`absolute top-4 h-[calc(100%-2rem)] w-2 cursor-col-resize rounded-full bg-transparent hover:bg-sky-200/70 ${
+          side === 'left' ? '-right-1' : '-left-1'
+        }`}
+        aria-hidden="true"
+      />
       <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
         {!collapsed ? (
           <div>
@@ -279,6 +316,7 @@ function PdfReaderPane({
   onZoomChange: (preset: ManualPdfZoomPreset) => void;
 }) {
   const zoomScale = zoomPresetToScale(zoomPreset);
+  const pageScale = Number(zoomScale);
   const pageCount = document?.page_count ?? 0;
   const pages = useMemo(() => Array.from({ length: pageCount }, (_, index) => index + 1), [pageCount]);
 
@@ -317,10 +355,6 @@ function PdfReaderPane({
             </div>
           ) : document ? (
             <div className="space-y-4">
-              <p className="text-sm text-slate-300">
-                Center pane ready for PDF reading. The workspace shell is wired to the loaded document and preserves
-                reader mode when zoom presets change.
-              </p>
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="rounded-xl border border-white/10 bg-white/5 p-4">
                   <p className="text-xs uppercase tracking-wide text-slate-400">Title</p>
@@ -356,55 +390,49 @@ function PdfReaderPane({
                 </div>
 
                 <div className="space-y-4">
-                  {readerMode === 'continuous' ? (
-                    pages.map((page) => (
+                  <Document file={document.pdf_url}>
+                    {readerMode === 'continuous' ? (
+                      pages.map((page) => (
+                        <article
+                          key={page}
+                          ref={(node) => setPageRef(page, node)}
+                          data-testid={`pdf-page-${page}`}
+                          data-active={String(page === activePage)}
+                          className={`overflow-hidden rounded-2xl border p-4 shadow-sm ${
+                            page === activePage
+                              ? 'border-sky-300 bg-white text-slate-900'
+                              : 'border-white/10 bg-white/5 text-white'
+                          }`}
+                        >
+                          <div className="mb-4 flex items-center justify-between">
+                            <p className="text-sm font-semibold">Page {page}</p>
+                            <p className="text-xs uppercase tracking-wide text-current/60">
+                              {page === activePage ? 'Active' : 'Idle'}
+                            </p>
+                          </div>
+                          <div className="overflow-auto rounded-xl bg-white text-slate-900">
+                            <Page pageNumber={page} scale={pageScale} />
+                          </div>
+                        </article>
+                      ))
+                    ) : (
                       <article
-                        key={page}
-                        ref={(node) => setPageRef(page, node)}
-                        data-testid={`pdf-page-${page}`}
-                        data-active={String(page === activePage)}
-                        className={`min-h-64 rounded-2xl border p-4 shadow-sm ${
-                          page === activePage
-                            ? 'border-sky-300 bg-white text-slate-900'
-                            : 'border-white/10 bg-white/5 text-white'
-                        }`}
+                        key={readerPage}
+                        ref={(node) => setPageRef(readerPage, node)}
+                        data-testid={`pdf-page-${readerPage}`}
+                        data-active="true"
+                        className="overflow-hidden rounded-2xl border border-sky-300 bg-white p-4 text-slate-900 shadow-sm"
                       >
                         <div className="mb-4 flex items-center justify-between">
-                          <p className="text-sm font-semibold">Page {page}</p>
-                          <p className="text-xs uppercase tracking-wide text-current/60">
-                            {page === activePage ? 'Active' : 'Idle'}
-                          </p>
+                          <p className="text-sm font-semibold">Page {readerPage}</p>
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Focused</p>
                         </div>
-                        <div className="space-y-3">
-                          <div className="h-40 rounded-xl border border-dashed border-current/20 bg-current/5" />
-                          <p className="text-sm text-current/70">
-                            Placeholder page canvas for continuous reading. Visible-page sync keeps this stack aligned
-                            with the reader viewport.
-                          </p>
+                        <div className="overflow-auto rounded-xl bg-white">
+                          <Page pageNumber={readerPage} scale={pageScale} />
                         </div>
                       </article>
-                    ))
-                  ) : (
-                    <article
-                      key={readerPage}
-                      ref={(node) => setPageRef(readerPage, node)}
-                      data-testid={`pdf-page-${readerPage}`}
-                      data-active="true"
-                      className="min-h-96 rounded-2xl border border-sky-300 bg-white p-4 text-slate-900 shadow-sm"
-                    >
-                      <div className="mb-4 flex items-center justify-between">
-                        <p className="text-sm font-semibold">Page {readerPage}</p>
-                        <p className="text-xs uppercase tracking-wide text-slate-500">Focused</p>
-                      </div>
-                      <div className="space-y-3">
-                        <div className="h-64 rounded-xl border border-dashed border-slate-300 bg-slate-50" />
-                        <p className="text-sm text-slate-600">
-                          Single-page focus keeps the selected page pinned here until a new TOC jump or page selection
-                          changes it.
-                        </p>
-                      </div>
-                    </article>
-                  )}
+                    )}
+                  </Document>
                 </div>
               </div>
             </div>
@@ -628,6 +656,7 @@ function ManualPdfWorkspace({
   onZoomChange: (preset: ManualPdfZoomPreset) => void;
 }) {
   const focusLayout = isLeftCollapsed && isRightCollapsed;
+  const [rightRailWidth, setRightRailWidth] = useState(EXPANDED_RAIL_WIDTH);
   const { activePage, jumpToPage, readerPage, scrollContainerRef, setPageRef } = useManualPdfPageNavigation(
     document,
     readerMode,
@@ -667,6 +696,25 @@ function ManualPdfWorkspace({
     },
     [onAnnotationModeChange, readerMode],
   );
+  const handleRightRailResizeStart = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = rightRailWidth;
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        setRightRailWidth(clampRailWidth(startWidth + startX - moveEvent.clientX));
+      };
+      const handleMouseUp = () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    },
+    [rightRailWidth],
+  );
 
   return (
     <div
@@ -677,6 +725,7 @@ function ManualPdfWorkspace({
     >
       <WorkspaceRailShell
         collapsed={isLeftCollapsed}
+        side="left"
         title="Outline"
         railLabel="Document rail"
         actionLabel={isLeftCollapsed ? 'Expand left panel' : 'Collapse left panel'}
@@ -738,10 +787,13 @@ function ManualPdfWorkspace({
 
       <WorkspaceRailShell
         collapsed={isRightCollapsed}
+        side="right"
         title="References"
         railLabel="Workspace rail"
         actionLabel={isRightCollapsed ? 'Expand right panel' : 'Collapse right panel'}
+        width={rightRailWidth}
         onToggle={onToggleRight}
+        onResizeStart={handleRightRailResizeStart}
       >
         <SectionPanel title="Annotation tools">
           <AnnotationModeControls

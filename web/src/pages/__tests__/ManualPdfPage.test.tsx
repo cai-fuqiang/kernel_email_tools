@@ -26,6 +26,18 @@ vi.mock('../../layouts/MainLayout', () => ({
   default: () => <div data-testid="main-layout"><Outlet /></div>,
 }));
 
+vi.mock('react-pdf', () => ({
+  Document: ({ children }: { children: ReactNode }) => <div data-testid="pdf-document">{children}</div>,
+  Page: ({ pageNumber }: { pageNumber: number }) => (
+    <div data-testid={`pdf-rendered-page-${pageNumber}`}>Audience text layer</div>
+  ),
+  pdfjs: {
+    GlobalWorkerOptions: {
+      workerSrc: '',
+    },
+  },
+}));
+
 afterEach(() => {
   mountedRoots.forEach((root) => {
     act(() => {
@@ -595,6 +607,106 @@ describe('ManualPdfPage', () => {
         }).scrollIntoView;
       }
     }
+  });
+
+  it('renders real PDF pages and removes the placeholder reader copy', async () => {
+    getManualDocumentViewMock.mockResolvedValue({
+      document_id: 'intel_sdm',
+      title: 'Intel SDM',
+      subtitle: 'Audience',
+      manual_type: 'intel_sdm',
+      manual_version: 'vol-1',
+      pdf_url: '/api/manual/documents/intel_sdm:file',
+      page_count: 172,
+      initial_page: 110,
+      toc: [],
+      page_text: [],
+    });
+
+    const { container } = await renderRoute('/manual/pdf/intel_sdm');
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="pdf-document"]')).toBeTruthy();
+      expect(container.querySelector('[data-testid="pdf-rendered-page-110"]')).toBeTruthy();
+      expect(container.textContent).toContain('Audience text layer');
+    });
+
+    expect(container.textContent).not.toContain('Center pane ready for PDF reading.');
+    expect(container.textContent).not.toContain('Placeholder page canvas for continuous reading.');
+  });
+
+  it('collapses both rails into slim handles', async () => {
+    getManualDocumentViewMock.mockResolvedValue({
+      document_id: 'intel_sdm',
+      title: 'Intel SDM',
+      subtitle: 'Audience',
+      manual_type: 'intel_sdm',
+      manual_version: 'vol-1',
+      pdf_url: '/api/manual/documents/intel_sdm:file',
+      page_count: 172,
+      initial_page: 110,
+      toc: [],
+      page_text: [],
+    });
+
+    const { container } = await renderRoute('/manual/pdf/intel_sdm');
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="left-rail-shell"]')).toBeTruthy();
+      expect(container.querySelector('[data-testid="right-rail-shell"]')).toBeTruthy();
+    });
+
+    const leftRail = container.querySelector('[data-testid="left-rail-shell"]') as HTMLElement;
+    const rightRail = container.querySelector('[data-testid="right-rail-shell"]') as HTMLElement;
+
+    expect(leftRail.style.width).toBe('320px');
+    expect(rightRail.style.width).toBe('320px');
+
+    await act(async () => {
+      findButton(container, 'Collapse left panel').click();
+      findButton(container, 'Collapse right panel').click();
+    });
+
+    expect(leftRail.style.width).toBe('48px');
+    expect(rightRail.style.width).toBe('48px');
+    expect(findButton(container, 'Expand left panel')).toBeTruthy();
+    expect(findButton(container, 'Expand right panel')).toBeTruthy();
+    expect(container.querySelector('[data-testid="left-rail-resize-handle"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="right-rail-resize-handle"]')).toBeTruthy();
+  });
+
+  it('drags the right rail desktop handle from 320px to 400px', async () => {
+    getManualDocumentViewMock.mockResolvedValue({
+      document_id: 'intel_sdm',
+      title: 'Intel SDM',
+      subtitle: 'Audience',
+      manual_type: 'intel_sdm',
+      manual_version: 'vol-1',
+      pdf_url: '/api/manual/documents/intel_sdm:file',
+      page_count: 172,
+      initial_page: 110,
+      toc: [],
+      page_text: [],
+    });
+
+    const { container } = await renderRoute('/manual/pdf/intel_sdm');
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="right-rail-shell"]')).toBeTruthy();
+    });
+
+    const rightRail = container.querySelector('[data-testid="right-rail-shell"]') as HTMLElement;
+    const rightHandle = container.querySelector('[data-testid="right-rail-resize-handle"]') as HTMLElement;
+
+    expect(rightRail.style.width).toBe('320px');
+
+    await act(async () => {
+      rightHandle.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 0 }));
+      window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: -80 }));
+      window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    });
+
+    expect(rightRail.style.width).toBe('400px');
   });
 
   it('renders the dedicated PDF workspace for the standalone route', async () => {
