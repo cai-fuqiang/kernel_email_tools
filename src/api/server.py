@@ -248,3 +248,6 @@ if os.path.isdir(static_dir):
             return FileResponse(file_path)
         return FileResponse(os.path.join(static_dir, 'index.html'))
     app.mount('/app/assets', StaticFiles(directory=os.path.join(static_dir, 'assets')), name='assets')
+    pdfjs_dir = os.path.join(static_dir, 'pdfjs')
+    if os.path.isdir(pdfjs_dir):
+        app.mount('/app/pdfjs', StaticFiles(directory=pdfjs_dir), name='pdfjs')
