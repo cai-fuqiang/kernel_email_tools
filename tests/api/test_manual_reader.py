@@ -178,3 +178,49 @@ def _make_chunk(manual_type, manual_version, pdf_path="", page_end=10):
         token_count=1,
         metadata={"pdf_path": pdf_path} if pdf_path else {},
     )
+
+
+def test_list_documents_endpoint_returns_summaries():
+    class FakeStorage:
+        async def list_documents(self):
+            return [
+                {
+                    "document_id": "intel_sdm:default",
+                    "title": "Intel SDM",
+                    "manual_type": "intel_sdm",
+                    "manual_version": "default",
+                    "page_count": 1234,
+                    "chunk_count": 88,
+                    "has_pdf": True,
+                }
+            ]
+
+    original = state._manual_storage
+    state._manual_storage = FakeStorage()
+    try:
+        response = asyncio.run(manual.list_documents())
+    finally:
+        state._manual_storage = original
+
+    assert len(response.documents) == 1
+    doc = response.documents[0]
+    assert doc.document_id == "intel_sdm:default"
+    assert doc.has_pdf is True
+    assert doc.chunk_count == 88
+
+
+def test_list_documents_endpoint_raises_503_when_storage_missing():
+    original = state._manual_storage
+    state._manual_storage = None
+    try:
+        try:
+            asyncio.run(manual.list_documents())
+        except HTTPException as exc:
+            caught = exc
+        else:
+            caught = None
+    finally:
+        state._manual_storage = original
+
+    assert caught is not None
+    assert caught.status_code == 503

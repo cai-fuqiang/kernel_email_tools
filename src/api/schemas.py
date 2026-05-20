@@ -108,6 +108,20 @@ class ManualDocumentPageText(BaseModel):
     text: str = ""
 
 
+class ManualDocumentSummary(BaseModel):
+    document_id: str
+    title: str
+    manual_type: str
+    manual_version: str
+    page_count: int
+    chunk_count: int
+    has_pdf: bool
+
+
+class ManualDocumentListResponse(BaseModel):
+    documents: list[ManualDocumentSummary]
+
+
 class ManualDocumentViewResponse(BaseModel):
     document_id: str
     title: str

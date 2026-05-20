@@ -27,6 +27,8 @@ from src.api.schemas import (
     AnnotationResponse,
     DraftApplyRequest,
     DraftApplyResponse,
+    ManualDocumentListResponse,
+    ManualDocumentSummary,
     ManualDocumentViewResponse,
 )
 from src.retriever.manual import ManualSearchQuery
@@ -120,6 +122,20 @@ async def manual_search(
             }
             for h in result.hits
         ],
+    )
+
+
+@router.get("/api/manual/documents", response_model=ManualDocumentListResponse)
+async def list_documents():
+    """List all ingested documents with summary metadata."""
+    if not state._manual_storage:
+        raise HTTPException(
+            status_code=503,
+            detail="Manual storage not initialized. Please configure storage.manual in settings.yaml",
+        )
+    summaries = await state._manual_storage.list_documents()
+    return ManualDocumentListResponse(
+        documents=[ManualDocumentSummary(**s) for s in summaries]
     )
 
 
