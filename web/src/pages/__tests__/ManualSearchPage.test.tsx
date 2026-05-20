@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-pdf', () => ({
@@ -47,5 +49,13 @@ describe('ManualSearchPage reader helpers', () => {
     ]);
 
     expect(pages).toEqual([1, 176, 177]);
+  });
+
+  it('opens the dedicated PDF workspace route from manual search hits', () => {
+    const filePath = resolve(import.meta.dirname, '..', 'ManualSearchPage.tsx');
+    const source = readFileSync(filePath, 'utf8');
+
+    expect(source).toContain('/manual/pdf/${encodeURIComponent(hit.document_id)}');
+    expect(source).toContain('Open PDF workspace');
   });
 });

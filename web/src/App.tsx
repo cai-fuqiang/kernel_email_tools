@@ -10,6 +10,7 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const TagsPage = lazy(() => import('./pages/TagsPage'));
 const AnnotationsPage = lazy(() => import('./pages/AnnotationsPage'));
 const ManualSearchPage = lazy(() => import('./pages/ManualSearchPage'));
+const ManualPdfPage = lazy(() => import('./pages/ManualPdfPage'));
 const KernelCodePage = lazy(() => import('./pages/KernelCodePage'));
 const KernelSymbolPreviewPage = lazy(() => import('./pages/KernelSymbolPreviewPage'));
 const KernelAnnotationPreviewPage = lazy(() => import('./pages/KernelAnnotationPreviewPage'));
@@ -73,7 +74,7 @@ export default function App() {
                 <Route path="/knowledge" element={<KnowledgePage />} />
                 <Route path="/annotations" element={<AnnotationsPage />} />
                 <Route path="/manual/search" element={<ManualSearchPage />} />
-                <Route path="/manual/search/:documentId" element={<ManualSearchPage />} />
+                <Route path="/manual/pdf/:documentId" element={<ManualPdfPage />} />
                 <Route path="/kernel-code" element={<KernelCodePage />} />
                 <Route path="/kernel-code/preview" element={<KernelSymbolPreviewPage />} />
                 <Route path="/kernel-code/annotation-preview" element={<KernelAnnotationPreviewPage />} />
