@@ -357,7 +357,11 @@ function ManualPdfWorkspace({
   const [activePage, setActivePage] = useState(document?.initial_page ?? 1);
 
   const annotationsForActivePage = useMemo(
-    () => annotations.filter((annotation) => getAnnotationPage(annotation) === activePage),
+    () =>
+      annotations
+        .slice()
+        .sort((a, b) => (getAnnotationPage(a) ?? 0) - (getAnnotationPage(b) ?? 0))
+        .filter((annotation) => getAnnotationPage(annotation) === activePage),
     [annotations, activePage],
   );
 
