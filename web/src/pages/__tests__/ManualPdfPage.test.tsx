@@ -26,26 +26,6 @@ vi.mock('../../layouts/MainLayout', () => ({
   default: () => <div data-testid="main-layout"><Outlet /></div>,
 }));
 
-vi.mock('@react-pdf-viewer/core', () => ({
-  Worker: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  Viewer: ({ fileUrl }: { fileUrl: string }) => (
-    <div data-testid="pdf-viewer-stub" data-file-url={fileUrl} />
-  ),
-}));
-
-vi.mock('@react-pdf-viewer/default-layout', () => ({
-  defaultLayoutPlugin: () => ({}),
-}));
-
-vi.mock('@react-pdf-viewer/page-navigation', () => ({
-  pageNavigationPlugin: () => ({
-    jumpToPage: vi.fn(),
-  }),
-}));
-
-vi.mock('@react-pdf-viewer/core/lib/styles/index.css', () => ({}));
-vi.mock('@react-pdf-viewer/default-layout/lib/styles/index.css', () => ({}));
-
 afterEach(() => {
   mountedRoots.forEach((root) => {
     act(() => {

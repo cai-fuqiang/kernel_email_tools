@@ -208,7 +208,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-20: dedicated manual PDF workspace now lives on `web/src/pages/ManualPdfPage.tsx` while `ManualSearchPage` stays search-only and links into `/manual/pdf/:documentId` for reading and annotation (src/api/routers/manual.py, src/api/schemas.py, src/storage/document_store.py, web/src/pages/ManualPdfPage.tsx, web/src/pages/ManualSearchPage.tsx)
 - 2026-05-20: manual PDF workspace now renders real PDF/text layers in the center pane, moves document metadata into the left rail, and uses collapsible plus desktop-resizable side rails with default-width reset on re-expand (web/src/pages/ManualPdfPage.tsx, web/src/pages/__tests__/ManualPdfPage.test.tsx)
 - 2026-05-20: manual PDF navigation now keeps `Manuals` as the stable entry route, exposes a contextual `PDF Workspace` sidebar item while reading, and adds an in-page return link back to manual search (web/src/App.tsx, web/src/layouts/MainLayout.tsx, web/src/pages/ManualPdfPage.tsx)
-- 2026-05-20: manual PDF workspace pins top-level `pdfjs-dist` to the same 5.4.296 worker version used by `react-pdf` to avoid API/worker mismatches at render time (web/package.json, web/package-lock.json, web/src/pages/ManualPdfPage.tsx)
+- 2026-05-20: manual PDF workspace now uses Mozilla PDF.js prebuilt viewer via iframe (`/app/pdfjs/web/viewer.html?file=...`) instead of `@react-pdf-viewer`; page jumps use `postMessage`; static bundle lives in `web/public/pdfjs/` (web/src/pages/ManualPdfPage.tsx, web/public/pdfjs/)
 
 ---
 

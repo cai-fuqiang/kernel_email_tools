@@ -12,16 +12,11 @@ import { Link, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-import { Worker, Viewer } from '@react-pdf-viewer/core';
-import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
-import '@react-pdf-viewer/core/lib/styles/index.css';
-import '@react-pdf-viewer/default-layout/lib/styles/index.css';
-
 import { getManualDocumentView, listAnnotations } from '../api/client';
 import type { AnnotationListItem, ManualDocumentView } from '../api/types';
 import { PageHeader, PageShell, PrimaryButton, SectionPanel } from '../components/ui';
 
-const PDFJS_WORKER_URL = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+const PDFJS_VIEWER_BASE = '/app/pdfjs/web/viewer.html';
 
 const EXPANDED_RAIL_WIDTH = 320;
 const COLLAPSED_RAIL_WIDTH = 48;
@@ -303,16 +298,27 @@ function PdfViewer({
   pdfUrl: string;
   targetPage: number;
 }) {
-  const [defaultLayout] = useState(() => defaultLayoutPlugin());
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const absoluteUrl = `${window.location.origin}${pdfUrl}`;
+  const viewerUrl = `${PDFJS_VIEWER_BASE}?file=${encodeURIComponent(absoluteUrl)}#page=${targetPage}`;
+  const prevPageRef = useRef(targetPage);
+
+  useEffect(() => {
+    if (prevPageRef.current === targetPage) return;
+    prevPageRef.current = targetPage;
+    const iframe = iframeRef.current;
+    if (!iframe?.contentWindow) return;
+    iframe.contentWindow.postMessage({ type: 'jump', page: targetPage }, window.location.origin);
+  }, [targetPage]);
 
   return (
-    <Worker workerUrl={PDFJS_WORKER_URL}>
-      <Viewer
-        fileUrl={pdfUrl}
-        initialPage={targetPage > 0 ? targetPage - 1 : 0}
-        plugins={[defaultLayout]}
-      />
-    </Worker>
+    <iframe
+      ref={iframeRef}
+      src={viewerUrl}
+      className="w-full h-full min-h-[40rem] border-0"
+      title="PDF Viewer"
+      allow="fullscreen"
+    />
   );
 }
 
@@ -440,7 +446,6 @@ function ManualPdfWorkspace({
         ) : document ? (
           <div className="h-full min-h-[40rem]">
             <PdfViewer
-              key={activePage}
               pdfUrl={document.pdf_url}
               targetPage={activePage}
             />
