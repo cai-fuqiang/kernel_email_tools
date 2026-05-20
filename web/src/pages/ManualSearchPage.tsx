@@ -28,7 +28,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url,
 ).toString();
 
-const DOCUMENT_ANNOTATION_PAGE_SIZE = 200;
+const DOCUMENT_ANNOTATION_PAGE_SIZE = 100;
 const PDF_RENDER_WIDTH = 860;
 
 type ManualChunkAnnotation = Annotation | AnnotationListItem;
@@ -60,6 +60,14 @@ type RegionRect = {
 type PendingRegionSelection = {
   page: number;
   rect: RegionRect;
+};
+
+type LoadedPdfDocument = {
+  numPages: number;
+};
+
+type LoadedPdfPage = {
+  view: [number, number, number, number] | number[];
 };
 
 function normalizeText(value: string): string {
@@ -563,7 +571,7 @@ export default function ManualSearchPage() {
                 >
                   <Document
                     file={readerDocument.pdf_url}
-                    onLoadSuccess={({ numPages }) => setPdfPageCount(numPages)}
+                    onLoadSuccess={({ numPages }: LoadedPdfDocument) => setPdfPageCount(numPages)}
                     loading={<div className="flex h-full items-center justify-center text-sm text-gray-500">Loading PDF...</div>}
                     error={<div className="flex h-full items-center justify-center text-sm text-red-600">Unable to render PDF file.</div>}
                   >
@@ -572,7 +580,7 @@ export default function ManualSearchPage() {
                       width={PDF_RENDER_WIDTH}
                       renderAnnotationLayer
                       renderTextLayer
-                      onLoadSuccess={(page) => setPageAspectRatio(page.view[3] / page.view[2])}
+                      onLoadSuccess={(page: LoadedPdfPage) => setPageAspectRatio(page.view[3] / page.view[2])}
                     />
                   </Document>
 
