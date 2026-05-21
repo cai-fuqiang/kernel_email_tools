@@ -210,6 +210,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-20: manual PDF navigation now keeps `Manuals` as the stable entry route, exposes a contextual `PDF Workspace` sidebar item while reading, and adds an in-page return link back to manual search (web/src/App.tsx, web/src/layouts/MainLayout.tsx, web/src/pages/ManualPdfPage.tsx)
 - 2026-05-20: manual PDF workspace now uses Mozilla PDF.js prebuilt viewer via iframe (`/app/pdfjs/web/viewer.html?file=...`) instead of `@react-pdf-viewer`; page jumps use `postMessage`; static bundle lives in `web/public/pdfjs/` (web/src/pages/ManualPdfPage.tsx, web/public/pdfjs/)
 - 2026-05-20: PDF Browser page lists all ingested documents; pdf_path injected at ingest time into chunk metadata; list_documents() groups by manual_type+version in Python (not SQL) to avoid SQLite JSON limitations (scripts/ingest_manual.py, src/storage/document_store.py, src/api/routers/manual.py, web/src/pages/ManualBrowserPage.tsx)
+- 2026-05-21: annotation cards and selected kernel code lines can be dragged out as static Markdown previews with deep links for Obsidian-style notes (web/src/components/AnnotationCard.tsx, web/src/components/kernelCode/AnnotationPanel.tsx, web/src/pages/KernelCodePage.tsx)
 
 ---
 

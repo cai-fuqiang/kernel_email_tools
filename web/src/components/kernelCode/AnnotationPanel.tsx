@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type RefObject } from 'react';
 import { LocateFixed, Maximize2, PanelRightOpen, X } from 'lucide-react';
 import {
   approveAnnotationPublication,
@@ -31,6 +31,7 @@ import {
   resolveAnnotationCardClickAction,
   shouldIgnoreAnnotationCardClick,
 } from './annotationPreview';
+import { localAnnotationSearchUrl } from '../../utils/externalLinks';
 
 type PendingAction =
   | { kind: 'approve'; annotationId: string }
@@ -51,6 +52,45 @@ export function getSupportedKnowledgeAnnotationTypes(): string[] {
 
 function formatAnnotationLineRange(annotation: CodeAnnotation): string {
   return formatAnnotationPreviewLineRange(annotation);
+}
+
+interface MarkdownDragPayload {
+  markdown: string;
+  plainText: string;
+  url: string;
+}
+
+export function buildAnnotationMarkdownDragPayload({
+  annotationId,
+  body,
+  label,
+  lineRange,
+  origin,
+}: {
+  annotationId: string;
+  body: string;
+  label: string;
+  lineRange: string;
+  origin?: string;
+}): MarkdownDragPayload {
+  const baseOrigin = origin ?? (typeof window !== 'undefined' ? window.location.origin : '');
+  const url = `${baseOrigin}${localAnnotationSearchUrl(annotationId)}`;
+  const title = [label || 'annotation', lineRange].filter(Boolean).join(' ');
+  const excerpt = body.trim().split(/\n{2,}/)[0]?.replace(/\s+/g, ' ').trim();
+  const quote = excerpt ? `\n\n> ${excerpt}` : '';
+  const markdown = `[annotation: ${title}](${url})${quote}`;
+  return {
+    markdown,
+    plainText: markdown,
+    url,
+  };
+}
+
+function writeMarkdownDragPayload(dataTransfer: DataTransfer, payload: MarkdownDragPayload) {
+  dataTransfer.effectAllowed = 'copy';
+  dataTransfer.setData('text/plain', payload.plainText);
+  dataTransfer.setData('text/markdown', payload.markdown);
+  dataTransfer.setData('text/uri-list', payload.url);
 }
 
 interface AnnotationPanelProps {
@@ -514,10 +554,22 @@ export default function AnnotationPanel({
     const replyCount = replyCounts[root.annotation_id] || 0;
     const sc = statusColors[root.publish_status] || 'bg-slate-200 text-slate-900';
 
+    const handleDragStart = (event: ReactDragEvent<HTMLDivElement>) => {
+      const payload = buildAnnotationMarkdownDragPayload({
+        annotationId: root.annotation_id,
+        body: root.body,
+        label: filePath,
+        lineRange: formatAnnotationLineRange(root),
+      });
+      writeMarkdownDragPayload(event.dataTransfer, payload);
+    };
+
     return (
       <div
         key={root.annotation_id}
         data-annotation-id={root.annotation_id}
+        draggable
+        onDragStart={handleDragStart}
         className={`space-y-1 ${onJumpToAnnotation || onFocusAnnotation ? 'cursor-pointer' : ''}`}
         title={resolveAnnotationCardClickAction({ active: Boolean(options.active), pinned: Boolean(options.pinned) }) === 'jump'
           ? 'Click to jump to code. Double-click to pin.'

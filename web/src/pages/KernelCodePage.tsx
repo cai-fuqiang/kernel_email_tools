@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
+import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   BookOpenText,
@@ -274,6 +274,60 @@ const INSPECTOR_VIEW_LABELS: Record<InspectorView, string> = {
 export function clampRequestedLine(line: number | null | undefined, lineCount: number): number | null {
   if (!line || line <= 0 || lineCount <= 0) return null;
   return Math.min(line, lineCount);
+}
+
+interface MarkdownDragPayload {
+  markdown: string;
+  plainText: string;
+  url: string;
+}
+
+function codeFenceLanguage(filePath: string): string {
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  if (ext === 'c' || ext === 'h') return 'c';
+  if (ext === 'rs') return 'rust';
+  if (ext === 'py') return 'python';
+  if (ext === 'sh') return 'bash';
+  return '';
+}
+
+export function buildKernelCodeSelectionMarkdownDragPayload({
+  version,
+  filePath,
+  rangeLabel,
+  startLine,
+  selectedText,
+  origin,
+}: {
+  version: string;
+  filePath: string;
+  rangeLabel: string;
+  startLine: number;
+  selectedText: string;
+  origin?: string;
+}): MarkdownDragPayload {
+  const baseOrigin = origin ?? (typeof window !== 'undefined' ? window.location.origin : '');
+  const url = `${baseOrigin}/app${kernelCodePath(version, filePath, startLine)}`;
+  const language = codeFenceLanguage(filePath);
+  const markdown = [
+    `[code: ${filePath} ${rangeLabel}](${url})`,
+    '',
+    `\`\`\`${language}`,
+    selectedText.trimEnd(),
+    '```',
+  ].join('\n');
+  return {
+    markdown,
+    plainText: markdown,
+    url,
+  };
+}
+
+function writeMarkdownDragPayload(dataTransfer: DataTransfer, payload: MarkdownDragPayload) {
+  dataTransfer.effectAllowed = 'copy';
+  dataTransfer.setData('text/plain', payload.plainText);
+  dataTransfer.setData('text/markdown', payload.markdown);
+  dataTransfer.setData('text/uri-list', payload.url);
 }
 
 function inspectorViewCount(
@@ -1227,6 +1281,21 @@ export default function KernelCodePage() {
     handleSelectRange(line);
   }
 
+  function handleCodeSelectionDragStart(event: ReactDragEvent<HTMLDivElement>) {
+    if (!selectedRange || !selectedText.trim()) {
+      event.preventDefault();
+      return;
+    }
+    const payload = buildKernelCodeSelectionMarkdownDragPayload({
+      version: selectedVersion,
+      filePath: currentPath,
+      rangeLabel: selectedRangeLabel,
+      startLine: selectedRange.startLine,
+      selectedText,
+    });
+    writeMarkdownDragPayload(event.dataTransfer, payload);
+  }
+
   function toggleInspectorSection(section: InspectorSectionId) {
     setCollapsedInspectorSections((current) => {
       const next = new Set(current);
@@ -1964,6 +2033,8 @@ export default function KernelCodePage() {
                           <div
                             key={lineNum}
                             data-line={lineNum}
+                            draggable={isSelected && selectedText.trim().length > 0}
+                            onDragStart={isSelected ? handleCodeSelectionDragStart : undefined}
                             className={`group grid w-max grid-cols-[14px_52px_max-content_24px] border-b border-slate-200 px-3 ${
                               isSelected
                                 ? 'border-l-2 border-l-sky-500 bg-sky-50'

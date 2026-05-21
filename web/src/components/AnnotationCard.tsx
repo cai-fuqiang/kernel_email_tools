@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type DragEvent as ReactDragEvent } from 'react';
 import type {
   AnnotationRelation,
   AnnotationRelationCreate,
@@ -11,6 +11,7 @@ import AnnotationIdBadge from './AnnotationIdBadge';
 import EmailTagEditor from './EmailTagEditor';
 import { useAuth } from '../auth';
 import { Shield, Tags } from 'lucide-react';
+import { localAnnotationSearchUrl } from '../utils/externalLinks';
 
 interface AnnotationCardProps {
   annotationId: string;
@@ -64,6 +65,26 @@ const TYPE_THEME: Record<string, { chip: string; panel: string; text: string }> 
     text: 'text-slate-700',
   },
 };
+
+function buildAnnotationCardMarkdownDragPayload({
+  annotationId,
+  annotationType,
+  body,
+  targetLabel,
+  anchorLabel,
+}: {
+  annotationId: string;
+  annotationType: string;
+  body: string;
+  targetLabel: string;
+  anchorLabel?: string;
+}) {
+  const url = `${window.location.origin}${localAnnotationSearchUrl(annotationId)}`;
+  const title = [targetLabel || annotationType || 'annotation', anchorLabel].filter(Boolean).join(' ');
+  const excerpt = body.trim().split(/\n{2,}/)[0]?.replace(/\s+/g, ' ').trim();
+  const markdown = `[annotation: ${title}](${url})${excerpt ? `\n\n> ${excerpt}` : ''}`;
+  return { markdown, plainText: markdown, url };
+}
 
 export default function AnnotationCard({
   annotationId,
@@ -131,8 +152,26 @@ export default function AnnotationCard({
     text: 'text-slate-700',
   };
 
+  const handleDragStart = (event: ReactDragEvent<HTMLDivElement>) => {
+    const payload = buildAnnotationCardMarkdownDragPayload({
+      annotationId,
+      annotationType,
+      body,
+      targetLabel,
+      anchorLabel,
+    });
+    event.dataTransfer.effectAllowed = 'copy';
+    event.dataTransfer.setData('text/plain', payload.plainText);
+    event.dataTransfer.setData('text/markdown', payload.markdown);
+    event.dataTransfer.setData('text/uri-list', payload.url);
+  };
+
   return (
-    <div className={`relative rounded-2xl ${theme.panel} p-4 shadow-sm backdrop-blur-sm`}>
+    <div
+      className={`relative rounded-2xl ${theme.panel} p-4 shadow-sm backdrop-blur-sm`}
+      draggable
+      onDragStart={handleDragStart}
+    >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
