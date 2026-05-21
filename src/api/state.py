@@ -45,6 +45,7 @@ _translation_jobs_by_thread: dict[str, str] = {}
 _annotation_store: Optional["AnnotationStore"] = None
 
 _kernel_source: Optional["BaseKernelSource"] = None
+_code_repositories: dict[str, dict] = {}
 
 _knowledge_store: Optional["KnowledgeStore"] = None
 

@@ -35,6 +35,7 @@ import type {
   TagTree,
   RegisterResult,
   UserRead,
+  CodeRepositoriesResponse,
   KernelVersionsResponse,
   KernelFileResponse,
   KernelResolveResponse,
@@ -64,6 +65,14 @@ export type {
 // 开发环境：Vite 代理 /api -> localhost:8000
 // 生产环境：FastAPI 挂载前端在 /app/，API 在 /api/
 const API_BASE = '/api';
+
+function encodeCodePath(path: string): string {
+  return path
+    .split('/')
+    .filter(Boolean)
+    .map(encodeURIComponent)
+    .join('/');
+}
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -1248,6 +1257,19 @@ export async function getKernelVersions(
   );
 }
 
+export async function getCodeRepositories(): Promise<CodeRepositoriesResponse> {
+  return fetchJSON<CodeRepositoriesResponse>(`${API_BASE}/code/repositories`);
+}
+
+export async function getCodeVersions(
+  repoId: string,
+  filter: 'release' | 'all' = 'release',
+): Promise<KernelVersionsResponse> {
+  return fetchJSON<KernelVersionsResponse>(
+    `${API_BASE}/code/${encodeURIComponent(repoId)}/versions?filter=${filter}`
+  );
+}
+
 export async function getKernelFile(
   version: string,
   path: string,
@@ -1255,6 +1277,18 @@ export async function getKernelFile(
 ): Promise<KernelFileResponse> {
   return fetchJSON<KernelFileResponse>(
     `${API_BASE}/kernel/file/${encodeURIComponent(version)}/${path}`,
+    signal ? { signal } : undefined,
+  );
+}
+
+export async function getCodeFile(
+  repoId: string,
+  version: string,
+  path: string,
+  signal?: AbortSignal,
+): Promise<KernelFileResponse> {
+  return fetchJSON<KernelFileResponse>(
+    `${API_BASE}/code/${encodeURIComponent(repoId)}/file/${encodeURIComponent(version)}/${encodeCodePath(path)}`,
     signal ? { signal } : undefined,
   );
 }
@@ -1281,7 +1315,31 @@ export async function getKernelTree(
   };
 }
 
+export async function getCodeTree(
+  repoId: string,
+  version: string,
+  path: string = '',
+  signal?: AbortSignal,
+): Promise<KernelTreeResponse> {
+  const suffix = path ? `/${encodeCodePath(path)}` : '';
+  type RawKernelTreeResponse = Omit<KernelTreeResponse, 'entries'> & {
+    entries: Array<Omit<KernelTreeResponse['entries'][number], 'type'> & { type: 'file' | 'directory' | 'dir' }>;
+  };
+  const tree = await fetchJSON<RawKernelTreeResponse>(
+    `${API_BASE}/code/${encodeURIComponent(repoId)}/tree/${encodeURIComponent(version)}${suffix}`,
+    signal ? { signal } : undefined,
+  );
+  return {
+    ...tree,
+    entries: tree.entries.map((entry) => ({
+      ...entry,
+      type: entry.type === 'dir' ? 'directory' : entry.type,
+    })),
+  };
+}
+
 const kernelResolveCache = new Map<string, Promise<KernelResolveResponse>>();
+const codeResolveCache = new Map<string, Promise<KernelResolveResponse>>();
 
 export async function resolveKernelSource(
   version: string,
@@ -1304,7 +1362,30 @@ export async function resolveKernelSource(
   return request;
 }
 
+export async function resolveCodeSource(
+  repoId: string,
+  version: string,
+  path: string,
+  line?: number | null,
+): Promise<KernelResolveResponse> {
+  const cacheKey = `${repoId}\n${version}\n${path}\n${line || ''}`;
+  const cached = codeResolveCache.get(cacheKey);
+  if (cached) return cached;
+
+  const params = new URLSearchParams();
+  params.set('version', version);
+  params.set('path', path);
+  if (line && line > 0) params.set('line', String(line));
+  const request = fetchJSON<KernelResolveResponse>(`${API_BASE}/code/${encodeURIComponent(repoId)}/resolve?${params}`).catch((err) => {
+    codeResolveCache.delete(cacheKey);
+    throw err;
+  });
+  codeResolveCache.set(cacheKey, request);
+  return request;
+}
+
 const kernelSymbolResolveCache = new Map<string, Promise<KernelSymbolResolveResponse>>();
+const codeSymbolResolveCache = new Map<string, Promise<KernelSymbolResolveResponse>>();
 
 export async function resolveKernelSymbol(
   version: string,
@@ -1324,6 +1405,28 @@ export async function resolveKernelSymbol(
     throw err;
   });
   kernelSymbolResolveCache.set(cacheKey, request);
+  return request;
+}
+
+export async function resolveCodeSymbol(
+  repoId: string,
+  version: string,
+  symbol: string,
+  limit: number = 10,
+): Promise<KernelSymbolResolveResponse> {
+  const cacheKey = `${repoId}\n${version}\n${symbol}\n${limit}`;
+  const cached = codeSymbolResolveCache.get(cacheKey);
+  if (cached) return cached;
+
+  const params = new URLSearchParams();
+  params.set('version', version);
+  params.set('symbol', symbol);
+  params.set('limit', String(limit));
+  const request = fetchJSON<KernelSymbolResolveResponse>(`${API_BASE}/code/${encodeURIComponent(repoId)}/symbol-resolve?${params}`).catch((err) => {
+    codeSymbolResolveCache.delete(cacheKey);
+    throw err;
+  });
+  codeSymbolResolveCache.set(cacheKey, request);
   return request;
 }
 

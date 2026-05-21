@@ -4,7 +4,15 @@ import pytest
 from fastapi import HTTPException
 
 from src.api import state
-from src.api.routers.kernel import _history_entry, _normalize_commit_hash, kernel_resolve, kernel_symbol_resolve
+from src.api.routers.kernel import (
+    _history_entry,
+    _normalize_commit_hash,
+    code_repositories,
+    code_resolve,
+    code_symbol_resolve,
+    kernel_resolve,
+    kernel_symbol_resolve,
+)
 from src.kernel_source.elixir import ElixirSource
 from src.kernel_source.base import BaseKernelSource, FileContent, TreeEntry, VersionInfo
 
@@ -29,8 +37,10 @@ class FakeKernelSource(BaseKernelSource):
 @pytest.fixture(autouse=True)
 def restore_kernel_state(monkeypatch):
     monkeypatch.setattr(state, "_app_config", {})
+    monkeypatch.setattr(state, "_code_repositories", {})
     yield
     monkeypatch.setattr(state, "_kernel_source", None)
+    monkeypatch.setattr(state, "_code_repositories", {})
 
 
 def test_kernel_resolve_returns_local_code_browser_url(monkeypatch):
@@ -64,6 +74,141 @@ async def _test_kernel_resolve_returns_local_code_browser_url(monkeypatch):
     assert result["path"] == "mm/vmscan.c"
     assert result["line"] == 12
     assert result["fallback_reason"] is None
+
+
+def test_code_repositories_lists_configured_repositories(monkeypatch):
+    monkeypatch.setattr(
+        state,
+        "_code_repositories",
+        {
+            "linux": {
+                "id": "linux",
+                "name": "Linux Kernel",
+                "default_version": "v6.8",
+                "elixir_base": "https://elixir.bootlin.com/linux",
+                "source": FakeKernelSource(),
+            },
+            "qemu": {
+                "id": "qemu",
+                "name": "QEMU",
+                "default_version": "master",
+                "elixir_base": "https://elixir.bootlin.com/qemu",
+                "source": FakeKernelSource(),
+            },
+        },
+    )
+
+    result = code_repositories()
+
+    assert [repo["id"] for repo in result["repositories"]] == ["linux", "qemu"]
+    assert result["repositories"][1]["name"] == "QEMU"
+    assert result["repositories"][1]["default_version"] == "master"
+    assert result["repositories"][1]["elixir_base"] == "https://elixir.bootlin.com/qemu"
+
+
+def test_code_resolve_returns_repo_specific_local_url(monkeypatch):
+    asyncio.run(_test_code_resolve_returns_repo_specific_local_url(monkeypatch))
+
+
+async def _test_code_resolve_returns_repo_specific_local_url(monkeypatch):
+    monkeypatch.setattr(
+        state,
+        "_code_repositories",
+        {
+            "qemu": {
+                "id": "qemu",
+                "name": "QEMU",
+                "default_version": "master",
+                "elixir_base": "https://elixir.bootlin.com/qemu",
+                "source": FakeKernelSource(
+                    {
+                        ("master", "hw/core/machine.c"): FileContent(
+                            path="hw/core/machine.c",
+                            version="master",
+                            content="void machine_run_board_init(void) {}\n",
+                            line_count=1,
+                            size=37,
+                            truncated=False,
+                        )
+                    }
+                ),
+            }
+        },
+    )
+
+    result = await code_resolve(repo_id="qemu", version="master", path="/hw/core/machine.c", line=42)
+
+    assert result["source"] == "local"
+    assert result["url"] == "/app/code/qemu?v=master&path=hw%2Fcore%2Fmachine.c&line=42"
+    assert result["external_url"] == "https://elixir.bootlin.com/qemu/master/source/hw/core/machine.c#L42"
+    assert result["external_source"] == "elixir"
+    assert result["path"] == "hw/core/machine.c"
+
+
+def test_code_resolve_rejects_unknown_repository(monkeypatch):
+    asyncio.run(_test_code_resolve_rejects_unknown_repository(monkeypatch))
+
+
+async def _test_code_resolve_rejects_unknown_repository(monkeypatch):
+    monkeypatch.setattr(state, "_code_repositories", {})
+
+    with pytest.raises(HTTPException) as exc_info:
+        await code_resolve(repo_id="ovs", version="master", path="lib/ofp-actions.c", line=None)
+
+    assert exc_info.value.status_code == 404
+    assert "Unknown code repository" in exc_info.value.detail
+
+
+def test_code_symbol_resolve_uses_repo_elixir_base(monkeypatch):
+    asyncio.run(_test_code_symbol_resolve_uses_repo_elixir_base(monkeypatch))
+
+
+async def _test_code_symbol_resolve_uses_repo_elixir_base(monkeypatch):
+    monkeypatch.setattr(
+        state,
+        "_code_repositories",
+        {
+            "qemu": {
+                "id": "qemu",
+                "name": "QEMU",
+                "default_version": "master",
+                "elixir_base": "https://elixir.bootlin.com/qemu",
+                "source": FakeKernelSource(
+                    {
+                        ("master", "hw/core/machine.c"): FileContent(
+                            path="hw/core/machine.c",
+                            version="master",
+                            content="void machine_run_board_init(void) {}\n",
+                            line_count=1,
+                            size=37,
+                            truncated=False,
+                        )
+                    }
+                ),
+            }
+        },
+    )
+
+    async def fake_resolve_symbol(self, version: str, symbol: str, limit: int = 10):
+        assert self._base_url == "https://elixir.bootlin.com/qemu"
+        assert version == "master"
+        assert symbol == "machine_run_board_init"
+        return [
+            {
+                "version": "master",
+                "path": "hw/core/machine.c",
+                "line": 88,
+                "url": "https://elixir.bootlin.com/qemu/master/source/hw/core/machine.c#L88",
+            }
+        ]
+
+    monkeypatch.setattr(ElixirSource, "resolve_symbol", fake_resolve_symbol)
+
+    result = await code_symbol_resolve(repo_id="qemu", version="master", symbol="machine_run_board_init")
+
+    assert result.query_url == "https://elixir.bootlin.com/qemu/master/ident/machine_run_board_init"
+    assert result.candidates[0].local_url == "/app/code/qemu?v=master&path=hw%2Fcore%2Fmachine.c&line=88"
+    assert result.candidates[0].external_url == "https://elixir.bootlin.com/qemu/master/source/hw/core/machine.c#L88"
 
 
 def test_kernel_resolve_falls_back_to_external_link(monkeypatch):

@@ -721,6 +721,18 @@ export interface KernelVersionsResponse {
   total: number;
 }
 
+export interface CodeRepositoryInfo {
+  id: string;
+  name: string;
+  default_version: string;
+  elixir_base: string | null;
+}
+
+export interface CodeRepositoriesResponse {
+  repositories: CodeRepositoryInfo[];
+  total: number;
+}
+
 
 export interface KernelFileResponse {
   version: string;
@@ -749,7 +761,7 @@ export interface KernelResolveResponse {
   source: 'local' | 'elixir' | 'git.kernel.org';
   url: string;
   external_url: string;
-  external_source: 'elixir' | 'git.kernel.org';
+  external_source: 'local' | 'elixir' | 'git.kernel.org';
   local_file_available: boolean;
   resolved_version: string;
   path: string;

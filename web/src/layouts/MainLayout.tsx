@@ -94,6 +94,7 @@ export default function MainLayout() {
 
   const primaryItems: NavItem[] = [
     { to: '/kernel-code', label: 'Kernel Code', icon: Code2 },
+    { to: '/code/qemu', label: 'QEMU Code', icon: Code2 },
     { to: '/search', label: 'Search', icon: Search },
     { to: '/knowledge', label: 'Knowledge', icon: Library },
   ];

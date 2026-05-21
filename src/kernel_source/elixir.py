@@ -7,6 +7,7 @@
 import logging
 import re
 from urllib.parse import quote
+from urllib.parse import urlparse
 
 import httpx
 
@@ -24,7 +25,7 @@ BASE_URL = "https://elixir.bootlin.com"
 
 # 匹配 tree 页面中的条目行: icon-tree (目录) / icon-blob (文件) — class 和 href 可能分行
 _TREE_ICON_RE = re.compile(r'class="tree-icon\s+(icon-tree|icon-blob)"')
-_HREF_RE = re.compile(r'href="(/linux/[^"]*/([^/"]+))"')
+_HREF_RE = re.compile(r'href="(/(?P<project>[^/"]+)/[^"]*/([^/"]+))"')
 # 匹配文件大小文本（如 "905 bytes"）
 _SIZE_TEXT_RE = re.compile(r'([\d,]+)\s*bytes?')
 # 匹配 source code 页面的代码块
@@ -37,7 +38,7 @@ _CODE_LINE_RE = re.compile(
 )
 # 匹配 ident 页面里指向源码行的链接，保留 path 和行号
 _IDENT_SOURCE_LINK_RE = re.compile(
-    r'href="(?P<href>/linux/(?P<version>[^/]+)/source/(?P<path>[^"#?]+)(?:#L(?P<line>\d+))?)"',
+    r'href="(?P<href>/(?P<project>[^/"]+)/(?P<version>[^/]+)/source/(?P<path>[^"#?]+)(?:#L(?P<line>\d+))?)"',
     re.DOTALL,
 )
 # HTML tag 剥离
@@ -82,8 +83,11 @@ class ElixirSource(BaseKernelSource):
         timeout: HTTP 请求超时秒数。
     """
 
-    def __init__(self, timeout: float = 15):
+    def __init__(self, timeout: float = 15, base_url: str | None = None):
         self._timeout = timeout
+        self._base_url = (base_url or f"{BASE_URL}/linux").rstrip("/")
+        parsed = urlparse(self._base_url)
+        self._project_path = parsed.path.strip("/").split("/", 1)[0] or "linux"
 
     async def list_versions(self, include_rc: bool = False) -> list[VersionInfo]:
         """elixir 不支持列举版本，返回空列表。"""
@@ -231,20 +235,17 @@ class ElixirSource(BaseKernelSource):
         except httpx.RequestError as e:
             raise ValueError(f"Failed to fetch from elixir: {url} — {e}")
 
-    @staticmethod
-    def _build_url(version: str, path: str) -> str:
+    def _build_url(self, version: str, path: str) -> str:
         """构建 elixir 页面 URL。"""
         if path:
-            return f"{BASE_URL}/linux/{version}/source/{path}"
-        return f"{BASE_URL}/linux/{version}/source/"
+            return f"{self._base_url}/{version}/source/{path}"
+        return f"{self._base_url}/{version}/source/"
 
-    @staticmethod
-    def _build_ident_url(version: str, symbol: str) -> str:
+    def _build_ident_url(self, version: str, symbol: str) -> str:
         """构建 elixir ident 页面 URL。"""
-        return f"{BASE_URL}/linux/{quote(version, safe='')}/ident/{quote(symbol, safe='')}"
+        return f"{self._base_url}/{quote(version, safe='')}/ident/{quote(symbol, safe='')}"
 
-    @staticmethod
-    def _parse_symbol_candidates(version: str, html: str) -> list[dict]:
+    def _parse_symbol_candidates(self, version: str, html: str) -> list[dict]:
         """从 ident 页面中提取源码候选项。
 
         返回值保留 path 和 line，前端可以据此拼出本地 Code Browser 跳转。
@@ -253,6 +254,8 @@ class ElixirSource(BaseKernelSource):
         seen: set[tuple[str, int]] = set()
 
         for match in _IDENT_SOURCE_LINK_RE.finditer(html):
+            if match.group("project") != self._project_path:
+                continue
             href_version = match.group("version")
             if href_version != version:
                 continue
@@ -270,7 +273,7 @@ class ElixirSource(BaseKernelSource):
                     "version": version,
                     "path": path,
                     "line": line,
-                    "url": f"{BASE_URL}/linux/{quote(version, safe='')}/source/{path}#L{line}",
+                    "url": f"{self._base_url}/{quote(version, safe='')}/source/{path}#L{line}",
                 }
             )
 

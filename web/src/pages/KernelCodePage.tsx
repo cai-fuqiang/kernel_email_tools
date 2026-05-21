@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   BookOpenText,
   ChevronRight,
@@ -23,14 +23,16 @@ import {
 import {
   getEntitiesByMessageId,
   getTargetTags,
+  getCodeFile,
+  getCodeRepositories,
+  getCodeTree,
+  getCodeVersions,
   getCodeAnnotations,
-  getKernelFile,
-  getKernelTree,
-  getKernelVersions,
   getThread,
-  resolveKernelSymbol,
+  resolveCodeSymbol,
 } from '../api/client';
 import type {
+  CodeRepositoryInfo,
   CodeAnnotation,
   KnowledgeEntity,
   KernelFileResponse,
@@ -72,6 +74,8 @@ import {
 import {
   elixirIdentUrl,
   isLikelyCIdentifier,
+  codeBrowserPath,
+  bootlinSourceUrl,
   kernelAnnotationPreviewPath,
   kernelCodePath,
   pickKernelSourceUrl,
@@ -292,6 +296,7 @@ function codeFenceLanguage(filePath: string): string {
 }
 
 export function buildKernelCodeSelectionMarkdownDragPayload({
+  repoId = 'linux',
   version,
   filePath,
   rangeLabel,
@@ -299,6 +304,7 @@ export function buildKernelCodeSelectionMarkdownDragPayload({
   selectedText,
   origin,
 }: {
+  repoId?: string;
   version: string;
   filePath: string;
   rangeLabel: string;
@@ -307,7 +313,7 @@ export function buildKernelCodeSelectionMarkdownDragPayload({
   origin?: string;
 }): MarkdownDragPayload {
   const baseOrigin = origin ?? (typeof window !== 'undefined' ? window.location.origin : '');
-  const url = `${baseOrigin}/app${kernelCodePath(version, filePath, startLine)}`;
+  const url = `${baseOrigin}/app${codeBrowserPath(repoId, version, filePath, startLine)}`;
   const language = codeFenceLanguage(filePath);
   const markdown = [
     `[code: ${filePath} ${rangeLabel}](${url})`,
@@ -339,14 +345,18 @@ function inspectorViewCount(
   return null;
 }
 
-export default function KernelCodePage() {
+export default function KernelCodePage({ repoId: explicitRepoId }: { repoId?: string } = {}) {
   const navigate = useNavigate();
+  const routeParams = useParams<{ repoId?: string }>();
+  const repoId = explicitRepoId || routeParams.repoId || 'linux';
+  const isKernelRepo = repoId === 'linux';
   const [searchParams, setSearchParams] = useSearchParams();
   const urlVersion = searchParams.get('v') || '';
   const urlPath = searchParams.get('path') || '';
   const urlLine = parseInt(searchParams.get('line') || '0', 10) || null;
   const urlAnnotationId = searchParams.get('annotation') || null;
 
+  const [repositories, setRepositories] = useState<CodeRepositoryInfo[]>([]);
   const [versions, setVersions] = useState<KernelVersionInfo[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(true);
   const [selectedVersion, setSelectedVersion] = useState(urlVersion);
@@ -379,6 +389,13 @@ export default function KernelCodePage() {
     try { return localStorage.getItem('kernel-code-insp-collapsed') === '1'; } catch { return false; }
   });
   const [inspectorView, setInspectorView] = useState<InspectorView>('overview');
+  const visibleInspectorViews = useMemo<InspectorView[]>(
+    () => (isKernelRepo ? (Object.keys(INSPECTOR_VIEW_LABELS) as InspectorView[]) : ['overview']),
+    [isKernelRepo],
+  );
+  useEffect(() => {
+    if (!visibleInspectorViews.includes(inspectorView)) setInspectorView('overview');
+  }, [inspectorView, visibleInspectorViews]);
   useEffect(() => {
     try { localStorage.setItem('kernel-code-nav-collapsed', navigatorCollapsed ? '1' : '0'); } catch { /* noop */ }
   }, [navigatorCollapsed]);
@@ -456,6 +473,12 @@ export default function KernelCodePage() {
   const fileAbortRef = useRef<AbortController | null>(null);
   const treeAbortRef = useRef<AbortController | null>(null);
 
+  const activeRepository = useMemo(
+    () => repositories.find((repo) => repo.id === repoId) || null,
+    [repositories, repoId],
+  );
+  const repositoryName = activeRepository?.name || (repoId === 'linux' ? 'Kernel' : repoId.toUpperCase());
+
   const nextPathRequestId = useCallback(() => {
     pathRequestIdRef.current += 1;
     return pathRequestIdRef.current;
@@ -489,14 +512,19 @@ export default function KernelCodePage() {
 
   useEffect(() => {
     setVersionsLoading(true);
-    getKernelVersions('all')
+    getCodeRepositories()
       .then((res) => {
-        setVersions(res.versions);
-        setSelectedVersion((current) => current || res.versions[0]?.tag || '');
+        setRepositories(res.repositories);
+        return getCodeVersions(repoId, 'all').then((versionRes) => ({ repositories: res.repositories, versionRes }));
+      })
+      .then((res) => {
+        setVersions(res.versionRes.versions);
+        const repo = res.repositories.find((item) => item.id === repoId);
+        setSelectedVersion((current) => current || repo?.default_version || res.versionRes.versions[0]?.tag || '');
       })
       .catch((e) => showToast(e.message, 'error'))
       .finally(() => setVersionsLoading(false));
-  }, []);
+  }, [repoId]);
 
   const sortEntries = useCallback(
     (entries: KernelTreeEntry[]) =>
@@ -513,7 +541,7 @@ export default function KernelCodePage() {
     if (!selectedVersion) return;
     setTreeLoading(true);
     try {
-      const res = await getKernelTree(selectedVersion, path, options?.signal);
+      const res = await getCodeTree(repoId, selectedVersion, path, options?.signal);
       const sorted = sortEntries(res.entries);
       setTreeCache((prev) => ({ ...prev, [res.path]: sorted }));
       return { path: res.path, entries: sorted };
@@ -526,7 +554,7 @@ export default function KernelCodePage() {
     } finally {
       setTreeLoading(false);
     }
-  }, [selectedVersion, sortEntries]);
+  }, [repoId, selectedVersion, sortEntries]);
 
   const ensureTreeLoaded = useCallback(
     async (path: string = '', signal?: AbortSignal) => {
@@ -633,8 +661,10 @@ export default function KernelCodePage() {
     );
     try {
       const [fileRes, annotRes] = await Promise.all([
-        getKernelFile(activeVersion, path, fileAbort.signal),
-        getCodeAnnotations(activeVersion, path, fileAbort.signal).catch(() => [] as CodeAnnotation[]),
+        getCodeFile(repoId, activeVersion, path, fileAbort.signal),
+        isKernelRepo
+          ? getCodeAnnotations(activeVersion, path, fileAbort.signal).catch(() => [] as CodeAnnotation[])
+          : Promise.resolve([] as CodeAnnotation[]),
       ]);
       if (requestId !== pathRequestIdRef.current) return false;
       const focusLine = clampRequestedLine(requestedLine, fileRes.line_count);
@@ -661,7 +691,7 @@ export default function KernelCodePage() {
         setFileLoading(false);
       }
     }
-  }, [abortPathRequests, expandAncestors, nextPathRequestId, selectedVersion, setSearchParams, urlLine]);
+  }, [abortPathRequests, expandAncestors, isKernelRepo, nextPathRequestId, repoId, selectedVersion, setSearchParams, urlLine]);
 
   const openPath = useCallback(
     async (path: string, targetLine?: number | null) => {
@@ -806,8 +836,25 @@ export default function KernelCodePage() {
     [currentPath],
   );
 
+  const pickRepositorySourceUrl = useCallback(
+    (path: string, line?: number) => {
+      if (isKernelRepo) return pickKernelSourceUrl(selectedVersion, path, line);
+      if (!activeRepository?.elixir_base) return null;
+      return {
+        url: bootlinSourceUrl(
+          activeRepository.elixir_base,
+          selectedVersion || activeRepository.default_version,
+          path,
+          line,
+        ),
+        source: 'elixir' as const,
+      };
+    },
+    [activeRepository?.default_version, activeRepository?.elixir_base, isKernelRepo, selectedVersion],
+  );
+
   const currentExternal = currentPath
-    ? pickKernelSourceUrl(selectedVersion, currentPath, isFileView ? focusLine || undefined : undefined)
+    ? pickRepositorySourceUrl(currentPath, isFileView ? focusLine || undefined : undefined)
     : null;
 
   const fileFacts = currentFile
@@ -884,7 +931,7 @@ export default function KernelCodePage() {
   }, [currentPathKind, isDirectoryView, relatedAnnotations.length, selectedLines.size, selectedSymbol]);
 
   useEffect(() => {
-    if (!selectedTargetRef || !selectedTargetAnchor || !selectedTargetAnchorExpanded) {
+    if (!isKernelRepo || !selectedTargetRef || !selectedTargetAnchor || !selectedTargetAnchorExpanded) {
       setTargetDirectTags([]);
       setTargetAggregatedTags([]);
       return;
@@ -915,7 +962,7 @@ export default function KernelCodePage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedTargetAnchor, selectedTargetAnchorExpanded, selectedTargetRef]);
+  }, [isKernelRepo, selectedTargetAnchor, selectedTargetAnchorExpanded, selectedTargetRef]);
 
   useEffect(() => {
     if (relatedThreadRefs.length === 0) {
@@ -1287,6 +1334,7 @@ export default function KernelCodePage() {
       return;
     }
     const payload = buildKernelCodeSelectionMarkdownDragPayload({
+      repoId,
       version: selectedVersion,
       filePath: currentPath,
       rangeLabel: selectedRangeLabel,
@@ -1332,7 +1380,7 @@ export default function KernelCodePage() {
           const entryPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
           const isExpanded = expandedTreePaths.has(entryPath);
           const isActive = entryPath === currentPath;
-          const entryPicked = !isDirectory ? pickKernelSourceUrl(selectedVersion, entryPath) : null;
+          const entryPicked = !isDirectory ? pickRepositorySourceUrl(entryPath) : null;
           return (
             <div key={entryPath}>
               <div
@@ -1518,7 +1566,7 @@ export default function KernelCodePage() {
       error: null,
     });
 
-    resolveKernelSymbol(selectedVersion || 'latest', symbol)
+    resolveCodeSymbol(repoId, selectedVersion || activeRepository?.default_version || 'latest', symbol)
       .then((result) => {
         if (cancelled) return;
         setSymbolResolve({
@@ -1542,7 +1590,7 @@ export default function KernelCodePage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedVersion, symbolPopoverSymbol]);
+  }, [activeRepository?.default_version, repoId, selectedVersion, symbolPopoverSymbol]);
 
   useEffect(() => {
     const candidates = symbolResolve?.result?.candidates || [];
@@ -1561,7 +1609,7 @@ export default function KernelCodePage() {
           if (!candidate.local_file_available) return [key, null] as const;
 
           try {
-            const file = await getKernelFile(candidate.version, candidate.path);
+            const file = await getCodeFile(repoId, candidate.version, candidate.path);
             const lines = file.content.split('\n');
             return [key, detectNearestSymbol(lines, candidate.line)] as const;
           } catch {
@@ -1579,7 +1627,7 @@ export default function KernelCodePage() {
     return () => {
       cancelled = true;
     };
-  }, [symbolResolve?.result]);
+  }, [repoId, symbolResolve?.result]);
 
   async function handleCopyScript() {
     try {
@@ -1616,7 +1664,7 @@ export default function KernelCodePage() {
   }
 
   async function handleAnnotationCreated() {
-    if (!selectedVersion || !currentPath) return;
+    if (!isKernelRepo || !selectedVersion || !currentPath) return;
     try {
       const annotRes = await getCodeAnnotations(selectedVersion, currentPath);
       setAnnotations(annotRes);
@@ -1643,6 +1691,17 @@ export default function KernelCodePage() {
 
   function handlePreviewOpenPage() {
     if (!symbolQuickPreview) return;
+    if (!isKernelRepo) {
+      navigate(
+        codeBrowserPath(
+          repoId,
+          symbolQuickPreview.candidate.version,
+          symbolQuickPreview.candidate.path,
+          symbolQuickPreview.candidate.line,
+        ),
+      );
+      return;
+    }
     navigate(
       kernelSymbolPreviewPath(
         symbolQuickPreview.candidate.version,
@@ -1721,7 +1780,7 @@ export default function KernelCodePage() {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
               <div className="flex items-center gap-2.5 text-sm font-semibold text-slate-950">
                 <FileCode2 className="h-4 w-4 text-sky-700" />
-                Code Atlas
+                {repositoryName} Code
               </div>
               <div className="hidden items-center gap-1 rounded-lg border border-slate-300 bg-slate-100 p-1 xl:flex">
                 <button
@@ -1754,6 +1813,9 @@ export default function KernelCodePage() {
                       onChange={(e) => handleVersionSelect(e.target.value)}
                       className="rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-950 outline-none transition focus:border-sky-500"
                     >
+                      {selectedVersion && !filteredVersions.some((version) => version.tag === selectedVersion) && (
+                        <option value={selectedVersion}>{selectedVersion}</option>
+                      )}
                       {filteredVersions.map((version) => (
                         <option key={version.tag} value={version.tag}>
                           {version.tag}
@@ -1782,7 +1844,7 @@ export default function KernelCodePage() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleLoadFile();
                 }}
-                placeholder="Open a kernel path, for example mm/mmap.c"
+                placeholder={isKernelRepo ? 'Open a kernel path, for example mm/mmap.c' : 'Open a source path, for example hw/core/machine.c'}
                 className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-950 outline-none transition placeholder:text-slate-500 focus:border-sky-500"
               />
               <SecondaryButton className="px-3 py-2" onClick={handleLoadFile} disabled={!isValidFilePath(pathInput) || fileLoading}>
@@ -1799,10 +1861,12 @@ export default function KernelCodePage() {
                   Source
                 </a>
               )}
-              <SecondaryButton className="px-3 py-2" onClick={handleCopyScript}>
-                <Copy className="h-4 w-4" />
-                {scriptCopied ? 'Copied' : 'Userscript'}
-              </SecondaryButton>
+              {isKernelRepo && (
+                <SecondaryButton className="px-3 py-2" onClick={handleCopyScript}>
+                  <Copy className="h-4 w-4" />
+                  {scriptCopied ? 'Copied' : 'Userscript'}
+                </SecondaryButton>
+              )}
             </div>
           </div>
 
@@ -1813,7 +1877,7 @@ export default function KernelCodePage() {
                 <StatusBadge tone="info">{currentFile.line_count.toLocaleString()} lines</StatusBadge>
                 <StatusBadge tone="muted">{formatBytes(currentFile.size)}</StatusBadge>
                 {currentFile.truncated && <StatusBadge tone="warning">Truncated</StatusBadge>}
-                <StatusBadge tone="success">{annotations.length} annotations</StatusBadge>
+                {isKernelRepo && <StatusBadge tone="success">{annotations.length} annotations</StatusBadge>}
               </>
             )}
           </div>
@@ -2028,7 +2092,7 @@ export default function KernelCodePage() {
                           activeAnnotationId,
                         });
                         const isActiveAnnotationLine = marker.active;
-                        const linePicked = pickKernelSourceUrl(selectedVersion, currentPath, lineNum);
+                        const linePicked = pickRepositorySourceUrl(currentPath, lineNum);
                         return (
                           <div
                             key={lineNum}
@@ -2083,16 +2147,20 @@ export default function KernelCodePage() {
                             <div className="whitespace-pre py-0.5 pr-8 text-slate-900">
                               {renderHighlightedLine(line)}
                             </div>
-                            <a
-                              href={linePicked.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="flex items-center justify-center text-slate-600 opacity-0 transition hover:text-sky-800 group-hover:opacity-100"
-                              title={`Open line ${lineNum} upstream`}
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
+                            {linePicked ? (
+                              <a
+                                href={linePicked.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex items-center justify-center text-slate-600 opacity-0 transition hover:text-sky-800 group-hover:opacity-100"
+                                title={`Open line ${lineNum} upstream`}
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            ) : (
+                              <span />
+                            )}
                           </div>
                         );
                       })}
@@ -2161,7 +2229,7 @@ export default function KernelCodePage() {
 
                       <div className="border-b border-slate-200 px-4 py-2">
                         <div className="flex flex-wrap gap-2">
-                          {(Object.keys(INSPECTOR_VIEW_LABELS) as InspectorView[]).map((view) => {
+                          {visibleInspectorViews.map((view) => {
                             const active = inspectorView === view;
                             const count = inspectorViewCount(view, {
                               annotations: annotations.length,
@@ -2216,7 +2284,7 @@ export default function KernelCodePage() {
                                 <MetaRow label="path" value={currentPath || '—'} />
                                 <MetaRow label="range" value={selectedRangeLabel} />
                                 <MetaRow label="symbol" value={selectedSymbol || 'Not inferred'} />
-                                <MetaRow label="repo" value="linux" />
+                                <MetaRow label="repo" value={repositoryName} />
                                 <MetaRow
                                   label="related"
                                   value={`${relatedAnnotations.length} annotations · ${selectedLines.size > 0 ? 'selection pinned' : 'browse mode'}`}
@@ -2226,7 +2294,11 @@ export default function KernelCodePage() {
                               <div className="mt-4 grid gap-2">
                                 {selectedSymbol && (
                                   <a
-                                    href={elixirIdentUrl(selectedVersion || 'latest', selectedSymbol)}
+                                    href={
+                                      activeRepository?.elixir_base
+                                        ? `${activeRepository.elixir_base.replace(/\/+$/, '')}/${encodeURIComponent(selectedVersion || activeRepository.default_version)}/ident/${encodeURIComponent(selectedSymbol)}`
+                                        : elixirIdentUrl(selectedVersion || 'latest', selectedSymbol)
+                                    }
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-xs font-medium text-slate-900 transition hover:border-slate-300 hover:bg-slate-200"
@@ -2238,7 +2310,7 @@ export default function KernelCodePage() {
                               </div>
                             </div>
 
-                            {currentFile && selectedRange && (
+                            {isKernelRepo && currentFile && selectedRange && (
                               <div className="rounded-xl border border-slate-200 bg-white p-4">
                                 <div className="flex items-center justify-between gap-2">
                                   <div>

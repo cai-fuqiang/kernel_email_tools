@@ -9,4 +9,12 @@ describe('MainLayout navigation', () => {
 
     expect(source).toContain("to: '/tags'");
   });
+
+  it('exposes a QEMU code navigation entry', () => {
+    const filePath = resolve(import.meta.dirname, '..', 'MainLayout.tsx');
+    const source = readFileSync(filePath, 'utf8');
+
+    expect(source).toContain("to: '/code/qemu'");
+    expect(source).toContain("label: 'QEMU Code'");
+  });
 });

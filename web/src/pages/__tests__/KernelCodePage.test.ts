@@ -33,4 +33,18 @@ describe('buildKernelCodeSelectionMarkdownDragPayload', () => {
     expect(payload.markdown).toContain('static int example(void)');
     expect(payload.plainText).toBe(payload.markdown);
   });
+
+  it('can build a fenced code preview for a configured non-kernel repository', () => {
+    const payload = buildKernelCodeSelectionMarkdownDragPayload({
+      repoId: 'qemu',
+      version: 'master',
+      filePath: 'hw/core/machine.c',
+      rangeLabel: 'L88',
+      startLine: 88,
+      selectedText: 'void machine_run_board_init(void)',
+      origin: 'http://aliyun.cloud.vm:8080',
+    });
+
+    expect(payload.markdown).toContain('[code: hw/core/machine.c L88](http://aliyun.cloud.vm:8080/app/code/qemu?v=master&path=hw%2Fcore%2Fmachine.c&line=88)');
+  });
 });

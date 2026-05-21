@@ -104,6 +104,59 @@ def _local_code_url(version: str, path: str, line: int | None = None) -> str:
     return f"/app/kernel-code?{params}"
 
 
+def _local_code_repo_url(repo_id: str, version: str, path: str, line: int | None = None) -> str:
+    if repo_id == "linux":
+        return _local_code_url(version, path, line)
+    params = f"v={quote(version, safe='')}&path={quote(path, safe='')}"
+    if line and line > 0:
+        params += f"&line={line}"
+    return f"/app/code/{quote(repo_id, safe='')}?{params}"
+
+
+def _bootlin_source_url(base_url: str, version: str, path: str, line: int | None = None) -> str:
+    url = f"{base_url.rstrip('/')}/{quote(version, safe='')}/source/{_encode_kernel_path(path)}"
+    if line and line > 0:
+        url += f"#L{line}"
+    return url
+
+
+def _bootlin_ident_url(base_url: str, version: str, symbol: str) -> str:
+    return f"{base_url.rstrip('/')}/{quote(version, safe='')}/ident/{quote(symbol, safe='')}"
+
+
+def _default_linux_repo() -> dict | None:
+    if not state._kernel_source:
+        return None
+    return {
+        "id": "linux",
+        "name": "Linux Kernel",
+        "default_version": "latest",
+        "elixir_base": (_external_links_cfg().get("elixir_base") or "https://elixir.bootlin.com/linux").rstrip("/"),
+        "source": state._kernel_source,
+    }
+
+
+def _get_code_repo(repo_id: str) -> dict:
+    normalized = repo_id.strip()
+    if not re.match(r"^[A-Za-z0-9_.-]{1,64}$", normalized):
+        raise HTTPException(status_code=404, detail="Unknown code repository")
+    repo = state._code_repositories.get(normalized)
+    if not repo and normalized == "linux":
+        repo = _default_linux_repo()
+    if not repo:
+        raise HTTPException(status_code=404, detail=f"Unknown code repository: {normalized}")
+    return repo
+
+
+def _repo_public_info(repo: dict) -> dict:
+    return {
+        "id": repo["id"],
+        "name": repo.get("name") or repo["id"],
+        "default_version": repo.get("default_version") or "master",
+        "elixir_base": repo.get("elixir_base"),
+    }
+
+
 def _local_git_source():
     if not state._kernel_source:
         raise HTTPException(status_code=503, detail="Kernel source not initialized")
@@ -796,26 +849,6 @@ async def kernel_file(version: str, path: str):
     }
 
 
-
-
-class CodeAnnotationCreateRequest(BaseModel):
-    """创建代码注释请求。"""
-    version: str = Field(..., description="内核版本 tag")
-    file_path: str = Field(..., description="文件相对路径")
-    start_line: int = Field(..., ge=1, description="起始行号")
-    end_line: int = Field(..., ge=1, description="结束行号")
-    body: str = Field(..., min_length=1, description="注释正文（支持 Markdown）")
-    author: Optional[str] = Field(None, description="作者名称")
-    visibility: str = Field("public", description="public | private")
-    in_reply_to: Optional[str] = Field(None, description="回复的父 annotation_id")
-
-
-class CodeAnnotationUpdateRequest(BaseModel):
-    """更新代码注释请求。"""
-    body: str = Field(..., min_length=1, description="注释正文")
-    visibility: Optional[str] = Field(None, description="public | private")
-
-
 class KernelSymbolCandidateResponse(BaseModel):
     version: str
     path: str
@@ -834,6 +867,242 @@ class KernelSymbolResolveResponse(BaseModel):
     resolved: bool
     candidates: list[KernelSymbolCandidateResponse]
     fallback_reason: str | None = None
+
+
+@router.get("/api/code/repositories")
+def code_repositories():
+    repos = list(state._code_repositories.values())
+    if not any(repo.get("id") == "linux" for repo in repos):
+        linux_repo = _default_linux_repo()
+        if linux_repo:
+            repos.insert(0, linux_repo)
+    return {
+        "repositories": [_repo_public_info(repo) for repo in repos],
+        "total": len(repos),
+    }
+
+
+@router.get("/api/code/{repo_id}/versions")
+async def code_versions(
+    repo_id: str,
+    filter: str = Query("release", description="版本过滤: release(正式版) 或 all(含rc)"),
+):
+    repo = _get_code_repo(repo_id)
+    include_rc = (filter == "all")
+    versions = await repo["source"].list_versions(include_rc=include_rc)
+    return {
+        "versions": [
+            {
+                "tag": v.tag,
+                "major": v.major,
+                "minor": v.minor,
+                "patch": v.patch,
+                "rc": v.rc,
+                "is_release": v.is_release,
+            }
+            for v in versions
+        ],
+        "total": len(versions),
+    }
+
+
+@router.get("/api/code/{repo_id}/tree/{version}/{path:path}")
+async def code_tree(repo_id: str, version: str, path: str = ""):
+    repo = _get_code_repo(repo_id)
+    try:
+        entries = await repo["source"].list_tree(version, path)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {
+        "version": version,
+        "path": path,
+        "entries": [
+            {
+                "name": e.name,
+                "path": e.path,
+                "type": e.entry_type.value,
+                "size": e.size,
+            }
+            for e in entries
+        ],
+        "total": len(entries),
+    }
+
+
+@router.get("/api/code/{repo_id}/tree/{version}")
+async def code_tree_root(repo_id: str, version: str):
+    return await code_tree(repo_id, version, "")
+
+
+@router.get("/api/code/{repo_id}/file/{version}/{path:path}")
+async def code_file(repo_id: str, version: str, path: str):
+    repo = _get_code_repo(repo_id)
+    try:
+        file_content = await repo["source"].get_file(version, path)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {
+        "version": file_content.version,
+        "path": file_content.path,
+        "content": file_content.content,
+        "line_count": file_content.line_count,
+        "size": file_content.size,
+        "truncated": file_content.truncated,
+    }
+
+
+@router.get("/api/code/{repo_id}/resolve")
+async def code_resolve(
+    repo_id: str,
+    version: str = Query(..., min_length=1, description="版本 tag"),
+    path: str = Query(..., min_length=1, description="仓库内相对文件路径"),
+    line: Optional[int] = Query(None, ge=1, description="可选行号"),
+):
+    repo = _get_code_repo(repo_id)
+    normalized_path = _normalize_kernel_path(path)
+    source = repo["source"]
+    local_source = source._primary if isinstance(source, FallbackKernelSource) else source
+    elixir_base = repo.get("elixir_base")
+
+    def external() -> tuple[str, str]:
+        if repo["id"] == "linux":
+            return _fallback_source_url(version, normalized_path, line)
+        if elixir_base:
+            return _bootlin_source_url(elixir_base, version, normalized_path, line), "elixir"
+        return "", ""
+
+    try:
+        file_content = await local_source.get_file(version, normalized_path)
+        fallback_url, fallback_source = external()
+        return {
+            "source": "local",
+            "url": _local_code_repo_url(repo["id"], version, normalized_path, line),
+            "external_url": fallback_url,
+            "external_source": fallback_source or "local",
+            "local_file_available": True,
+            "resolved_version": file_content.version,
+            "path": file_content.path,
+            "line": line,
+            "line_count": file_content.line_count,
+            "fallback_reason": None,
+        }
+    except (FileNotFoundError, ValueError) as e:
+        local_error = str(e)
+
+    fallback_url, fallback_source = external()
+    return {
+        "source": fallback_source or "local",
+        "url": fallback_url,
+        "external_url": fallback_url,
+        "external_source": fallback_source or "local",
+        "local_file_available": False,
+        "resolved_version": version,
+        "path": normalized_path,
+        "line": line,
+        "line_count": None,
+        "fallback_reason": local_error,
+    }
+
+
+@router.get("/api/code/{repo_id}/symbol-resolve", response_model=KernelSymbolResolveResponse)
+async def code_symbol_resolve(
+    repo_id: str,
+    version: str = Query(..., min_length=1, description="版本 tag"),
+    symbol: str = Query(..., min_length=1, description="符号名"),
+    limit: int = Query(10, ge=1, le=20, description="最多返回候选数"),
+):
+    repo = _get_code_repo(repo_id)
+    elixir_base = repo.get("elixir_base")
+    normalized_symbol = _normalize_kernel_symbol(symbol)
+    query_url = _bootlin_ident_url(elixir_base, version, normalized_symbol) if elixir_base else ""
+    if not elixir_base:
+        return KernelSymbolResolveResponse(
+            symbol=normalized_symbol,
+            version=version,
+            query_url=query_url,
+            source="elixir",
+            resolved=False,
+            candidates=[],
+            fallback_reason="Repository has no Elixir base configured",
+        )
+
+    source = repo["source"]
+    local_source = source._primary if isinstance(source, FallbackKernelSource) else source
+    local_available = hasattr(local_source, "get_file")
+    elixir_source = ElixirSource(base_url=elixir_base)
+    try:
+        elixir_candidates = await elixir_source.resolve_symbol(version, normalized_symbol, limit=limit)
+    except FileNotFoundError as e:
+        return KernelSymbolResolveResponse(
+            symbol=normalized_symbol,
+            version=version,
+            query_url=query_url,
+            source="elixir",
+            resolved=False,
+            candidates=[],
+            fallback_reason=str(e),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    candidates: list[KernelSymbolCandidateResponse] = []
+    for candidate in elixir_candidates:
+        candidate_path = _normalize_kernel_path(str(candidate.get("path", "")))
+        candidate_line = int(candidate.get("line") or 0)
+        external_url = str(candidate.get("url") or _bootlin_source_url(elixir_base, version, candidate_path, candidate_line))
+        local_file_available = False
+        if local_available:
+            try:
+                await local_source.get_file(version, candidate_path)  # type: ignore[attr-defined]
+                local_file_available = True
+            except (FileNotFoundError, ValueError):
+                local_file_available = False
+
+        candidates.append(
+            KernelSymbolCandidateResponse(
+                version=str(candidate.get("version") or version),
+                path=candidate_path,
+                line=candidate_line,
+                local_url=_local_code_repo_url(repo["id"], version, candidate_path, candidate_line),
+                external_url=external_url,
+                local_file_available=local_file_available,
+                source="local" if local_file_available else "elixir",
+            )
+        )
+
+    return KernelSymbolResolveResponse(
+        symbol=normalized_symbol,
+        version=version,
+        query_url=query_url,
+        source="elixir",
+        resolved=bool(candidates),
+        candidates=candidates,
+        fallback_reason=None,
+    )
+
+
+
+
+class CodeAnnotationCreateRequest(BaseModel):
+    """创建代码注释请求。"""
+    version: str = Field(..., description="内核版本 tag")
+    file_path: str = Field(..., description="文件相对路径")
+    start_line: int = Field(..., ge=1, description="起始行号")
+    end_line: int = Field(..., ge=1, description="结束行号")
+    body: str = Field(..., min_length=1, description="注释正文（支持 Markdown）")
+    author: Optional[str] = Field(None, description="作者名称")
+    visibility: str = Field("public", description="public | private")
+    in_reply_to: Optional[str] = Field(None, description="回复的父 annotation_id")
+
+
+class CodeAnnotationUpdateRequest(BaseModel):
+    """更新代码注释请求。"""
+    body: str = Field(..., min_length=1, description="注释正文")
+    visibility: Optional[str] = Field(None, description="public | private")
 
 
 @router.get("/api/kernel/resolve")

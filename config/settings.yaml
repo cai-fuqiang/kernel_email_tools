@@ -164,3 +164,15 @@ kernel_source:
     tag_list_ttl: 3600                   # tag 列表缓存 TTL（秒）
     tree_cache_size: 256                 # 目录树 LRU 缓存条目数
     file_cache_size: 128                 # 文件内容 LRU 缓存条目数
+
+# 可配置多仓库源码浏览。新增仓库（如 ovs）按 qemu 的结构增加一段即可。
+code_repositories:
+  qemu:
+    name: QEMU
+    repo_path: /home/wang/workspace/qemu/.git
+    default_version: master
+    elixir_base: https://elixir.bootlin.com/qemu
+    max_file_size: 1048576
+    cache:
+      tree_cache_size: 256
+      file_cache_size: 128

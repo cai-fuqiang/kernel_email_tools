@@ -48,6 +48,26 @@ from src.translator.google_translator import GoogleTranslator, is_available as i
 logger = logging.getLogger(__name__)
 
 
+def _init_git_code_source(repo_path: str, cfg: dict):
+    cache_cfg = cfg.get("cache", {})
+    return GitLocalSource(
+        repo_path=repo_path,
+        max_file_size=cfg.get("max_file_size", 1_048_576),
+        tree_cache_size=cache_cfg.get("tree_cache_size", 256),
+        file_cache_size=cache_cfg.get("file_cache_size", 128),
+    )
+
+
+def _register_code_repository(repo_id: str, cfg: dict, source) -> None:
+    state._code_repositories[repo_id] = {
+        "id": repo_id,
+        "name": cfg.get("name") or repo_id,
+        "default_version": cfg.get("default_version") or cfg.get("version") or "master",
+        "elixir_base": cfg.get("elixir_base"),
+        "source": source,
+    }
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理：启动时初始化组件，关闭时释放资源。"""
@@ -58,6 +78,7 @@ async def lifespan(app: FastAPI):
     indexer_cfg = config.get("indexer", {})
     state._auth_config = config.get("auth", {})
     state._app_config = config
+    state._code_repositories = {}
 
     # ========== 邮件存储初始化 ==========
     email_storage_cfg = storage_cfg.get("email", {})
@@ -184,23 +205,52 @@ async def lifespan(app: FastAPI):
     if kernel_repo_path:
         expanded = os.path.expanduser(kernel_repo_path)
         if os.path.isdir(expanded):
-            cache_cfg = kernel_cfg.get("cache", {})
-            git_source = GitLocalSource(
-                repo_path=kernel_repo_path,
-                max_file_size=kernel_cfg.get("max_file_size", 1_048_576),
-                tree_cache_size=cache_cfg.get("tree_cache_size", 256),
-                file_cache_size=cache_cfg.get("file_cache_size", 128),
+            git_source = _init_git_code_source(kernel_repo_path, kernel_cfg)
+            linux_elixir_base = (
+                kernel_cfg.get("elixir_base")
+                or (config.get("external_links", {}) or {}).get("elixir_base")
+                or "https://elixir.bootlin.com/linux"
             )
-            fallback_source = ElixirSource()
+            fallback_source = ElixirSource(base_url=linux_elixir_base)
             state._kernel_source = FallbackKernelSource(
                 primary=git_source,
                 fallback=fallback_source,
+            )
+            _register_code_repository(
+                "linux",
+                {
+                    "name": "Linux Kernel",
+                    "default_version": kernel_cfg.get("default_version") or "latest",
+                    "elixir_base": linux_elixir_base,
+                },
+                state._kernel_source,
             )
             logger.info("Kernel source initialized: %s", kernel_repo_path)
         else:
             logger.warning("Kernel repo path not found: %s", expanded)
     else:
         logger.warning("Kernel source path not configured")
+
+    for repo_id, repo_cfg in (config.get("code_repositories", {}) or {}).items():
+        if repo_id == "linux":
+            continue
+        repo_path = repo_cfg.get("repo_path", "")
+        if not repo_path:
+            logger.warning("Code repository %s path not configured", repo_id)
+            continue
+        expanded = os.path.expanduser(repo_path)
+        if not os.path.isdir(expanded):
+            logger.warning("Code repository %s path not found: %s", repo_id, expanded)
+            continue
+        git_source = _init_git_code_source(repo_path, repo_cfg)
+        source = git_source
+        if repo_cfg.get("elixir_base"):
+            source = FallbackKernelSource(
+                primary=git_source,
+                fallback=ElixirSource(base_url=repo_cfg["elixir_base"]),
+            )
+        _register_code_repository(repo_id, repo_cfg, source)
+        logger.info("Code repository initialized: %s (%s)", repo_id, repo_path)
 
     yield
 

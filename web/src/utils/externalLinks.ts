@@ -81,11 +81,25 @@ export function kernelCodePath(
   filePath: string,
   line?: number,
 ): string {
+  return codeBrowserPath('linux', version, filePath, line);
+}
+
+/**
+ * 构建可配置仓库的 Code Browser 路径。`linux` 保持旧的 `/kernel-code`
+ * 路由，其它仓库使用 `/code/:repoId`。
+ */
+export function codeBrowserPath(
+  repoId: string,
+  version: string,
+  filePath: string,
+  line?: number,
+): string {
   const params = new URLSearchParams();
   params.set('v', version);
   params.set('path', filePath);
   if (line && line > 0) params.set('line', String(line));
-  return `/kernel-code?${params.toString()}`;
+  if (repoId === 'linux') return `/kernel-code?${params.toString()}`;
+  return `/code/${encodeURIComponent(repoId)}?${params.toString()}`;
 }
 
 /**
@@ -199,9 +213,21 @@ export function elixirSourceUrl(
   filePath: string,
   line?: number,
 ): string {
+  return bootlinSourceUrl(elixirBase(), version, filePath, line);
+}
+
+/**
+ * 构建任意 Bootlin Elixir 项目的源码 URL。
+ */
+export function bootlinSourceUrl(
+  baseUrl: string,
+  version: string,
+  filePath: string,
+  line?: number,
+): string {
   const v = encodeURIComponent(version);
   const p = encodePath(filePath);
-  let url = `${elixirBase()}/${v}/source/${p}`;
+  let url = `${baseUrl.replace(/\/+$/, '')}/${v}/source/${p}`;
   if (line && line > 0) url += `#L${line}`;
   return url;
 }
