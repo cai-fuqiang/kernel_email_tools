@@ -540,8 +540,15 @@ export function buildCodeSymbolCandidateHref(
     'local_file_available' | 'external_url' | 'version' | 'path' | 'line'
   > & { local_url?: string | null },
 ): string {
-  if (!candidate.local_file_available) return candidate.external_url;
+  if (repoId === 'linux' && !candidate.local_file_available) return candidate.external_url;
   return `/app${codeBrowserPath(repoId, candidate.version, candidate.path, candidate.line)}`;
+}
+
+export function isCodeSymbolCandidateLocalJump(
+  repoId: string,
+  candidate: Pick<KernelSymbolCandidateResponse, 'local_file_available'>,
+): boolean {
+  return repoId !== 'linux' || candidate.local_file_available;
 }
 
 function writeMarkdownDragPayload(dataTransfer: DataTransfer, payload: MarkdownDragPayload) {
@@ -2931,17 +2938,17 @@ export default function KernelCodePage({ repoId: explicitRepoId }: { repoId?: st
                   <div className="flex shrink-0 items-center gap-2">
                     <span
                       className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${
-                        candidate.local_file_available
+                        isCodeSymbolCandidateLocalJump(repoId, candidate)
                           ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                           : 'border-amber-200 bg-amber-50 text-amber-700'
                       }`}
                     >
-                      {candidate.local_file_available ? 'Local' : 'Elixir'}
+                      {isCodeSymbolCandidateLocalJump(repoId, candidate) ? 'Local' : 'Elixir'}
                     </span>
                     <a
                       href={buildCodeSymbolCandidateHref(repoId, candidate)}
-                      target={candidate.local_file_available ? '_self' : '_blank'}
-                      rel={candidate.local_file_available ? undefined : 'noopener noreferrer'}
+                      target={isCodeSymbolCandidateLocalJump(repoId, candidate) ? '_self' : '_blank'}
+                      rel={isCodeSymbolCandidateLocalJump(repoId, candidate) ? undefined : 'noopener noreferrer'}
                       onClick={() => setSymbolPopover(null)}
                       className="rounded-md border border-slate-300 bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700 transition hover:border-sky-400 hover:text-sky-800"
                     >

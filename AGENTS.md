@@ -213,6 +213,7 @@ After every feature is complete, ALL AI agents must:
 - 2026-05-21: annotation cards and selected kernel code lines can be dragged out as static Markdown previews with deep links for Obsidian-style notes (web/src/components/AnnotationCard.tsx, web/src/components/kernelCode/AnnotationPanel.tsx, web/src/pages/KernelCodePage.tsx)
 - 2026-05-21: source browser is now repository-configurable via `code_repositories`; `/kernel-code` remains Linux-compatible while `/code/:repoId` supports QEMU and future repos such as OVS (src/api/routers/kernel.py, src/api/server.py, web/src/pages/KernelCodePage.tsx)
 - 2026-05-28: code browser uses one global Code navigation entry with an in-page repository selector, per-repository last-location memory, and repo-aware source links for Linux/QEMU navigation (web/src/pages/KernelCodePage.tsx, web/src/layouts/MainLayout.tsx)
+- 2026-05-28: non-Linux symbol candidate jumps ignore stale Linux Elixir external URLs and route through the active repository code browser instead (web/src/pages/KernelCodePage.tsx)
 
 ---
 
@@ -225,7 +226,7 @@ After every feature is complete, ALL AI agents must:
 <claude-mem-context>
 # Memory Context
 
-# [kernel_email_tools] recent context, 2026-05-28 6:30pm GMT+8
+# [kernel_email_tools] recent context, 2026-05-28 6:37pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE

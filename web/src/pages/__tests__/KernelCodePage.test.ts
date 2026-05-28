@@ -7,6 +7,7 @@ import {
   buildCodeSymbolCandidateHref,
   buildKernelCodeSelectionMarkdownDragPayload,
   buildAnnotationPreviewAtlasPath,
+  isCodeSymbolCandidateLocalJump,
   canRunRepositoryUrlEffects,
   isRepositoryStateResetComplete,
   shouldNotifyRepositoryResetComplete,
@@ -125,6 +126,22 @@ describe('source code route helpers', () => {
       path: 'hw/core/machine.c',
       line: 88,
     })).toBe('/app/code/qemu?v=master&path=hw%2Fcore%2Fmachine.c&line=88');
+  });
+
+  it('keeps non-linux symbol candidate jumps inside the active repository even when external_url points at Linux Elixir', () => {
+    expect(buildCodeSymbolCandidateHref('qemu', {
+      local_file_available: false,
+      local_url: null,
+      external_url: 'https://elixir.bootlin.com/linux/v11.0.0/source/chardev/char-serial.c',
+      version: 'v11.0.0',
+      path: 'chardev/char-serial.c',
+      line: 1,
+    })).toBe('/app/code/qemu?v=v11.0.0&path=chardev%2Fchar-serial.c&line=1');
+  });
+
+  it('treats non-linux symbol candidate jumps as local app navigation', () => {
+    expect(isCodeSymbolCandidateLocalJump('qemu', { local_file_available: false })).toBe(true);
+    expect(isCodeSymbolCandidateLocalJump('linux', { local_file_available: false })).toBe(false);
   });
 });
 
