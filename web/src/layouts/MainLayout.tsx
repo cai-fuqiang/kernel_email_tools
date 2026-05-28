@@ -26,6 +26,7 @@ type NavItem = {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   end?: boolean;
+  activePrefixes?: string[];
 };
 
 function roleTone(role: string) {
@@ -34,13 +35,30 @@ function roleTone(role: string) {
   return 'muted';
 }
 
-function NavSection({ title, items, collapsed = false }: { title: string; items: NavItem[]; collapsed?: boolean }) {
-  const linkClass = ({ isActive }: { isActive: boolean }) =>
+function NavSection({
+  title,
+  items,
+  collapsed = false,
+  pathname,
+}: {
+  title: string;
+  items: NavItem[];
+  collapsed?: boolean;
+  pathname: string;
+}) {
+  const linkClass = (item: NavItem, isActive: boolean) => {
+    const activeByPrefix = item.activePrefixes?.some(
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+    ) ?? false;
+    const active = isActive || activeByPrefix;
+    return (
     `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
-      isActive
+      active
         ? 'bg-slate-900 text-white shadow-sm'
         : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
-    }`;
+    }`
+    );
+  };
 
   return (
     <div>
@@ -58,7 +76,7 @@ function NavSection({ title, items, collapsed = false }: { title: string; items:
               to={item.to}
               end={item.end}
               title={collapsed ? item.label : undefined}
-              className={linkClass}
+              className={({ isActive }) => linkClass(item, isActive)}
             >
               <Icon className="h-4 w-4 shrink-0" />
               {!collapsed && <span className="truncate">{item.label}</span>}
@@ -93,8 +111,7 @@ export default function MainLayout() {
   }, [location.pathname]);
 
   const primaryItems: NavItem[] = [
-    { to: '/kernel-code', label: 'Kernel Code', icon: Code2 },
-    { to: '/code/qemu', label: 'QEMU Code', icon: Code2 },
+    { to: '/kernel-code', label: 'Code', icon: Code2, activePrefixes: ['/code'] },
     { to: '/search', label: 'Search', icon: Search },
     { to: '/knowledge', label: 'Knowledge', icon: Library },
   ];
@@ -165,8 +182,8 @@ export default function MainLayout() {
         </div>
 
         <nav className={collapsed ? 'flex-1 space-y-4 overflow-y-auto px-2 py-4' : 'flex-1 space-y-6 overflow-y-auto p-4'}>
-          <NavSection title="Primary" items={primaryItems} collapsed={collapsed} />
-          <NavSection title="Context" items={contextItems} collapsed={collapsed} />
+          <NavSection title="Primary" items={primaryItems} collapsed={collapsed} pathname={location.pathname} />
+          <NavSection title="Context" items={contextItems} collapsed={collapsed} pathname={location.pathname} />
           {isAdmin && (
             <NavSection
               title="Admin"
@@ -174,6 +191,7 @@ export default function MainLayout() {
                 { to: '/users', label: 'Users', icon: Users },
               ]}
               collapsed={collapsed}
+              pathname={location.pathname}
             />
           )}
         </nav>

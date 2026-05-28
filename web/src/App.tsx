@@ -79,6 +79,7 @@ export default function App() {
                 <Route path="/manual/pdf/:documentId" element={<ManualPdfPage />} />
                 <Route path="/manual/browser" element={<ManualBrowserPage />} />
                 <Route path="/kernel-code" element={<KernelCodePage repoId="linux" />} />
+                <Route path="/code" element={<KernelCodePage repoId="linux" />} />
                 <Route path="/code/:repoId" element={<KernelCodePage />} />
                 <Route path="/kernel-code/preview" element={<KernelSymbolPreviewPage />} />
                 <Route path="/kernel-code/annotation-preview" element={<KernelAnnotationPreviewPage />} />

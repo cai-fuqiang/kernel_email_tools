@@ -10,11 +10,15 @@ describe('MainLayout navigation', () => {
     expect(source).toContain("to: '/tags'");
   });
 
-  it('exposes a QEMU code navigation entry', () => {
+  it('exposes one Code navigation entry for source repositories', () => {
     const filePath = resolve(import.meta.dirname, '..', 'MainLayout.tsx');
     const source = readFileSync(filePath, 'utf8');
 
-    expect(source).toContain("to: '/code/qemu'");
-    expect(source).toContain("label: 'QEMU Code'");
+    expect(source.match(/label: 'Code'/g) ?? []).toHaveLength(1);
+    expect(source).toContain("to: '/kernel-code'");
+    expect(source).toContain("activePrefixes: ['/code']");
+    expect(source).not.toContain("label: 'Kernel Code'");
+    expect(source).not.toContain("to: '/code/qemu'");
+    expect(source).not.toContain("label: 'QEMU Code'");
   });
 });

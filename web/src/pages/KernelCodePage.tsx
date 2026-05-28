@@ -77,7 +77,6 @@ import {
   codeBrowserPath,
   bootlinSourceUrl,
   kernelAnnotationPreviewPath,
-  kernelCodePath,
   pickKernelSourceUrl,
   kernelSymbolPreviewPath,
 } from '../utils/externalLinks';
@@ -280,6 +279,183 @@ export function clampRequestedLine(line: number | null | undefined, lineCount: n
   return Math.min(line, lineCount);
 }
 
+export function codeRepositoryRoutePath(repoId: string): string {
+  return repoId === 'linux' ? '/kernel-code' : `/code/${encodeURIComponent(repoId)}`;
+}
+
+export type RepositoryLocation = {
+  version?: string;
+  path?: string;
+  line?: number | null;
+  annotationId?: string | null;
+};
+
+export function repositoryLocationStorageKey(repoId: string): string {
+  return `code-browser:last-location:${repoId}`;
+}
+
+function browserLocalStorage(): Storage | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    return localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeRepositoryLocation(value: unknown): RepositoryLocation | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  const location: RepositoryLocation = {};
+  let hasSavedTarget = false;
+  if (typeof raw.version === 'string' && raw.version) {
+    location.version = raw.version;
+    hasSavedTarget = true;
+  }
+  if (typeof raw.path === 'string' && raw.path) {
+    location.path = raw.path;
+    hasSavedTarget = true;
+  }
+  if (typeof raw.line === 'number' && Number.isFinite(raw.line) && raw.line > 0) {
+    location.line = raw.line;
+    hasSavedTarget = true;
+  } else if (raw.line === null) {
+    location.line = null;
+  }
+  if (typeof raw.annotationId === 'string' && raw.annotationId) {
+    location.annotationId = raw.annotationId;
+    hasSavedTarget = true;
+  } else if (raw.annotationId === null) {
+    location.annotationId = null;
+  }
+  return hasSavedTarget ? location : null;
+}
+
+export function readSavedRepositoryLocation(repoId: string): RepositoryLocation | null {
+  try {
+    const raw = browserLocalStorage()?.getItem(repositoryLocationStorageKey(repoId));
+    if (!raw) return null;
+    return normalizeRepositoryLocation(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+export function writeSavedRepositoryLocation(repoId: string, location: RepositoryLocation): void {
+  try {
+    const normalized = normalizeRepositoryLocation(location);
+    if (!normalized) return;
+    browserLocalStorage()?.setItem(repositoryLocationStorageKey(repoId), JSON.stringify(normalized));
+  } catch {
+    /* best effort */
+  }
+}
+
+export function buildCodeRepositorySavedLocationRoute(
+  repoId: string,
+  location: RepositoryLocation | null,
+): string {
+  const routePath = codeRepositoryRoutePath(repoId);
+  const normalized = normalizeRepositoryLocation(location);
+  if (!normalized) return routePath;
+
+  const params = new URLSearchParams();
+  if (normalized.version) params.set('v', normalized.version);
+  if (normalized.path) params.set('path', normalized.path);
+  if (normalized.line) params.set('line', String(normalized.line));
+  if (normalized.annotationId) params.set('annotation', normalized.annotationId);
+  const query = params.toString();
+  return query ? `${routePath}?${query}` : routePath;
+}
+
+export function buildRepositoryLocationToPersist({
+  selectedVersion,
+  currentPath,
+  urlVersion,
+  urlPath,
+  urlLine,
+  urlAnnotationId,
+}: {
+  selectedVersion: string;
+  currentPath: string;
+  urlVersion: string;
+  urlPath: string;
+  urlLine: number | null;
+  urlAnnotationId: string | null;
+}): RepositoryLocation {
+  const hasUrlLocation = Boolean(urlVersion || urlPath || urlLine || urlAnnotationId);
+  return {
+    version: selectedVersion || urlVersion || undefined,
+    path: hasUrlLocation ? urlPath : currentPath,
+    line: urlLine,
+    annotationId: urlAnnotationId,
+  };
+}
+
+export function canRunRepositoryUrlEffects({
+  stateRepoId,
+  repoId,
+}: {
+  stateRepoId: string;
+  repoId: string;
+}): boolean {
+  return stateRepoId === repoId;
+}
+
+export function shouldResetRepositoryState({
+  stateRepoId,
+  repoId,
+}: {
+  stateRepoId: string;
+  repoId: string;
+}): boolean {
+  return stateRepoId !== repoId;
+}
+
+export function isRepositoryStateResetComplete({
+  selectedVersion,
+  urlVersion,
+  currentPath,
+  urlPath,
+  currentPathKind,
+  hasCurrentFile,
+}: {
+  selectedVersion: string;
+  urlVersion: string;
+  currentPath: string;
+  urlPath: string;
+  currentPathKind: AtlasPathKind;
+  hasCurrentFile: boolean;
+}): boolean {
+  return selectedVersion === urlVersion && currentPath === urlPath && currentPathKind === null && !hasCurrentFile;
+}
+
+export function shouldNotifyRepositoryResetComplete({
+  stateRepoId,
+  repoId,
+  resetComplete,
+}: {
+  stateRepoId: string;
+  repoId: string;
+  resetComplete: boolean;
+}): boolean {
+  return resetComplete && stateRepoId !== repoId;
+}
+
+export function buildCodeRepositorySelectOptions(
+  repositories: CodeRepositoryInfo[],
+  activeRepoId: string | null | undefined,
+): Array<{ id: string; label: string; value: string; selected: boolean; targetPath: string }> {
+  const selectedRepoId = activeRepoId || 'linux';
+  return repositories.map((repo) => ({
+    id: repo.id,
+    label: repo.name || repo.id,
+    value: repo.id,
+    selected: repo.id === selectedRepoId,
+    targetPath: codeRepositoryRoutePath(repo.id),
+  }));
+}
+
 interface MarkdownDragPayload {
   markdown: string;
   plainText: string;
@@ -327,6 +503,45 @@ export function buildKernelCodeSelectionMarkdownDragPayload({
     plainText: markdown,
     url,
   };
+}
+
+export function buildAnnotationPreviewAtlasPath({
+  repoId,
+  selectedVersion,
+  currentPath,
+  annotation,
+}: {
+  repoId: string;
+  selectedVersion: string;
+  currentPath: string;
+  annotation: Pick<CodeAnnotation, 'version' | 'file_path'> & {
+    line_start?: number | null;
+    start_line?: number | null;
+    anchor?: CodeAnnotation['anchor'];
+  };
+}): string {
+  const previewLine =
+    annotationPreviewStartLine(annotation as CodeAnnotation) ||
+    annotation.start_line ||
+    annotation.line_start ||
+    undefined;
+  return codeBrowserPath(
+    repoId,
+    annotation.version || selectedVersion,
+    annotation.file_path || currentPath,
+    previewLine,
+  );
+}
+
+export function buildCodeSymbolCandidateHref(
+  repoId: string,
+  candidate: Pick<
+    KernelSymbolCandidateResponse,
+    'local_file_available' | 'external_url' | 'version' | 'path' | 'line'
+  > & { local_url?: string | null },
+): string {
+  if (!candidate.local_file_available) return candidate.external_url;
+  return `/app${codeBrowserPath(repoId, candidate.version, candidate.path, candidate.line)}`;
 }
 
 function writeMarkdownDragPayload(dataTransfer: DataTransfer, payload: MarkdownDragPayload) {
@@ -451,6 +666,7 @@ export default function KernelCodePage({ repoId: explicitRepoId }: { repoId?: st
     anchorRect: DOMRect;
     avoidRect: DOMRect | null;
   } | null>(null);
+  const [repositoryResetToken, setRepositoryResetToken] = useState(0);
 
   const codeViewRef = useRef<HTMLDivElement | null>(null);
   const annotationPanelRef = useRef<HTMLDivElement | null>(null);
@@ -472,12 +688,18 @@ export default function KernelCodePage({ repoId: explicitRepoId }: { repoId?: st
   currentInspWidthRef.current = inspectorWidth;
   const fileAbortRef = useRef<AbortController | null>(null);
   const treeAbortRef = useRef<AbortController | null>(null);
+  const stateRepoIdRef = useRef(repoId);
+  const lastPersistedRepoIdRef = useRef(repoId);
 
   const activeRepository = useMemo(
     () => repositories.find((repo) => repo.id === repoId) || null,
     [repositories, repoId],
   );
   const repositoryName = activeRepository?.name || (repoId === 'linux' ? 'Kernel' : repoId.toUpperCase());
+  const repositorySelectOptions = useMemo(
+    () => buildCodeRepositorySelectOptions(repositories, repoId),
+    [repositories, repoId],
+  );
 
   const nextPathRequestId = useCallback(() => {
     pathRequestIdRef.current += 1;
@@ -509,6 +731,75 @@ export default function KernelCodePage({ repoId: explicitRepoId }: { repoId?: st
   useEffect(() => {
     setAnnotationQuickPreview(null);
   }, [currentPath, selectedVersion]);
+
+  useEffect(() => {
+    if (!shouldResetRepositoryState({ stateRepoId: stateRepoIdRef.current, repoId })) return;
+    const resetComplete = isRepositoryStateResetComplete({
+      selectedVersion,
+      urlVersion,
+      currentPath,
+      urlPath,
+      currentPathKind,
+      hasCurrentFile: currentFile !== null,
+    });
+    if (shouldNotifyRepositoryResetComplete({
+      stateRepoId: stateRepoIdRef.current,
+      repoId,
+      resetComplete,
+    })) {
+      stateRepoIdRef.current = repoId;
+      setRepositoryResetToken((token) => token + 1);
+      return;
+    }
+    abortPathRequests();
+    nextPathRequestId();
+    setSelectedVersion(urlVersion);
+    setCurrentPath(urlPath);
+    setCurrentPathKind(null);
+    setCurrentFile(null);
+    setFileLoading(false);
+    setTreeLoading(false);
+    setPathInput(urlPath);
+    setDirectoryEntries([]);
+    setAnnotations([]);
+    setSelectedLines(urlLine ? new Set([urlLine]) : new Set());
+    setTreePath('');
+    setTreeCache({});
+    setExpandedTreePaths(new Set());
+  }, [
+    abortPathRequests,
+    currentFile,
+    currentPath,
+    currentPathKind,
+    nextPathRequestId,
+    repoId,
+    selectedVersion,
+    urlLine,
+    urlPath,
+    urlVersion,
+  ]);
+
+  useEffect(() => {
+    if (!canRunRepositoryUrlEffects({ stateRepoId: stateRepoIdRef.current, repoId })) return;
+    const repoChanged = lastPersistedRepoIdRef.current !== repoId;
+    const hasUrlLocation = Boolean(urlVersion || urlPath || urlLine || urlAnnotationId);
+    if (repoChanged && !hasUrlLocation) {
+      lastPersistedRepoIdRef.current = repoId;
+      return;
+    }
+    writeSavedRepositoryLocation(
+      repoId,
+      buildRepositoryLocationToPersist({
+        selectedVersion,
+        currentPath,
+        urlVersion,
+        urlPath,
+        urlLine,
+        urlAnnotationId,
+      }),
+    );
+    lastPersistedRepoIdRef.current = repoId;
+  }, [currentPath, repoId, repositoryResetToken, selectedVersion, urlAnnotationId, urlLine, urlPath, urlVersion]);
 
   useEffect(() => {
     setVersionsLoading(true);
@@ -760,10 +1051,11 @@ export default function KernelCodePage({ repoId: explicitRepoId }: { repoId?: st
   }, [openPath]);
 
   useEffect(() => {
+    if (!canRunRepositoryUrlEffects({ stateRepoId: stateRepoIdRef.current, repoId })) return;
     if (urlPath && selectedVersion) {
       void openPathRef.current(urlPath, urlLine);
     }
-  }, [selectedVersion, urlPath, urlLine]);
+  }, [repoId, repositoryResetToken, selectedVersion, urlPath, urlLine]);
 
   useEffect(() => {
     if (selectedVersion) {
@@ -1092,6 +1384,11 @@ export default function KernelCodePage({ repoId: explicitRepoId }: { repoId?: st
     setTreePath('');
     setSelectedLines(new Set());
     setSearchParams({ v: tag }, { replace: true });
+  }
+
+  function handleRepositorySelect(nextRepoId: string) {
+    if (!nextRepoId || nextRepoId === repoId) return;
+    navigate(buildCodeRepositorySavedLocationRoute(nextRepoId, readSavedRepositoryLocation(nextRepoId)));
   }
 
   function handleLoadFile() {
@@ -1743,11 +2040,12 @@ export default function KernelCodePage({ repoId: explicitRepoId }: { repoId?: st
     if (!annotationQuickPreview) return;
     const annotation = annotationQuickPreview.annotation;
     navigate(
-      kernelCodePath(
-        annotation.version || selectedVersion,
-        annotation.file_path || currentPath,
-        annotationPreviewStartLine(annotation) || undefined,
-      ),
+      buildAnnotationPreviewAtlasPath({
+        repoId,
+        selectedVersion,
+        currentPath,
+        annotation,
+      }),
     );
   }
 
@@ -1790,7 +2088,7 @@ export default function KernelCodePage({ repoId: explicitRepoId }: { repoId?: st
                   aria-label={navigatorCollapsed ? 'Expand navigator' : 'Collapse navigator'}
                   title={navigatorCollapsed ? 'Expand navigator' : 'Collapse navigator'}
                 >
-                  {navigatorCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+                {navigatorCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
                 </button>
                 <button
                   type="button"
@@ -1802,6 +2100,22 @@ export default function KernelCodePage({ repoId: explicitRepoId }: { repoId?: st
                   {inspectorCollapsed ? <PanelRightOpen className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
                 </button>
               </div>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <Library className="h-4 w-4 text-slate-600" />
+                <span className="sr-only">Repository</span>
+                <select
+                  aria-label="Repository"
+                  value={repoId}
+                  onChange={(e) => handleRepositorySelect(e.target.value)}
+                  className="rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-950 outline-none transition focus:border-sky-500"
+                >
+                  {repositorySelectOptions.map((repo) => (
+                    <option key={repo.id} value={repo.value}>
+                      {repo.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {versionsLoading ? (
                 <div className="text-sm text-slate-600">Loading versions...</div>
               ) : (
@@ -2625,7 +2939,7 @@ export default function KernelCodePage({ repoId: explicitRepoId }: { repoId?: st
                       {candidate.local_file_available ? 'Local' : 'Elixir'}
                     </span>
                     <a
-                      href={candidate.local_file_available ? candidate.local_url : candidate.external_url}
+                      href={buildCodeSymbolCandidateHref(repoId, candidate)}
                       target={candidate.local_file_available ? '_self' : '_blank'}
                       rel={candidate.local_file_available ? undefined : 'noopener noreferrer'}
                       onClick={() => setSymbolPopover(null)}
